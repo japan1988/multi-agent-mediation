@@ -1,8 +1,14 @@
 
- 動的な同盟形成や妥協のロジックを再現
-- 仲裁AI（MediatorAI）が国際ガバナンス基準に従って調停
-- 集団合意／分裂／再編成までの動的プロセスを検証
-- シナリオごとの自動ログ記録＆検証をサポート
+
+技術的背景
+本プロジェクトは、複数のAIエージェント間で異なる価値観や優先度を持つ状況下において、円滑な交渉・調停を実現するシミュレーターの開発を目的としています。
+
+従来の単一AI制御では困難であった、多様な利害の調整や妥協形成の過程を、動的な同盟形成や仲裁AIの介入を通じて再現します。
+
+本システムは国際ガバナンス基準を参考に設計されており、安全性や公平性の観点から調停プロセスの検証を可能にしています。
+
+これにより、AIの集団的意思決定の研究・教育への応用に加え、実務における意思調整支援など、幅広い分野での活用が期待されます。
+
 
 ## ファイル内容
 - メインノートブック: Untitled27 (3).ipynb 他
@@ -20,7 +26,14 @@
 - The author assumes no responsibility for privacy or copyright issues arising from the use of this package.
 
 ---
+Technical Background
+This project aims to develop a simulator that facilitates smooth negotiation and mediation among multiple AI agents with differing values and priorities.
 
+It reproduces the processes of adjusting diverse interests and forming compromises—tasks that are challenging for single AI control—through dynamic alliance formation and intervention by a mediator AI.
+
+The system is designed with reference to international governance standards, enabling verification of mediation processes from the perspectives of safety and fairness.
+
+As a result, it is expected to have broad applications, including research and education on collective AI decision-making, as well as practical support for consensus-building in real-world scenarios.
 ## Disclaimer
 
 - This package is released **solely for educational and research purposes**.
