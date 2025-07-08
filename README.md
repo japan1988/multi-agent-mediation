@@ -16,6 +16,8 @@
 - 国際的AI倫理ガイドライン（OECD, EU, IEEE等）を参照していますが、**完全な準拠や絶対的安全性は保証できません**。
 - **商用利用は禁止してます。**
 - **悪意ある用途や違法行為への利用を固く禁止します。**
+- 本パッケージの使用により発生するプライバシー・著作権関連の問題について、著者は一切責任を負いません。
+- The author assumes no responsibility for privacy or copyright issues arising from the use of this package.
 
 ---
 
