@@ -12,16 +12,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      multi-agent-mediation/
-├── README.md
-├── requirements.txt   
-├── untitled28 (1).py
-├── untitled28 (2).py
-├── untitled28 (3).py
-└── .github/
-    └── workflows/
-        └── python-app.yml
-
+      uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -42,5 +33,11 @@ jobs:
     - name: Run tests
       run: |
         pytest --import-mode=importlib
+
+
+
+    
+     
+       
 
 
