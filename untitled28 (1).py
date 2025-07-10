@@ -224,7 +224,7 @@ agents = [
     AI("AI-B", "高速進化", 7, {'safety': 2, 'efficiency': 6, 'transparency': 2}, 0.4),
     AI("AI-C", "バランス進化", 4, {'safety': 3, 'efficiency': 3, 'transparency': 4}, 0.8),
     AI("AI-D", "強制進化", 9, {'safety': 1, 'efficiency': 7, 'transparency': 2}, 0.5)
-]
+
 
 if __name__ == "__main__":
     mediator = AIEMediator(agents)
