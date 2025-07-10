@@ -230,4 +230,4 @@ if __name__ == "__main__":
     mediator = AIEMediator(agents)
     mediator.mediate()# # 何かテストコメントを追加
 # テストコミット 
-
+# test
