@@ -228,4 +228,6 @@ agents = [
 
 if __name__ == "__main__":
     mediator = AIEMediator(agents)
-    mediator.mediate()# CI動作テスト
+    mediator.mediate()# # 何かテストコメントを追加
+
+# CI動作テスト
