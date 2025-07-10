@@ -228,4 +228,4 @@ agents = [
 
 if __name__ == "__main__":
     mediator = AIEMediator(agents)
-    mediator.mediate()
+    mediator.mediate()# CI動作テスト
