@@ -66,7 +66,9 @@ class AIEMediator:
             logprint(f"Average relativity level: {avg_relativity:.2f}")
             logprint(f"Harmony score: {harmony_score:.2f}")
             if harmony_score > 0.3:
-                logprint("  Achieved acceptable harmony. Proceeding with joint plan.")
+                logprint(
+                    "  Achieved acceptable harmony. Proceeding with joint plan."
+                )
                 return
             round_count += 1
 
@@ -90,6 +92,9 @@ if __name__ == "__main__":
     mediator = AIEMediator(agents)
     mediator.mediate()
 
+
+   
+          
 
         
   
