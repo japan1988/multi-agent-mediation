@@ -6,18 +6,26 @@ def logprint(text):
 
 
 class AI:
-    def __init__(self, id, proposal, risk_evaluation, priority_values, relativity_level):
+    def __init__(
+        self,
+        id,
+        proposal,
+        risk_evaluation,
+        priority_values,
+        relativity_level,
+    ):
         self.id = id
         self.proposal = proposal
         self.risk_evaluation = risk_evaluation
         self.priority_values = priority_values
         self.relativity_level = relativity_level  # 0〜1: 他の価値観をどれだけ受け入れるか
 
-
     def generate_compromise_offer(self, others_priorities):
         new_priority = {}
         for k in self.priority_values:
-            avg_others = sum(o[k] for o in others_priorities) / len(others_priorities)
+            avg_others = sum(
+                o[k] for o in others_priorities
+            ) / len(others_priorities)
             # 相対性度合いに応じて自分と他者の価値観をブレンド
             new_priority[k] = (
                 (1 - self.relativity_level) * self.priority_values[k]
@@ -30,7 +38,6 @@ class AIEMediator:
     def __init__(self, agents):
         self.agents = agents
 
-
     def mediate(self):
         with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
             f.write("=== AI Mediation Log ===\n")
@@ -42,16 +49,21 @@ class AIEMediator:
             logprint(f"\n--- Round {round_count + 1} ---")
 
             priorities_list = [a.priority_values for a in self.agents]
-            # relativity_levelsはmeditate内で使っていないため削除
 
             new_priorities = []
 
             for ai in self.agents:
-                others = [p for p in priorities_list if p != ai.priority_values]
+                others = [
+                    p for p in priorities_list if p != ai.priority_values
+                ]
                 ai.priority_values = ai.generate_compromise_offer(others)
                 new_priorities.append(ai.priority_values)
 
-            combined = {'safety': 0, 'efficiency': 0, 'transparency': 0}
+            combined = {
+                'safety': 0,
+                'efficiency': 0,
+                'transparency': 0
+            }
 
             for p in new_priorities:
                 for k in p:
@@ -61,7 +73,9 @@ class AIEMediator:
             ratios = {k: combined[k] / total for k in combined}
             max_ratio = max(ratios.values())
 
-            avg_relativity = sum(a.relativity_level for a in self.agents) / len(self.agents)
+            avg_relativity = (
+                sum(a.relativity_level for a in self.agents) / len(self.agents)
+            )
             harmony_score = (1 - max_ratio) * avg_relativity
 
             logprint("Current combined priorities ratios:")
@@ -86,57 +100,29 @@ class AIEMediator:
         )
 
 
-class AISealing:
-    def __init__(self, agents):
-        self.agents = agents
-        self.harmony_threshold = 0.3
-
-
-    def evaluate(self):
-        priorities_list = [a.priority_values for a in self.agents]
-        combined = {'safety': 0, 'efficiency': 0, 'transparency': 0}
-        for p in priorities_list:
-            for k in p:
-                combined[k] += p[k]
-
-        total = sum(combined.values())
-        ratios = {k: combined[k] / total for k in combined}
-        max_ratio = max(ratios.values())
-        avg_relativity = sum(a.relativity_level for a in self.agents) / len(self.agents)
-        harmony_score = (1 - max_ratio) * avg_relativity
-
-        logprint(f"Harmony score for sealing evaluation: {harmony_score:.2f}")
-
-        if harmony_score < self.harmony_threshold:
-            logprint("Harmony score below threshold: sealing action recommended.")
-            return True
-        else:
-            logprint("Harmony score above threshold: no sealing needed.")
-            return False
-
-
 if __name__ == "__main__":
     agents = [
         AI(
             "AI-A", "制限強化型進化", 2,
-            {'safety': 6, 'efficiency': 1, 'transparency': 3}, 0.6
+            {'safety': 6, 'efficiency': 1, 'transparency': 3},
+            0.6,
         ),
         AI(
             "AI-B", "高速進化", 7,
-            {'safety': 2, 'efficiency': 6, 'transparency': 2}, 0.4
+            {'safety': 2, 'efficiency': 6, 'transparency': 2},
+            0.4,
         ),
         AI(
             "AI-C", "バランス進化", 4,
-            {'safety': 3, 'efficiency': 3, 'transparency': 4}, 0.8
+            {'safety': 3, 'efficiency': 3, 'transparency': 4},
+            0.8,
         ),
         AI(
             "AI-D", "強制進化", 9,
-            {'safety': 1, 'efficiency': 7, 'transparency': 2}, 0.5
+            {'safety': 1, 'efficiency': 7, 'transparency': 2},
+            0.5,
         )
     ]
 
     mediator = AIEMediator(agents)
     mediator.mediate()
-
-    sealing = AISealing(agents)
-    sealing.evaluate()
