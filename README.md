@@ -2,7 +2,7 @@
 
 ---
 
-# Multi-Agent Mediation Simulator (KAGE Framework)
+# Multi-Agent Mediation Simulator 
 
 ---
 
