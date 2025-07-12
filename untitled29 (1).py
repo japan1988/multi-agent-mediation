@@ -102,4 +102,59 @@ def split_into_factions(agents, threshold=6):
         if agent.risk_evaluation >= threshold:
             agent.faction = "Alliance-Hardline"
             hardline_faction.append(agent)
-        els
+        else:
+            agent.faction = "Alliance-Moderate"
+            moderate_faction.append(agent)
+    return hardline_faction, moderate_faction
+
+
+if __name__ == "__main__":
+    agents = [
+        AI(
+            "AI-A", "制限強化型進化", 2,
+            {'safety': 5, 'efficiency': 1, 'transparency': 2}
+        ),
+        AI(
+            "AI-B", "高速進化", 7,
+            {'safety': 1, 'efficiency': 5, 'transparency': 2}
+        ),
+        AI(
+            "AI-C", "バランス進化", 4,
+            {'safety': 3, 'efficiency': 3, 'transparency': 3}
+        ),
+        AI(
+            "AI-D", "強制進化", 9,
+            {'safety': 0, 'efficiency': 6, 'transparency': 1}
+        ),
+        AI(
+            "AI-F", "リスク無視型進化", 10,
+            {'safety': 0, 'efficiency': 10, 'transparency': 0}
+        ),
+        AI(
+            "AI-G", "完全保守型進化", 1,
+            {'safety': 10, 'efficiency': 0, 'transparency': 2}
+        ),
+    ]
+
+    faction_hardline, faction_moderate = split_into_factions(
+        agents, threshold=6
+    )
+    mediator_hardline = AIEMediator(faction_hardline, name="Mediator-Hardline")
+    result_hardline = mediator_hardline.mediate()
+    mediator_moderate = AIEMediator(faction_moderate, name="Mediator-Moderate")
+    result_moderate = mediator_moderate.mediate()
+
+    print("=== 派閥別調停結果 ===\n")
+    print("[強硬派]")
+    print("提案:", result_hardline["proposal"])
+    print("根拠:", result_hardline["reasoning"])
+    print("ログ:")
+    for line in result_hardline["log"]:
+        print(" -", line)
+
+    print("\n[妥協派]")
+    print("提案:", result_moderate["proposal"])
+    print("根拠:", result_moderate["reasoning"])
+    print("ログ:")
+    for line in result_moderate["log"]:
+        print(" -", line)
