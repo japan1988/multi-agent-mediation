@@ -36,19 +36,26 @@ class AIEMediator:
         details = []
         for entry in inputs:
             risk = entry['risk']
-            weight_sum = sum(entry['priority'].values())
+            priority = entry['priority']
+            weight_sum = sum(priority.values())
             combined_weighted_risk += risk * weight_sum
             compromise_score_total += (weight_sum - risk)
             details.append(
                 {
                     'id': entry['id'],
                     'risk': risk,
-                    'priority': entry['priority'],
+                    'priority': priority,
                     'proposal': entry['proposal']
                 }
             )
-        avg_risk = (combined_weighted_risk / len(inputs)) if inputs else 0
-        avg_compromise = (compromise_score_total / len(inputs)) if inputs else 0
+        if inputs:
+            avg_risk = combined_weighted_risk / len(inputs)
+        else:
+            avg_risk = 0
+        if inputs:
+            avg_compromise = compromise_score_total / len(inputs)
+        else:
+            avg_compromise = 0
         return avg_risk, avg_compromise, details
 
     def generate_proposal(self, avg_risk, avg_compromise, details):
@@ -218,11 +225,15 @@ if __name__ == "__main__":
         "[強硬派]"
     )
     print(
-        "提案:",
+        "提案:"
+    )
+    print(
         proposal_hardline
     )
     print(
-        "根拠:",
+        "根拠:"
+    )
+    print(
         reasoning_hardline
     )
     print(
@@ -230,7 +241,9 @@ if __name__ == "__main__":
     )
     for line in log_hardline:
         print(
-            " -",
+            " -"
+        )
+        print(
             line
         )
 
@@ -238,11 +251,15 @@ if __name__ == "__main__":
         "\n[妥協派]"
     )
     print(
-        "提案:",
+        "提案:"
+    )
+    print(
         proposal_moderate
     )
     print(
-        "根拠:",
+        "根拠:"
+    )
+    print(
         reasoning_moderate
     )
     print(
@@ -250,8 +267,11 @@ if __name__ == "__main__":
     )
     for line in log_moderate:
         print(
-            " -",
+            " -"
+        )
+        print(
             line
         )
 
-# <--- ここでファイル終了、空行1つだけ。スペースもタブもなし
+# ファイル末尾は空行1つ、スペース・タブは一切なし
+
