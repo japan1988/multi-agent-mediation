@@ -1,3 +1,8 @@
+def logprint(text):
+    print(text)
+    with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
+        f.write(text + "\n")
+
 def mediate(self):
     with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
         f.write("=== AI Mediation Log ===\n")
