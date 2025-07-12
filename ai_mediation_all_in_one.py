@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 
-
 def logprint(text):
-
-
     print(text)
     with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
         f.write(text + "\n")
@@ -14,8 +11,6 @@ class AI:
     def __init__(
         self, id, proposal, risk_evaluation, priority_values, relativity_level
     ):
-
-
         self.id = id
         self.proposal = proposal
         self.risk_evaluation = risk_evaluation
@@ -24,15 +19,10 @@ class AI:
 
 
     def generate_compromise_offer(self, others_priorities):
-
-
         new_priority = {}
 
         for k in self.priority_values:
-            avg_others = sum(
-                o[k] for o in others_priorities
-            ) / len(others_priorities)
-            # 相対性度合いに応じて自分と他者の価値観をブレンド
+            avg_others = sum(o[k] for o in others_priorities) / len(others_priorities)
             new_priority[k] = (
                 (1 - self.relativity_level) * self.priority_values[k]
                 + self.relativity_level * avg_others
@@ -43,14 +33,10 @@ class AI:
 class AIEMediator:
 
     def __init__(self, agents):
-
-
         self.agents = agents
 
 
     def mediate(self):
-
-
         with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
             f.write("=== AI Mediation Log ===\n")
 
@@ -58,7 +44,6 @@ class AIEMediator:
         max_rounds = 5
 
         while round_count < max_rounds:
-
             logprint(f"\n--- Round {round_count + 1} ---")
 
             priorities_list = [a.priority_values for a in self.agents]
@@ -66,9 +51,7 @@ class AIEMediator:
             new_priorities = []
 
             for ai in self.agents:
-                others = [
-                    p for p in priorities_list if p != ai.priority_values
-                ]
+                others = [p for p in priorities_list if p != ai.priority_values]
                 ai.priority_values = ai.generate_compromise_offer(others)
                 new_priorities.append(ai.priority_values)
 
@@ -83,7 +66,6 @@ class AIEMediator:
             harmony_score = (1 - max(ratios.values())) * avg_relativity
 
             logprint("Current combined priorities ratios:")
-
             for k, v in ratios.items():
                 logprint(f"  {k}: {v:.2%}")
 
@@ -108,15 +90,11 @@ class AIEMediator:
 class AISealing:
 
     def __init__(self, agents):
-
-
         self.agents = agents
         self.harmony_threshold = 0.3
 
 
     def evaluate(self):
-
-
         priorities_list = [a.priority_values for a in self.agents]
         combined = {'safety': 0, 'efficiency': 0, 'transparency': 0}
 
@@ -129,9 +107,7 @@ class AISealing:
 
         max_ratio = max(ratios.values())
 
-        avg_relativity = sum(a.relativity_level for a in self.agents) / len(
-            self.agents
-        )
+        avg_relativity = sum(a.relativity_level for a in self.agents) / len(self.agents)
         harmony_score = (1 - max_ratio) * avg_relativity
 
         logprint(f"Harmony score for sealing evaluation: {harmony_score:.2f}")
@@ -145,7 +121,6 @@ class AISealing:
 
 
 if __name__ == "__main__":
-
     agents = [
         AI(
             "AI-A", "制限強化型進化", 2,
