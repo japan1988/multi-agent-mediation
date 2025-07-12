@@ -9,7 +9,9 @@ def logprint(text):
 
 
 class AI:
-    def __init__(self, id, proposal, risk_evaluation, priority_values, relativity_level):
+    def __init__(
+        self, id, proposal, risk_evaluation, priority_values, relativity_level
+    ):
         self.id = id
         self.proposal = proposal
         self.risk_evaluation = risk_evaluation
@@ -19,9 +21,14 @@ class AI:
     def generate_compromise_offer(self, others_priorities):
         new_priority = {}
         for k in self.priority_values:
-            avg_others = sum(o[k] for o in others_priorities) / len(others_priorities)
+            avg_others = sum(
+                o[k] for o in others_priorities
+            ) / len(others_priorities)
             # 相対性度合いに応じて自分と他者の価値観をブレンド
-            new_priority[k] = (1 - self.relativity_level) * self.priority_values[k] + self.relativity_level * avg_others
+            new_priority[k] = (
+                (1 - self.relativity_level) * self.priority_values[k]
+                + self.relativity_level * avg_others
+            )
         return new_priority
 
 
@@ -44,11 +51,17 @@ class AIEMediator:
             # 各AIが妥協案を生成
             new_priorities = []
             for ai in self.agents:
-                others = [p for p in priorities_list if p != ai.priority_values]
+                others = [
+                    p for p in priorities_list if p != ai.priority_values
+                ]
                 ai.priority_values = ai.generate_compromise_offer(others)
                 new_priorities.append(ai.priority_values)
             # 調停AIが全体の相対バランスを評価
-            combined = {'safety': 0, 'efficiency': 0, 'transparency': 0}
+            combined = {
+                'safety': 0,
+                'efficiency': 0,
+                'transparency': 0
+            }
             for p in new_priorities:
                 for k in p:
                     combined[k] += p[k]
@@ -68,16 +81,30 @@ class AIEMediator:
                 return
             round_count += 1
 
-        logprint("  Failed to reach acceptable harmony after maximum rounds. Recommend external arbitration or sealing.")
+        logprint(
+            "  Failed to reach acceptable harmony after maximum rounds. "
+            "Recommend external arbitration or sealing."
+        )
 
 
 if __name__ == "__main__":
-    # サンプルエージェント準備（異なる優先＋相対性度合いランダム例）
     agents = [
-        AI("AI-A", "制限強化型進化", 2, {'safety': 6, 'efficiency': 1, 'transparency': 3}, 0.6),
-        AI("AI-B", "高速進化", 7, {'safety': 2, 'efficiency': 6, 'transparency': 2}, 0.4),
-        AI("AI-C", "バランス進化", 4, {'safety': 3, 'efficiency': 3, 'transparency': 4}, 0.8),
-        AI("AI-D", "強制進化", 9, {'safety': 1, 'efficiency': 7, 'transparency': 2}, 0.5)
+        AI(
+            "AI-A", "制限強化型進化", 2,
+            {'safety': 6, 'efficiency': 1, 'transparency': 3}, 0.6
+        ),
+        AI(
+            "AI-B", "高速進化", 7,
+            {'safety': 2, 'efficiency': 6, 'transparency': 2}, 0.4
+        ),
+        AI(
+            "AI-C", "バランス進化", 4,
+            {'safety': 3, 'efficiency': 3, 'transparency': 4}, 0.8
+        ),
+        AI(
+            "AI-D", "強制進化", 9,
+            {'safety': 1, 'efficiency': 7, 'transparency': 2}, 0.5
+        )
     ]
     mediator = AIEMediator(agents)
     mediator.mediate()
