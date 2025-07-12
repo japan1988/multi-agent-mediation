@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 
+
 def logprint(text):
     print(text)
     with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
         f.write(text + "\n")
 
+
 class AI:
-    def __init__(self, id, proposal, risk_evaluation, priority_values, relativity_level):
+    def __init__(self, id, proposal, risk_evaluation,
+                 priority_values, relativity_level):
         self.id = id
         self.proposal = proposal
         self.risk_evaluation = risk_evaluation
@@ -23,6 +26,7 @@ class AI:
                 + self.relativity_level * avg_others
             )
         return new_priority
+
 
 class AIEMediator:
     def __init__(self, agents):
@@ -59,7 +63,8 @@ class AIEMediator:
             logprint(f"Harmony score: {harmony_score:.2f}")
             if harmony_score > 0.3:
                 logprint(
-                    "  Achieved acceptable harmony. Proceeding with joint plan."
+                    "  Achieved acceptable harmony. "
+                    "Proceeding with joint plan."
                 )
                 return
             round_count += 1
@@ -68,6 +73,7 @@ class AIEMediator:
             "  Failed to reach acceptable harmony after maximum rounds. "
             "Recommend external arbitration or sealing."
         )
+
 
 if __name__ == "__main__":
     agents = [
@@ -82,13 +88,3 @@ if __name__ == "__main__":
     ]
     mediator = AIEMediator(agents)
     mediator.mediate()
-
-     
-       
-
-
-   
-          
-
-        
-  
