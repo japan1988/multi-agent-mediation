@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 
+
 class AI:
+
     def __init__(self, id, proposal, risk_evaluation, priority_values):
         self.id = id
         self.proposal = proposal
         self.risk_evaluation = risk_evaluation
         self.priority = priority_values
         self.faction = None
+
 
 class AIEMediator:
     RISK_THRESHOLD_L1 = 9
@@ -96,7 +99,9 @@ class AIEMediator:
             log_lines
         )
 
-    def format_result(self, proposal, avg_risk, avg_compromise, details, log_lines):
+    def format_result(
+        self, proposal, avg_risk, avg_compromise, details, log_lines
+    ):
         return {
             'mediator': self.name,
             'proposal': proposal,
@@ -115,6 +120,7 @@ class AIEMediator:
         avg_risk, avg_compromise, details = self.evaluate(inputs)
         return self.generate_proposal(avg_risk, avg_compromise, details)
 
+
 def split_into_factions(agents, threshold=6):
     hardline_faction = []
     moderate_faction = []
@@ -126,6 +132,7 @@ def split_into_factions(agents, threshold=6):
             agent.faction = "Alliance-Moderate"
             moderate_faction.append(agent)
     return hardline_faction, moderate_faction
+
 
 if __name__ == "__main__":
     agents = [
