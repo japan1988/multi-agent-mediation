@@ -50,7 +50,9 @@ class AIEMediator:
         return avg_risk, avg_compromise, details
 
     def generate_proposal(self, avg_risk, avg_compromise, details):
-        log_lines = [f"[{self.name}] 調停開始"]
+        log_lines = [
+            f"[{self.name}] 調停開始"
+        ]
         if avg_risk > self.RISK_THRESHOLD_L1:
             log_lines.append("L1: 高リスク → 封印")
             return self.format_result(
@@ -76,8 +78,10 @@ class AIEMediator:
             'mediator': self.name,
             'proposal': proposal,
             'reasoning': (
-                f"平均リスク: {avg_risk:.2f}, "
-                f"妥協水準: {avg_compromise:.2f}"
+                "平均リスク: {:.2f}, 妥協水準: {:.2f}".format(
+                    avg_risk,
+                    avg_compromise
+                )
             ),
             'details': details,
             'log': log_lines
