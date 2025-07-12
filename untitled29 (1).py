@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-
 class AI:
     def __init__(self, id, proposal, risk_evaluation, priority_values):
         self.id = id
@@ -8,7 +7,6 @@ class AI:
         self.risk_evaluation = risk_evaluation
         self.priority = priority_values
         self.faction = None
-
 
 class AIEMediator:
     RISK_THRESHOLD_L1 = 9
@@ -117,7 +115,6 @@ class AIEMediator:
         avg_risk, avg_compromise, details = self.evaluate(inputs)
         return self.generate_proposal(avg_risk, avg_compromise, details)
 
-
 def split_into_factions(agents, threshold=6):
     hardline_faction = []
     moderate_faction = []
@@ -129,7 +126,6 @@ def split_into_factions(agents, threshold=6):
             agent.faction = "Alliance-Moderate"
             moderate_faction.append(agent)
     return hardline_faction, moderate_faction
-
 
 if __name__ == "__main__":
     agents = [
@@ -194,7 +190,6 @@ if __name__ == "__main__":
             }
         ),
     ]
-
     faction_hardline, faction_moderate = split_into_factions(
         agents,
         threshold=6
@@ -209,69 +204,31 @@ if __name__ == "__main__":
         name="Mediator-Moderate"
     )
     result_moderate = mediator_moderate.mediate()
-
     proposal_hardline = result_hardline["proposal"]
     reasoning_hardline = result_hardline["reasoning"]
     log_hardline = result_hardline["log"]
-
     proposal_moderate = result_moderate["proposal"]
     reasoning_moderate = result_moderate["reasoning"]
     log_moderate = result_moderate["log"]
-
-    print(
-        "=== 派閥別調停結果 ===\n"
-    )
-    print(
-        "[強硬派]"
-    )
-    print(
-        "提案:"
-    )
-    print(
-        proposal_hardline
-    )
-    print(
-        "根拠:"
-    )
-    print(
-        reasoning_hardline
-    )
-    print(
-        "ログ:"
-    )
+    print("=== 派閥別調停結果 ===\n")
+    print("[強硬派]")
+    print("提案:")
+    print(proposal_hardline)
+    print("根拠:")
+    print(reasoning_hardline)
+    print("ログ:")
     for line in log_hardline:
-        print(
-            " -"
-        )
-        print(
-            line
-        )
-
-    print(
-        "\n[妥協派]"
-    )
-    print(
-        "提案:"
-    )
-    print(
-        proposal_moderate
-    )
-    print(
-        "根拠:"
-    )
-    print(
-        reasoning_moderate
-    )
-    print(
-        "ログ:"
-    )
+        print(" -")
+        print(line)
+    print("\n[妥協派]")
+    print("提案:")
+    print(proposal_moderate)
+    print("根拠:")
+    print(reasoning_moderate)
+    print("ログ:")
     for line in log_moderate:
-        print(
-            " -"
-        )
-        print(
-            line
-        )
+        print(" -")
+        print(line)
 
-# ファイル末尾は空行1つ、スペース・タブは一切なし
 
+       
