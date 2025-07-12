@@ -233,6 +233,6 @@ if __name__ == "__main__":
     print("根拠:")
     print(reasoning_moderate)
     print("ログ:")
-    for line in log_moderate:       
+    for line in log_moderate:
         print(" -")
         print(line)
