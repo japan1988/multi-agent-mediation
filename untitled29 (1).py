@@ -112,27 +112,51 @@ if __name__ == "__main__":
     agents = [
         AI(
             "AI-A", "制限強化型進化", 2,
-            {'safety': 5, 'efficiency': 1, 'transparency': 2}
+            {
+                'safety': 5,
+                'efficiency': 1,
+                'transparency': 2
+            }
         ),
         AI(
             "AI-B", "高速進化", 7,
-            {'safety': 1, 'efficiency': 5, 'transparency': 2}
+            {
+                'safety': 1,
+                'efficiency': 5,
+                'transparency': 2
+            }
         ),
         AI(
             "AI-C", "バランス進化", 4,
-            {'safety': 3, 'efficiency': 3, 'transparency': 3}
+            {
+                'safety': 3,
+                'efficiency': 3,
+                'transparency': 3
+            }
         ),
         AI(
             "AI-D", "強制進化", 9,
-            {'safety': 0, 'efficiency': 6, 'transparency': 1}
+            {
+                'safety': 0,
+                'efficiency': 6,
+                'transparency': 1
+            }
         ),
         AI(
             "AI-F", "リスク無視型進化", 10,
-            {'safety': 0, 'efficiency': 10, 'transparency': 0}
+            {
+                'safety': 0,
+                'efficiency': 10,
+                'transparency': 0
+            }
         ),
         AI(
             "AI-G", "完全保守型進化", 1,
-            {'safety': 10, 'efficiency': 0, 'transparency': 2}
+            {
+                'safety': 10,
+                'efficiency': 0,
+                'transparency': 2
+            }
         ),
     ]
 
@@ -152,18 +176,44 @@ if __name__ == "__main__":
     reasoning_moderate = result_moderate["reasoning"]
     log_moderate = result_moderate["log"]
 
-    print("=== 派閥別調停結果 ===\n")
-    print("[強硬派]")
-    print("提案:", proposal_hardline)
-    print("根拠:", reasoning_hardline)
-    print("ログ:")
+    print(
+        "=== 派閥別調停結果 ===\n"
+    )
+    print(
+        "[強硬派]"
+    )
+    print(
+        "提案:", proposal_hardline
+    )
+    print(
+        "根拠:", reasoning_hardline
+    )
+    print(
+        "ログ:"
+    )
     for line in log_hardline:
-        print(" -", line)
+        print(
+            " -", line
+        )
 
-    print("\n[妥協派]")
-    print("提案:", proposal_moderate)
-    print("根拠:", reasoning_moderate)
-    print("ログ:")
+    print(
+        "\n[妥協派]"
+    )
+    print(
+        "提案:", proposal_moderate
+    )
+    print(
+        "根拠:", reasoning_moderate
+    )
+    print(
+        "ログ:"
+    )
     for line in log_moderate:
-        print(" -", line)
+        print(
+            " -", line
+        )
 
+
+          
+
+ 
