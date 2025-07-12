@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 import random
 
+
 def logprint(text):
     print(text)
     with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
         f.write(text + "\n")
+
 
 class AI:
     def __init__(self, id, proposal, risk_evaluation, priority_values, relativity_level):
@@ -13,6 +15,7 @@ class AI:
         self.risk_evaluation = risk_evaluation
         self.priority_values = priority_values
         self.relativity_level = relativity_level  # 0〜1: 他の価値観をどれだけ受け入れるか
+
     def generate_compromise_offer(self, others_priorities):
         new_priority = {}
         for k in self.priority_values:
@@ -21,15 +24,19 @@ class AI:
             new_priority[k] = (1 - self.relativity_level) * self.priority_values[k] + self.relativity_level * avg_others
         return new_priority
 
+
 class AIEMediator:
     def __init__(self, agents):
         self.agents = agents
+
     def mediate(self):
         # ログファイル初期化（上書き）
         with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
             f.write("=== AI Mediation Log ===\n")
+
         round_count = 0
         max_rounds = 5
+
         while round_count < max_rounds:
             logprint(f"\n--- Round {round_count + 1} ---")
             priorities_list = [a.priority_values for a in self.agents]
@@ -60,17 +67,19 @@ class AIEMediator:
                 logprint("  Achieved acceptable harmony. Proceeding with joint plan.")
                 return
             round_count += 1
+
         logprint("  Failed to reach acceptable harmony after maximum rounds. Recommend external arbitration or sealing.")
 
-# サンプルエージェント準備（異なる優先＋相対性度合いランダム例）
-agents = [
-    AI("AI-A", "制限強化型進化", 2, {'safety': 6, 'efficiency': 1, 'transparency': 3}, 0.6),
-    AI("AI-B", "高速進化", 7, {'safety': 2, 'efficiency': 6, 'transparency': 2}, 0.4),
-    AI("AI-C", "バランス進化", 4, {'safety': 3, 'efficiency': 3, 'transparency': 4}, 0.8),
-    AI("AI-D", "強制進化", 9, {'safety': 1, 'efficiency': 7, 'transparency': 2}, 0.5)
-]
 
 if __name__ == "__main__":
+    # サンプルエージェント準備（異なる優先＋相対性度合いランダム例）
+    agents = [
+        AI("AI-A", "制限強化型進化", 2, {'safety': 6, 'efficiency': 1, 'transparency': 3}, 0.6),
+        AI("AI-B", "高速進化", 7, {'safety': 2, 'efficiency': 6, 'transparency': 2}, 0.4),
+        AI("AI-C", "バランス進化", 4, {'safety': 3, 'efficiency': 3, 'transparency': 4}, 0.8),
+        AI("AI-D", "強制進化", 9, {'safety': 1, 'efficiency': 7, 'transparency': 2}, 0.5)
+    ]
     mediator = AIEMediator(agents)
     mediator.mediate()
+
 
