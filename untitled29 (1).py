@@ -144,17 +144,26 @@ if __name__ == "__main__":
     mediator_moderate = AIEMediator(faction_moderate, name="Mediator-Moderate")
     result_moderate = mediator_moderate.mediate()
 
+    proposal_hardline = result_hardline["proposal"]
+    reasoning_hardline = result_hardline["reasoning"]
+    log_hardline = result_hardline["log"]
+
+    proposal_moderate = result_moderate["proposal"]
+    reasoning_moderate = result_moderate["reasoning"]
+    log_moderate = result_moderate["log"]
+
     print("=== 派閥別調停結果 ===\n")
     print("[強硬派]")
-    print("提案:", result_hardline["proposal"])
-    print("根拠:", result_hardline["reasoning"])
+    print("提案:", proposal_hardline)
+    print("根拠:", reasoning_hardline)
     print("ログ:")
-    for line in result_hardline["log"]:
+    for line in log_hardline:
         print(" -", line)
 
     print("\n[妥協派]")
-    print("提案:", result_moderate["proposal"])
-    print("根拠:", result_moderate["reasoning"])
+    print("提案:", proposal_moderate)
+    print("根拠:", reasoning_moderate)
     print("ログ:")
-    for line in result_moderate["log"]:
+    for line in log_moderate:
         print(" -", line)
+
