@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 
-
 def logprint(text):
     print(text)
     with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
         f.write(text + "\n")
-
 
 class AI:
     def __init__(self, id, proposal, risk_evaluation, priority_values, relativity_level):
@@ -26,13 +24,11 @@ class AI:
             )
         return new_priority
 
-
 class AIEMediator:
     def __init__(self, agents):
         self.agents = agents
 
     def mediate(self):
-        # ログファイル初期化（上書き）
         with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
             f.write("=== AI Mediation Log ===\n")
 
@@ -43,23 +39,19 @@ class AIEMediator:
             logprint(f"\n--- Round {round_count + 1} ---")
             priorities_list = [a.priority_values for a in self.agents]
             relativity_levels = [a.relativity_level for a in self.agents]
-            # 各AIが妥協案を生成
             new_priorities = []
             for ai in self.agents:
                 others = [p for p in priorities_list if p != ai.priority_values]
                 ai.priority_values = ai.generate_compromise_offer(others)
                 new_priorities.append(ai.priority_values)
-            # 調停AIが全体の相対バランスを評価
             combined = {'safety': 0, 'efficiency': 0, 'transparency': 0}
             for p in new_priorities:
                 for k in p:
                     combined[k] += p[k]
             total = sum(combined.values())
             ratios = {k: combined[k] / total for k in combined}
-            # 調和スコア: 相対性度合いの平均に基づく
             avg_relativity = sum(relativity_levels) / len(relativity_levels)
             harmony_score = (1 - max(ratios.values())) * avg_relativity
-            # 出力
             logprint("Current combined priorities ratios:")
             for k, v in ratios.items():
                 logprint(f"  {k}: {v:.2%}")
@@ -77,7 +69,6 @@ class AIEMediator:
             "Recommend external arbitration or sealing."
         )
 
-
 if __name__ == "__main__":
     agents = [
         AI("AI-A", "制限強化型進化", 2,
@@ -91,6 +82,9 @@ if __name__ == "__main__":
     ]
     mediator = AIEMediator(agents)
     mediator.mediate()
+
+     
+       
 
 
    
