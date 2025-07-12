@@ -32,6 +32,9 @@ jobs:
     - name: Run tests
       run: |
         pytest --import-mode=importlib
+pytest
+flake8
+# 他、必要なパッケージをここに
 
 
 
