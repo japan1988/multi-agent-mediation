@@ -234,6 +234,7 @@ if __name__ == "__main__":
     print(reasoning_moderate)
     print("ログ:")
     for line in log_moderate:
+        
         print(" -")
         print(line)
 
