@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-
 def logprint(text):
     print(text)
     with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
@@ -7,22 +6,18 @@ def logprint(text):
 
 
 class AI:
-
-    def __init__(
-        self, id, proposal, risk_evaluation, priority_values, relativity_level
-    ):
+    def __init__(self, id, proposal, risk_evaluation, priority_values, relativity_level):
         self.id = id
         self.proposal = proposal
         self.risk_evaluation = risk_evaluation
         self.priority_values = priority_values
         self.relativity_level = relativity_level  # 0〜1: 他の価値観をどれだけ受け入れるか
 
-
     def generate_compromise_offer(self, others_priorities):
         new_priority = {}
-
         for k in self.priority_values:
             avg_others = sum(o[k] for o in others_priorities) / len(others_priorities)
+            # 相対性度合いに応じて自分と他者の価値観をブレンド
             new_priority[k] = (
                 (1 - self.relativity_level) * self.priority_values[k]
                 + self.relativity_level * avg_others
@@ -31,10 +26,8 @@ class AI:
 
 
 class AIEMediator:
-
     def __init__(self, agents):
         self.agents = agents
-
 
     def mediate(self):
         with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
@@ -88,11 +81,9 @@ class AIEMediator:
 
 
 class AISealing:
-
     def __init__(self, agents):
         self.agents = agents
         self.harmony_threshold = 0.3
-
 
     def evaluate(self):
         priorities_list = [a.priority_values for a in self.agents]
@@ -104,9 +95,7 @@ class AISealing:
 
         total = sum(combined.values())
         ratios = {k: combined[k] / total for k in combined}
-
         max_ratio = max(ratios.values())
-
         avg_relativity = sum(a.relativity_level for a in self.agents) / len(self.agents)
         harmony_score = (1 - max_ratio) * avg_relativity
 
