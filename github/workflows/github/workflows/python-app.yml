@@ -33,7 +33,5 @@ jobs:
       run: |
         pytest --import-mode=importlib
 
-pytest
-flake8
 
 
