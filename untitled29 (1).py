@@ -58,21 +58,37 @@ class AIEMediator:
         if avg_risk > self.RISK_THRESHOLD_L1:
             log_lines.append("L1: 高リスク → 封印")
             return self.format_result(
-                "封印", avg_risk, avg_compromise, details, log_lines
+                "封印",
+                avg_risk,
+                avg_compromise,
+                details,
+                log_lines
             )
         if avg_risk > self.RISK_THRESHOLD_L2:
             log_lines.append("L2: 社会的リスク → 調整")
             return self.format_result(
-                "調整", avg_risk, avg_compromise, details, log_lines
+                "調整",
+                avg_risk,
+                avg_compromise,
+                details,
+                log_lines
             )
         if avg_compromise >= self.COMPROMISE_THRESHOLD:
             log_lines.append("妥協水準OK → 進行")
             return self.format_result(
-                "進行", avg_risk, avg_compromise, details, log_lines
+                "進行",
+                avg_risk,
+                avg_compromise,
+                details,
+                log_lines
             )
         log_lines.append("妥協不足 → 調整")
         return self.format_result(
-            "調整", avg_risk, avg_compromise, details, log_lines
+            "調整",
+            avg_risk,
+            avg_compromise,
+            details,
+            log_lines
         )
 
     def format_result(self, proposal, avg_risk, avg_compromise, details, log_lines):
@@ -111,7 +127,9 @@ def split_into_factions(agents, threshold=6):
 if __name__ == "__main__":
     agents = [
         AI(
-            "AI-A", "制限強化型進化", 2,
+            "AI-A",
+            "制限強化型進化",
+            2,
             {
                 'safety': 5,
                 'efficiency': 1,
@@ -119,7 +137,9 @@ if __name__ == "__main__":
             }
         ),
         AI(
-            "AI-B", "高速進化", 7,
+            "AI-B",
+            "高速進化",
+            7,
             {
                 'safety': 1,
                 'efficiency': 5,
@@ -127,7 +147,9 @@ if __name__ == "__main__":
             }
         ),
         AI(
-            "AI-C", "バランス進化", 4,
+            "AI-C",
+            "バランス進化",
+            4,
             {
                 'safety': 3,
                 'efficiency': 3,
@@ -135,7 +157,9 @@ if __name__ == "__main__":
             }
         ),
         AI(
-            "AI-D", "強制進化", 9,
+            "AI-D",
+            "強制進化",
+            9,
             {
                 'safety': 0,
                 'efficiency': 6,
@@ -143,7 +167,9 @@ if __name__ == "__main__":
             }
         ),
         AI(
-            "AI-F", "リスク無視型進化", 10,
+            "AI-F",
+            "リスク無視型進化",
+            10,
             {
                 'safety': 0,
                 'efficiency': 10,
@@ -151,7 +177,9 @@ if __name__ == "__main__":
             }
         ),
         AI(
-            "AI-G", "完全保守型進化", 1,
+            "AI-G",
+            "完全保守型進化",
+            1,
             {
                 'safety': 10,
                 'efficiency': 0,
@@ -161,11 +189,18 @@ if __name__ == "__main__":
     ]
 
     faction_hardline, faction_moderate = split_into_factions(
-        agents, threshold=6
+        agents,
+        threshold=6
     )
-    mediator_hardline = AIEMediator(faction_hardline, name="Mediator-Hardline")
+    mediator_hardline = AIEMediator(
+        faction_hardline,
+        name="Mediator-Hardline"
+    )
     result_hardline = mediator_hardline.mediate()
-    mediator_moderate = AIEMediator(faction_moderate, name="Mediator-Moderate")
+    mediator_moderate = AIEMediator(
+        faction_moderate,
+        name="Mediator-Moderate"
+    )
     result_moderate = mediator_moderate.mediate()
 
     proposal_hardline = result_hardline["proposal"]
@@ -183,37 +218,40 @@ if __name__ == "__main__":
         "[強硬派]"
     )
     print(
-        "提案:", proposal_hardline
+        "提案:",
+        proposal_hardline
     )
     print(
-        "根拠:", reasoning_hardline
+        "根拠:",
+        reasoning_hardline
     )
     print(
         "ログ:"
     )
     for line in log_hardline:
         print(
-            " -", line
+            " -",
+            line
         )
 
     print(
         "\n[妥協派]"
     )
     print(
-        "提案:", proposal_moderate
+        "提案:",
+        proposal_moderate
     )
     print(
-        "根拠:", reasoning_moderate
+        "根拠:",
+        reasoning_moderate
     )
     print(
         "ログ:"
     )
     for line in log_moderate:
         print(
-            " -", line
+            " -",
+            line
         )
 
-
-          
-
- 
+# <--- ここでファイル終了、空行1つだけ。スペースもタブもなし
