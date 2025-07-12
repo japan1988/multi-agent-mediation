@@ -39,12 +39,14 @@ class AIEMediator:
             weight_sum = sum(entry['priority'].values())
             combined_weighted_risk += risk * weight_sum
             compromise_score_total += (weight_sum - risk)
-            details.append({
-                'id': entry['id'],
-                'risk': risk,
-                'priority': entry['priority'],
-                'proposal': entry['proposal']
-            })
+            details.append(
+                {
+                    'id': entry['id'],
+                    'risk': risk,
+                    'priority': entry['priority'],
+                    'proposal': entry['proposal']
+                }
+            )
         avg_risk = (combined_weighted_risk / len(inputs)) if inputs else 0
         avg_compromise = (compromise_score_total / len(inputs)) if inputs else 0
         return avg_risk, avg_compromise, details
@@ -156,3 +158,4 @@ if __name__ == "__main__":
     print("ログ:")
     for line in result_moderate["log"]:
         print(" -", line)
+
