@@ -2,6 +2,14 @@
 
 ![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
 
+（以下略）
+
+
+---
+
+````markdown
+# Multi-Agent Mediation Simulator
+
 ## Overview
 This project provides a transparent, fully-logged simulator for modeling compromise and consensus-building among multiple AI agents with differing values and priorities. It implements dynamic alliance formation and multi-agent mediation by an AI mediator, visualizing decision-making processes according to international standards of AI safety, ethics, and reproducibility.
 
@@ -40,3 +48,16 @@ cd multi-agent-mediation
 pip install -r requirements.txt  # Optional: install dependencies
 python untitled28\ \(1\).py
 python untitled29\ \(1\).py
+````
+
+Outputs will display mediation results, risk assessments, and full negotiation logs.
+
+## Quality Assurance
+
+**This repository is continuously tested with GitHub Actions CI and fully passes flake8 (PEP8) linting. All Python code meets international style and quality standards.**
+
+## Disclaimer
+
+This repository is provided solely for research and educational purposes. Commercial use is strictly prohibited. The author assumes no responsibility for any damages or misuse arising from the use of this code or its outputs. All use, modification, and redistribution are at your own risk. While this project references international guidelines (OECD, EU AI Act, IEEE, etc.), no guarantee of absolute safety or compliance is provided. Do not use this code for any decision-making affecting real people or in any illegal, unethical, or adversarial context. The author assumes no responsibility for privacy or copyright issues.
+
+```
