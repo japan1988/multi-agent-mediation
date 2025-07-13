@@ -1,6 +1,7 @@
 # Multi-Agent Mediation Simulator
 https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
-![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
+[![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+
 
 ````markdown
 # Multi-Agent Mediation Simulator
