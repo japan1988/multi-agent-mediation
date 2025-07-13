@@ -50,8 +50,6 @@ Example process logs (mediation_process_log.txt or similar)
 
 How to Use
 bash
-コピーする
-編集する
 git clone https://github.com/japan1988/multi-agent-mediation.git
 cd multi-agent-mediation
 pip install -r requirements.txt    # Optional: install dependencies
