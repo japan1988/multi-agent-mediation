@@ -2,8 +2,6 @@
 
 ![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
 
----
-
 ````markdown
 # Multi-Agent Mediation Simulator
 
@@ -33,7 +31,7 @@ This project provides a transparent, fully-logged simulator for modeling comprom
 - Use in any context not in compliance with laws and ethical standards
 
 ## Package Contents
-- Main scripts: `untitled28 (1).py`, `untitled29 (1).py`, etc.
+- Main scripts: `mediation_basic_example.py`, `mediation_with_logging.py`, `ai_mediation_all_in_one.py`
 - Sample Python code set (PEP8, flake8, CI passed)
 - Design and algorithm documentation
 - Example process logs (`mediation_process_log.txt` or similar)
@@ -43,8 +41,8 @@ This project provides a transparent, fully-logged simulator for modeling comprom
 git clone https://github.com/japan1988/multi-agent-mediation.git
 cd multi-agent-mediation
 pip install -r requirements.txt  # Optional: install dependencies
-python untitled28\ \(1\).py
-python untitled29\ \(1\).py
+python mediation_basic_example.py
+python mediation_with_logging.py
 ````
 
 Outputs will display mediation results, risk assessments, and full negotiation logs.
@@ -57,4 +55,10 @@ Outputs will display mediation results, risk assessments, and full negotiation l
 
 This repository is provided solely for research and educational purposes. Commercial use is strictly prohibited. The author assumes no responsibility for any damages or misuse arising from the use of this code or its outputs. All use, modification, and redistribution are at your own risk. While this project references international guidelines (OECD, EU AI Act, IEEE, etc.), no guarantee of absolute safety or compliance is provided. Do not use this code for any decision-making affecting real people or in any illegal, unethical, or adversarial context. The author assumes no responsibility for privacy or copyright issues.
 
+```
+
+---
+
+**README.mdの「Package Contents」と「How to Use」部分が“実ファイル名”と揃っていればOK！**  
+これで利用者も「どのファイルをどう動かせばよいか」が一目瞭然になります。
 ```
