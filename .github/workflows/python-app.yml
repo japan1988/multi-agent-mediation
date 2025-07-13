@@ -27,3 +27,21 @@ jobs:
         run: |
           pip install flake8
           flake8 .
+
+      - name: Type check with mypy
+        run: |
+          pip install mypy
+          mypy .
+
+      - name: Run tests with coverage
+        run: |
+          pip install pytest coverage
+          coverage run -m pytest
+          coverage report
+
+      - name: Upload coverage to Coveralls
+        run: |
+          pip install coveralls
+          coveralls
+        env:
+          COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
