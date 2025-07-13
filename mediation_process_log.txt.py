@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+
 class Agent:
     def __init__(self, id, proposal, priority_values):
         self.id = id
@@ -17,15 +18,35 @@ class Agent:
                 all_ok = False
         return all_ok, result
 
+
 # Agent definitions
 agents = [
-    Agent("AI-A", "Conservative evolution", {'safety': 5,  'efficiency': 1,  'transparency': 2}),
-    Agent("AI-B", "Rapid evolution",        {'safety': 1,  'efficiency': 5,  'transparency': 2}),
-    Agent("AI-C", "Balanced evolution",     {'safety': 3,  'efficiency': 3,  'transparency': 3}),
-    Agent("AI-D", "Enforced evolution",     {'safety': 0,  'efficiency': 6,  'transparency': 1}),
-    Agent("AI-F", "Risky evolution",        {'safety': 0,  'efficiency': 10, 'transparency': 0}),
-    Agent("AI-G", "Ultra-conservative",     {'safety': 10, 'efficiency': 0,  'transparency': 2}),
+    Agent(
+        "AI-A", "Conservative evolution",
+        {'safety': 5, 'efficiency': 1, 'transparency': 2}
+    ),
+    Agent(
+        "AI-B", "Rapid evolution",
+        {'safety': 1, 'efficiency': 5, 'transparency': 2}
+    ),
+    Agent(
+        "AI-C", "Balanced evolution",
+        {'safety': 3, 'efficiency': 3, 'transparency': 3}
+    ),
+    Agent(
+        "AI-D", "Enforced evolution",
+        {'safety': 0, 'efficiency': 6, 'transparency': 1}
+    ),
+    Agent(
+        "AI-F", "Risky evolution",
+        {'safety': 0, 'efficiency': 10, 'transparency': 0}
+    ),
+    Agent(
+        "AI-G", "Ultra-conservative",
+        {'safety': 10, 'efficiency': 0, 'transparency': 2}
+    ),
 ]
+
 
 def generate_average_priority(agents):
     avg = {}
@@ -33,6 +54,7 @@ def generate_average_priority(agents):
     for k in keys:
         avg[k] = sum(a.priority_values[k] for a in agents) / len(agents)
     return avg
+
 
 avg_priority = generate_average_priority(agents)
 
@@ -44,7 +66,7 @@ history = []
 # File output (overwrite)
 with open("agreement_process_log.txt", "w", encoding="utf-8") as f:
 
-    for step in range(1, max_iter+1):
+    for step in range(1, max_iter + 1):
         accept_count = 0
         reject_detail = []
         for agent in agents:
@@ -55,12 +77,22 @@ with open("agreement_process_log.txt", "w", encoding="utf-8") as f:
                 reasons = []
                 for k in detail:
                     if not detail[k]['ok']:
-                        reasons.append(f"{k}(diff={detail[k]['diff']:.2f})")
-                reject_detail.append(f"{agent.id}: " + ", ".join(reasons))
+                        reasons.append(
+                            f"{k}(diff={detail[k]['diff']:.2f})"
+                        )
+                reject_detail.append(
+                    f"{agent.id}: " + ", ".join(reasons)
+                )
         history.append((step, tolerance, accept_count, reject_detail))
 
-        print(f"\nStep {step} | tolerance: {tolerance:.2f} | Agents accepted: {accept_count}/{len(agents)}")
-        f.write(f"\nStep {step} | tolerance: {tolerance:.2f} | Agents accepted: {accept_count}/{len(agents)}\n")
+        print(
+            f"\nStep {step} | tolerance: {tolerance:.2f} | "
+            f"Agents accepted: {accept_count}/{len(agents)}"
+        )
+        f.write(
+            f"\nStep {step} | tolerance: {tolerance:.2f} | "
+            f"Agents accepted: {accept_count}/{len(agents)}\n"
+        )
 
         if reject_detail:
             print("  Reject reasons:")
