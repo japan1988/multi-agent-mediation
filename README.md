@@ -1,82 +1,72 @@
+Multi-Agent Mediation Simulator
 
+Overview
+This project provides a transparent, fully-logged simulator for modeling compromise and consensus-building among multiple AI agents with differing values and priorities.
+It implements dynamic alliance formation and multi-agent mediation by an AI mediator, visualizing decision-making processes according to international standards of AI safety, ethics, and reproducibility.
 
----
+Purpose and Intended Use
+Research and education in AI negotiation, mediation, and compromise mechanisms
 
-# Multi-Agent Mediation Simulator 
+Simulation and validation of risk scenarios for safe and ethical AI system design
 
----
+Analysis of collective decision-making, leadership dynamics, and consensus-building
 
-## Overview
+Case studies aligned with international AI governance practices (OECD, EU, IEEE, etc.)
 
-This project is a simulator that reproduces the processes of compromise and consensus-building among multiple AI agents with differing values and priorities.
-It models dynamic alliance formation and mediation by an AI mediator, visualizing group decision-making in accordance with international standards of safety, fairness, and reproducibility.
+Use in prototyping, academic competitions, and other non-commercial or research-oriented activities
 
----
+Transparency and Safety Features
+All decision processes, negotiation steps, and outcomes are fully logged for auditability and reproducibility.
 
-## Purpose and Intended Use
+All major rules, thresholds, and algorithms are openly published and externally reviewable.
 
-* Research on negotiation, mediation, and compromise mechanisms between AI/multi-agents
-* Risk scenario validation for ethical and safety design
-* Analysis of consensus building and leadership in collective decision-making; educational use
-* Case studies for international AI governance practices
-* Use in prototype development, AI competitions, and other non-commercial, research, or educational activities
+Automatic fail-safe ("sealing") triggers if excessive risk or unintended evolution is detected.
 
----
+Reference implementation aligns with global AI ethics guidelines; all parameters are explicitly documented.
 
-## Known Limitations, Risks, and Misuse Examples
+Limitations, Risks, and Prohibited Uses
+Limitations: For research and educational use only; not for industrial/commercial deployment or real-time control.
 
-* **Limitations:**
-  This project is intended for educational and research use only. It is not suitable for industrial or commercial purposes, or for real-time control systems.
-* **Known Risks:**
-  There is a risk that, due to unintended parameter settings or excessive automation, decisions may be made without proper safety validation.
-* **Examples of Misuse:**
-  Use for commercial decision-making, judgments affecting humans in significant ways, regulatory evasion, or offensive/adversarial scenarios is strictly prohibited.
+Risks: Incorrect parameterization or over-automation could lead to decisions without adequate human safety validation.
 
----
+Prohibited Uses:
 
-## Package Contents
+Commercial or industrial deployment
 
-* Main notebooks: `untitled28 (1).py`, `untitled29 (1).py`
-* Sample Python code set (all scripts are PEP8/flake8/CI-passed)
-* Documentation and design explanation materials
+Any real-world decisions affecting people, safety, finances, or rights
 
----
+Use for regulatory evasion, adversarial, malicious, or offensive purposes
 
-## How to Use
+Use in any context not in compliance with laws and ethical standards
 
-```bash
-# Clone the repository
+Package Contents
+Main scripts: untitled28 (1).py, untitled29 (1).py, etc.
+
+Sample Python code set (PEP8, flake8, CI passed)
+
+Design and algorithm documentation
+
+Example process logs (mediation_process_log.txt or similar)
+
+How to Use
+bash
+コピーする
+編集する
 git clone https://github.com/japan1988/multi-agent-mediation.git
 cd multi-agent-mediation
-
-# (Optional) Install dependencies
-pip install -r requirements.txt
-
-# Run sample code
+pip install -r requirements.txt    # Optional: install dependencies
 python untitled28\ \(1\).py
 python untitled29\ \(1\).py
-```
+Outputs will display mediation results, risk assessments, and full negotiation logs.
 
-The output will display mediation results for each AI faction and risk assessment.
+Disclaimer
+This repository is provided solely for research and educational purposes. Commercial use is strictly prohibited.
+The author assumes no responsibility for any damages or misuse arising from the use of this code or its outputs.
+All use, modification, and redistribution are at your own risk.
+While this project references international guidelines (OECD, EU AI Act, IEEE, etc.), no guarantee of absolute safety or compliance is provided.
+Do not use this code for any decision-making affecting real people or in any illegal, unethical, or adversarial context.
+The author assumes no responsibility for privacy or copyright issues.
 
----
 
-## Safety and Governance Considerations
-
-* This simulator implements explicit algorithms for risk assessment and compromise formation criteria.
-* All mediation processes and evaluation results for each scenario are automatically logged.
-* If unintended extreme evolution or risk values exceed thresholds, a fail-safe (sealing) logic is automatically triggered.
-* All major decision-making rules, thresholds, and algorithms are published and open to external review.
-
----
-
-## Disclaimer
-
-This repository is intended **solely for research and educational purposes**.
-Commercial use is strictly prohibited.
-The author assumes no responsibility for any damages or issues resulting from the use or application of this package. Use, modification, and redistribution are at your own risk.
-Although this project references international AI ethics guidelines (OECD, EU, IEEE, etc.), full compliance and absolute safety are not guaranteed.
-Commercial use, malicious use, or illegal use is strictly prohibited.
-The author also assumes no responsibility for any privacy or copyright issues arising from the use of this package.
 
 ---
