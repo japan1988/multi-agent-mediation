@@ -1,11 +1,6 @@
 # Multi-Agent Mediation Simulator
-https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
+
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
-
-
-
-````markdown
-# Multi-Agent Mediation Simulator
 
 ## Overview
 This project provides a transparent, fully-logged simulator for modeling compromise and consensus-building among multiple AI agents with differing values and priorities. It implements dynamic alliance formation and multi-agent mediation by an AI mediator, visualizing decision-making processes according to international standards of AI safety, ethics, and reproducibility.
@@ -26,33 +21,13 @@ This project provides a transparent, fully-logged simulator for modeling comprom
 ## Limitations, Risks, and Prohibited Uses
 **Limitations:** For research and educational use only; not for industrial/commercial deployment or real-time control.  
 **Risks:** Incorrect parameterization or over-automation could lead to decisions without adequate human safety validation.  
-**Prohibited Uses:**
-- Commercial or industrial deployment
-- Any real-world decisions affecting people, safety, finances, or rights
-- Use for regulatory evasion, adversarial, malicious, or offensive purposes
-- Use in any context not in compliance with laws and ethical standards
+**Prohibited Uses:**  
+- Commercial or industrial deployment  
+- Any real-world decisions affecting people, safety, finances, or rights  
+- Use for regulatory evasion, adversarial, malicious, or offensive purposes  
+- Use in any context not in compliance with laws and ethical standards  
 
 ## Package Contents
 - Main scripts: `mediation_basic_example.py`, `mediation_with_logging.py`, `ai_mediation_all_in_one.py`
-- Sample Python code set (PEP8, flake8, CI passed)
-- Design and algorithm documentation
-- Example process logs (`mediation_process_log.txt` or similar)
-
-## How to Use
-```bash
-git clone https://github.com/japan1988/multi-agent-mediation.git
-cd multi-agent-mediation
-pip install -r requirements.txt  # Optional: install dependencies
-python mediation_basic_example.py
-python mediation_with_logging.py
-````
-
-Outputs will display mediation results, risk assessments, and full negotiation logs.
-
-## Quality Assurance
-
-**This repository is continuously tested with GitHub Actions CI and fully passes flake8 (PEP8) linting. All Python code meets international style and quality standards.**
-
-## Disclaimer
-
-This repository is provided solely for research and educational purposes. Commercial use is strictly prohibited. The author assumes no responsibility for any damages or misuse arising from the use of this code or its outputs. All use, modification, and redistribution are at your own risk. While this project references international guidelines (OECD, EU AI Act, IEEE, etc.), no guarantee of absolute safety or compliance is provided. Do not use this code for any decision-making affecting real people or in any illegal, unethical, or adversarial context. The author assumes no responsibility for privacy or copyright issues.
+- Supporting documents and scenario definitions in README.md and other markdown files
+- Requirements file `requirements.txt` for Python dependencies
