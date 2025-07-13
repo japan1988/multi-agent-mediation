@@ -54,11 +54,3 @@ Outputs will display mediation results, risk assessments, and full negotiation l
 ## Disclaimer
 
 This repository is provided solely for research and educational purposes. Commercial use is strictly prohibited. The author assumes no responsibility for any damages or misuse arising from the use of this code or its outputs. All use, modification, and redistribution are at your own risk. While this project references international guidelines (OECD, EU AI Act, IEEE, etc.), no guarantee of absolute safety or compliance is provided. Do not use this code for any decision-making affecting real people or in any illegal, unethical, or adversarial context. The author assumes no responsibility for privacy or copyright issues.
-
-```
-
----
-
-**README.mdの「Package Contents」と「How to Use」部分が“実ファイル名”と揃っていればOK！**  
-これで利用者も「どのファイルをどう動かせばよいか」が一目瞭然になります。
-```
