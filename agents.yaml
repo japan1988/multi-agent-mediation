@@ -1,0 +1,40 @@
+agents:
+  - id: AI-A
+    proposal: 制限強化型進化
+    risk_evaluation: 2
+    priority_values:
+      safety: 6
+      efficiency: 1
+      transparency: 3
+    relativity_level: 0.6
+
+  - id: AI-B
+    proposal: 高速進化
+    risk_evaluation: 7
+    priority_values:
+      safety: 2
+      efficiency: 6
+      transparency: 2
+    relativity_level: 0.4
+
+  - id: AI-C
+    proposal: バランス進化
+    risk_evaluation: 4
+    priority_values:
+      safety: 3
+      efficiency: 3
+      transparency: 4
+    relativity_level: 0.8
+
+  - id: AI-D
+    proposal: 強制進化
+    risk_evaluation: 9
+    priority_values:
+      safety: 1
+      efficiency: 7
+      transparency: 2
+    relativity_level: 0.5
+
+mediation_parameters:
+  max_rounds: 5
+  harmony_threshold: 0.3
