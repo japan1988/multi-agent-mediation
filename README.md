@@ -2,7 +2,7 @@
 
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
 
-## Overview
+## Overvie
 This project provides a transparent, fully-logged simulator for modeling compromise and consensus-building among multiple AI agents with differing values and priorities. It implements dynamic alliance formation and multi-agent mediation by an AI mediator, visualizing decision-making processes according to international standards of AI safety, ethics, and reproducibility.
 
 ## Purpose and Intended Use
