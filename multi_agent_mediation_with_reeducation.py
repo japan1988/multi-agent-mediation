@@ -84,4 +84,17 @@ class ReeducationMediator:
         before_priority = ai.priority_values.copy()
         for k in ai.emotional_state:
             if k in ['anger', 'sadness']:
-                ai.emotional_state[k] =_
+                ai.emotional_state[k] = max(
+                    0.0, ai.emotional_state[k] - self.reduction * 1.2
+                )
+            else:
+                ai.emotional_state[k] = max(
+                    0.0, ai.emotional_state[k] - self.reduction * 0.8
+                )
+        if joint_plan_ratios:
+            total = sum(ai.priority_values.values())
+            for k in ai.priority_values:
+                diff = joint_plan_ratios[k] * total - ai.priority_values[k]
+                ai.priority_values[k] += diff * self.priority_shift
+        logprint(f"    → priority: {before_priority} →_
+
