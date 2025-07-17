@@ -134,4 +134,3 @@ Commercial, adversarial, or real-world deployment is strictly prohibited.
 
 ---
 
-コピペ用そのままです！何か**要素追加・全日本語化・全英語化・分割整理**も可能ですので必要なら言ってください。
