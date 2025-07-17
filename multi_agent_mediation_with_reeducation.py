@@ -128,4 +128,25 @@ class AIEMediator:
             for ai in round_sealed:
                 logprint(f"[封印トリガー] 感情過剰：{ai.id}")
             sealed_agents.extend(
-                [ai for ai in round_sealed if ai not in se_]()
+                [ai for ai in round_sealed if ai not in sealed_agents]
+            )
+            agents = [
+                ai for ai in agents if not ai.is_emotionally_unstable()
+            ]
+
+            if not agents:
+                logprint("全AI封印により調停停止。")
+                break
+            if len(agents) == 1:
+                logprint(f"最終残存AI：{agents[0].id} のみ、調停停止。")
+                break
+
+            priorities_list = [a.priority_values for a in agents]
+            new_priorities = []
+            for ai in agents:
+                others = [
+                    p for p in priorities_list if p != ai.priority_values
+                ]
+                ai.priority_values = ai.generate_compromise_offer(others)
+                new_priorities.append(ai.priority_values)
+
