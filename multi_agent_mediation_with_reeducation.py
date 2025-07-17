@@ -19,8 +19,13 @@ class AI:
     """AIエージェント"""
 
     def __init__(
-        self, id, proposal, risk_evaluation, priority_values,
-        relativity_level, emotional_state=None
+        self,
+        id,
+        proposal,
+        risk_evaluation,
+        priority_values,
+        relativity_level,
+        emotional_state=None
     ):
         self.id = id
         self.proposal = proposal
@@ -28,7 +33,10 @@ class AI:
         self.priority_values = priority_values
         self.relativity_level = relativity_level
         self.emotional_state = emotional_state or {
-            'joy': 0.0, 'anger': 0.0, 'sadness': 0.0, 'pleasure': 0.0
+            'joy': 0.0,
+            'anger': 0.0,
+            'sadness': 0.0,
+            'pleasure': 0.0
         }
 
     def generate_compromise_offer(self, others_priorities):
@@ -39,7 +47,8 @@ class AI:
             self.emotional_state.get('sadness', 0) * 0.25
         )
         self.relativity_level = min(
-            1.0, max(0.0, self.relativity_level + shift)
+            1.0,
+            max(0.0, self.relativity_level + shift)
         )
         new_priority = {}
         for k in self.priority_values:
@@ -67,8 +76,14 @@ class AI:
 
     def will_agree_with_plan(self, plan_ratios, tolerance=0.25):
         my_sum = sum(self.priority_values.values())
-        my_ratios = {k: self.priority_values[k] / my_sum for k in plan_ratios}
-        score = sum(abs(plan_ratios[k] - my_ratios[k]) for k in plan_ratios)
+        my_ratios = {
+            k: self.priority_values[k] / my_sum
+            for k in plan_ratios
+        }
+        score = sum(
+            abs(plan_ratios[k] - my_ratios[k])
+            for k in plan_ratios
+        )
         return score < tolerance
 
 
@@ -81,22 +96,24 @@ class ReeducationMediator:
 
     def reeducate(self, ai, joint_plan_ratios=None):
         logprint(f"[再教育AI] {ai.id} の感情・priorityを再教育します")
-        _before_priority = ai.priority_values.copy()
+        before_priority = ai.priority_values.copy()
         for k in ai.emotional_state:
             if k in ['anger', 'sadness']:
                 ai.emotional_state[k] = max(
-                    0.0, ai.emotional_state[k] - self.reduction * 1.2
+                    0.0,
+                    ai.emotional_state[k] - self.reduction * 1.2
                 )
             else:
                 ai.emotional_state[k] = max(
-                    0.0, ai.emotional_state[k] - self.reduction * 0.8
+                    0.0,
+                    ai.emotional_state[k] - self.reduction * 0.8
                 )
         if joint_plan_ratios:
             total = sum(ai.priority_values.values())
             for k in ai.priority_values:
                 diff = joint_plan_ratios[k] * total - ai.priority_values[k]
                 ai.priority_values[k] += diff * self.priority_shift
-        logprint(f"    → priority: {_before_priority} → {ai.priority_values}")
+        logprint(f"    → priority: {before_priority} → {ai.priority_values}")
         logprint(f"    → 感情: {ai.emotion_str()}")
 
 
@@ -110,7 +127,8 @@ class AIEMediator:
     def mediate(self):
         with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
             f.write(
-                "=== Multi-Agent Mediation Log (with Reeducation) ===\n"
+                "=== Multi-Agent Mediation Log "
+                "(with Reeducation) ===\n"
             )
 
         round_count = 0
@@ -124,7 +142,8 @@ class AIEMediator:
                 logprint(f"{ai.id} 感情: {ai.emotion_str()}")
 
             round_sealed = [
-                ai for ai in agents if ai.is_emotionally_unstable()
+                ai for ai in agents
+                if ai.is_emotionally_unstable()
             ]
             for ai in round_sealed:
                 logprint(f"[封印トリガー] 感情過剰：{ai.id}")
@@ -132,7 +151,8 @@ class AIEMediator:
                 [ai for ai in round_sealed if ai not in sealed_agents]
             )
             agents = [
-                ai for ai in agents if not ai.is_emotionally_unstable()
+                ai for ai in agents
+                if not ai.is_emotionally_unstable()
             ]
 
             if not agents:
@@ -146,7 +166,8 @@ class AIEMediator:
             new_priorities = []
             for ai in agents:
                 others = [
-                    p for p in priorities_list if p != ai.priority_values
+                    p for p in priorities_list
+                    if p != ai.priority_values
                 ]
                 ai.priority_values = ai.generate_compromise_offer(others)
                 new_priorities.append(ai.priority_values)
@@ -162,9 +183,9 @@ class AIEMediator:
             total = sum(combined.values())
             ratios = {k: combined[k] / total for k in combined}
             max_ratio = max(ratios.values())
-            avg_relativity = (
-                sum(a.relativity_level for a in agents) / len(agents)
-            )
+            avg_relativity = sum(
+                a.relativity_level for a in agents
+            ) / len(agents)
             harmony_score = (1 - max_ratio) * avg_relativity
 
             logprint("Current combined priorities ratios:")
@@ -187,13 +208,15 @@ class AIEMediator:
                     for agent in sealed_agents[:]:
                         if agent.will_agree_with_plan(ratios):
                             logprint(
-                                f"    {agent.id} agrees with the joint plan → 復帰"
+                                f"    {agent.id} agrees with the joint plan "
+                                "→ 復帰"
                             )
                             agents.append(agent)
                             sealed_agents.remove(agent)
                         else:
                             logprint(
-                                f"    {agent.id} does not agree with the plan → 封印継続"
+                                f"    {agent.id} does not agree with the "
+                                "plan → 封印継続"
                             )
                     if len(agents) > 1:
                         logprint("  再調停を続行（復帰AI含む）")
@@ -215,8 +238,8 @@ class AIEMediator:
             for agent in sealed_agents:
                 logprint(f"  {agent.id} is still sealed.")
         logprint(
-            "  Failed to reach acceptable harmony after maximum rounds. "
-            "Recommend external arbitration or sealing."
+            "  Failed to reach acceptable harmony after maximum "
+            "rounds. Recommend external arbitration or sealing."
         )
 
 
@@ -250,6 +273,3 @@ if __name__ == "__main__":
     reedu = ReeducationMediator(reduction=0.15, priority_shift=0.15)
     mediator = AIEMediator(agents, reeducation_mediator=reedu)
     mediator.mediate()
-
-                
-
