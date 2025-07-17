@@ -123,7 +123,21 @@ Please submit issues or pull requests if you have improvements or suggestions.
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
 
 ---
+⚠️ Disclaimer / 免責事項
 
+This repository is intended **solely for educational, research, and demonstration purposes.**  
+It is **not designed for deployment in production, military, or ethically sensitive environments** without extensive review and adaptation.
+
+本リポジトリは、**教育・研究・デモンストレーション目的に限定して提供**されています。  
+**商用利用・軍事利用・倫理的に重大な環境での使用は想定されておらず、事前の十分な検証と検討が必要です。**
+
+The authors accept no liability for misuse, unintended consequences, or ethical violations resulting from derivative works or deployments of this code.
+
+本コードを元にした派生物や運用において生じる**誤用・予期せぬ影響・倫理的問題について、開発者は一切の責任を負いません。**
+
+If used in research or demonstrations, proper attribution and responsible disclosure are encouraged.
+
+研究や発表で使用される場合は、**適切な引用と責任ある活用**を推奨します。
 ## 🌐 Tags / タグ（研究者向け）
 
 `multi-agent` `AI-mediation` `emotion-aware-AI` `value-alignment` `AI-governance` `ethical-AI` `封印構造` `感情統治型AI`
