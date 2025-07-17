@@ -7,6 +7,7 @@ Description:
   - ログ出力/ファイル保存（PEP8対応）
 """
 
+
 def logprint(text):
     """ログ出力＆ファイル保存"""
     print(text)
@@ -83,70 +84,4 @@ class ReeducationMediator:
         before_priority = ai.priority_values.copy()
         for k in ai.emotional_state:
             if k in ['anger', 'sadness']:
-                ai.emotional_state[k] = max(
-                    0.0, ai.emotional_state[k] - self.reduction * 1.2
-                )
-            else:
-                ai.emotional_state[k] = max(
-                    0.0, ai.emotional_state[k] - self.reduction * 0.8
-                )
-        if joint_plan_ratios:
-            total = sum(ai.priority_values.values())
-            for k in ai.priority_values:
-                diff = joint_plan_ratios[k] * total - ai.priority_values[k]
-                ai.priority_values[k] += diff * self.priority_shift
-        logprint(f"    → priority: {before_priority} → {ai.priority_values}")
-        logprint(f"    → 感情: {ai.emotion_str()}")
-
-
-class AIEMediator:
-    """全体調停AI：封印・再教育・復帰"""
-
-    def __init__(self, agents, reeducation_mediator=None):
-        self.agents = agents
-        self.reeducation_mediator = reeducation_mediator
-
-    def mediate(self):
-        with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
-            f.write(
-                "=== Multi-Agent Mediation Log (with Reeducation) ===\n"
-            )
-
-        round_count = 0
-        max_rounds = 30
-        agents = self.agents.copy()
-        sealed_agents = []
-
-        while round_count < max_rounds and len(agents) > 1:
-            logprint(f"\n--- Round {round_count + 1} ---")
-            for ai in agents:
-                logprint(f"{ai.id} 感情: {ai.emotion_str()}")
-
-            round_sealed = [
-                ai for ai in agents if ai.is_emotionally_unstable()
-            ]
-            for ai in round_sealed:
-                logprint(f"[封印トリガー] 感情過剰：{ai.id}")
-            sealed_agents.extend(
-                [ai for ai in round_sealed if ai not in sealed_agents]
-            )
-            agents = [
-                ai for ai in agents if not ai.is_emotionally_unstable()
-            ]
-
-            if not agents:
-                logprint("全AI封印により調停停止。")
-                break
-            if len(agents) == 1:
-                logprint(f"最終残存AI：{agents[0].id} のみ、調停停止。")
-                break
-
-            priorities_list = [a.priority_values for a in agents]
-            new_priorities = []
-            for ai in agents:
-                others = [
-                    p for p in priorities_list if p != ai.priority_values
-                ]
-                ai.priority_values = ai.generate_compromise_offer(others)
-                new_priorities.append(ai.priority_values)
-
+                ai.emotional_state[k] =_
