@@ -1,136 +1,142 @@
-
-
----
-
-# Multi-Agent Mediation Simulator / マルチエージェントAI調停シミュレータ
+# Multi-Agent Mediation Simulator with Reeducation  
+マルチエージェント調停シミュレータ（再教育・封印復帰対応）
 
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/commits/main)
+[![Issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/issues)
+[![Stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
 
 ---
 
-## Overview / 概要
+## 🧠 Overview / 概要
 
-This project provides a transparent, fully-logged simulator for modeling compromise and consensus-building among multiple AI agents with differing values and priorities.
-It implements dynamic alliance formation, multi-agent mediation, agent sealing/reeducation/restore mechanisms, and logging, in alignment with global AI governance and safety principles.
+This simulator models a dynamic **multi-agent consensus process** among AI agents with differing priorities and emotions.  
+It implements a full loop of:
 
-本プロジェクトは、多様な価値観・優先順位を持つ複数AIエージェント間での合意形成・妥協案生成・再教育・封印・復帰までを段階的にシミュレートできる透明性重視のツールです。
-すべての交渉・判断・リスク・経過はログとして保存され、AI安全・倫理・国際ガバナンス基準に基づいた設計となっています。
+- **Negotiation and compromise**
+- **Emotional instability detection**
+- **Sealing (temporary exclusion)**
+- **Reeducation and reintegration into the group**
 
----
-
-## Main Features / 主な機能
-
-* **Compromise & Mediation**: Dynamic multi-round negotiation with relativity (value adaptation) and emotion (affecting compromise)
-* **Sealing & Restoration**: Emotionally unstable agents are auto-sealed; may be reeducated and restored if conditions met
-* **Reeducation**: "Reeducation AI" can adjust agent emotions/priorities to align with joint plans
-* **Full Logging**: All steps are output to `ai_mediation_log.txt` for full traceability/auditability
-* **PEP8 Compliant**: Fully passes Python code style and CI (see green badge above)
-* **International Standards**: Scenarios/test logic based on OECD/EU/IEEE principles for safe AI mediation
+本プロジェクトは、異なる優先価値と感情状態を持つAIエージェント間での合意形成を目的としたシミュレーターです。  
+**妥協・封印・再教育・復帰**というAI制御ループを完全に実装しています。
 
 ---
 
-## Intended Use / 想定用途
+## 🔧 Features / 主な機能
 
-* Research and education in AI negotiation, compromise, mediation, and arbitration
-  AI交渉・調停・妥協・再教育・合意形成メカニズムの研究・教育
-* Simulation of safe/ethical value alignment and risk control in multi-agent systems
-  マルチエージェントシステムにおける安全な価値調整・リスク制御の検証
-* Transparent prototyping, academic competition, case studies
-  透明性重視のプロトタイピング、学術コンペ、ケーススタディ
-* Policy & governance scenario testing under international frameworks
-  国際ガバナンス枠組みに沿った政策・制度設計シミュレーション
+- ✅ AI agent with **emotional states (joy, anger, sadness, pleasure)**
+- ✅ **Sealing** when emotional instability exceeds thresholds
+- ✅ **Reeducation mediator** that adjusts emotion and priority values
+- ✅ **Compromise algorithm** based on relativity and social influence
+- ✅ Full **logging** to `ai_mediation_log.txt` for auditability
 
 ---
 
-## Limitations, Risks & Prohibited Use
+## 🧩 Use Cases / 想定用途
 
-**制約・リスク・禁止事項**
-
-* **For research/educational use only.**
-  研究・教育用途限定。
-* **Not for industrial/commercial/real-world deployment.**
-  商用・産業・実世界運用には非対応。
-* **Risks:** Incorrect parameters or adversarial input may bypass safety/sealing.
-  パラメータやシナリオ次第では安全機構が突破されるリスクあり。
-* **Prohibited:**
-
-  * Commercial/real-world decision use
-    商用・実世界の意思決定への使用
-  * Regulatory evasion, adversarial/malicious/illegal contexts
-    規制逃れ、敵対的/違法/倫理違反の用途
-  * Any non-compliance with global AI ethics & laws
-    国際的なAI倫理・法規範への違反
+- Research in **AI alignment**, **AI safety**, and **value-based negotiation**
+- Simulation of **dynamic AI governance** and consensus-building
+- Education and demonstrations of **AI emotion modeling** and **mediation logic**
+- Basis for exploring **sealed AI architectures** or **reintegrated AGI**
 
 ---
 
-## How to Use / 使い方
+## 🧱 Architecture / 構造
 
-1. **Install requirements / 必要なPythonパッケージをインストール**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Run the main simulator / メインシミュレータを実行**
-
-   ```bash
-   python multi_agent_mediation_with_reeducation.py
-   ```
-
-3. **Check the output log / ログファイル確認**
-
-   * All logs and process steps are saved to `ai_mediation_log.txt`
-     すべての交渉・評価・封印・復帰の経過が `ai_mediation_log.txt` に出力されます。
-
----
-
-## File Structure / ファイル構成
-
-* `multi_agent_mediation_with_reeducation.py`
-
-  * **Main simulation** (recommended: with compromise, emotion, sealing, reeducation, restoration)
-* `mediation_with_logging.py`, `mediation_basic_example.py`
-
-  * Baseline/simple negotiation examples
-* `ai_mediation_all_in_one.py`
-
-  * Unified previous model (simple integration test)
-* `agents.yaml`
-
-  * (Optional) Agent parameter presets/scenarios
-* `requirements.txt`
-
-  * Python dependency list
+```text
+┌────────────┐       封印（Emotion Trigger）
+│  AI Agent  ├─────────────┐
+└────┬───────┘             ↓
+     │              ┌────────────┐
+妥協案生成         │  Sealed AI │
+（Relativity）      └────┬───────┘
+     ↓                   │
+┌────▼───────┐     再教育・価値補正
+│ Mediation  │◄───────┐
+└────┬───────┘       │
+     │               ▼
+    合意評価（Harmony Score） > 0.3  
+     │
+     ▼
+復帰 or 調停続行
+```
 
 ---
 
-## Transparency & Safety / 透明性・安全性
+## 🚀 Getting Started / 実行方法
 
-* All mediation steps and logic are logged for full reproducibility.
-* Source, parameters, and algorithms are open and externally reviewable.
-* Automatic sealing triggers if excessive risk or unintended evolution is detected.
+### Requirements / 必須環境
 
----
+- Python 3.8+
+- `no additional libraries required`
 
-## License / ライセンス
+### Run / 実行方法
 
-This project is released for **research and education only** under an open academic license.
-Commercial, adversarial, or real-world deployment is strictly prohibited.
-本プロジェクトは研究・教育用途限定の学術ライセンスで公開されています。商用・実世界運用・敵対的利用は厳禁です。
+```bash
+python multi_agent_mediation_with_reeducation.py
+```
 
----
-
-## Author / 作者
-
-* [japan1988](https://github.com/japan1988)
-* Contact: See GitHub profile
+ログ出力は `ai_mediation_log.txt` に保存されます。
 
 ---
 
-## Acknowledgments / 謝辞
+## 📄 Example Output / 出力例（抜粋）
 
-* Scenarios and mediation logic inspired by OECD/EU/IEEE AI governance frameworks.
-* Feedback, questions, and non-commercial academic collaborations are welcome.
+```txt
+--- Round 1 ---
+AI-A 感情: joy:0.30 anger:0.20 sadness:0.10 pleasure:0.40
+AI-B 感情: joy:0.10 anger:0.80 sadness:0.40 pleasure:0.20
+[封印トリガー] 感情過剰：AI-B
+...
+Achieved acceptable harmony. Proceeding with joint plan.
+    AI-B agrees with the joint plan → 復帰
+```
 
 ---
 
+## 🧪 Research Significance / 研究的意義
+
+This project is an experimental prototype of **emotion-sensitive AI governance**, with implications in:
+
+- AGI sealing and restoration control
+- Emotionally reactive agent negotiation
+- Safe AI group behavior arbitration
+- Ethical architecture testing for multi-agent systems
+
+本プロジェクトは、**感情統合型AI制御**の実装例として、安全なAGI調停・封印・復帰プロセスの研究に応用可能です。
+
+---
+
+## 🧑‍🔬 Contributions / コントリビューション
+
+Contributions welcome.  
+Please submit issues or pull requests if you have improvements or suggestions.  
+ご提案・改善は Issues または Pull Request にてお気軽にお寄せください。
+
+---
+
+## 📜 License / ライセンス
+
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+
+---
+
+## 🌐 Tags / タグ（研究者向け）
+
+`multi-agent` `AI-mediation` `emotion-aware-AI` `value-alignment` `AI-governance` `ethical-AI` `封印構造` `感情統治型AI`
+
+---
+
+## 🔖 How to Cite / 引用方法（研究者向け）
+
+```bibtex
+@misc{multiagent2025,
+  title   = {Multi-Agent Mediation Simulator with Reeducation},
+  year    = {2025},
+  howpublished = {\url{https://github.com/japan1988/multi-agent-mediation}},
+  note    = {AI governance and emotional sealing simulation},
+}
+```
