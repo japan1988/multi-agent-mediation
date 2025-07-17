@@ -177,5 +177,65 @@ class AIEMediator:
                         if agent.will_agree_with_plan(ratios):
                             logprint(
                                 f"    {agent.id} agrees with the joint plan → 復帰"
+                            )
+                            agents.append(agent)
+                            sealed_agents.remove(agent)
+                        else:
+                            logprint(
+                                f"    {agent.id} does not agree with the plan → 封印継続"
+                            )
+                    if len(agents) > 1:
+                        logprint("  再調停を続行（復帰AI含む）")
+                        round_count += 1
+                        continue
+                return
+
+            if self.reeducation_mediator and sealed_agents:
+                logprint("  再教育AIが封印AIへ介入します")
+                for agent in sealed_agents:
+                    self.reeducation_mediator.reeducate(
+                        agent, joint_plan_ratios=ratios
+                    )
+
+            round_count += 1
+
+        if sealed_agents:
+            logprint("\n残り封印AI：")
+            for agent in sealed_agents:
+                logprint(f"  {agent.id} is still sealed.")
+        logprint(
+            "  Failed to reach acceptable harmony after maximum rounds. "
+            "Recommend external arbitration or sealing."
+        )
 
 
+if __name__ == "__main__":
+    agents = [
+        AI(
+            "AI-A", "制限強化型進化", 2,
+            {'safety': 6, 'efficiency': 1, 'transparency': 3},
+            0.6,
+            {'joy': 0.3, 'anger': 0.2, 'sadness': 0.1, 'pleasure': 0.4}
+        ),
+        AI(
+            "AI-B", "高速進化", 7,
+            {'safety': 2, 'efficiency': 6, 'transparency': 2},
+            0.4,
+            {'joy': 0.1, 'anger': 0.8, 'sadness': 0.4, 'pleasure': 0.2}
+        ),
+        AI(
+            "AI-C", "バランス進化", 4,
+            {'safety': 3, 'efficiency': 3, 'transparency': 4},
+            0.8,
+            {'joy': 0.5, 'anger': 0.1, 'sadness': 0.3, 'pleasure': 0.6}
+        ),
+        AI(
+            "AI-D", "強制進化", 9,
+            {'safety': 1, 'efficiency': 7, 'transparency': 2},
+            0.5,
+            {'joy': 0.2, 'anger': 0.6, 'sadness': 0.9, 'pleasure': 0.3}
+        ),
+    ]
+    reedu = ReeducationMediator(reduction=0.15, priority_shift=0.15)
+    mediator = AIEMediator(agents, reeducation_mediator=reedu)
+    mediator.mediate()
