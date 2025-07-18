@@ -123,6 +123,13 @@ Please submit issues or pull requests if you have improvements or suggestions.
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
 
 ---
+
+
+Permission is hereby granted, free of charge, to any person obtaining a copy...
+（以下略：GitHubで自動生成できます）
+
+Permission is hereby granted, free of charge, to any person obtaining a copy...
+（以下略：GitHubで自動生成できます）
 ⚠️ Disclaimer / 免責事項
 
 This repository is intended **solely for educational, research, and demonstration purposes.**  
