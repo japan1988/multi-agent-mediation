@@ -10,7 +10,7 @@
 
 ---
 
-## 🧠 Overview / 概要
+## Overview / 概要
 
 This simulator models a dynamic **multi-agent consensus process** among AI agents with differing priorities and emotions.  
 It implements a full loop of:
@@ -25,7 +25,7 @@ It implements a full loop of:
 
 ---
 
-## 🔧 Features / 主な機能
+##   Features / 主な機能
 
 - ✅ AI agent with **emotional states (joy, anger, sadness, pleasure)**
 - ✅ **Sealing** when emotional instability exceeds thresholds
@@ -35,7 +35,7 @@ It implements a full loop of:
 
 ---
 
-## 🧩 Use Cases / 想定用途
+##   Use Cases / 想定用途
 
 - Research in **AI alignment**, **AI safety**, and **value-based negotiation**
 - Simulation of **dynamic AI governance** and consensus-building
@@ -44,7 +44,7 @@ It implements a full loop of:
 
 ---
 
-## 🧱 Architecture / 構造
+##   Architecture / 構造
 
 ```text
 ┌────────────┐       封印（Emotion Trigger）
@@ -66,7 +66,7 @@ It implements a full loop of:
 
 ---
 
-## 🚀 Getting Started / 実行方法
+##   Getting Started / 実行方法
 
 ### Requirements / 必須環境
 
@@ -83,7 +83,7 @@ python multi_agent_mediation_with_reeducation.py
 
 ---
 
-## 📄 Example Output / 出力例（抜粋）
+##   Example Output / 出力例（抜粋）
 
 ```txt
 --- Round 1 ---
@@ -97,7 +97,7 @@ Achieved acceptable harmony. Proceeding with joint plan.
 
 ---
 
-## 🧪 Research Significance / 研究的意義
+##   Research Significance / 研究的意義
 
 This project is an experimental prototype of **emotion-sensitive AI governance**, with implications in:
 
@@ -110,7 +110,7 @@ This project is an experimental prototype of **emotion-sensitive AI governance**
 
 ---
 
-## 🧑‍🔬 Contributions / コントリビューション
+##   Contributions / コントリビューション
 
 Contributions welcome.  
 Please submit issues or pull requests if you have improvements or suggestions.  
@@ -118,7 +118,7 @@ Please submit issues or pull requests if you have improvements or suggestions.
 
 ---
 
-## 📜 License / ライセンス
+##   License / ライセンス
 
 This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
 
@@ -130,7 +130,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy...
 
 Permission is hereby granted, free of charge, to any person obtaining a copy...
 （以下略：GitHubで自動生成できます）
-⚠️ Disclaimer / 免責事項
+⚠ Disclaimer / 免責事項
 
 This repository is intended **solely for educational, research, and demonstration purposes.**  
 It is **not designed for deployment in production, military, or ethically sensitive environments** without extensive review and adaptation.
@@ -145,13 +145,13 @@ The authors accept no liability for misuse, unintended consequences, or ethical 
 If used in research or demonstrations, proper attribution and responsible disclosure are encouraged.
 
 研究や発表で使用される場合は、**適切な引用と責任ある活用**を推奨します。
-## 🌐 Tags / タグ（研究者向け）
+##   Tags / タグ（研究者向け）
 
 `multi-agent` `AI-mediation` `emotion-aware-AI` `value-alignment` `AI-governance` `ethical-AI` `封印構造` `感情統治型AI`
 
 ---
 
-## 🔖 How to Cite / 引用方法（研究者向け）
+##   How to Cite / 引用方法（研究者向け）
 
 ```bibtex
 @misc{multiagent2025,
