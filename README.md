@@ -1,7 +1,4 @@
 
-
----
-
 ````markdown
 # AI Alliance Persuasion Simulator  
 AI同盟 説得・封印復帰シミュレータ
