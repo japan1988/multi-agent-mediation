@@ -13,8 +13,6 @@ AI同盟 説得・封印復帰シミュレータ
 [![Issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/issues)
 [![Stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
 
----
-
 ## Overview / 概要
 
 This simulator models an **AI alliance mediation and persuasion process** with full logging,  
