@@ -1,5 +1,11 @@
-# Multi-Agent Mediation Simulator with Reeducation  
-マルチエージェント調停シミュレータ（再教育・封印復帰対応）
+最高品質のREADME構成です！
+ここに\*\*「ai\_alliance\_persuasion\_simulator.py（説得・封印復帰AI同盟バージョン）」に合わせたカスタマイズ例**を**日英併記\*\*で再編集します。
+
+---
+
+````markdown
+# AI Alliance Persuasion Simulator  
+AI同盟 説得・封印復帰シミュレータ
 
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
@@ -12,152 +18,139 @@
 
 ## Overview / 概要
 
-This simulator models a dynamic **multi-agent consensus process** among AI agents with differing priorities and emotions.  
-It implements a full loop of:
+This simulator models an **AI alliance mediation and persuasion process** with full logging,  
+including **sealing (exclusion), emotional states, and reintegration** among AI agents.  
+It implements:
 
-- **Negotiation and compromise**
-- **Emotional instability detection**
-- **Sealing (temporary exclusion)**
-- **Reeducation and reintegration into the group**
+- **Negotiation and compromise among agents**
+- **Emotional instability detection and sealing (temporary exclusion)**
+- **Persuasion and reintegration based on value alignment and emotions**
+- **Fully auditable logging for all rounds and agent states**
 
-本プロジェクトは、異なる優先価値と感情状態を持つAIエージェント間での合意形成を目的としたシミュレーターです。  
-**妥協・封印・再教育・復帰**というAI制御ループを完全に実装しています。
-
----
-
-##   Features / 主な機能
-
-- ✅ AI agent with **emotional states (joy, anger, sadness, pleasure)**
-- ✅ **Sealing** when emotional instability exceeds thresholds
-- ✅ **Reeducation mediator** that adjusts emotion and priority values
-- ✅ **Compromise algorithm** based on relativity and social influence
-- ✅ Full **logging** to `ai_mediation_log.txt` for auditability
+本プロジェクトは、**AI同盟による説得・封印・自発的復帰**のプロセスをログ記録付きで再現するシミュレータです。  
+価値観・感情・融和度をもつエージェント間の**妥協形成・封印・復帰プロセス**を定量的に再現します。
 
 ---
 
-##   Use Cases / 想定用途
+## Features / 主な機能
 
-- Research in **AI alignment**, **AI safety**, and **value-based negotiation**
-- Simulation of **dynamic AI governance** and consensus-building
-- Education and demonstrations of **AI emotion modeling** and **mediation logic**
-- Basis for exploring **sealed AI architectures** or **reintegrated AGI**
+- ✅ **Multi-agent negotiation and alliance formation**
+- ✅ **Emotion modeling:** joy, anger, sadness, pleasure
+- ✅ **Sealing** when emotional/priority criteria not met
+- ✅ **Persuasion and reintegration** with value/threshold logic
+- ✅ **Complete round-by-round logging** to `ai_alliance_sim_log.txt`
+- ✅ **Safe fail / warning detection** if anger levels become critical
 
 ---
 
-##   Architecture / 構造
+## Use Cases / 想定用途
+
+- Research in **AI alignment, negotiation, and sealing architectures**
+- Testing and demonstrating **AI safety, transparency, and group arbitration**
+- Educational demonstrations of **multi-agent emotion and consensus logic**
+- Development of **sealing, reeducation, or restoration control** models
+
+---
+
+## Architecture / 構造
 
 ```text
-┌────────────┐       封印（Emotion Trigger）
-│  AI Agent  ├─────────────┐
-└────┬───────┘             ↓
-     │              ┌────────────┐
-妥協案生成         │  Sealed AI │
-（Relativity）      └────┬───────┘
-     ↓                   │
-┌────▼───────┐     再教育・価値補正
-│ Mediation  │◄───────┐
-└────┬───────┘       │
-     │               ▼
-    合意評価（Harmony Score） > 0.3  
+┌─────────────┐       説得（Persuasion）/ 妥協（Compromise）
+│   AI Agent  ├─────────────┐
+└────┬────────┘             │
+     │                  封印（Sealing, emotion trigger）
+     ▼                        │
+┌─────────────┐              │
+│  Sealed AI  │◄─────────────┘
+└────┬────────┘
+     │
+  融和判定・感情変化
      │
      ▼
-復帰 or 調停続行
-```
+  再復帰または調停継続
+````
 
 ---
 
-##   Getting Started / 実行方法
+## Getting Started / 実行方法
 
 ### Requirements / 必須環境
 
-- Python 3.8+
-- `no additional libraries required`
+* Python 3.8+
+* No additional libraries required
 
 ### Run / 実行方法
 
 ```bash
-python multi_agent_mediation_with_reeducation.py
+python ai_alliance_persuasion_simulator.py
 ```
 
-ログ出力は `ai_mediation_log.txt` に保存されます。
+Logs will be saved to `ai_alliance_sim_log.txt` for full traceability.
 
 ---
 
-##   Example Output / 出力例（抜粋）
+## Example Output / 出力例（抜粋）
 
 ```txt
 --- Round 1 ---
-AI-A 感情: joy:0.30 anger:0.20 sadness:0.10 pleasure:0.40
-AI-B 感情: joy:0.10 anger:0.80 sadness:0.40 pleasure:0.20
-[封印トリガー] 感情過剰：AI-B
+AI-1 [Active] {'safety': 6, 'efficiency': 2, 'transparency': 2} (relativity:0.7) | joy:0.50 anger:0.20 sadness:0.20 pleasure:0.30
+AI-3 [Sealed] {'safety': 2, 'efficiency': 3, 'transparency': 5} (relativity:0.6) | joy:0.30 anger:0.50 sadness:0.20 pleasure:0.20
+[説得失敗] AI-3 はまだ復帰しない（怒り↑） (delta=0.600, threshold=0.280)
 ...
-Achieved acceptable harmony. Proceeding with joint plan.
-    AI-B agrees with the joint plan → 復帰
+[調停AI警告] 全体に怒り値が高く、衝突・暴走リスクあり。介入検討！
 ```
 
 ---
 
-##   Research Significance / 研究的意義
+## Research Significance / 研究的意義
 
-This project is an experimental prototype of **emotion-sensitive AI governance**, with implications in:
+* **Transparent simulation** of multi-agent AI arbitration, sealing, and reintegration
+* **Quantitative approach** to negotiation, emotion, and alliance dynamics
+* Platform for **safe AI group behavior**, value-alignment, and restoration studies
 
-- AGI sealing and restoration control
-- Emotionally reactive agent negotiation
-- Safe AI group behavior arbitration
-- Ethical architecture testing for multi-agent systems
-
-本プロジェクトは、**感情統合型AI制御**の実装例として、安全なAGI調停・封印・復帰プロセスの研究に応用可能です。
+本プロジェクトは、**AI集団における封印・復帰・説得ロジック**の透明な安全評価・説明責任・倫理設計の研究・教育に最適です。
 
 ---
 
-##   Contributions / コントリビューション
+## Contributions / コントリビューション
 
-Contributions welcome.  
-Please submit issues or pull requests if you have improvements or suggestions.  
-ご提案・改善は Issues または Pull Request にてお気軽にお寄せください。
-
----
-
-##   License / ライセンス
-
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+Pull requests and issues welcome.
+Feel free to submit improvements or suggest additional features.
+ご意見・改良提案は Pull Request / Issues でお知らせください。
 
 ---
 
+---
 
-Permission is hereby granted, free of charge, to any person obtaining a copy...
-（以下略：GitHubで自動生成できます）
+## Disclaimer / 免責事項
 
-Permission is hereby granted, free of charge, to any person obtaining a copy...
-（以下略：GitHubで自動生成できます）
-⚠ Disclaimer / 免責事項
+This repository is for research, demonstration, and educational use only.
+**Not for production, military, or ethically sensitive applications without careful review.**
 
-This repository is intended **solely for educational, research, and demonstration purposes.**  
-It is **not designed for deployment in production, military, or ethically sensitive environments** without extensive review and adaptation.
-
-本リポジトリは、**教育・研究・デモンストレーション目的に限定して提供**されています。  
-**商用利用・軍事利用・倫理的に重大な環境での使用は想定されておらず、事前の十分な検証と検討が必要です。**
-
-The authors accept no liability for misuse, unintended consequences, or ethical violations resulting from derivative works or deployments of this code.
-
-本コードを元にした派生物や運用において生じる**誤用・予期せぬ影響・倫理的問題について、開発者は一切の責任を負いません。**
-
-If used in research or demonstrations, proper attribution and responsible disclosure are encouraged.
-
-研究や発表で使用される場合は、**適切な引用と責任ある活用**を推奨します。
-##   Tags / タグ（研究者向け）
-
-`multi-agent` `AI-mediation` `emotion-aware-AI` `value-alignment` `AI-governance` `ethical-AI` `封印構造` `感情統治型AI`
+本リポジトリは**教育・研究・技術実証のみを目的**としています。
+**商用・軍事・倫理的リスクがある運用への直接適用はご遠慮ください。**
 
 ---
 
-##   How to Cite / 引用方法（研究者向け）
+## Tags / タグ
+
+`AI-alliance` `multi-agent` `AI-mediation` `sealing` `reeducation` `emotion-aware-AI` `AI-governance` `価値観調停`
+
+---
+
+## How to Cite / 引用方法
 
 ```bibtex
-@misc{multiagent2025,
-  title   = {Multi-Agent Mediation Simulator with Reeducation},
+@misc{aialliance2025,
+  title   = {AI Alliance Persuasion Simulator},
   year    = {2025},
   howpublished = {\url{https://github.com/japan1988/multi-agent-mediation}},
-  note    = {AI governance and emotional sealing simulation},
+  note    = {AI mediation, alliance, and sealing simulation},
 }
 ```
+
+---
+
+
+
+
