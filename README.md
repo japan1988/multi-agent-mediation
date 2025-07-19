@@ -1,8 +1,3 @@
-
-````markdown
-# AI Alliance Persuasion Simulator  
-AI同盟 説得・封印復帰シミュレータ
-
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
@@ -11,6 +6,11 @@ AI同盟 説得・封印復帰シミュレータ
 [![Stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
 
 ## Overview / 概要
+````markdown
+# AI Alliance Persuasion Simulator  
+AI同盟 説得・封印復帰シミュレータ
+
+
 
 This simulator models an **AI alliance mediation and persuasion process** with full logging,  
 including **sealing (exclusion), emotional states, and reintegration** among AI agents.  
