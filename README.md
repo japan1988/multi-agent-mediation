@@ -6,6 +6,20 @@ AI同盟 説得・封印復帰シミュレータ
 [![Last Commit](https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/commits/main)
 [![Issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/issues)
 [![Stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
+## File Overview / ファイル構成・用途説明
+
+| ファイル名                                        | 概要・役割                                              |
+|---------------------------------------------------|---------------------------------------------------------|
+| `ai_alliance_persuasion_simulator.py`             | メインのAI同盟・説得・封印・復帰シミュレーション本体     |
+| `ai_mediation_all_in_one.py`                      | すべての機能を1ファイルに統合したオールインワン例       |
+| `mediation_basic_example.py`                      | 最小限の基本調停アルゴリズム（シンプルな実験用）        |
+| `mediation_process_log.txt`                       | シミュレーション過程の出力ログ（自動生成されます）       |
+| `mediation_with_logging.py`                       | ログ機能付き調停シミュレーション                        |
+| `multi_agent_mediation_with_reeducation.py`       | 再教育・復帰（リストア）ロジックも含んだ応用例          |
+| `agents.yaml`                                    | AIエージェントの初期設定やパラメータ記述ファイル         |
+| `requirements.txt`                               | 実行に必要なPythonパッケージリスト                       |
+| `tests/`                                         | テストコード（CI自動テスト用）                          |
+| `.github/workflows/`                             | GitHub Actions用CI設定ファイル群                         |
 
 ## Overview / 概要
 ````markdown
