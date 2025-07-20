@@ -55,9 +55,10 @@ class AIAgent:
             self.sealed = False
         else:
             self.emotional_state['anger'] += 0.1
-        # クリップ
+        # クリップ（80文字超え防止のため2行に分割）
         for k in self.emotional_state:
-            self.emotional_state[k] = max(0.0, min(1.0, self.emotional_state[k]))
+            v = self.emotional_state[k]
+            self.emotional_state[k] = max(0.0, min(1.0, v))
         # 説得判定理由も返す
         return persuaded, delta, effective_threshold
 
@@ -178,4 +179,3 @@ if __name__ == "__main__":
     ]
     mediator = Mediator(agents)
     mediator.run()
-    
