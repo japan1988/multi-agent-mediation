@@ -17,7 +17,6 @@ KAGE本体や専用ガバナンス構造は含みません。
 
 ---
 
-（以下、既存の Overview / Features / Disclaimer などを続けてください）
 
 
 
