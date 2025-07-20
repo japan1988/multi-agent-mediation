@@ -6,6 +6,7 @@ A simulator for modeling alliance, persuasion, sealing, and reintegration among 
 All logs are saved to 'ai_alliance_sim_log.txt'.
 """
 
+
 def logprint(text):
     print(text)
     with open("ai_alliance_sim_log.txt", "a", encoding="utf-8") as f:
