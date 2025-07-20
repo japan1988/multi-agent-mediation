@@ -1,3 +1,24 @@
+# Multi-Agent Mediation & Governance Simulator
+**AIマルチエージェント調停・ガバナンス・封印/再教育シミュレーター**
+
+[![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
+---
+
+> **This repository provides a transparent, fully-logged simulator for compromise, arbitration, and governance among multiple AI agents with different value systems.**  
+> **No KAGE internal logic or proprietary evolution framework is included.**  
+> **All code is for research, validation, and education only.**
+
+AIエージェント同士の妥協・調停・封印・再教育プロセスを記録・可視化するための完全ログシミュレータです。  
+KAGE本体や専用ガバナンス構造は含みません。  
+本リポジトリの全コードは**研究・検証・教育目的**に限ります。
+
+---
+
+（以下、既存の Overview / Features / Disclaimer などを続けてください）
+
 
 
 ````markdown
