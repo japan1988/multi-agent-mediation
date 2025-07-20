@@ -60,5 +60,17 @@ python ai_mediation_governance_demo.py
 
 MIT
 
+## Disclaimer / 免責事項
+
+- This repository is for **research, validation, and educational use only**.  
+  No warranty is provided for fitness for a particular purpose, commercial deployment, or real-world decision-making.
+- The simulation code **does not implement or expose any proprietary, sensitive, or production AI control algorithms** (including KAGE or similar frameworks).
+- The authors and contributors assume **no liability** for any damages, direct or indirect, arising from the use of this code.
+- Use at your own risk.  
+- 本リポジトリは**研究・検証・教育用途のみ**を目的としています。  
+  特定の目的への適合性・商用利用・現実社会での意思決定に対する保証は一切ありません。
+- 公開コードには**KAGE等の専用・重要制御構造は含まれていません**。
+- 本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。
+- ご利用は**自己責任**でお願いします。
 -
 
