@@ -71,12 +71,6 @@ This repository provides a **transparent, fully-logged simulator** for compromis
 python ai_mediation_governance_demo.py
 ````
 
----
-
-## License
-
-MIT
-
 ## Disclaimer / 免責事項
 
 - This repository is for **research, validation, and educational use only**.  
