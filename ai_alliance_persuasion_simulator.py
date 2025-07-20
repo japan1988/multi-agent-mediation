@@ -2,7 +2,8 @@
 """
 ai_alliance_persuasion_simulator.py
 
-A simulator for modeling alliance, persuasion, sealing, and reintegration among multiple AI agents.
+A simulator for modeling alliance, persuasion,
+sealing, and reintegration among multiple AI agents.
 All logs are saved to 'ai_alliance_sim_log.txt'.
 """
 
@@ -16,7 +17,8 @@ def logprint(text):
 class AIAgent:
     def __init__(self, id, priorities, relativity, emotional_state=None, sealed=False):
         self.id = id
-        self.priorities = priorities  # e.g. {'safety': 6, 'efficiency': 2, 'transparency': 2}
+        # e.g. {'safety': 6, 'efficiency': 2, 'transparency': 2}
+        self.priorities = priorities
         self.relativity = relativity  # 0〜1: 融和度
         self.sealed = sealed
         self.emotional_state = emotional_state or {
@@ -160,4 +162,3 @@ if __name__ == "__main__":
     ]
     mediator = Mediator(agents)
     mediator.run()
-
