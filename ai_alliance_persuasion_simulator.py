@@ -179,3 +179,6 @@ if __name__ == "__main__":
     ]
 mediator = Mediator(agents)
 mediator.run()
+
+
+    
