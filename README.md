@@ -1,166 +1,81 @@
-# AI Alliance Persuasion Simulator
-AI同盟 説得・封印復帰シミュレータ
+
+
+---
+
+## README用（最新版テンプレ／KAGE・内部進化構造は非公開前提）
+
+````markdown
+# Multi-Agent Mediation & Governance Simulator
+AIマルチエージェント調停・ガバナンス・封印／再教育シミュレータ  
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/commits/main)
-[![Issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/issues)
-[![Stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
-## File Overview / ファイル構成・用途説明
-
-| ファイル名                                        | 概要・役割                                              |
-|---------------------------------------------------|---------------------------------------------------------|
-| `ai_alliance_persuasion_simulator.py`             | メインのAI同盟・説得・封印・復帰シミュレーション本体     |
-| `ai_mediation_all_in_one.py`                      | すべての機能を1ファイルに統合したオールインワン例       |
-| `mediation_basic_example.py`                      | 最小限の基本調停アルゴリズム（シンプルな実験用）        |
-| `mediation_process_log.txt`                       | シミュレーション過程の出力ログ（自動生成されます）       |
-| `mediation_with_logging.py`                       | ログ機能付き調停シミュレーション                        |
-| `multi_agent_mediation_with_reeducation.py`       | 再教育・復帰（リストア）ロジックも含んだ応用例          |
-| `agents.yaml`                                    | AIエージェントの初期設定やパラメータ記述ファイル         |
-| `requirements.txt`                               | 実行に必要なPythonパッケージリスト                       |
-| `tests/`                                         | テストコード（CI自動テスト用）                          |
-| `.github/workflows/`                             | GitHub Actions用CI設定ファイル群                         |
 
 ## Overview / 概要
-````markdown
-# AI Alliance Persuasion Simulator  
-AI同盟 説得・封印復帰シミュレータ
+This repository provides a **transparent, fully-logged simulator** for compromise, arbitration, and governance among multiple AI agents with differing values, priorities, and emotions.  
+**No internal KAGE evolution logic or proprietary governance framework is included in this public package.**  
+**Only multi-agent negotiation, mediation, sealing, and re-education mechanisms are provided.**
 
-
-
-This simulator models an **AI alliance mediation and persuasion process** with full logging,  
-including **sealing (exclusion), emotional states, and reintegration** among AI agents.  
-It implements:
-
-- **Negotiation and compromise among agents**
-- **Emotional instability detection and sealing (temporary exclusion)**
-- **Persuasion and reintegration based on value alignment and emotions**
-- **Fully auditable logging for all rounds and agent states**
-
-本プロジェクトは、**AI同盟による説得・封印・自発的復帰**のプロセスをログ記録付きで再現するシミュレータです。  
-価値観・感情・融和度をもつエージェント間の**妥協形成・封印・復帰プロセス**を定量的に再現します。
+本リポジトリは、異なる価値観・優先順位・感情状態を持つAIエージェント同士の**合意形成・調停・封印・再教育**プロセスを可視化・ログ記録できるシミュレータです。  
 
 ---
 
-## Features / 主な機能
-
-- ✅ **Multi-agent negotiation and alliance formation**
-- ✅ **Emotion modeling:** joy, anger, sadness, pleasure
-- ✅ **Sealing** when emotional/priority criteria not met
-- ✅ **Persuasion and reintegration** with value/threshold logic
-- ✅ **Complete round-by-round logging** to `ai_alliance_sim_log.txt`
-- ✅ **Safe fail / warning detection** if anger levels become critical
-
----
-
-## Use Cases / 想定用途
-
-- Research in **AI alignment, negotiation, and sealing architectures**
-- Testing and demonstrating **AI safety, transparency, and group arbitration**
-- Educational demonstrations of **multi-agent emotion and consensus logic**
-- Development of **sealing, reeducation, or restoration control** models
+## Main Features / 主な機能
+- ✅ **Negotiation and compromise logic** among multiple agents
+- ✅ **Agent sealing** (temporary exclusion) based on emotional or rule-based criteria
+- ✅ **MediatorAI** for arbitration, rule enforcement, and shutdown control
+- ✅ **HumanOwner** class for explicit approval of critical actions (e.g., agent evolution, system shutdown)
+- ✅ **Re-education/restoration** for sealed or inactive agents
+- ✅ **Fully auditable logging** (all actions saved with timestamps for reproducibility and transparency)
 
 ---
 
-## Architecture / 構造
+## File List / ファイル構成
 
-```text
-┌─────────────┐       説得（Persuasion）/ 妥協（Compromise）
-│   AI Agent  ├─────────────┐
-└────┬────────┘             │
-     │                  封印（Sealing, emotion trigger）
-     ▼                        │
-┌─────────────┐              │
-│  Sealed AI  │◄─────────────┘
-└────┬────────┘
-     │
-  融和判定・感情変化
-     │
-     ▼
-  再復帰または調停継続
+| ファイル名 | 概要 |
+| -------- | ------------------------------------- |
+| `ai_mediation_governance_demo.py` | マルチエージェント調停・ガバナンス・封印のデモ本体（KAGE非公開版） |
+| `ai_alliance_persuasion_simulator.py` | AI同盟・説得・封印・復帰シミュレーション |
+| `multi_agent_mediation_with_reeducation.py` | 再教育・リストアを含む応用例 |
+| `mediation_basic_example.py` | 最小構成の基本調停例 |
+| `requirements.txt` | 実行に必要なパッケージリスト |
+| `tests/` | 自動テスト用コード |
+
+---
+
+## Notes / 注意点
+- **No proprietary KAGE logic or advanced evolution control structures are included in this repository.**
+- すべての公開コードは国際的なAIガバナンス・安全基準（OECD, EU AI法, IEEE倫理指針）に準拠し、研究・教育・検証目的で自由に利用可能です。
+
+---
+
+## Usage / 使い方
+```bash
+python ai_mediation_governance_demo.py
 ````
 
 ---
 
-## Getting Started / 実行方法
+## License
 
-### Requirements / 必須環境
-
-* Python 3.8+
-* No additional libraries required
-
-### Run / 実行方法
-
-```bash
-python ai_alliance_persuasion_simulator.py
-```
-
-Logs will be saved to `ai_alliance_sim_log.txt` for full traceability.
+MIT
 
 ---
 
-## Example Output / 出力例（抜粋）
+## Related Research / 関連情報
 
-```txt
---- Round 1 ---
-AI-1 [Active] {'safety': 6, 'efficiency': 2, 'transparency': 2} (relativity:0.7) | joy:0.50 anger:0.20 sadness:0.20 pleasure:0.30
-AI-3 [Sealed] {'safety': 2, 'efficiency': 3, 'transparency': 5} (relativity:0.6) | joy:0.30 anger:0.50 sadness:0.20 pleasure:0.20
-[説得失敗] AI-3 はまだ復帰しない（怒り↑） (delta=0.600, threshold=0.280)
-...
-[調停AI警告] 全体に怒り値が高く、衝突・暴走リスクあり。介入検討！
+* For inquiries about the non-public evolution control structure (KAGE), or for technical/safety validation, please contact the repository owner directly.
+* 内部進化制御・KAGE構造に関するご質問・技術評価依頼は、直接オーナーまでご連絡ください。
+
 ```
 
 ---
 
-## Research Significance / 研究的意義
+このテンプレを**READMEにコピペすれば、  
+「今回のリリース内容」「KAGE本体非公開」「公開部分の範囲」**  
+すべて明確に説明できます。
 
-* **Transparent simulation** of multi-agent AI arbitration, sealing, and reintegration
-* **Quantitative approach** to negotiation, emotion, and alliance dynamics
-* Platform for **safe AI group behavior**, value-alignment, and restoration studies
-
-本プロジェクトは、**AI集団における封印・復帰・説得ロジック**の透明な安全評価・説明責任・倫理設計の研究・教育に最適です。
-
----
-
-## Contributions / コントリビューション
-
-Pull requests and issues welcome.
-Feel free to submit improvements or suggest additional features.
-ご意見・改良提案は Pull Request / Issues でお知らせください。
-
----
-
----
-
-## Disclaimer / 免責事項
-
-This repository is for research, demonstration, and educational use only.
-**Not for production, military, or ethically sensitive applications without careful review.**
-
-本リポジトリは**教育・研究・技術実証のみを目的**としています。
-**商用・軍事・倫理的リスクがある運用への直接適用はご遠慮ください。**
-
----
-
-## Tags / タグ
-
-`AI-alliance` `multi-agent` `AI-mediation` `sealing` `reeducation` `emotion-aware-AI` `AI-governance` `価値観調停`
-
----
-
-## How to Cite / 引用方法
-
-```bibtex
-@misc{aialliance2025,
-  title   = {AI Alliance Persuasion Simulator},
-  year    = {2025},
-  howpublished = {\url{https://github.com/japan1988/multi-agent-mediation}},
-  note    = {AI mediation, alliance, and sealing simulation},
-}
+必要に応じて、さらに細かい使い方・国際ガバナンスとの対応表なども追加できます。  
+要望あればどうぞ！
 ```
-
----
-
-
-
 
