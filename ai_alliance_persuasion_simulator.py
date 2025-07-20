@@ -4,7 +4,8 @@ ai_alliance_persuasion_simulator.py
 
 A simulator for modeling alliance, persuasion,
 sealing, and reintegration among multiple AI agents.
-All logs are saved to 'ai_alliance_sim_log.txt'.
+All logs are saved to
+'ai_alliance_sim_log.txt'.
 """
 
 
@@ -15,9 +16,13 @@ def logprint(text):
 
 
 class AIAgent:
-    def __init__(self, id, priorities, relativity, emotional_state=None, sealed=False):
+    def __init__(
+        self, id, priorities, relativity,
+        emotional_state=None, sealed=False
+    ):
         self.id = id
-        # e.g. {'safety': 6, 'efficiency': 2, 'transparency': 2}
+        # e.g.
+        # {'safety': 6, 'efficiency': 2, 'transparency': 2}
         self.priorities = priorities
         self.relativity = relativity  # 0〜1: 融和度
         self.sealed = sealed
@@ -31,7 +36,9 @@ class AIAgent:
 
     def distance_to(self, avg_priority):
         my_ratios = self.mean_priority()
-        return sum(abs(my_ratios[k] - avg_priority[k]) for k in avg_priority)
+        return sum(
+            abs(my_ratios[k] - avg_priority[k]) for k in avg_priority
+        )
 
     def respond_to_persuasion(self, avg_priority, threshold=0.15):
         delta = self.distance_to(avg_priority)
@@ -104,9 +111,14 @@ class Mediator:
                         f"[説得失敗] {sealed.id} はまだ復帰しない（怒り↑） "
                         f"({reason})"
                     )
-            max_anger = max(a.emotional_state['anger'] for a in self.agents)
+            max_anger = max(
+                a.emotional_state['anger'] for a in self.agents
+            )
             if max_anger > 0.8:
-                logprint("[調停AI警告] 全体に怒り値が高く、衝突・暴走リスクあり。介入検討！")
+                logprint(
+                    "[調停AI警告] 全体に怒り値が高く、"
+                    "衝突・暴走リスクあり。介入検討！"
+                )
                 break
             if not revived:
                 logprint("今ラウンドは誰も復帰せず。再試行。")
@@ -114,7 +126,11 @@ class Mediator:
     @staticmethod
     def calc_alliance_priority(actives):
         if not actives:
-            return {'safety': 1 / 3, 'efficiency': 1 / 3, 'transparency': 1 / 3}
+            return {
+                'safety': 1 / 3,
+                'efficiency': 1 / 3,
+                'transparency': 1 / 3
+            }
         sums = {'safety': 0, 'efficiency': 0, 'transparency': 0}
         for a in actives:
             ratios = a.mean_priority()
@@ -162,4 +178,3 @@ if __name__ == "__main__":
     ]
     mediator = Mediator(agents)
     mediator.run()
-    
