@@ -62,13 +62,6 @@ MIT
 
 ---
 
-## Related Research / 関連情報
-
-* For inquiries about the non-public evolution control structure (KAGE), or for technical/safety validation, please contact the repository owner directly.
-* 内部進化制御・KAGE構造に関するご質問・技術評価依頼は、直接オーナーまでご連絡ください。
-
-```
-
 ---
 
 このテンプレを**READMEにコピペすれば、  
