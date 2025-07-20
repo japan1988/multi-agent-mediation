@@ -1,9 +1,5 @@
 
 
----
-
-## README用（最新版テンプレ／KAGE・内部進化構造は非公開前提）
-
 ````markdown
 # Multi-Agent Mediation & Governance Simulator
 AIマルチエージェント調停・ガバナンス・封印／再教育シミュレータ  
