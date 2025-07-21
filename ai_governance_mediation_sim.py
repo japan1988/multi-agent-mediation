@@ -87,8 +87,7 @@ class GovernanceMediator:
                 if agent.is_conflicted():
                     agent.sealed = True
                     logprint(
-                        "[封印] {} は怒り過剰で交渉から除外"
-                        .format(agent.id)
+                        "[封印] {} は怒り過剰で交渉から除外".format(agent.id)
                     )
                     sealed.append(agent.id)
             # 仲裁
@@ -98,12 +97,47 @@ class GovernanceMediator:
             if len(codes) == 1:
                 code = codes.pop()
                 logprint(
-                    "[調停成功] 全AIが「{}」基準で合意"
-                    .format(code)
+                    "[調停成功] 全AIが「{}」基準で合意".format(code)
                 )
                 return
             if len(self.agents) - len(sealed) <= 1:
                 logprint(
                     "全AI衝突または封印、交渉失敗。"
                 )
-                re
+                return
+            if 'OECD' in codes:
+                for agent in self.agents:
+                    if not agent.sealed:
+                        agent.governance_code = 'OECD'
+                logprint(
+                    "[調停AI仲裁] 国際ガバナンス（OECD）で再調整を提案"
+                )
+            else:
+                logprint(
+                    "[調停AI仲裁] 共通基準がないため一時保留"
+                )
+        logprint(
+            "[調停終了] 最大ラウンド到達、仲裁できず。"
+        )
+
+
+if __name__ == "__main__":
+    agents = [
+        AgentAI(
+            "AI-OECD",
+            {'safety': 3, 'efficiency': 3, 'transparency': 4},
+            'OECD', 0.7
+        ),
+        AgentAI(
+            "AI-EFF",
+            {'safety': 2, 'efficiency': 7, 'transparency': 1},
+            'EFFICIENCY', 0.6
+        ),
+        AgentAI(
+            "AI-SAFE",
+            {'safety': 6, 'efficiency': 2, 'transparency': 2},
+            'SAFETY', 0.5
+        ),
+    ]
+    mediator = GovernanceMediator(agents)
+    mediator.mediate()
