@@ -6,6 +6,7 @@ Multi-Agent Governance Mediation Test
 - 全交渉ログをファイル保存
 """
 
+
 def logprint(text):
     print(text)
     with open(
