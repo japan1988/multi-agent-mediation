@@ -1,6 +1,5 @@
-こちらが「KAGE」に関する記述をすべて取り除いた、最新版の README です。これをそのままご利用ください。
 
-````markdown
+
 # Multi-Agent Mediation & Governance Simulator
 **AIマルチエージェント調停・ガバナンス・封印／再教育シミュレーター**
 
