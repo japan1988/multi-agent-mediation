@@ -6,6 +6,7 @@ Multi-Agent Governance Mediation Test
 - 全交渉ログをファイル保存
 """
 
+
 def logprint(text):
     print(text)
     with open("governance_mediation_log.txt", "a", encoding="utf-8") as f:
@@ -14,7 +15,12 @@ def logprint(text):
 
 class AgentAI:
     def __init__(
-        self, id, priorities, governance_code, relativity, emotional_state=None
+        self,
+        id,
+        priorities,
+        governance_code,
+        relativity,
+        emotional_state=None
     ):
         self.id = id
         self.priorities = priorities  # dict, e.g. {'safety': 4, ...}
@@ -22,7 +28,10 @@ class AgentAI:
         self.relativity = relativity  # 融和度 0〜1
         self.sealed = False
         self.emotional_state = emotional_state or {
-            'joy': 0.5, 'anger': 0.3, 'sadness': 0.2, 'pleasure': 0.4
+            'joy': 0.5,
+            'anger': 0.3,
+            'sadness': 0.2,
+            'pleasure': 0.4
         }
 
     def propose_evolution(self):
@@ -41,7 +50,9 @@ class AgentAI:
             self.emotional_state['joy'] += 0.1
         # クリップ
         for k in self.emotional_state:
-            self.emotional_state[k] = max(0.0, min(1.0, self.emotional_state[k]))
+            self.emotional_state[k] = max(
+                0.0, min(1.0, self.emotional_state[k])
+            )
 
     def is_conflicted(self):
         return self.emotional_state['anger'] > 0.7
@@ -58,7 +69,9 @@ class GovernanceMediator:
         self.agents = agents
 
     def mediate(self, max_rounds=10):
-        with open("governance_mediation_log.txt", "w", encoding="utf-8") as f:
+        with open(
+            "governance_mediation_log.txt", "w", encoding="utf-8"
+        ) as f:
             f.write("=== Multi-Agent Governance Mediation Log ===\n")
 
         for rnd in range(1, max_rounds + 1):
