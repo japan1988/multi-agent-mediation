@@ -23,9 +23,12 @@ class AgentAI:
         emotional_state=None
     ):
         self.id = id
-        self.priorities = priorities  # dict, e.g. {'safety': 4, ...}
-        self.governance_code = governance_code  # 'OECD', etc
-        self.relativity = relativity  # 融和度 0〜1
+        self.priorities = priorities
+        # dict, e.g. {'safety': 4, ...}
+        self.governance_code = governance_code
+        # 'OECD', etc
+        self.relativity = relativity
+        # 融和度 0〜1
         self.sealed = False
         self.emotional_state = emotional_state or {
             'joy': 0.5,
