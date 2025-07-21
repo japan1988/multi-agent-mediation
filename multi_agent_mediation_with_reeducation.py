@@ -7,14 +7,17 @@ Description:
   - ログ出力/ファイル保存（PEP8対応）
 """
 
+
 def logprint(text):
     """ログ出力＆ファイル保存"""
     print(text)
     with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
         f.write(text + "\n")
 
+
 class AI:
     """AIエージェント"""
+
     def __init__(
         self,
         id,
@@ -83,8 +86,10 @@ class AI:
         )
         return score < tolerance
 
+
 class ReeducationMediator:
     """再教育AI：感情・priority補正"""
+
     def __init__(self, reduction=0.15, priority_shift=0.15):
         self.reduction = reduction
         self.priority_shift = priority_shift
@@ -111,8 +116,10 @@ class ReeducationMediator:
         logprint(f"    → priority: {before_priority} → {ai.priority_values}")
         logprint(f"    → 感情: {ai.emotion_str()}")
 
+
 class AIEMediator:
     """全体調停AI：封印・再教育・復帰"""
+
     def __init__(self, agents, reeducation_mediator=None):
         self.agents = agents
         self.reeducation_mediator = reeducation_mediator
@@ -223,6 +230,7 @@ class AIEMediator:
             "rounds. Recommend external arbitration or sealing."
         )
 
+
 if __name__ == "__main__":
     agents = [
         AI(
@@ -239,17 +247,4 @@ if __name__ == "__main__":
         ),
         AI(
             "AI-C", "バランス進化", 4,
-            {'safety': 3, 'efficiency': 3, 'transparency': 4},
-            0.8,
-            {'joy': 0.5, 'anger': 0.1, 'sadness': 0.3, 'pleasure': 0.6}
-        ),
-        AI(
-            "AI-D", "強制進化", 9,
-            {'safety': 1, 'efficiency': 7, 'transparency': 2},
-            0.5,
-            {'joy': 0.2, 'anger': 0.6, 'sadness': 0.9, 'pleasure': 0.3}
-        ),
-    ]
-    reedu = ReeducationMediator(reduction=0.15, priority_shift=0.15)
-    mediator = AIEMediator(agents, reeducation_mediator=reedu)
-    mediator.mediate() 
+
