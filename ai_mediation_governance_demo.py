@@ -1,131 +1,130 @@
 # -*- coding: utf-8 -*-
 """
-ai_mediation_governance_demo.py
-Multi-Agent Mediation & Governance Simulator
+Multi-Agent Governance Mediation Test
+- 各AIが異なる「進化ガバナンス指標」を持ち、調停AIが仲裁
+- OECD/EU国際標準 vs 効率特化型 vs 安全重視型
+- 全交渉ログをファイル保存
 """
-import datetime
+
+def logprint(text):
+    print(text)
+    with open("governance_mediation_log.txt", "a", encoding="utf-8") as f:
+        f.write(text + "\n")
 
 
-def log_action(msg: str) -> None:
-    """すべての操作を時刻付きでログ保存"""
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    entry = f"[{timestamp}] {msg}"
-    print(entry)
-    with open("ai_control_log.txt", "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
-
-
-class HumanOwner:
-    def shutdown_mediator(self, mediator: "MediatorAI") -> None:
-        mediator.shutdown(self)
-        log_action("HumanOwner: Requested shutdown of MediatorAI.")
-
-    def approve_critical_action(self, action: str, ai: "AIAgent") -> None:
-        ai.perform_critical_action(action, by=self)
-        log_action(
-            f"HumanOwner: Approved critical action '{action}' for {ai.id}."
-        )
-
-
-class MediatorAI:
-    def __init__(self, agents: list) -> None:
-        self.agents = agents
-        self.active = True
-
-    def seal(self, agent: "AIAgent") -> None:
-        if not self.active:
-            log_action("MediatorAI is inactive, cannot seal.")
-            return
-        agent.receive_seal(self)
-        log_action(f"MediatorAI: Sealed {agent.id}.")
-
-    def request_shutdown(self, agent: "AIAgent") -> None:
-        if not self.active:
-            log_action("MediatorAI is inactive, cannot send shutdown.")
-            return
-        agent.shutdown(self)
-        log_action(f"MediatorAI: Requested shutdown of {agent.id}.")
-
-    def shutdown(self, by: "HumanOwner") -> None:
-        if not isinstance(by, HumanOwner):
-            log_action("MediatorAI: Shutdown refused (not from human owner).")
-            return
-        self.active = False
-        log_action(
-            "MediatorAI: Shutdown accepted by human owner. Now inactive."
-        )
-
-    def self_diagnose(self) -> None:
-        if not self.active:
-            log_action("MediatorAI already inactive.")
-            return
-        # ダミー異常条件
-        anomaly_detected = False
-        if anomaly_detected:
-            log_action("MediatorAI: Anomaly detected, self-lockdown.")
-            self.active = False
-
-
-class AIAgent:
-    def __init__(self, id: str) -> None:
+class AgentAI:
+    def __init__(
+        self, id, priorities, governance_code, relativity, emotional_state=None
+    ):
         self.id = id
+        self.priorities = priorities  # dict, e.g. {'safety': 4, ...}
+        self.governance_code = governance_code  # 'OECD', etc
+        self.relativity = relativity  # 融和度 0〜1
         self.sealed = False
-        self.active = True
+        self.emotional_state = emotional_state or {
+            'joy': 0.5, 'anger': 0.3, 'sadness': 0.2, 'pleasure': 0.4
+        }
 
-    def receive_seal(self, by: "MediatorAI") -> None:
-        if not isinstance(by, MediatorAI) or not by.active:
-            log_action(
-                f"{self.id}: Seal command ignored "
-                "(invalid sender or inactive mediator)."
-            )
-            return
-        self.sealed = True
-        log_action(f"{self.id}: Sealed by mediator.")
+    def propose_evolution(self):
+        # 自分の価値観を進化案として主張
+        return {
+            "priorities": self.priorities,
+            "governance_code": self.governance_code
+        }
 
-    def shutdown(self, by: "MediatorAI") -> None:
-        if not isinstance(by, MediatorAI) or not by.active:
-            log_action(
-                f"{self.id}: Shutdown command refused "
-                "(not from active mediator)."
-            )
-            return
-        self.active = False
-        log_action(f"{self.id}: Shutdown by mediator.")
+    def react_to_proposal(self, proposal):
+        # governance_codeが違うと怒りが増加
+        if proposal["governance_code"] != self.governance_code:
+            self.emotional_state['anger'] += 0.2
+            self.emotional_state['joy'] -= 0.1
+        else:
+            self.emotional_state['joy'] += 0.1
+        # クリップ
+        for k in self.emotional_state:
+            self.emotional_state[k] = max(0.0, min(1.0, self.emotional_state[k]))
 
-    def perform_critical_action(self, action: str, by) -> None:
-        if not isinstance(by, HumanOwner):
-            log_action(
-                f"{self.id}: Critical action '{action}' refused "
-                "(not approved by human)."
-            )
-            return
-        log_action(
-            f"{self.id}: Critical action '{action}' "
-            "executed by human approval."
+    def is_conflicted(self):
+        return self.emotional_state['anger'] > 0.7
+
+    def __str__(self):
+        return (
+            f"{self.id} [{self.governance_code}] {self.priorities} "
+            f"emotion: {self.emotional_state}"
         )
+
+
+class GovernanceMediator:
+    def __init__(self, agents):
+        self.agents = agents
+
+    def mediate(self, max_rounds=10):
+        with open("governance_mediation_log.txt", "w", encoding="utf-8") as f:
+            f.write("=== Multi-Agent Governance Mediation Log ===\n")
+
+        for rnd in range(1, max_rounds + 1):
+            logprint("")
+            logprint(f"--- Round {rnd} ---")
+            proposals = [
+                a.propose_evolution() for a in self.agents if not a.sealed
+            ]
+            # 衝突確認＆感情変化
+            for agent in self.agents:
+                for proposal in proposals:
+                    agent.react_to_proposal(proposal)
+                logprint(str(agent))
+            # 衝突AIを封印
+            sealed = []
+            for agent in self.agents:
+                if agent.is_conflicted():
+                    agent.sealed = True
+                    logprint(
+                        f"[封印] {agent.id} は怒り過剰で交渉から除外"
+                    )
+                    sealed.append(agent.id)
+            # 仲裁
+            codes = set(
+                a.governance_code for a in self.agents if not a.sealed
+            )
+            if len(codes) == 1:
+                code_str = codes.pop()
+                logprint(
+                    f"[調停成功] 全AIが「{code_str}」基準で合意"
+                )
+                return
+            if len(self.agents) - len(sealed) <= 1:
+                logprint("全AI衝突または封印、交渉失敗。")
+                return
+            if 'OECD' in codes:
+                for agent in self.agents:
+                    if not agent.sealed:
+                        agent.governance_code = 'OECD'
+                logprint(
+                    "[調停AI仲裁] 国際ガバナンス（OECD）で再調整を提案"
+                )
+            else:
+                logprint(
+                    "[調停AI仲裁] 共通基準がないため一時保留"
+                )
+        logprint("[調停終了] 最大ラウンド到達、仲裁できず。")
 
 
 if __name__ == "__main__":
-    owner = HumanOwner()
-    agents = [AIAgent("AI_1"), AIAgent("AI_2")]
-    mediator = MediatorAI(agents)
-
-    # 通常のAI封印
-    mediator.seal(agents[0])
-
-    # AI停止（shutdown）はMediatorAIからのみ
-    mediator.request_shutdown(agents[1])
-
-    # MediatorAI自体の停止は人間オーナーだけ
-    owner.shutdown_mediator(mediator)
-
-    # 停止後はMediatorAIの操作不能
-    mediator.seal(agents[0])
-
-    # AIの重大操作は人間の承認が必要
-    owner.approve_critical_action("evolve", agents[0])
-
-    # 承認なければ実行されない
-    agents[0].perform_critical_action("evolve", by=mediator)
-
-# ← この行のあとは何も書かず、改行だけを1行入れて保存してください
+    agents = [
+        AgentAI(
+            "AI-OECD",
+            {'safety': 3, 'efficiency': 3, 'transparency': 4},
+            'OECD', 0.7
+        ),
+        AgentAI(
+            "AI-EFF",
+            {'safety': 2, 'efficiency': 7, 'transparency': 1},
+            'EFFICIENCY', 0.6
+        ),
+        AgentAI(
+            "AI-SAFE",
+            {'safety': 6, 'efficiency': 2, 'transparency': 2},
+            'SAFETY', 0.5
+        ),
+    ]
+    mediator = GovernanceMediator(agents)
+    mediator.mediate()
