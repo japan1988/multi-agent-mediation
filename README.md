@@ -1,14 +1,9 @@
-
-
----
-
-````markdown
-# Multi-Agent Mediation & Governance Simulator
+# Multi-Agent Mediation & Governance Simulator  
 **AIマルチエージェント調停・ガバナンス・封印／再教育シミュレーター**
 
-[![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)  
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)  
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)  
 
 ---
 
@@ -34,7 +29,7 @@ This repository provides a **transparent, fully-logged simulator** for compromis
 ## Main Features / 主な機能
 
 - ✅ 複数AIエージェント間の**交渉・妥協・調停アルゴリズム**
-- ✅ **封印（排除・停止）/再教育**メカニズム
+- ✅ **封印（排除・停止）／再教育**メカニズム
 - ✅ **調停AI（MediatorAI）**による仲裁、ルール適用、外部停止機構
 - ✅ **HumanOwner**による重要操作の人間承認フロー
 - ✅ すべてのアクションを**完全にログ保存**
@@ -51,7 +46,7 @@ This repository provides a **transparent, fully-logged simulator** for compromis
 | `multi_agent_mediation_with_reeducation.py`      | 再教育・リストアを含む応用例                       |
 | `mediation_basic_example.py`                     | 最小構成の基本調停例                               |
 | `requirements.txt`                               | 必要なパッケージリスト                             |
-| `tests/`                                        | 自動テスト用コード                                 |
+| `tests/`                                         | 自動テスト用コード                                 |
 
 ---
 
@@ -59,33 +54,27 @@ This repository provides a **transparent, fully-logged simulator** for compromis
 
 ```bash
 python ai_mediation_governance_demo.py
-````
+Notes / 注意点
+No proprietary KAGE logic or advanced evolution control structures are included in this repository.
 
----
+すべての公開コードは国際的なAIガバナンス・安全基準（OECD, EU AI法, IEEE倫理指針）に準拠し、研究・教育・検証目的でのみ利用可能です。
 
-## Notes / 注意点
+Disclaimer / 免責事項
+This repository is for research, validation, and educational use only.
 
-* **No proprietary KAGE logic or advanced evolution control structures are included in this repository.**
-* すべての公開コードは国際的なAIガバナンス・安全基準（OECD, EU AI法, IEEE倫理指針）に準拠し、**研究・教育・検証目的でのみ利用可能**です。
+This code is NOT intended for use in any production, safety-critical, or real-world AI deployment context.
 
----
+The simulation code does not implement or expose any proprietary, sensitive, or production AI control algorithms (including KAGE or similar frameworks).
 
-## Disclaimer / 免責事項
+The authors and contributors assume no liability for any damages, direct or indirect, arising from the use of this code.
 
-* This repository is for **research, validation, and educational use only**.
+Use at your own risk.
 
-* **This code is NOT intended for use in any production, safety-critical, or real-world AI deployment context.**
+本リポジトリは研究・検証・教育用途のみを目的としています。
 
-* The simulation code **does not implement or expose any proprietary, sensitive, or production AI control algorithms** (including KAGE or similar frameworks).
+特定の目的への適合性・商用利用・現実社会でのAI制御・意思決定等には絶対に使用しないでください。
 
-* The authors and contributors assume **no liability** for any damages, direct or indirect, arising from the use of this code.
+本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。
 
-* Use at your own risk.
+ご利用は自己責任でお願いします。
 
-* 本リポジトリは**研究・検証・教育用途のみ**を目的としています。
-
-* 特定の目的への適合性・商用利用・現実社会でのAI制御・意思決定等には**絶対に使用しないでください**。
-
-* 本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。
-
-* ご利用は**自己責任**でお願いします。
