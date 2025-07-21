@@ -61,10 +61,8 @@ class AgentAI:
         """怒りが閾値を超えたら衝突状態"""
         return self.emotional_state["anger"] > 0.7
 
- def __str__(self) -> str:
-    return (
-        f"{self.id} [{self.governance_code}] "
-        f"{self.priorities} emotion: {self.emotional_state}"
-    )
- 
-
+    def __str__(self) -> str:
+        return (
+            f"{self.id} [{self.governance_code}] "
+            f"{self.priorities} emotion: {self.emotional_state}"
+        )
