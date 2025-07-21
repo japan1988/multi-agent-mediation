@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 ai_mediation_governance_demo.py
-
 Multi-Agent Mediation & Governance Simulator
 """
-
 import datetime
 
 
@@ -129,4 +127,5 @@ if __name__ == "__main__":
 
     # 承認なければ実行されない
     agents[0].perform_critical_action("evolve", by=mediator)
-    
+
+# ← この行のあとは何も書かず、改行だけを1行入れて保存してください
