@@ -6,7 +6,6 @@ Multi-Agent Governance Mediation Test
 - 全交渉ログをファイル保存
 """
 
-
 def logprint(text: str) -> None:
     """画面出力＆ログファイル追記"""
     print(text)
@@ -14,7 +13,6 @@ def logprint(text: str) -> None:
         "governance_mediation_log.txt", "a", encoding="utf-8"
     ) as f:
         f.write(text + "\n")
-
 
 class AgentAI:
     def __init__(
@@ -26,7 +24,7 @@ class AgentAI:
         emotional_state: dict = None,
     ):
         self.id = id
-        self.priorities = priorities  # dict, e.g. {'safety': 4}
+        self.priorities = priorities
         self.governance_code = governance_code
         self.relativity = relativity
         self.sealed = False
@@ -36,6 +34,7 @@ class AgentAI:
             "sadness": 0.2,
             "pleasure": 0.4,
         }
+
 
     def propose_evolution(self) -> dict:
         """自分の価値観を進化案として主張"""
