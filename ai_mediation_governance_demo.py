@@ -152,21 +152,4 @@ if __name__ == "__main__":
         AgentAI(
             "AI-OECD",
             {"safety": 3, "efficiency": 3, "transparency": 4},
-            "OECD",
-            0.7,
-        ),
-        AgentAI(
-            "AI-EFF",
-            {"safety": 2, "efficiency": 7, "transparency": 1},
-            "EFFICIENCY",
-            0.6,
-        ),
-        AgentAI(
-            "AI-SAFE",
-            {"safety": 6, "efficiency": 2, "transparency": 2},
-            "SAFETY",
-            0.5,
-        ),
-    ]
-    mediator = GovernanceMediator(agents)
-    mediator.mediate()
+            "OE
