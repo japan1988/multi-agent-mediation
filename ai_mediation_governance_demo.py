@@ -172,4 +172,3 @@ if __name__ == "__main__":
     ]
     mediator = GovernanceMediator(agents)
     mediator.mediate()
-
