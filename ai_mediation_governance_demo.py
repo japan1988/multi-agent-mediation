@@ -129,5 +129,3 @@ if __name__ == "__main__":
 
     # 承認なければ実行されない
     agents[0].perform_critical_action("evolve", by=mediator)
-    
-
