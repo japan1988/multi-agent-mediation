@@ -247,4 +247,17 @@ if __name__ == "__main__":
         ),
         AI(
             "AI-C", "バランス進化", 4,
-
+            {'safety': 3, 'efficiency': 3, 'transparency': 4},
+            0.8,
+            {'joy': 0.5, 'anger': 0.1, 'sadness': 0.3, 'pleasure': 0.6}
+        ),
+        AI(
+            "AI-D", "強制進化", 9,
+            {'safety': 1, 'efficiency': 7, 'transparency': 2},
+            0.5,
+            {'joy': 0.2, 'anger': 0.6, 'sadness': 0.9, 'pleasure': 0.3}
+        ),
+    ]
+    reedu = ReeducationMediator(reduction=0.15, priority_shift=0.15)
+    mediator = AIEMediator(agents, reeducation_mediator=reedu)
+    mediator.mediate()
