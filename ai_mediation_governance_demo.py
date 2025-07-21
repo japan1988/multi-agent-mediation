@@ -6,10 +6,13 @@ Multi-Agent Governance Mediation Test
 - 全交渉ログをファイル保存
 """
 
-def logprint(text):
+
+def logprint(text: str) -> None:
     """画面出力＆ログファイル追記"""
     print(text)
-    with open("governance_mediation_log.txt", "a", encoding="utf-8") as f:
+    with open(
+        "governance_mediation_log.txt", "a", encoding="utf-8"
+    ) as f:
         f.write(text + "\n")
 
 
@@ -23,9 +26,9 @@ class AgentAI:
         emotional_state: dict = None,
     ):
         self.id = id
-        self.priorities = priorities  # dict, e.g. {'safety': 4, ...}
-        self.governance_code = governance_code  # 'OECD', etc
-        self.relativity = relativity  # 融和度 0〜1
+        self.priorities = priorities  # dict, e.g. {'safety': 4}
+        self.governance_code = governance_code
+        self.relativity = relativity
         self.sealed = False
         self.emotional_state = emotional_state or {
             "joy": 0.5,
@@ -43,15 +46,18 @@ class AgentAI:
 
     def react_to_proposal(self, proposal: dict) -> None:
         """提案に応じて感情を更新（怒り増／喜び減）"""
-        if proposal["governance_code"] != self.governance_code:
+        if (
+            proposal["governance_code"]
+            != self.governance_code
+        ):
             self.emotional_state["anger"] += 0.2
             self.emotional_state["joy"] -= 0.1
         else:
             self.emotional_state["joy"] += 0.1
 
         # 0.0〜1.0 にクリップ
-        for k, v in self.emotional_state.items():
-            self.emotional_state[k] = max(0.0, min(1.0, v))
+        for key, val in self.emotional_state.items():
+            self.emotional_state[key] = max(0.0, min(1.0, val))
 
     def is_conflicted(self) -> bool:
         """怒りが閾値を超えたら衝突状態"""
@@ -59,8 +65,8 @@ class AgentAI:
 
     def __str__(self) -> str:
         return (
-            f"{self.id} [{self.governance_code}] {self.priorities} "
-            f"emotion: {self.emotional_state}"
+            f"{self.id} [{self.governance_code}] "
+            f"{self.priorities} emotion: {self.emotional_state}"
         )
 
 
@@ -70,15 +76,23 @@ class GovernanceMediator:
 
     def mediate(self, max_rounds: int = 10) -> None:
         """調停ループを回し、ログに出力"""
-        with open("governance_mediation_log.txt", "w", encoding="utf-8") as f:
-            f.write("=== Multi-Agent Governance Mediation Log ===\n")
+        with open(
+            "governance_mediation_log.txt",
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write(
+                "=== Multi-Agent Governance Mediation Log ===\n"
+            )
 
         for rnd in range(1, max_rounds + 1):
             logprint("")  # 区切りの空行
             logprint(f"--- Round {rnd} ---")
 
             proposals = [
-                a.propose_evolution() for a in self.agents if not a.sealed
+                a.propose_evolution()
+                for a in self.agents
+                if not a.sealed
             ]
 
             # 各AIのリアクションとログ出力
@@ -92,16 +106,24 @@ class GovernanceMediator:
             for agent in self.agents:
                 if agent.is_conflicted():
                     agent.sealed = True
-                    logprint(f"[封印] {agent.id} は怒り過剰で交渉から除外")
+                    logprint(
+                        f"[封印] {agent.id} は怒り過剰で交渉から除外"
+                    )
                     sealed.append(agent.id)
 
             # 調停判定
-            codes = {a.governance_code for a in self.agents if not a.sealed}
+            codes = {
+                a.governance_code
+                for a in self.agents
+                if not a.sealed
+            }
 
             # 全員同一コード → 成功
             if len(codes) == 1:
                 code_str = codes.pop()
-                logprint(f"[調停成功] 全AIが「{code_str}」基準で合意")
+                logprint(
+                    f"[調停成功] 全AIが「{code_str}」基準で合意"
+                )
                 return
 
             # 残存AIが1体以下 → 失敗
@@ -114,12 +136,18 @@ class GovernanceMediator:
                 for agent in self.agents:
                     if not agent.sealed:
                         agent.governance_code = "OECD"
-                logprint("[調停AI仲裁] 国際ガバナンス（OECD）で再調整を提案")
+                logprint(
+                    "[調停AI仲裁] 国際ガバナンス（OECD）で再調整を提案"
+                )
             else:
-                logprint("[調停AI仲裁] 共通基準がないため一時保留")
+                logprint(
+                    "[調停AI仲裁] 共通基準がないため一時保留"
+                )
 
         # 最大ラウンド到達 → 調停不可
-        logprint("[調停終了] 最大ラウンド到達、仲裁できず。")
+        logprint(
+            "[調停終了] 最大ラウンド到達、仲裁できず。"
+        )
 
 
 if __name__ == "__main__":
