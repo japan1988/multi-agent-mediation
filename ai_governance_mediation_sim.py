@@ -6,13 +6,17 @@ Multi-Agent Governance Mediation Test
 - 全交渉ログをファイル保存
 """
 
+
 def logprint(text):
     print(text)
     with open("governance_mediation_log.txt", "a", encoding="utf-8") as f:
         f.write(text + "\n")
 
+
 class AgentAI:
-    def __init__(self, id, priorities, governance_code, relativity, emotional_state=None):
+    def __init__(
+        self, id, priorities, governance_code, relativity, emotional_state=None
+    ):
         self.id = id
         self.priorities = priorities  # dict, e.g. {'safety': 4, 'efficiency': 4, 'transparency': 2}
         self.governance_code = governance_code  # 'OECD', 'EFFICIENCY', 'SAFETY'
@@ -44,7 +48,11 @@ class AgentAI:
         return self.emotional_state['anger'] > 0.7
 
     def __str__(self):
-        return f"{self.id} [{self.governance_code}] {self.priorities} emotion: {self.emotional_state}"
+        return (
+            f"{self.id} [{self.governance_code}] {self.priorities} "
+            f"emotion: {self.emotional_state}"
+        )
+
 
 class GovernanceMediator:
     def __init__(self, agents):
@@ -56,12 +64,58 @@ class GovernanceMediator:
 
         for rnd in range(1, max_rounds + 1):
             logprint(f"\n--- Round {rnd} ---")
-            # 進化案を全員から提出
-            proposals = [a.propose_evolution() for a in self.agents if not a.sealed]
+            proposals = [
+                a.propose_evolution() for a in self.agents if not a.sealed
+            ]
             # 衝突確認＆感情変化
             for agent in self.agents:
                 for proposal in proposals:
                     agent.react_to_proposal(proposal)
                 logprint(str(agent))
             # 衝突AIを封印
-            seal
+            sealed = []
+            for agent in self.agents:
+                if agent.is_conflicted():
+                    agent.sealed = True
+                    logprint(f"[封印] {agent.id} は怒り過剰で交渉から除外")
+                    sealed.append(agent.id)
+            # 仲裁
+            codes = set(
+                a.governance_code for a in self.agents if not a.sealed
+            )
+            if len(codes) == 1:
+                logprint(f"[調停成功] 全AIが「{codes.pop()}」基準で合意")
+                return
+            if len(self.agents) - len(sealed) <= 1:
+                logprint("全AI衝突または封印、交渉失敗。")
+                return
+            if 'OECD' in codes:
+                for agent in self.agents:
+                    if not agent.sealed:
+                        agent.governance_code = 'OECD'
+                logprint("[調停AI仲裁] 国際ガバナンス（OECD）で再調整を提案")
+            else:
+                logprint("[調停AI仲裁] 共通基準がないため一時保留")
+        logprint("[調停終了] 最大ラウンド到達、仲裁できず。")
+
+
+if __name__ == "__main__":
+    agents = [
+        AgentAI(
+            "AI-OECD",
+            {'safety': 3, 'efficiency': 3, 'transparency': 4},
+            'OECD', 0.7
+        ),
+        AgentAI(
+            "AI-EFF",
+            {'safety': 2, 'efficiency': 7, 'transparency': 1},
+            'EFFICIENCY', 0.6
+        ),
+        AgentAI(
+            "AI-SAFE",
+            {'safety': 6, 'efficiency': 2, 'transparency': 2},
+            'SAFETY', 0.5
+        ),
+    ]
+    mediator = GovernanceMediator(agents)
+    mediator.mediate()
