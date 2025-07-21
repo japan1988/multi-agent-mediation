@@ -252,4 +252,4 @@ if __name__ == "__main__":
     ]
     reedu = ReeducationMediator(reduction=0.15, priority_shift=0.15)
     mediator = AIEMediator(agents, reeducation_mediator=reedu)
-    mediator.mediate()
+    mediator.mediate() 
