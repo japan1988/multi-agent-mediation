@@ -3,10 +3,13 @@
 # Multi-Agent Mediation & Governance Simulator
 **AIマルチエージェント調停・ガバナンス・封印／再教育シミュレーター**
 
-[![Coverage](https://img.shields.io/codecov/c/github/ユーザー名/リポジトリ名.svg)](https://codecov.io/gh/ユーザー名/リポジトリ名)
-[![Known Vulnerabilities](https://snyk.io/test/github/ユーザー名/リポジトリ名/badge.svg)](https://snyk.io/test/github/ユーザー名/リポジトリ名)
-[![Documentation Status](https://readthedocs.org/projects/パッケージ名/badge/?version=latest)](https://パッケージ名.readthedocs.io/ja/latest/)
-[![PyPI version](https://img.shields.io/pypi/v/パッケージ名.svg)](https://pypi.org/project/パッケージ名/)
+[![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Coverage](https://img.shields.io/codecov/c/github/japan1988/multi-agent-mediation.svg)](https://codecov.io/gh/japan1988/multi-agent-mediation)
+[![Known Vulnerabilities](https://snyk.io/test/github/japan1988/multi-agent-mediation/badge.svg)](https://snyk.io/test/github/japan1988/multi-agent-mediation)
+[![Documentation Status](https://readthedocs.org/projects/multi-agent-mediation/badge/?version=latest)](https://multi-agent-mediation.readthedocs.io/)
+[![PyPI version](https://img.shields.io/pypi/v/multi-agent-mediation.svg)](https://pypi.org/project/multi-agent-mediation/)
 
 
 ---
