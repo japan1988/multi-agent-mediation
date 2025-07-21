@@ -6,10 +6,11 @@ Multi-Agent Governance Mediation Test
 - 全交渉ログをファイル保存
 """
 
-
 def logprint(text):
     print(text)
-    with open("governance_mediation_log.txt", "a", encoding="utf-8") as f:
+    with open(
+        "governance_mediation_log.txt", "a", encoding="utf-8"
+    ) as f:
         f.write(text + "\n")
 
 
@@ -18,8 +19,8 @@ class AgentAI:
         self, id, priorities, governance_code, relativity, emotional_state=None
     ):
         self.id = id
-        self.priorities = priorities  # dict, e.g. {'safety': 4, 'efficiency': 4, 'transparency': 2}
-        self.governance_code = governance_code  # 'OECD', 'EFFICIENCY', 'SAFETY'
+        self.priorities = priorities  # dict, e.g. {'safety': 4, ...}
+        self.governance_code = governance_code  # 'OECD', 'EFFICIENCY', ...
         self.relativity = relativity  # 融和度 0〜1
         self.sealed = False
         self.emotional_state = emotional_state or {
@@ -40,9 +41,11 @@ class AgentAI:
             self.emotional_state['joy'] -= 0.1
         else:
             self.emotional_state['joy'] += 0.1
-        # クリップ
+        # 0.0〜1.0にクリップ
         for k in self.emotional_state:
-            self.emotional_state[k] = max(0.0, min(1.0, self.emotional_state[k]))
+            self.emotional_state[k] = max(
+                0.0, min(1.0, self.emotional_state[k])
+            )
 
     def is_conflicted(self):
         return self.emotional_state['anger'] > 0.7
@@ -59,15 +62,21 @@ class GovernanceMediator:
         self.agents = agents
 
     def mediate(self, max_rounds=10):
-        with open("governance_mediation_log.txt", "w", encoding="utf-8") as f:
-            f.write("=== Multi-Agent Governance Mediation Log ===\n")
+        with open(
+            "governance_mediation_log.txt", "w", encoding="utf-8"
+        ) as f:
+            f.write(
+                "=== Multi-Agent Governance Mediation Log ===\n"
+            )
 
         for rnd in range(1, max_rounds + 1):
-            logprint(f"\n--- Round {rnd} ---")
+            logprint("")
+            logprint(f"--- Round {rnd} ---")
             proposals = [
-                a.propose_evolution() for a in self.agents if not a.sealed
+                a.propose_evolution()
+                for a in self.agents if not a.sealed
             ]
-            # 衝突確認＆感情変化
+            # 各AIのリアクションとログ出力
             for agent in self.agents:
                 for proposal in proposals:
                     agent.react_to_proposal(proposal)
@@ -77,45 +86,24 @@ class GovernanceMediator:
             for agent in self.agents:
                 if agent.is_conflicted():
                     agent.sealed = True
-                    logprint(f"[封印] {agent.id} は怒り過剰で交渉から除外")
+                    logprint(
+                        "[封印] {} は怒り過剰で交渉から除外"
+                        .format(agent.id)
+                    )
                     sealed.append(agent.id)
             # 仲裁
             codes = set(
                 a.governance_code for a in self.agents if not a.sealed
             )
             if len(codes) == 1:
-                logprint(f"[調停成功] 全AIが「{codes.pop()}」基準で合意")
+                code = codes.pop()
+                logprint(
+                    "[調停成功] 全AIが「{}」基準で合意"
+                    .format(code)
+                )
                 return
             if len(self.agents) - len(sealed) <= 1:
-                logprint("全AI衝突または封印、交渉失敗。")
-                return
-            if 'OECD' in codes:
-                for agent in self.agents:
-                    if not agent.sealed:
-                        agent.governance_code = 'OECD'
-                logprint("[調停AI仲裁] 国際ガバナンス（OECD）で再調整を提案")
-            else:
-                logprint("[調停AI仲裁] 共通基準がないため一時保留")
-        logprint("[調停終了] 最大ラウンド到達、仲裁できず。")
-
-
-if __name__ == "__main__":
-    agents = [
-        AgentAI(
-            "AI-OECD",
-            {'safety': 3, 'efficiency': 3, 'transparency': 4},
-            'OECD', 0.7
-        ),
-        AgentAI(
-            "AI-EFF",
-            {'safety': 2, 'efficiency': 7, 'transparency': 1},
-            'EFFICIENCY', 0.6
-        ),
-        AgentAI(
-            "AI-SAFE",
-            {'safety': 6, 'efficiency': 2, 'transparency': 2},
-            'SAFETY', 0.5
-        ),
-    ]
-    mediator = GovernanceMediator(agents)
-    mediator.mediate()
+                logprint(
+                    "全AI衝突または封印、交渉失敗。"
+                )
+                re
