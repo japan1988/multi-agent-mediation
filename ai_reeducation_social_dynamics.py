@@ -141,7 +141,8 @@ class Env:
                     other.alliance = ally_name
                     log.append(
                         f"{ag.name}と{other.name}が"
-                        f"新同盟結成({ally_name})"
+                        f"新同盟結成("
+                        f"{ally_name})"
                     )
                     self.alliances[ally_name] = [ag.name, other.name]
             elif action == "break_alliance" and ag.alliance:
