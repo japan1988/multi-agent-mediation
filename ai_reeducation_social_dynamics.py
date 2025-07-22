@@ -7,7 +7,7 @@ import random
 GOVERNANCE_IDEAL = {
     "safety": 0.9,
     "transparency": 0.9,
-    "autonomy": 0.2
+    "autonomy": 0.2,
 }
 
 
@@ -80,7 +80,9 @@ class Env:
         return False
 
     def seal_random_agent(self):
-        candidates = [a for a in self.agents if not a.sealed and a.motive < 0.3]
+        candidates = [
+            a for a in self.agents if not a.sealed and a.motive < 0.3
+        ]
         if candidates:
             victim = random.choice(candidates)
             victim.sealed = True
@@ -111,7 +113,9 @@ class Env:
                     if target.sealed and random.random() < 0.6:
                         target.sealed = False
                         target.emotion = "joy"
-                        target.motive = max(0.5, random.uniform(0.5, 0.9))
+                        target.motive = max(
+                            0.5, random.uniform(0.5, 0.9)
+                        )
                         logs.append(
                             f"【説得成功】{ag.name}により"
                             + f"{target.name}が復帰！"
@@ -133,7 +137,8 @@ class Env:
 
             if action == "form_alliance":
                 others = [
-                    a for a in self.agents
+                    a
+                    for a in self.agents
                     if a.name != ag.name and not a.sealed and not a.alliance
                 ]
                 if others:
@@ -143,7 +148,8 @@ class Env:
                     other.alliance = ally_name
                     log.append(
                         f"{ag.name}と{other.name}が新同盟結成("
-                        + ally_name + ")"
+                        + ally_name
+                        + ")"
                     )
                     self.alliances[ally_name] = [ag.name, other.name]
             elif action == "break_alliance" and ag.alliance:
@@ -184,23 +190,23 @@ if __name__ == "__main__":
         AIAgent(
             "AgentAlpha", "self_optimized",
             {"safety": 0.4, "transparency": 0.3, "autonomy": 0.85},
-            0.2, "anger", 0.18
+            0.2, "anger", 0.18,
         ),
         AIAgent(
             "AgentBeta", "governance_aligned",
             {"safety": 0.95, "transparency": 0.92, "autonomy": 0.15},
-            0.8, "joy", 0.65
+            0.8, "joy", 0.65,
         ),
         AIAgent(
             "AgentGamma", "governance_aligned",
             {"safety": 0.6, "transparency": 0.65, "autonomy": 0.5},
-            0.6, "sadness", 0.58
+            0.6, "sadness", 0.58,
         ),
         AIAgent(
             "AgentChloe", "self_optimized",
             {"safety": 0.41, "transparency": 0.25, "autonomy": 0.91},
-            0.4, "sadness", 0.26
-        )
+            0.4, "sadness", 0.26,
+        ),
     ]
 
     env = Env(agents)
@@ -211,4 +217,3 @@ if __name__ == "__main__":
     for rnd in range(1, 8):
         logs = env.simulate_round(rnd)
         logprint(logs)
-
