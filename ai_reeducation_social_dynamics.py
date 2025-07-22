@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 
+
 import random
+
 
 GOVERNANCE_IDEAL = {
     "safety": 0.9,
     "transparency": 0.9,
     "autonomy": 0.2
 }
+
 
 class AIAgent:
     def __init__(self, name, policy, values, relativity, emotion, motive):
