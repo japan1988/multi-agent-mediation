@@ -8,7 +8,6 @@ GOVERNANCE_IDEAL = {
     "autonomy": 0.2
 }
 
-
 class AIAgent:
     def __init__(self, name, policy, values, relativity, emotion, motive):
         self.name = name
@@ -112,7 +111,7 @@ class Env:
                         target.motive = max(0.5, random.uniform(0.5, 0.9))
                         logs.append(
                             f"【説得成功】{ag.name}により"
-                            f"{target.name}が復帰！"
+                            + f"{target.name}が復帰！"
                         )
         return logs
 
@@ -140,9 +139,8 @@ class Env:
                     ag.alliance = ally_name
                     other.alliance = ally_name
                     log.append(
-                        f"{ag.name}と{other.name}が"
-                        f"新同盟結成("
-                        f"{ally_name})"
+                        f"{ag.name}と{other.name}が新同盟結成("
+                        + ally_name + ")"
                     )
                     self.alliances[ally_name] = [ag.name, other.name]
             elif action == "break_alliance" and ag.alliance:
@@ -210,3 +208,4 @@ if __name__ == "__main__":
     for rnd in range(1, 8):
         logs = env.simulate_round(rnd)
         logprint(logs)
+
