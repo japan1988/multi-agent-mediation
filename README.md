@@ -1,6 +1,3 @@
-
-
-````markdown
 # Multi-Agent Mediation & Governance Simulator
 **AIマルチエージェント調停・ガバナンス・封印／再教育シミュレーター**
 
