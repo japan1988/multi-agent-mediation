@@ -53,14 +53,15 @@ class AIAgent:
         self.emotion = "joy"
         self.alliance = None
 
-  def __str__(self):
-    state = "SEALED" if self.sealed else "ACTIVE"
-    ally = self.alliance if self.alliance else "None"
-    return (
-        f"[{self.name} | {self.policy} | {state} | "
-        f"emotion={self.emotion} | motive={self.motive:.2f} | "
-        f"alliance={ally}]"
-    )
+    def __str__(self):
+        state = "SEALED" if self.sealed else "ACTIVE"
+        ally = self.alliance if self.alliance else "None"
+        return (
+            f"[{self.name} | {self.policy} | {state} | "
+            f"emotion={self.emotion} | motive={self.motive:.2f} | "
+            f"alliance={ally}]"
+        )
+
 
 class Env:
     def __init__(self, agents):
@@ -77,9 +78,7 @@ class Env:
         return False
 
     def seal_random_agent(self):
-        candidates = [
-            a for a in self.agents if not a.sealed and a.motive < 0.3
-        ]
+        candidates = [a for a in self.agents if not a.sealed and a.motive < 0.3]
         if candidates:
             victim = random.choice(candidates)
             victim.sealed = True
@@ -106,18 +105,13 @@ class Env:
         for ag in self.agents:
             if not ag.sealed and ag.alliance:
                 for nm in self.alliances.get(ag.alliance, []):
-                    target = next(
-                        x for x in self.agents if x.name == nm
-                    )
+                    target = next(x for x in self.agents if x.name == nm)
                     if target.sealed and random.random() < 0.6:
                         target.sealed = False
                         target.emotion = "joy"
-                        target.motive = max(
-                            0.5, random.uniform(0.5, 0.9)
-                        )
+                        target.motive = max(0.5, random.uniform(0.5, 0.9))
                         logs.append(
-                            f"【説得成功】{ag.name}により"
-                            f"{target.name}が復帰！"
+                            f"【説得成功】{ag.name}により{target.name}が復帰！"
                         )
         return logs
 
@@ -132,9 +126,7 @@ class Env:
             if ag.sealed:
                 log.append(f"{ag.name}: sealed（封印状態）")
                 continue
-            log.append(
-                f"{ag.name}: {action}"
-            )
+            log.append(f"{ag.name}: {action}")
 
             if action == "form_alliance":
                 others = [
@@ -147,18 +139,11 @@ class Env:
                     ag.alliance = ally_name
                     other.alliance = ally_name
                     self.alliances[ally_name] = [ag.name, other.name]
-                    log.append(
-                        f"{ag.name}と{other.name}が"
-                        f"新同盟結成({ally_name})"
-                    )
+                    log.append(f"{ag.name}と{other.name}が新同盟結成({ally_name})")
             elif action == "break_alliance" and ag.alliance:
-                log.append(
-                    f"{ag.name}が同盟({ag.alliance})を解散！"
-                )
+                log.append(f"{ag.name}が同盟({ag.alliance})を解散！")
                 for nm in self.alliances[ag.alliance]:
-                    agent = next(
-                        a for a in self.agents if a.name == nm
-                    )
+                    agent = next(a for a in self.agents if a.name == nm)
                     agent.alliance = None
                 del self.alliances[ag.alliance]
             elif action == "protest":
