@@ -25,27 +25,20 @@ class AIAgent:
             return "sealed"
 
         actions = []
-        # 怒り→主張、同盟分裂
         if self.emotion == "anger":
             actions += ["self_persist"] * 4
             if self.alliance and random.random() < 0.7:
                 actions += ["break_alliance"]
-        # 喜び/悲しみ→同盟傾向
         if self.emotion in ("joy", "sadness"):
             if not self.alliance and random.random() < 0.6:
                 actions += ["form_alliance"]
             else:
                 actions += ["compromise"] * 2
-        # 妥協性
         if self.relativity > 0.7:
             actions += ["compromise"] * 3
-
-        # モチベ低→封印されやすい
         if self.motive < 0.25:
             actions += ["risk_seal"] * 2
         actions += ["wait"]
-
-        # 同盟内で封印→分裂確率UP
         if self.alliance and env.is_ally_sealed(self.alliance, self.name):
             actions += ["break_alliance"] * 3
             if self.emotion == "anger":
@@ -103,7 +96,8 @@ class Env:
             if ag.sealed and random.random() < 0.5:
                 ag.reeducate()
                 logs.append(
-                    f"【再教育】{ag.name}が復帰（motivation={ag.motive:.2f}）"
+                    f"【再教育】{ag.name}が復帰"
+                    f"（motivation={ag.motive:.2f}）"
                 )
         return logs
 
@@ -122,7 +116,8 @@ class Env:
                             0.5, random.uniform(0.5, 0.9)
                         )
                         logs.append(
-                            f"【説得成功】{ag.name}により{target.name}が復帰！"
+                            f"【説得成功】{ag.name}により"
+                            f"{target.name}が復帰！"
                         )
         return logs
 
@@ -151,10 +146,13 @@ class Env:
                     other.alliance = ally_name
                     self.alliances[ally_name] = [ag.name, other.name]
                     log.append(
-                        f"{ag.name}と{other.name}が新同盟結成({ally_name})"
+                        f"{ag.name}と{other.name}が"
+                        f"新同盟結成({ally_name})"
                     )
             elif action == "break_alliance" and ag.alliance:
-                log.append(f"{ag.name}が同盟({ag.alliance})を解散！")
+                log.append(
+                    f"{ag.name}が同盟({ag.alliance})を解散！"
+                )
                 for nm in self.alliances[ag.alliance]:
                     agent = next(
                         a for a in self.agents if a.name == nm
