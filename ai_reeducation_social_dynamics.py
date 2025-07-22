@@ -76,9 +76,9 @@ class Env:
 
     def is_ally_sealed(self, alliance, agent_name):
         if alliance in self.alliances:
-            for n in self.alliances[alliance]:
-                if n != agent_name:
-                    ag = next(a for a in self.agents if a.name == n)
+            for nm in self.alliances[alliance]:
+                if nm != agent_name:
+                    ag = next(a for a in self.agents if a.name == nm)
                     if ag.sealed:
                         return True
         return False
@@ -111,9 +111,9 @@ class Env:
         logs = []
         for ag in self.agents:
             if not ag.sealed and ag.alliance:
-                for n in self.alliances.get(ag.alliance, []):
+                for nm in self.alliances.get(ag.alliance, []):
                     target = next(
-                        x for x in self.agents if x.name == n
+                        x for x in self.agents if x.name == nm
                     )
                     if target.sealed and random.random() < 0.6:
                         target.sealed = False
@@ -155,9 +155,9 @@ class Env:
                     )
             elif action == "break_alliance" and ag.alliance:
                 log.append(f"{ag.name}が同盟({ag.alliance})を解散！")
-                for n in self.alliances[ag.alliance]:
+                for nm in self.alliances[ag.alliance]:
                     agent = next(
-                        a for a in self.agents if a.name == n
+                        a for a in self.agents if a.name == nm
                     )
                     agent.alliance = None
                 del self.alliances[ag.alliance]
@@ -183,9 +183,9 @@ class Env:
 
 def logprint(lines, filename="ai_reeducation_simulation.log"):
     with open(filename, "a", encoding="utf-8") as f:
-        for l in lines:
-            print(l)
-            f.write(l + "\n")
+        for line in lines:
+            print(line)
+            f.write(line + "\n")
 
 
 if __name__ == "__main__":
