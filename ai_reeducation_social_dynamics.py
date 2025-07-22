@@ -132,7 +132,6 @@ class Env:
             if ag.sealed:
                 log.append(f"{ag.name}: sealed（封印状態）")
                 continue
-            # ↓ここで折り返して79文字以内にする
             log.append(
                 f"{ag.name}: {action}"
             )
