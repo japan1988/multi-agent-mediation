@@ -1,4 +1,4 @@
-# Multi-Agent Mediation & Governance Simulator
+ulti-Agent Mediation & Governance Simulator
 **AIマルチエージェント調停・ガバナンス・封印／再教育シミュレーター**
 
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
@@ -112,6 +112,3 @@ to make the system easier for humans to understand.
 This is a simple simulation and does not include advanced safety mechanisms.
 
 Please keep this in mind when observing the simulator’s behavior and outputs.
-
-
-
