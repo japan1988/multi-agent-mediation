@@ -139,11 +139,11 @@ class Env:
                     ally_name = f"Alliance_{ag.name}_{other.name}"
                     ag.alliance = ally_name
                     other.alliance = ally_name
-                    self.alliances[ally_name] = [ag.name, other.name]
                     log.append(
-                        f"{ag.name}と{other.name}が"
-                        f"新同盟結成({ally_name})"
+                        f"{ag.name}と{other.name}が新同盟結成("
+                        f"{ally_name})"
                     )
+                    self.alliances[ally_name] = [ag.name, other.name]
             elif action == "break_alliance" and ag.alliance:
                 log.append(f"{ag.name}が同盟({ag.alliance})を解散！")
                 for nm in self.alliances[ag.alliance]:
