@@ -99,7 +99,7 @@ python ai_mediation_governance_demo.py
 
 ---
 
-## 📝 Note: About “Self” and “Consciousness” Expressions in This AI Simulator (English)
+## 📝 Note: About “Self” and “Consciousness” Expressions in This AI Simulator 
 
 Any appearances of “AI self,” “emotions,” “inner thoughts,” or “self-reflection” in this program/simulator
 are solely for dramatic effect or as part of a pseudo-subjective model.
