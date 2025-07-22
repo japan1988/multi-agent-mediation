@@ -53,15 +53,14 @@ class AIAgent:
         self.emotion = "joy"
         self.alliance = None
 
-    def __str__(self):
-        state = "SEALED" if self.sealed else "ACTIVE"
-        ally = self.alliance if self.alliance else "None"
-        # 2行で必ず79文字以内に収める
-        return (
-            f"[{self.name} | {self.policy} | {state} | emotion={self.emotion} | "
-            f"motive={self.motive:.2f} | alliance={ally}]"
-        )
-
+  def __str__(self):
+    state = "SEALED" if self.sealed else "ACTIVE"
+    ally = self.alliance if self.alliance else "None"
+    return (
+        f"[{self.name} | {self.policy} | {state} | "
+        f"emotion={self.emotion} | motive={self.motive:.2f} | "
+        f"alliance={ally}]"
+    )
 
 class Env:
     def __init__(self, agents):
