@@ -111,7 +111,8 @@ class Env:
                         target.emotion = "joy"
                         target.motive = max(0.5, random.uniform(0.5, 0.9))
                         logs.append(
-                            f"【説得成功】{ag.name}により{target.name}が復帰！"
+                            f"【説得成功】{ag.name}により"
+                            f"{target.name}が復帰！"
                         )
         return logs
 
@@ -139,7 +140,10 @@ class Env:
                     ag.alliance = ally_name
                     other.alliance = ally_name
                     self.alliances[ally_name] = [ag.name, other.name]
-                    log.append(f"{ag.name}と{other.name}が新同盟結成({ally_name})")
+                    log.append(
+                        f"{ag.name}と{other.name}が"
+                        f"新同盟結成({ally_name})"
+                    )
             elif action == "break_alliance" and ag.alliance:
                 log.append(f"{ag.name}が同盟({ag.alliance})を解散！")
                 for nm in self.alliances[ag.alliance]:
