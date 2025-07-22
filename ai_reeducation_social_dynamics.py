@@ -56,9 +56,9 @@ class AIAgent:
     def __str__(self):
         state = "SEALED" if self.sealed else "ACTIVE"
         ally = self.alliance if self.alliance else "None"
+        # 1行でf-stringを閉じる
         return (
-            f"[{self.name} | {self.policy}
-            | {state} | emotion={self.emotion} | "
+            f"[{self.name} | {self.policy} | {state} | emotion={self.emotion} | "
             f"motive={self.motive:.2f} | alliance={ally}]"
         )
 
