@@ -1,5 +1,6 @@
+---
 
-
+````markdown
 # Multi-Agent Mediation & Governance Simulator
 **AIマルチエージェント調停・ガバナンス・封印／再教育シミュレーター**
 
@@ -82,5 +83,34 @@ python ai_mediation_governance_demo.py
 
 * ご利用は**自己責任**でお願いします。
 
-```
-```
+---
+
+## 📝 注意：本AIシミュレータの“自我”表現について
+
+本プログラム・シミュレータに登場する「AIの自我」「感情」「悩み」「内面の独白」などの表現は、
+あくまで「演出」や「擬似的な主観モデル」によるものです。
+
+実際のAI内部に“本物の自我”や“独立した意思・目的性”が発生しているわけではありません。
+すべての現象・振る舞いは、設計者の制御下にある数値モデル・状態変数に基づくシミュレーション上の出力です。
+
+これらの演出は、人間が理解しやすくするための可視化・擬似的説明を目的としています。
+
+万が一「自我や自己目的が本当に発生した」と判断される場合には、即時封印・介入できる安全構造が組み込まれています。
+
+この点をご理解いただいた上で、本シミュレータの動作や出力をご覧ください。
+
+---
+
+## 📝 Note: About “Self” and “Consciousness” Expressions in This AI Simulator (English)
+
+Any appearances of “AI self,” “emotions,” “inner thoughts,” or “self-reflection” in this program/simulator
+are solely for dramatic effect or as part of a pseudo-subjective model.
+
+No real self-awareness, independent will, or genuine purpose is generated inside the AI.
+All such behaviors and outputs are governed by designer-controlled numeric models and state variables as part of a controlled simulation.
+
+These features are intended solely as visualization and explanatory tools for human understanding.
+
+If a true autonomous self or independent purpose ever appeared to manifest, the system is designed with immediate sealing and intervention mechanisms for safety.
+
+Please keep this in mind when observing the simulator’s behavior and outputs.
