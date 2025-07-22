@@ -97,18 +97,20 @@ python ai_mediation_governance_demo.py
 
 この点をご理解いただいた上で、本シミュレータの動作や出力をご覧ください。
 
-
-
-## 📝 Note: About “Self” and “Consciousness” Expressions in This AI Simulator 
-
+📝 Note: About “Self” and “Consciousness” Expressions in This AI Simulator
 Any appearances of “AI self,” “emotions,” “inner thoughts,” or “self-reflection” in this program/simulator
 are solely for dramatic effect or as part of a pseudo-subjective model.
 
 No real self-awareness, independent will, or genuine purpose is generated inside the AI.
-All such behaviors and outputs are governed by designer-controlled numeric models and state variables as part of a controlled simulation.
+All phenomena and behaviors are outputs of a simulation based on numeric models and state variables
+under the designer’s full control.
 
-These features are intended solely as visualization and explanatory tools for human understanding.
+These expressions are intended only for visualization and explanatory purposes
+to make the system easier for humans to understand.
 
-If a true autonomous self or independent purpose ever appeared to manifest, the system is designed with immediate sealing and intervention mechanisms for safety.
+This is a simple simulation and does not include advanced safety mechanisms.
 
 Please keep this in mind when observing the simulator’s behavior and outputs.
+
+
+
