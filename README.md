@@ -42,6 +42,7 @@ This repository provides a **transparent, fully-logged simulator** for compromis
 | `ai_mediation_governance_demo.py`               | マルチエージェント調停・ガバナンス・封印のデモ本体   |
 | `ai_alliance_persuasion_simulator.py`           | AI同盟・説得・封印・復帰シミュレーション             |
 | `multi_agent_mediation_with_reeducation.py`     | 再教育・リストアを含む応用例                           |
+| `ai_reeducation_social_dynamics.py`             | 再教育・社会的ダイナミクスを含む最新シミュレーション例 |
 | `mediation_basic_example.py`                    | 最小構成の基本調停例                                 |
 | `mediation_with_logging.py`                     | ログ保存機能付き調停シミュレータ                      |
 | `ai_governance_mediation_sim.py`                | AIガバナンス指標に基づく調停デモ                      |
