@@ -44,7 +44,7 @@ AI社会における進化と安全制御の基本原則をシンプルに体験
 
 | ファイル名                        | 概要                       |
 | ---------------------------- | ------------------------ |
-| `ai_pacd_simulation_py.py`   | マルチエージェント進化・封印・再教育サンプル本体 |
+| `ai_pacd_simulation_py       | マルチエージェント進化・封印・再教育サンプル本体 |
 | `ai_pacd_simulation_log.txt` | ログファイル出力例                |
 | `requirements.txt`           | 必要なパッケージリスト              |
 | `.github/workflows/`         | GitHub Actions の設定ファイル   |
