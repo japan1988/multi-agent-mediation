@@ -4,6 +4,7 @@ import random
 
 LOG_FILE = "ai_hierarchy_simulation_log.txt"
 
+
 def logprint(line):
     print(line)
     with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -104,4 +105,3 @@ if __name__ == "__main__":
             logprint(a)
         agent_evolve(agents)
     logprint(f"\n【MediatorAI介入ラウンド記録】 {mediator.intervene_log}")
-
