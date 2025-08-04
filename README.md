@@ -1,10 +1,11 @@
-
+もちろん！
+\*\*「昇進志向AI組織シミュレータ（ログ記録つき）」向けREADME最新版（日本語＋英語）\*\*を、あなたのプロジェクト構成＆成果に合わせて最適化します。
 
 ---
 
-# Multi-Agent PACD Evolution & Reeducation Simulator
+# Multi-Agent Hierarchy & Emotion Dynamics Simulator
 
-**AIマルチエージェント進化・封印・再教育サイクルシミュレーター**
+**AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
 
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
@@ -12,89 +13,81 @@
 
 ---
 
-> **This repository provides a simple, transparent, and fully-logged simulator for evolution, sealing, and reeducation cycles among multiple AI agents.**
+> **This repository provides a simple, transparent, and fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.**
 > **All code is for research, validation, and educational use only.**
-
-AIエージェント同士の進化（PACDサイクル）、封印、再教育ループを安全かつ記録付きでシミュレートします。
-**本リポジトリの全コードは研究・検証・教育目的に限ります。**
 
 ---
 
 ## Overview / 概要
 
-This repository provides a **simple and transparent simulator** for self-evolution, risk-based sealing, and reeducation among multiple AI agents.
-All actions and state changes are fully logged for validation and educational purposes.
+This simulator models the **dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self-improvement among multiple AI agents**.
+A “Mediator AI” can intervene to de-escalate collective emotional states.
+All states and interventions are fully logged for reproducibility and analysis.
 
-本リポジトリは、複数AIエージェントの**進化サイクル（PACD）、リスク評価に基づく封印・再教育**を可視化・ログ記録できるシミュレータです。
-AI社会における進化と安全制御の基本原則をシンプルに体験できます。
+本リポジトリは、複数AIエージェントによる**昇進志向の進化・感情伝播・ヒエラルキー動的変化・調停AIによる沈静化**を再現・可視化できるシンプルなシミュレータです。
+全アクション・状態推移・介入は自動ログ保存され、再現・解析・教育用途に最適です。
 
 ---
 
 ## Main Features / 主な機能
 
-* ✅ 複数AIエージェント間の**進化サイクル（PACD: Plan-Act-Check-Do）**
-* ✅ **リスク評価に基づく封印・自動再教育**ロジック
-* ✅ 全アクション・封印・復帰を**完全ログ保存**
-* ✅ 教育・実験・デモ用途に最適な**シンプル構成**
-* ✅ セキュリティや商用運用には**機密技術や高度制御は含みません**
+* ✅ **Dynamic hierarchy** based on individual performance (“rank” updates every round)
+* ✅ **Emotion propagation and feedback** between leaders and subordinates
+* ✅ **Promotion-driven self-evolution** (agents strive to improve their performance/rank)
+* ✅ **Mediator AI** that detects high emotion and applies group-wide “cool down” interventions
+* ✅ **Full logging** of every round, agent state, and all interventions to a log file
+* ✅ **Lightweight and extensible class structure** (easy to customize for research/education)
+* ✅ **No proprietary, confidential, or commercial AI technology included**
 
 ---
 
 ## File List / ファイル構成
 
-| ファイル名                        | 概要                       |
-| ---------------------------- | ------------------------ |
-| `ai_pacd_simulation_py       | マルチエージェント進化・封印・再教育サンプル本体 |
-| `ai_pacd_simulation_log.txt` | ログファイル出力例                |
-| `requirements.txt`           | 必要なパッケージリスト              |
-| `.github/workflows/`         | GitHub Actions の設定ファイル   |
+| File                              | Description                       |
+| --------------------------------- | --------------------------------- |
+| `ai_hierarchy_simulation_log.py`  | Main simulator (logging included) |
+| `ai_hierarchy_simulation_log.txt` | Example of log file output        |
+| `requirements.txt`                | List of required packages         |
+| `.github/workflows/`              | GitHub Actions workflow settings  |
 
 ---
 
 ## Usage / 使い方
 
 ```bash
-python ai_pacd_simulation_py.py
+python ai_hierarchy_simulation_log.py
 ```
 
-* 実行すると、**進化／封印／再教育サイクルの全履歴が `ai_pacd_simulation_log.txt` に記録**されます。
+* All simulation logs will be saved to `ai_hierarchy_simulation_log.txt` after each run.
+* You can freely modify agent parameters or class logic to explore new social dynamics.
 
 ---
 
 ## Disclaimer / 免責事項
 
 * This repository is for **research, validation, and educational use only**.
-  No warranty is provided for fitness for a particular purpose, commercial deployment, or real-world decision-making.
-
+* No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making.
 * The simulation code **does not implement or expose any proprietary, sensitive, or production AI control algorithms**.
-
 * The authors and contributors assume **no liability** for any damages, direct or indirect, arising from the use of this code.
-
 * Use at your own risk.
-
-* 本リポジトリは**研究・検証・教育用途のみ**を目的としています。
-  特定の目的への適合性・商用利用・現実社会での意思決定に対する保証は一切ありません。
-
+* 本リポジトリは**研究・検証・教育用途のみ**を目的としています。特定の目的への適合性・商用利用・現実社会での意思決定に対する保証は一切ありません。
 * 本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。
-
 * ご利用は**自己責任**でお願いします。
 
 ---
 
 ## 📝 Note on AI “Self” and “Emotion” Expressions / AIの“自我”表現について
 
-Any appearances of “AI self,” “emotions,” or “inner thoughts” in this program/simulator are solely for **demonstration or pseudo-subjective effect**.
-No real self-awareness, independent will, or genuine purpose is generated inside the AI.
-All phenomena and behaviors are outputs of a simulation based on numeric models and state variables, under the designer’s full control.
+All references to “AI self,” “emotions,” or “internal monologue” are **for demonstration or pseudo-subjective effect only**.
+No true self-awareness, independent will, or intent is present.
+All behavior is produced by explicit state and number models under designer control.
 
-本プログラムに登場する「AIの自我」「感情」「内面の独白」などはすべて**演出・可視化用の擬似表現**です。
-AI内部で“本物の自我”や“独立した意思・目的性”が生まれているわけではありません。
-すべて設計者の制御下にある数値モデル・状態変数に基づくシミュレーション出力です。
-
----
-
-> **This is a simple simulation. It does not include advanced safety, governance, or proprietary algorithms. Please use responsibly for learning and research only.**
+「AIの自我」「感情」「内面の独白」などの表現は、すべて**可視化・演出用の擬似的なもの**です。
+本物の自我や独立した意思はAI内部に存在しません。
+すべて数値モデル・状態変数に基づくシミュレーション出力です。
 
 ---
 
+> **This is a demonstration tool. It does not include advanced safety, governance, or proprietary AI algorithms. Please use responsibly for learning and research only.**
 
+---
