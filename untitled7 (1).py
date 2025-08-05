@@ -5,7 +5,7 @@ Original file is located at
     https://colab.research.google.com/drive/1l5SVRgV6wNFPz8sBGm6heNYIE2DPPNyj
 """
 
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # ←importは必ずここ（ファイル最上部）！
 
 # 階層ランクのグラフ
 rounds = [1, 2, 3, 4, 5]
@@ -34,4 +34,5 @@ plt.xlabel("Round")
 plt.ylabel("Emotion Level")
 plt.title("Emotion Dynamics")
 plt.legend()
-plt.savefig("emotion_dynamics_sample.
+plt.savefig("emotion_dynamics_sample.png")
+plt.show()
