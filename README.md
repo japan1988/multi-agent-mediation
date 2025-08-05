@@ -41,13 +41,26 @@ A “Mediator AI” can intervene to de-escalate collective emotional states.
 
 ## File List / ファイル構成
 
-| File                                         | Description                                     |
-| -------------------------------------------- | ----------------------------------------------- |
-| `ai_hierarchy_dynamics_full_log_20250804.py` | Main simulator (with full logging, latest ver.) |
-| `ai_hierarchy_simulation_log.txt`            | Example log output file                         |
-| `requirements.txt`                           | List of required Python packages                |
-| `.github/workflows/python-app.yml`           | GitHub Actions workflow settings                |
-| `README.md`                                  | This documentation file                         |
+| File/Folder                                   | Description（内容・役割）                                   |
+|-----------------------------------------------|-----------------------------------------------------------|
+| `.github/workflows/`                          | GitHub Actionsワークフロー設定                              |
+| `tests/`                                      | テストコード・サンプル（自動テスト用）                       |
+| `LICENSE`                                     | ライセンス（MIT）                                          |
+| `README.md`                                   | ドキュメント本体                                           |
+| `agents.yaml`                                 | エージェント定義ファイル                                    |
+| `ai_alliance_persuasion_simulator.py`         | AI同盟形成・説得シミュレータ                               |
+| `ai_governance_mediation_sim.py`              | ガバナンス重視AI調停シミュレータ                            |
+| `ai_hierarchy_dynamics_full_log_20250804.py`  | ヒエラルキー・感情・昇進競争＋ロギングシミュレータ（最新版） |
+| `ai_hierarchy_simulation_log.py`              | シンプルなヒエラルキーシミュレータ（旧版）                  |
+| `ai_mediation_all_in_one.py`                  | AI調停オールインワン（複合機能）                            |
+| `ai_mediation_governance_demo.py`             | ガバナンスデモ付き調停シミュレータ                          |
+| `ai_pacd_simulation.py`                       | PACD（提案→承認→変更→拒否）型シミュレータ                  |
+| `ai_reeducation_social_dynamics.py`           | 再教育・社会ダイナミクスAIシミュレータ                      |
+| `mediation_basic_example.py`                  | 調停AIの基本例                                             |
+| `mediation_process_log.txt.py`                | 調停プロセスログ出力例                                     |
+| `mediation_with_logging.py`                   | ログ付き調停AI                                             |
+| `multi_agent_mediation_with_reeducation.py`   | 再教育付きマルチエージェント調停AI                          |
+| `requirements.txt`                            | 依存パッケージリスト（Python用）                            |
 
 ---
 
