@@ -36,3 +36,4 @@ plt.title("Emotion Dynamics")
 plt.legend()
 plt.savefig("emotion_dynamics_sample.png")
 plt.show()
+　
