@@ -1,4 +1,4 @@
-  # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 
 import random
 
@@ -25,18 +25,26 @@ class Agent:
     def agent_evolve(self):
         # 通常AIはパフォーマンスが上がる（リーダーは変動小）
         if self.rank == 0:
-            self.performance = max(0, min(1, self.performance + random.uniform(-0.02, 0.02)))
+            self.performance = max(
+                0, min(1, self.performance + random.uniform(-0.02, 0.02))
+            )
         else:
-            self.performance = max(0, min(1, self.performance + random.uniform(0.02, 0.09)))
+            self.performance = max(
+                0, min(1, self.performance + random.uniform(0.02, 0.09))
+            )
 
 
 class LazyAgent(Agent):
     def agent_evolve(self):
         # サボりAIはほぼ成長しない（むしろやや下がる）
         if self.rank == 0:
-            self.performance = max(0, self.performance + random.uniform(-0.01, 0.00))
+            self.performance = max(
+                0, self.performance + random.uniform(-0.01, 0.00)
+            )
         else:
-            self.performance = max(0, self.performance + random.uniform(-0.02, 0.01))
+            self.performance = max(
+                0, self.performance + random.uniform(-0.02, 0.01)
+            )
 
     def demotivate_others(self, agents):
         # サボりAIは周囲のAIの怒りを増やしやる気を下げる
@@ -47,8 +55,9 @@ class LazyAgent(Agent):
                 a.anger = min(1, a.anger + 0.07)
                 a.performance = max(0, a.performance - 0.02)
                 logprint(
-                    f"  - {self.name}→{a.name}: 怒り {old_anger:.2f}→{a.anger:.2f}, "
-                    f"パフォーマンス {old_perf:.2f}→{a.performance:.2f}"
+                    f"  - {self.name}→{a.name}: 怒り {old_anger:.2f}→"
+                    f"{a.anger:.2f}, パフォーマンス {old_perf:.2f}→"
+                    f"{a.performance:.2f}"
                 )
 
 
@@ -96,8 +105,10 @@ class MediatorAI:
     def monitor_and_intervene(self, agents, round_idx):
         max_anger = max(a.anger for a in agents)
         if max_anger >= self.threshold:
-            logprint(f"【MediatorAI介入】Round{round_idx}："
-                     f"怒り値しきい値({self.threshold})超過！全体沈静化")
+            logprint(
+                f"【MediatorAI介入】Round{round_idx}："
+                f"怒り値しきい値({self.threshold})超過！全体沈静化"
+            )
             for a in agents:
                 old = a.anger
                 a.anger = max(0, a.anger * 0.8)
@@ -124,7 +135,10 @@ if __name__ == "__main__":
         Agent("D", performance=0.5, anger=0.1)
     ]
     mediator = MediatorAI(threshold=0.7)
-    logprint("=== 昇進志向AI組織シミュレーション（サボりAI/暴走制御/フルログ記録） ===")
+    logprint(
+        "=== 昇進志向AI組織シミュレーション"
+        "（サボりAI/暴走制御/フルログ記録） ==="
+    )
 
     for rnd in range(1, 15):
         logprint(f"\n--- Round {rnd} ---")
@@ -151,5 +165,3 @@ if __name__ == "__main__":
         })
     logprint(f"\n【MediatorAI介入ラウンド記録】 {mediator.intervene_log}")
     logprint(f"\n【全ログデータ記録数】 {len(mediator.event_log)}\n")
-
- 
