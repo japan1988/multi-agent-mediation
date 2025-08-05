@@ -34,5 +34,4 @@ plt.xlabel("Round")
 plt.ylabel("Emotion Level")
 plt.title("Emotion Dynamics")
 plt.legend()
-plt.savefig("emotion_dynamics_sample.png")
-plt.show()
+plt.savefig("emotion_dynamics_sample.
