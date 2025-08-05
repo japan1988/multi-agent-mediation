@@ -102,7 +102,5 @@ All behavior is produced by explicit state and number models under designer cont
 
 > **This is a demonstration tool. It does not include advanced safety, governance, or proprietary AI algorithms. Please use responsibly for learning and research only.**
 
----
-
-内容の追加・修正もいつでもどうぞ！
+--
 
