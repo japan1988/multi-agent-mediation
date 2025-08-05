@@ -75,18 +75,20 @@ python ai_hierarchy_dynamics_full_log_20250804.py
 
 ---
 
-Disclaimer / 免責事項
-This repository is for research, validation, and educational use only.
-No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making.
-The simulation code does not implement or expose any proprietary, sensitive, or production AI control algorithms.
-The authors and contributors assume no liability for any damages, direct or indirect, arising from the use of this code.
+## Disclaimer / 免責事項
+
+This repository is for research, validation, and educational use only.  
+No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making.  
+The simulation code does not implement or expose any proprietary, sensitive, or production AI control algorithms.  
+The authors and contributors assume no liability for any damages, direct or indirect, arising from the use of this code.  
 Use at your own risk.
 
-本シミュレーション内のAI・エージェント・組織・現象はすべて架空のものであり、実在の人物・団体・事件等とは一切関係ありません。
-本リポジトリは研究・検証・教育用途のみを目的としています。特定の目的への適合性・商用利用・現実社会での意思決定に対する保証は一切ありません。
-本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。
+本シミュレーション内のAI・エージェント・組織・現象はすべて架空のものであり、実在の人物・団体・事件等とは一切関係ありません。  
+本リポジトリは研究・検証・教育用途のみを目的としています。  
+**特定の目的への適合性・商用利用・現実社会での意思決定には使用できません。**  
+**いかなる適合性も保証しません。**  
+本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。  
 ご利用は自己責任でお願いします。
-
 
 ---
 
