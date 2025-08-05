@@ -1,5 +1,4 @@
 
-
 ---
 
 # Multi-Agent Hierarchy & Emotion Dynamics Simulator
@@ -12,7 +11,7 @@
 
 ---
 
-> **This repository provides a simple, transparent, and fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.**
+> **This repository provides a transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.**
 > **All code is for research, validation, and educational use only.**
 
 ---
@@ -21,10 +20,10 @@
 
 This simulator models the **dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self-improvement among multiple AI agents**.
 A “Mediator AI” can intervene to de-escalate collective emotional states.
-All states and interventions are fully logged for reproducibility and analysis.
+**All states and interventions are fully logged for reproducibility and analysis.**
 
 本リポジトリは、複数AIエージェントによる**昇進志向の進化・感情伝播・ヒエラルキー動的変化・調停AIによる沈静化**を再現・可視化できるシンプルなシミュレータです。
-全アクション・状態推移・介入は自動ログ保存され、再現・解析・教育用途に最適です。
+**全アクション・状態推移・介入は自動ログ保存され、再現・解析・教育用途に最適です。**
 
 ---
 
@@ -42,23 +41,24 @@ All states and interventions are fully logged for reproducibility and analysis.
 
 ## File List / ファイル構成
 
-| File                              | Description                       |
-| --------------------------------- | --------------------------------- |
-| `ai_hierarchy_simulation_log.py`  | Main simulator (logging included) |
-| `ai_hierarchy_simulation_log.txt` | Example of log file output        |
-| `requirements.txt`                | List of required packages         |
-| `.github/workflows/`              | GitHub Actions workflow settings  |
+| File                                         | Description                                     |
+| -------------------------------------------- | ----------------------------------------------- |
+| `ai_hierarchy_dynamics_full_log_20250804.py` | Main simulator (with full logging, latest ver.) |
+| `ai_hierarchy_simulation_log.txt`            | Example log output file                         |
+| `requirements.txt`                           | List of required Python packages                |
+| `.github/workflows/python-app.yml`           | GitHub Actions workflow settings                |
+| `README.md`                                  | This documentation file                         |
 
 ---
 
 ## Usage / 使い方
 
 ```bash
-python ai_hierarchy_simulation_log.py
+python ai_hierarchy_dynamics_full_log_20250804.py
 ```
 
 * All simulation logs will be saved to `ai_hierarchy_simulation_log.txt` after each run.
-* You can freely modify agent parameters or class logic to explore new social dynamics.
+* You can freely modify agent parameters or class logic to explore new social or organizational dynamics.
 
 ---
 
@@ -90,3 +90,6 @@ All behavior is produced by explicit state and number models under designer cont
 > **This is a demonstration tool. It does not include advanced safety, governance, or proprietary AI algorithms. Please use responsibly for learning and research only.**
 
 ---
+
+内容の追加・修正もいつでもどうぞ！
+
