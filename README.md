@@ -90,6 +90,7 @@ Use at your own risk.
 本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。  
 ご利用は自己責任でお願いします。
 
+
 ---
 
 ## 📝 Note on AI “Self” and “Emotion” Expressions / AIの“自我”表現について
