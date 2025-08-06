@@ -1,29 +1,18 @@
-MIT License
-
 Copyright (c) 2024 Japan1988
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+本ソフトウェアおよび付属ドキュメントの利用は、個人・教育・研究目的に限り無償で許可します。
+商用利用・営利目的での使用・再配布・販売は一切禁止します。
+著作権表示およびこのライセンス文を削除しないでください。
+本ソフトウェアは現状有姿（as-is）で提供され、いかなる保証もありません。
+利用により生じたいかなる損害についても、作者は責任を負いません。
 
 ---
 
-【日本語補足】
-- このAIシミュレータはMITライセンスです。個人・法人・教育・研究・いずれでも無償で利用できます。
-- 改変・再配布・派生物の作成も自由。ただし「このライセンス文」と「著作権表示（Japan1988）」は削除しないでください。
-- ソフトウェアは現状有姿（as-is）で提供され、作者は一切の責任を負いません。
+【English Version】
 
+Copyright (c) 2024 Japan1988
+
+This software and accompanying documentation may be used free of charge for personal, educational, or research purposes only.
+Commercial use, redistribution, or sale is strictly prohibited.
+Do not remove this license or the copyright notice.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. THE AUTHOR ASSUMES NO LIABILITY FOR ANY DAMAGES ARISING FROM THE USE OF THIS SOFTWARE.
