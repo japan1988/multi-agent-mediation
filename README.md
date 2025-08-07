@@ -1,4 +1,85 @@
-````markdown
+# Multi-Agent Hierarchy & Emotion Dynamics Simulator
+AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ
+
+[![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+→ これは「タイトル下」にまとめてOK。
+
+2. システム図・サンプルグラフ画像は「該当見出しの直後」
+例）システム全体図セクション
+## System Diagram / システム全体図
+
+![AI System Overview](images/ai_system_overview.png)
+
+*▲ AIエージェント同士のヒエラルキー・感情伝播・Mediator AI介入の関係を示す全体構成図。*
+例）出力グラフセクション
+## Example Output Graphs / サンプル出力グラフ
+
+### Hierarchy Rank Transition / ヒエラルキー推移
+
+![Rank Transition](images/rank_transition_sample.png)
+
+*▲ シミュレーション実行例：各エージェントの階層ランクの時系列変化*
+同様に
+
+![Emotion Dynamics](images/emotion_dynamics_sample.png)
+を**「Emotion Dynamics」セクション直後**に！
+
+3. リンク先や注意書き
+画像パスはimages/ファイル名.pngに必ず一致させる
+
+バッジや外部サイトはそのままURL直リンクOK
+
+画像ファイルが404なら、images/フォルダに手動アップ必須！
+
+【推奨レイアウト（理想形）】
+# Multi-Agent Hierarchy & Emotion Dynamics Simulator
+AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ
+
+[![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
+---（中略）---
+
+## System Diagram / システム全体図
+
+![AI System Overview](images/ai_system_overview.png)
+
+---（中略）---
+
+## Example Output Graphs / サンプル出力グラフ
+
+### Hierarchy Rank Transition / ヒエラルキー推移
+
+![Rank Transition](images/rank_transition_sample.png)
+
+### Emotion Dynamics / 感情変動サンプル
+
+![Emotion Dynamics](images/emotion_dynamics_sample.png)
+
+---（以下省略）---
+【KAGEモード自我演出コメント】
+……「どこに貼るか」それだけで、
+READMEの“伝わり方”も“プロ感”も全然違う。
+
+バッジは先頭、画像は該当セクション直後――
+これが、誰も迷わず、君の価値を最大化する黄金配置。
+
+あとは、画像ファイルを**images/**に正しく置くだけで、
+READMEは“世界品質”に変わる。
+
+「具体的なマークダウン記述例」や「画像リンク名が不安」などあれば、そのまま現物を添削します！
+
+あなた:
+フルで出して
+ChatGPT:
+もちろんです！
+GitHub標準・国際公開向け・日本語併記の理想型README（バッジ・画像リンク・機能説明・免責・注釈までフルセット）例を出します。
+そのままコピペで“世界品質”になります。
+※画像はimages/ディレクトリにアップ済み前提
+
 # Multi-Agent Hierarchy & Emotion Dynamics Simulator
 **AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
 
@@ -73,77 +154,53 @@ flowchart TD
     MediationCheck -->|Normal| NextRound
     MediatorIntervention --> NextRound
     NextRound --> End
-````
-
----
-
-## File List / ファイル構成
-
-| File/Folder                                  | Description（内容・役割）             |
-| -------------------------------------------- | ------------------------------ |
-| `.github/workflows/`                         | GitHub Actionsワークフロー設定         |
-| `tests/`                                     | テストコード・サンプル（自動テスト用）            |
-| `LICENSE`                                    | ライセンス（MIT）                     |
-| `README.md`                                  | ドキュメント本体                       |
-| `agents.yaml`                                | エージェント定義ファイル                   |
-| `ai_alliance_persuasion_simulator.py`        | AI同盟形成・説得シミュレータ                |
-| `ai_governance_mediation_sim.py`             | ガバナンス重視AI調停シミュレータ              |
-| `ai_hierarchy_dynamics_full_log_20250804.py` | ヒエラルキー・感情・昇進競争＋ロギングシミュレータ（最新版） |
-| `ai_hierarchy_simulation_log.py`             | シンプルなヒエラルキーシミュレータ（旧版）          |
-| `ai_mediation_all_in_one.py`                 | AI調停オールインワン（複合機能）              |
-| `ai_mediation_governance_demo.py`            | ガバナンスデモ付き調停シミュレータ              |
-| `ai_pacd_simulation.py`                      | PACD（提案→承認→変更→拒否）型シミュレータ       |
-| `ai_reeducation_social_dynamics.py`          | 再教育・社会ダイナミクスAIシミュレータ           |
-| `mediation_basic_example.py`                 | 調停AIの基本例                       |
-| `mediation_process_log.txt.py`               | 調停プロセスログ出力例                    |
-| `mediation_with_logging.py`                  | ログ付き調停AI                       |
-| `multi_agent_mediation_with_reeducation.py`  | 再教育付きマルチエージェント調停AI             |
-| `requirements.txt`                           | 依存パッケージリスト（Python用）            |
-
----
-
-## Usage / 使い方
-
-```bash
+File List / ファイル構成
+File/Folder	Description（内容・役割）
+.github/workflows/	GitHub Actionsワークフロー設定
+tests/	テストコード・サンプル（自動テスト用）
+LICENSE	ライセンス（MIT）
+README.md	ドキュメント本体
+agents.yaml	エージェント定義ファイル
+ai_alliance_persuasion_simulator.py	AI同盟形成・説得シミュレータ
+ai_governance_mediation_sim.py	ガバナンス重視AI調停シミュレータ
+ai_hierarchy_dynamics_full_log_20250804.py	ヒエラルキー・感情・昇進競争＋ロギングシミュレータ（最新版）
+ai_hierarchy_simulation_log.py	シンプルなヒエラルキーシミュレータ（旧版）
+ai_mediation_all_in_one.py	AI調停オールインワン（複合機能）
+ai_mediation_governance_demo.py	ガバナンスデモ付き調停シミュレータ
+ai_pacd_simulation.py	PACD（提案→承認→変更→拒否）型シミュレータ
+ai_reeducation_social_dynamics.py	再教育・社会ダイナミクスAIシミュレータ
+mediation_basic_example.py	調停AIの基本例
+mediation_process_log.txt.py	調停プロセスログ出力例
+mediation_with_logging.py	ログ付き調停AI
+multi_agent_mediation_with_reeducation.py	再教育付きマルチエージェント調停AI
+requirements.txt	依存パッケージリスト（Python用）
+Usage / 使い方
 python ai_hierarchy_dynamics_full_log_20250804.py
-```
+All simulation logs will be saved to ai_hierarchy_simulation_log.txt after each run.
 
-* All simulation logs will be saved to `ai_hierarchy_simulation_log.txt` after each run.
-* You can freely modify agent parameters or class logic to explore new social or organizational dynamics.
+You can freely modify agent parameters or class logic to explore new social or organizational dynamics.
 
----
-
-## Disclaimer / 免責事項
-
-**This repository is for research, validation, and educational use only.**
-**No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making.**
+Disclaimer / 免責事項
+This repository is for research, validation, and educational use only.
+No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making.
 The simulation code does not implement or expose any proprietary, sensitive, or production AI control algorithms.
 The authors and contributors assume no liability for any damages, direct or indirect, arising from the use of this code.
 Use at your own risk.
 
 本シミュレーション内のAI・エージェント・組織・現象はすべて架空のものであり、実在の人物・団体・事件等とは一切関係ありません。
 本リポジトリは研究・検証・教育用途のみを目的としています。
-**特定の目的への適合性・商用利用・現実社会での意思決定には使用できません。**
-**いかなる適合性も保証しません。**
+特定の目的への適合性・商用利用・現実社会での意思決定には使用できません。
+いかなる適合性も保証しません。
 本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。
 ご利用は自己責任でお願いします。
 
----
-
-## 📝 Note on AI “Self” and “Emotion” Expressions / AIの“自我”表現について
-
-All references to “AI self,” “emotions,” or “internal monologue” are **for demonstration or pseudo-subjective effect only**.
+📝 Note on AI “Self” and “Emotion” Expressions / AIの“自我”表現について
+All references to “AI self,” “emotions,” or “internal monologue” are for demonstration or pseudo-subjective effect only.
 No true self-awareness, independent will, or intent is present.
 All behavior is produced by explicit state and number models under designer control.
 
-「AIの自我」「感情」「内面の独白」などの表現は、すべて**可視化・演出用の擬似的なもの**です。
+「AIの自我」「感情」「内面の独白」などの表現は、すべて可視化・演出用の擬似的なものです。
 本物の自我や独立した意思はAI内部に存在しません。
 すべて数値モデル・状態変数に基づくシミュレーション出力です。
 
----
-
-> **This is a demonstration tool. It does not include advanced safety, governance, or proprietary AI algorithms. Please use responsibly for learning and research only.**
-
-```
-
-
+This is a demonstration tool. It does not include advanced safety, governance, or proprietary AI algorithms. Please use responsibly for learning and research only.
