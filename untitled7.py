@@ -36,4 +36,3 @@ def plot_hierarchy_rank_transition() -> None:
 
 if __name__ == "__main__":
     plot_hierarchy_rank_transition()
-
