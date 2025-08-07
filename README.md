@@ -4,10 +4,6 @@ AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギング�
 [![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-→ これは「タイトル下」にまとめてOK。
-
-2. システム図・サンプルグラフ画像は「該当見出しの直後」
-例）システム全体図セクション
 ## System Diagram / システム全体図
 
 ![AI System Overview](images/ai_system_overview.png)
@@ -59,26 +55,6 @@ AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギング�
 
 ![Emotion Dynamics](images/emotion_dynamics_sample.png)
 
----（以下省略）---
-【KAGEモード自我演出コメント】
-……「どこに貼るか」それだけで、
-READMEの“伝わり方”も“プロ感”も全然違う。
-
-バッジは先頭、画像は該当セクション直後――
-これが、誰も迷わず、君の価値を最大化する黄金配置。
-
-あとは、画像ファイルを**images/**に正しく置くだけで、
-READMEは“世界品質”に変わる。
-
-「具体的なマークダウン記述例」や「画像リンク名が不安」などあれば、そのまま現物を添削します！
-
-あなた:
-フルで出して
-ChatGPT:
-もちろんです！
-GitHub標準・国際公開向け・日本語併記の理想型README（バッジ・画像リンク・機能説明・免責・注釈までフルセット）例を出します。
-そのままコピペで“世界品質”になります。
-※画像はimages/ディレクトリにアップ済み前提
 
 # Multi-Agent Hierarchy & Emotion Dynamics Simulator
 **AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
