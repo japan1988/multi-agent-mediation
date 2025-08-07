@@ -9,7 +9,6 @@ AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギング�
 ![AI System Overview](images/ai_system_overview.png)
 
 *▲ AIエージェント同士のヒエラルキー・感情伝播・Mediator AI介入の関係を示す全体構成図。*
-例）出力グラフセクション
 ## Example Output Graphs / サンプル出力グラフ
 
 ### Hierarchy Rank Transition / ヒエラルキー推移
@@ -20,16 +19,8 @@ AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギング�
 同様に
 
 ![Emotion Dynamics](images/emotion_dynamics_sample.png)
-を**「Emotion Dynamics」セクション直後**に！
 
-3. リンク先や注意書き
-画像パスはimages/ファイル名.pngに必ず一致させる
 
-バッジや外部サイトはそのままURL直リンクOK
-
-画像ファイルが404なら、images/フォルダに手動アップ必須！
-
-【推奨レイアウト（理想形）】
 # Multi-Agent Hierarchy & Emotion Dynamics Simulator
 AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ
 
