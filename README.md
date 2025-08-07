@@ -38,16 +38,7 @@ AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギング�
 
 ### Emotion Dynamics / 感情変動サンプル
 
-![Emotion Dynamics](images/emotion_dynamics_sample.png)
-
-
-# Multi-Agent Hierarchy & Emotion Dynamics Simulator
-**AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
-
-[![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-
+![Emotion Dynamics](images/emotion_dynamics_sample.
 ---
 
 > **This repository provides a transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.**  
