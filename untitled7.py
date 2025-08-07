@@ -10,6 +10,7 @@ Original file is located at
 
 import matplotlib.pyplot as plt  # type: ignore
 
+
 def plot_hierarchy_rank_transition() -> None:
     """
     ラウンドごとのエージェント階層ランク遷移をグラフ描画し、PNG保存も行う。
@@ -32,5 +33,7 @@ def plot_hierarchy_rank_transition() -> None:
     plt.savefig("rank_transition_sample.png")
     plt.show()
 
+
 if __name__ == "__main__":
     plot_hierarchy_rank_transition()
+
