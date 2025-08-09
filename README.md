@@ -2,6 +2,10 @@
 
 **AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
+![CI Status](https://img.shields.io/github/actions/workflow/status/USERNAME/REPO/python-app.yml?branch=main)
+
 > Transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.
 > 研究・検証・教育用途のみ（商用/実運用不可）。
 
@@ -72,8 +76,6 @@ flowchart TD
 | `mediation_process_log.txt.py`               | 調停プロセスログ出力例              |
 | `multi_agent_mediation_with_reeducation.py`  | 再教育付きマルチエージェント調停AI       |
 
-> 注: 実際のファイル名はリポジトリの最新状態に合わせて更新してください。
-
 ---
 
 ## Requirements / 必要要件
@@ -86,7 +88,6 @@ pip install -r requirements.txt
 ```
 
 > Lint/Type check（任意）:
-> `flake8`, `mypy` を使う場合は次の通り。
 >
 > ```bash
 > pip install flake8 mypy types-matplotlib
@@ -98,59 +99,16 @@ pip install -r requirements.txt
 
 ## Usage / 使い方
 
-### Quick Run / クイック実行
-
 ```bash
 python ai_hierarchy_dynamics_full_log_20250804.py
 ```
 
-All simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after each run.
-
-各エージェントのパラメータやクラスロジックを自由に変更して、組織・社会ダイナミクスの振る舞い差を探索できます。
-
-### CLI Options（例）
-
-
-```bash
-python ai_hierarchy_dynamics_full_log_20250804.py \
-  --rounds 30 \
-  --seed 20250809 \
-  --threshold 0.65 \
-  --log ai_hierarchy_simulation_log.txt
-```
-
----
-
-## Reproducibility / 再現性
-
-* 乱数シードを明示設定すると結果が再現できます（`--seed`）。
-* すべての状態・介入がログに記録され、解析しやすくなっています。
+Simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after each run.
 
 ---
 
 ## Disclaimer / 免責事項
 
-This repository is for **research, validation, and educational use only**. No warranty is provided for fitness for any particular purpose, commercial deployment, or real‑world decision‑making. The simulation code does **not** implement or expose proprietary, sensitive, or production AI control algorithms. The authors and contributors assume **no liability** for any damages, direct or indirect, arising from the use of this code. **Use at your own risk.**
+This repository is for **research, validation, and educational use only**. No warranty is provided for fitness for any particular purpose, commercial deployment, or real‑world decision‑making. The simulation code does **not** implement or expose proprietary, sensitive, or production AI control algorithms.
 
-本シミュレーション内のAI・エージェント・組織・現象はすべて架空です。商用利用・現実社会での意思決定には使用できません。いかなる適合性も保証しません。本コードの利用により生じたいかなる損害・トラブルについても、作者・貢献者は一切の責任を負いません。**自己責任**でご利用ください。
-
----
-
-## Note on AI “Self” & “Emotion” Expressions / AIの“自我”・“感情”表現について
-
-All references to “AI self,” “emotions,” or “internal monologue” are for demonstration or pseudo‑subjective effect only. No true self‑awareness, independent will, or intent is present. All behavior is produced by **explicit state & number models under designer control**.
-
-「AIの自我」「感情」「内面の独白」などの表現は、可視化・演出用の擬似的なものです。本物の自我や独立した意思はAI内部に存在しません。すべて数値モデル・状態変数に基づくシミュレーション出力です。
-
----
-
-## License / ライセンス
-
-This project is licensed under the **MIT License**.
-本プロジェクトは **MIT ライセンス** で配布します。
-
----
-
-## Contributing / コントリビューション
-
-Issues や Pull Request を歓迎します。再現手順・期待値・ログ断片など、**検証可能な情報**を添えてご提案ください。
+本シミュレーション内のAI・エージェント・組織・現象はすべて架空です。商用利用・現実社会での意思決定には使用できません。
