@@ -110,7 +110,6 @@ All simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after
 
 ### CLI Options（例）
 
-> *注: 例示。実装に応じて変更してください。*
 
 ```bash
 python ai_hierarchy_dynamics_full_log_20250804.py \
