@@ -7,6 +7,35 @@
 
 **AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
 
+# docs/images フォルダ作成
+mkdir -p docs/images
+
+# グラフ生成用スクリプト実行（例）
+python - << 'PY'
+from rank_transition_sample import run_simulation
+import matplotlib.pyplot as plt
+
+steps = 50
+rates = run_simulation(steps=steps, mediation_strength=0.5)
+
+plt.figure(figsize=(6, 4))
+plt.plot(range(steps), rates, marker="o", label="Follower Rate")
+plt.ylim(0.0, 1.0)
+plt.xlabel("Step")
+plt.ylabel("Rule Followers Rate")
+plt.title("Rule Following Rate Over Time")
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.savefig("docs/images/simulation_example.png")
+plt.close()
+print("Saved: docs/images/simulation_example.png")
+PY
+
+# コミット＆プッシュ
+git add docs/images/simulation_example.png
+git commit -m "Add simulation example graph for README"
+git push
 
 
 > Transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.
