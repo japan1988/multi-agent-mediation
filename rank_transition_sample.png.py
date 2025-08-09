@@ -6,10 +6,8 @@ Hierarchy Rank Transition plotter
 """
 
 from typing import List
-
 import matplotlib  # CI等のGUIなし環境でもOKにする
 matplotlib.use("Agg")
-
 import matplotlib.pyplot as plt  # type: ignore[import-not-found]
 
 
