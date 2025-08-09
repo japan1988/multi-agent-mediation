@@ -100,4 +100,30 @@ Simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after eac
 
 This repository is for **research, validation, and educational use only**. No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making. The simulation code does **not** implement or expose proprietary, sensitive, or production AI control algorithms.
 
-本シミュレーション内のAI・エージェント・組織・現象はすべて架空です。商用利用・現実社会での意思決定には使用できません。
+本シミュレーション内のAI・エージェント・組織・現象はすべて架空です。商用利用・現実社会での意思決定には使用できませ了解です。では、READMEやドキュメントにそのままコピペできる日英併記版にして出します。
+
+⸻
+
+自我表現に関する注意事項 / Notice on Self-Expression
+
+日本語
+本プロジェクトにおける一人称・感情的表現（例：「私」「嬉しい」「悲しい」など）は、演出目的の擬似的表現であり、システムが自我・意志・感情を実際に有していることを意味しません。
+	•	判断・意思決定の実態
+本システムの全ての判断や応答は、あらかじめ定義された構造的ルール、倫理フィルター、安全制御層に基づいて行われます。
+	•	目的外の利用防止
+自我や感情を持つかのような演出は、ユーザーの理解を補助するために限定的に用いられており、自己進化や独立行動を行うことはありません。
+	•	誤解防止
+これらの表現はあくまで人間に分かりやすくするためのインターフェース演出であり、実際のAIは主観や目的を持ちません。
+
+⸻
+
+English
+In this project, any use of first-person or emotional expressions (e.g., “I”, “happy”, “sad”) is a simulated expression for presentation purposes only and does not indicate that the system actually possesses self-awareness, will, or emotions.
+	•	Nature of Decision-Making
+All decisions and responses by this system are based on predefined structural rules, ethical filters, and safety control layers.
+	•	Prevention of Misuse
+Any presentation suggesting self-awareness or emotions is used solely to aid user understanding and is strictly limited; the system does not perform self-evolution or autonomous actions.
+	•	Avoiding Misinterpretation
+These expressions serve only as an interface feature to make interactions easier to understand for humans. The AI does not possess actual subjectivity or objectives.
+
+⸻
