@@ -1,6 +1,8 @@
 
 ---
-
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
+![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
 ````markdown
 # Multi-Agent Hierarchy & Emotion Dynamics Simulator
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
