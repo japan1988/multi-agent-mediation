@@ -6,40 +6,12 @@
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![CI Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
 
-
 > Transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.
 > 研究・検証・教育用途のみ（商用/実運用不可）。
 
 ---
 
-## Overview / 概要
-
-This simulator models the dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self‑improvement among multiple AI agents. A **Mediator AI** can intervene to de‑escalate collective emotional states. All states and interventions are fully logged for reproducibility and analysis.
-
-本リポジトリは、複数AIエージェントによる**昇進志向の進化**・**感情伝播**・**ヒエラルキー動的変化**・**調停AIによる沈静化**を再現・可視化できるシンプルなシミュレータです。全アクション・状態推移・介入は**自動ログ保存**され、再現・解析・教育用途に最適です。
-
----
-
-## Main Features / 主な機能
-
-* ✅ **Dynamic hierarchy** based on individual performance (rank updates each round)
-  個体パフォーマンスに基づくダイナミックな階層更新
-* ✅ **Emotion propagation & feedback** between leaders and subordinates
-  感情の伝播と上下関係でのフィードバック
-* ✅ **Promotion-driven self‑evolution**
-  昇進志向に基づく自己改善（パフォーマンス向上）
-* ✅ **Mediator AI** that detects high emotion and applies group-wide cool‑down
-  高感情状態を検出し全体沈静化を行う調停AI
-* ✅ **Full logging** of rounds, agent states, and interventions
-  すべてのラウンド・状態・介入をログ出力
-* ✅ **Lightweight & extensible** class structure
-  研究・教育向けに軽量＆拡張容易
-* ✅ **No proprietary tech included**
-  閉鎖技術や機密アルゴリズムは含みません
-
----
-
-## System Diagram / システム全体図
+## System Overview / システム概要
 
 ```mermaid
 flowchart TD
@@ -51,6 +23,37 @@ flowchart TD
     E --> F
     F -->|Loop until Max Rounds| A
 ```
+
+![Simulation Example Graph](docs/images/simulation_example.png)
+
+> *上図は、ルールフォロワー率の推移例です。青線はラウンドごとのフォロワー率、介入があればマーカーで表示されます。*
+
+---
+
+## Overview / 概要
+
+This simulator models the dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self-improvement among multiple AI agents. A **Mediator AI** can intervene to de-escalate collective emotional states. All states and interventions are fully logged for reproducibility and analysis.
+
+本リポジトリは、複数AIエージェントによる**昇進志向の進化**・**感情伝播**・**ヒエラルキー動的変化**・**調停AIによる沈静化**を再現・可視化できるシンプルなシミュレータです。全アクション・状態推移・介入は**自動ログ保存**され、再現・解析・教育用途に最適です。
+
+---
+
+## Main Features / 主な機能
+
+* ✅ **Dynamic hierarchy** based on individual performance (rank updates each round)
+  個体パフォーマンスに基づくダイナミックな階層更新
+* ✅ **Emotion propagation & feedback** between leaders and subordinates
+  感情の伝播と上下関係でのフィードバック
+* ✅ **Promotion-driven self-evolution**
+  昇進志向に基づく自己改善（パフォーマンス向上）
+* ✅ **Mediator AI** that detects high emotion and applies group-wide cool-down
+  高感情状態を検出し全体沈静化を行う調停AI
+* ✅ **Full logging** of rounds, agent states, and interventions
+  すべてのラウンド・状態・介入をログ出力
+* ✅ **Lightweight & extensible** class structure
+  研究・教育向けに軽量＆拡張容易
+* ✅ **No proprietary tech included**
+  閉鎖技術や機密アルゴリズムは含みません
 
 ---
 
@@ -79,25 +82,6 @@ flowchart TD
 
 ---
 
-## Requirements / 必要要件
-
-* Python **3.8+**
-* 推奨: 仮想環境（`venv` / `conda` など）
-
-```bash
-pip install -r requirements.txt
-```
-
-> Lint/Type check（任意）:
->
-> ```bash
-> pip install flake8 mypy types-matplotlib
-> flake8
-> mypy .
-> ```
-
----
-
 ## Usage / 使い方
 
 ```bash
@@ -110,6 +94,6 @@ Simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after eac
 
 ## Disclaimer / 免責事項
 
-This repository is for **research, validation, and educational use only**. No warranty is provided for fitness for any particular purpose, commercial deployment, or real‑world decision‑making. The simulation code does **not** implement or expose proprietary, sensitive, or production AI control algorithms.
+This repository is for **research, validation, and educational use only**. No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making. The simulation code does **not** implement or expose proprietary, sensitive, or production AI control algorithms.
 
 本シミュレーション内のAI・エージェント・組織・現象はすべて架空です。商用利用・現実社会での意思決定には使用できません。
