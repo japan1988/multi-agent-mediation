@@ -6,39 +6,13 @@ AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギング�
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ## System Diagram / システム全体図
 
-![AI System Overview](images/ai_system_overview.png)
 
-*▲ AIエージェント同士のヒエラルキー・感情伝播・Mediator AI介入の関係を示す全体構成図。*
-## Example Output Graphs / サンプル出力グラフ
-
-### Hierarchy Rank Transition / ヒエラルキー推移
-
-![Rank Transition](images/rank_transition_sample.png)
-
-*▲ シミュレーション実行例：各エージェントの階層ランクの時系列変化*
-同様に
-
-![Emotion Dynamics](images/emotion_dynamics_sample.png)
 
 
 # Multi-Agent Hierarchy & Emotion Dynamics Simulator
 AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ
 
-## System Diagram / システム全体図
 
-![AI System Overview](images/ai_system_overview.png)
-
----（中略）---
-
-## Example Output Graphs / サンプル出力グラフ
-
-### Hierarchy Rank Transition / ヒエラルキー推移
-
-![Rank Transition](images/rank_transition_sample.png)
-
-### Emotion Dynamics / 感情変動サンプル
-
-![Emotion Dynamics](images/emotion_dynamics_sample.
 ---
 
 > **This repository provides a transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.**  
