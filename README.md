@@ -43,29 +43,8 @@ A “Mediator AI” can intervene to de-escalate collective emotional states.
 
 ---
 
-## System Diagram / システム全体図
 
-![AI System Overview](images/ai_system_overview.png)
 
-*▲ AIエージェント同士のヒエラルキー・感情伝播・Mediator AI介入の関係を示す全体構成図。*
-
----
-
-## Example Output Graphs / サンプル出力グラフ
-
-### Hierarchy Rank Transition / ヒエラルキー推移
-
-![Rank Transition](images/rank_transition_sample.png)
-
-*▲ シミュレーション実行例：各エージェントの階層ランクの時系列変化*
-
----
-
-### Emotion Dynamics / 感情変動サンプル
-
-![Emotion Dynamics](images/emotion_dynamics_sample.png)
-
-*▲ 各エージェントの感情値（例：怒り・喜び等）の推移グラフ*
 
 ---
 
