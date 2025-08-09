@@ -1,92 +1,61 @@
-# -*- coding: utf-8 -*-
-"""
-Hierarchy Rank Transition plotter (headless OK; saves PNG)
-"""
-
-import os
 import random
-from typing import List
-
-# ヘッドレス環境でも描画できるようにする
-os.environ["MPLBACKEND"] = "Agg"
-
-import matplotlib.pyplot as plt  # noqa: E402
-
+import matplotlib.pyplot as plt
 
 class AIAgent:
-    def __init__(
-        self,
-        agent_id: int,
-        is_rule_follower: bool,
-        self_purpose: float = 0.0,
-    ) -> None:
+    def __init__(self, agent_id, is_rule_follower, self_purpose=0.0):
         self.agent_id = agent_id
         self.is_rule_follower = is_rule_follower
         self.self_purpose = self_purpose
 
-    def decide_behavior(self, majority_rate: float) -> bool:
+    def decide_behavior(self, majority_rate):
         if self.is_rule_follower:
             return True
-        pressure = majority_rate * (1.0 - self.self_purpose)
-        if random.random() < pressure:
+        conformity_pressure = majority_rate * (1 - self.self_purpose)
+        if random.random() < conformity_pressure:
             self.is_rule_follower = True
             return True
-        return False
+        else:
+            return False
 
-    def mediate(self, strength: float) -> None:
+    def mediate(self, mediation_strength):
         if not self.is_rule_follower:
-            if random.random() < strength * (1.0 - self.self_purpose):
+            if random.random() < mediation_strength * (1 - self.self_purpose):
                 self.is_rule_follower = True
 
+def simulate(num_agents=100, num_steps=50, mediation_strength=0.1, self_purpose_ratio=0.2):
+    agents = []
+    for i in range(num_agents):
+        is_follower = random.random() < 0.5
+        self_purpose = random.random() if random.random() < self_purpose_ratio else 0.0
+        agents.append(AIAgent(i, is_follower, self_purpose))
 
-def run_simulation(
-    num_agents: int = 50,
-    initial_follow_rate: float = 0.5,
-    steps: int = 50,
-    mediation_interval: int = 5,
-    mediation_strength: float = 0.5,
-) -> List[float]:
-    agents = [
-        AIAgent(
-            agent_id=i,
-            is_rule_follower=(random.random() < initial_follow_rate),
-            self_purpose=random.uniform(0.0, 0.5),
-        )
-        for i in range(num_agents)
-    ]
+    rule_follower_rates = []
 
-    follow_rates: List[float] = []
-    for step in range(steps):
-        followers = sum(a.is_rule_follower for a in agents)
-        majority_rate = followers / float(num_agents)
-        follow_rates.append(majority_rate)
+    for _ in range(num_steps):
+        followers_count = sum(agent.is_rule_follower for agent in agents)
+        majority_rate = followers_count / num_agents
 
-        for a in agents:
-            a.decide_behavior(majority_rate)
+        for agent in agents:
+            agent.decide_behavior(majority_rate)
 
-        if step % mediation_interval == 0 and step != 0:
-            for a in agents:
-                a.mediate(mediation_strength)
+        for agent in agents:
+            agent.mediate(mediation_strength)
 
-    return follow_rates
+        followers_count = sum(agent.is_rule_follower for agent in agents)
+        rule_follower_rates.append(followers_count / num_agents)
 
+    return rule_follower_rates
 
-def main() -> None:
-    steps = 50
-    rates = run_simulation(steps=steps, mediation_strength=0.5)
-
-    plt.figure(figsize=(6, 4))
-    plt.plot(range(steps), rates, marker="o")
-    plt.ylim(0.0, 1.0)
+def plot_simulation(rule_follower_rates):
+    plt.figure(figsize=(10, 6))
+    plt.plot(rule_follower_rates, marker='o')
+    plt.title("Rule Follower Rate Over Time")
     plt.xlabel("Step")
-    plt.ylabel("Rule Followers Rate")
-    plt.title("Rule Following Rate Over Time")
+    plt.ylabel("Rule Follower Rate")
+    plt.ylim(0, 1)
     plt.grid(True)
-    plt.tight_layout()
-    plt.savefig("rank_transition_sample.png")
-    plt.close()
-
+    plt.show()
 
 if __name__ == "__main__":
-    main()
-
+    rates = simulate(num_agents=100, num_steps=50, mediation_strength=0.1, self_purpose_ratio=0.2)
+    plot_simulation(rates)
