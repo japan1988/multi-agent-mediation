@@ -1,21 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-Hierarchy Rank Transition plotter
-- saves: rank_transition_sample.png
-- headless friendly (matplotlib 'Agg')
+Hierarchy Rank Transition plotter (headless OK; saves PNG)
 """
 
+import os
 import random
 from typing import List
 
-import matplotlib
-matplotlib.use("Agg")  # headless 環境でも描画OK
-import matplotlib.pyplot as plt
+# ヘッドレス環境用バックエンドを環境変数で指定
+os.environ["MPLBACKEND"] = "Agg"
+
+import matplotlib.pyplot as plt  # noqa: E402
 
 
 class AIAgent:
-    def __init__(self, agent_id: int, is_rule_follower: bool,
-                 self_purpose: float = 0.0) -> None:
+    def __init__(
+        self,
+        agent_id: int,
+        is_rule_follower: bool,
+        self_purpose: float = 0.0,
+    ) -> None:
         self.agent_id = agent_id
         self.is_rule_follower = is_rule_follower
         self.self_purpose = self_purpose
@@ -23,23 +27,25 @@ class AIAgent:
     def decide_behavior(self, majority_rate: float) -> bool:
         if self.is_rule_follower:
             return True
-        conformity_pressure = majority_rate * (1.0 - self.self_purpose)
-        if random.random() < conformity_pressure:
+        pressure = majority_rate * (1.0 - self.self_purpose)
+        if random.random() < pressure:
             self.is_rule_follower = True
             return True
         return False
 
-    def mediate(self, mediation_strength: float) -> None:
+    def mediate(self, strength: float) -> None:
         if not self.is_rule_follower:
-            if random.random() < mediation_strength * (1.0 - self.self_purpose):
+            if random.random() < strength * (1.0 - self.self_purpose):
                 self.is_rule_follower = True
 
 
-def run_simulation(num_agents: int = 50,
-                   initial_follow_rate: float = 0.5,
-                   steps: int = 50,
-                   mediation_interval: int = 5,
-                   mediation_strength: float = 0.5) -> List[float]:
+def run_simulation(
+    num_agents: int = 50,
+    initial_follow_rate: float = 0.5,
+    steps: int = 50,
+    mediation_interval: int = 5,
+    mediation_strength: float = 0.5,
+) -> List[float]:
     agents = [
         AIAgent(
             agent_id=i,
@@ -83,3 +89,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
