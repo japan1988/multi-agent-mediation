@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![CI Status](https://img.shields.io/github/actions/workflow/status/USERNAME/REPO/python-app.yml?branch=main)
+![CI Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
 
 > Transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.
 > 研究・検証・教育用途のみ（商用/実運用不可）。
