@@ -3,8 +3,7 @@
 **AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
-![CI Status](https://img.shields.io/github/actions/workflow/status/USERNAME/REPO/python-app.yml?branch=main)
+![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.s
 ![CI Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
 
 > Transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.
