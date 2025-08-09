@@ -5,7 +5,6 @@ Hierarchy Rank Transition plotter
 
 from __future__ import annotations
 import random
-from typing import List
 
 import matplotlib.pyplot as plt  # type: ignore[import-not-found]
 
@@ -87,3 +86,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
