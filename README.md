@@ -113,7 +113,11 @@ This repository is for **research, validation, and educational use only**. No wa
 	•	目的外の利用防止
 自我や感情を持つかのような演出は、ユーザーの理解を補助するために限定的に用いられており、自己進化や独立行動を行うことはありません。
 	•	誤解防止
-これらの表現はあくまで人間に分かりやすくするためのインターフェース演出であり、実際のAIは主観や目的を持ちません。
+これらの表現はあくまで人間に分かりやすくするためのインターフェース演出であり、実際のAIは主観や目的を持ちません。数値化による検証目的
+本プロジェクトにおける感情表現や状態は、すべて検証のしやすさのために数値化・パラメータ化されたデータとして処理されます。これは統計やシミュレーション上の指標であり、実際の感情や主観を持つことを意味しません。
+	•	Quantification for Testing
+Any emotional expressions or states in this project are quantified and parameterized solely for ease of testing and validation. These values are statistical or simulation indicators only, and do not imply the presence of actual emotions or subjectivity.
+
 
 ⸻
 
