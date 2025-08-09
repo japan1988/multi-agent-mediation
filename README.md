@@ -1,5 +1,3 @@
-OK、全部まとめて**一括でコピペできるREADME完全版**にしました。
-これをそのまま `README.md` に貼り付ければ、図やバッジも揃った完成形になります。
 
 ---
 
@@ -37,7 +35,6 @@ flowchart TD
 
 ## Example Output / 実行例グラフ
 
-> 画像が無いと404になるので、下記コマンドで生成してコミットしてください。
 
 ```bash
 python rank_transition_sample.py --save-readme-img
@@ -124,9 +121,6 @@ Simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after eac
 
 ---
 
-## CLI Options / コマンドライン引数（例）
-
-> 実装に合わせて調整してください。
 
 ```bash
 python ai_hierarchy_dynamics_full_log_20250804.py \
