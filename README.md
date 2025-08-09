@@ -1,3 +1,9 @@
+はい、では整形済みの完成版 README を一括コピペできる形で出します。
+バッジは横並び、図と例の画像リンクは正常位置、開発者向け手順は末尾に分離しています。
+
+---
+
+````markdown
 # Multi-Agent Hierarchy & Emotion Dynamics Simulator
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
@@ -48,4 +54,97 @@ flowchart TD
     MediatorIntervention --> NextRound
     NextRound -->|Loop until Max Rounds| UpdateRank
     NextRound --> End
+````
+
+---
+
+## Simulation Example Graph
+
+![Simulation Example Graph](docs/images/simulation_example.png)
+上図は、ルールフォロワー率の推移例です。青線はラウンドごとのフォロワー率、介入があればマーカーで表示されます。
+
+---
+
+## File List / ファイル構成
+
+| File/Folder                                  | Description（内容・役割）       |
+| -------------------------------------------- | ------------------------ |
+| `.github/workflows/`                         | GitHub Actions ワークフロー設定  |
+| `tests/`                                     | テストコード・サンプル（自動テスト用）      |
+| `LICENSE`                                    | ライセンス（MIT）               |
+| `README.md`                                  | ドキュメント本体                 |
+| `requirements.txt`                           | 依存パッケージリスト               |
+| `agents.yaml`                                | エージェント定義ファイル             |
+| `ai_hierarchy_dynamics_full_log_20250804.py` | ヒエラルキー・感情・昇進競争＋ロギング（最新版） |
+| `ai_hierarchy_simulation_log.py`             | シンプルなヒエラルキーシミュレータ（旧版）    |
+| `ai_mediation_all_in_one.py`                 | AI 調停オールインワン（複合機能）       |
+| `ai_mediation_governance_demo.py`            | ガバナンス重視デモ付き調停シミュレータ      |
+| `ai_governance_mediation_sim.py`             | ガバナンス重視AI調停シミュレータ        |
+| `ai_alliance_persuasion_simulator.py`        | AI同盟形成・説得シミュレータ          |
+| `ai_reeducation_social_dynamics.py`          | 再教育・社会ダイナミクスAIシミュレータ     |
+| `ai_pacd_simulation.py`                      | PACD（提案→承認→変更→拒否）型シミュレータ |
+| `mediation_basic_example.py`                 | 調停AIの基本例                 |
+| `mediation_with_logging.py`                  | ログ付き調停AI                 |
+| `mediation_process_log.txt.py`               | 調停プロセスログ出力例              |
+| `multi_agent_mediation_with_reeducation.py`  | 再教育付きマルチエージェント調停AI       |
+
+---
+
+## Usage / 使い方
+
+```bash
+python ai_hierarchy_dynamics_full_log_20250804.py
+```
+
+Simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after each run.
+
+---
+
+## Developer Notes / 開発者向けメモ
+
+README用グラフ生成手順：
+
+```bash
+mkdir -p docs/images
+
+python - << 'PY'
+from rank_transition_sample import run_simulation
+import matplotlib.pyplot as plt
+
+steps = 50
+rates = run_simulation(steps=steps, mediation_strength=0.5)
+
+plt.figure(figsize=(6, 4))
+plt.plot(range(steps), rates, marker="o", label="Follower Rate")
+plt.ylim(0.0, 1.0)
+plt.xlabel("Step")
+plt.ylabel("Rule Followers Rate")
+plt.title("Rule Following Rate Over Time")
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.savefig("docs/images/simulation_example.png")
+plt.close()
+print("Saved: docs/images/simulation_example.png")
+PY
+
+git add docs/images/simulation_example.png
+git commit -m "Add simulation example graph for README"
+git push
+```
+
+---
+
+## Disclaimer / 免責事項
+
+This repository is for **research, validation, and educational use only**.
+No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making.
+The simulation code does **not** implement or expose proprietary, sensitive, or production AI control algorithms.
+
+本シミュレーション内のAI・エージェント・組織・現象はすべて架空です。
+商用利用・現実社会での意思決定には使用できません。
+
+```
+
+---
 
