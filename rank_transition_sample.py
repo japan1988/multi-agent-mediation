@@ -3,8 +3,11 @@
 Hierarchy Rank Transition plotter
 """
 
+from __future__ import annotations
 import random
-import matplotlib.pyplot as plt
+from typing import List
+
+import matplotlib.pyplot as plt  # type: ignore[import-not-found]
 
 
 class AIAgent:
@@ -40,7 +43,7 @@ def run_simulation(
     steps: int = 50,
     mediation_interval: int = 5,
     mediation_strength: float = 0.5,
-):
+) -> list[float]:
     agents = [
         AIAgent(
             agent_id=i,
@@ -50,7 +53,7 @@ def run_simulation(
         for i in range(num_agents)
     ]
 
-    follow_rates = []
+    follow_rates: list[float] = []
     for step in range(steps):
         followers = sum(a.is_rule_follower for a in agents)
         majority_rate = followers / float(num_agents)
