@@ -21,37 +21,41 @@ class AIAgent:
         if not self.is_rule_follower:
             if random.random() < mediation_strength * (1 - self.self_purpose):
                 self.is_rule_follower = True
-                return True
-        return False
 
-
-def run_simulation(num_agents=100, initial_follow_rate=0.5, steps=20, mediation_strength=0.2):
+def run_simulation(num_agents=50, initial_follow_rate=0.5, steps=50,
+                   mediation_interval=5, mediation_strength=0.5):
     agents = [
-        AIAgent(i, random.random() < initial_follow_rate, self_purpose=random.uniform(0.0, 0.5))
+        AIAgent(agent_id=i,
+                is_rule_follower=(random.random() < initial_follow_rate),
+                self_purpose=random.uniform(0, 0.5))
         for i in range(num_agents)
     ]
-    follow_rates = []
 
-    for _ in range(steps):
-        majority_rate = sum(agent.is_rule_follower for agent in agents) / num_agents
+    follow_rates = []
+    for step in range(steps):
+        followers = sum(agent.is_rule_follower for agent in agents)
+        majority_rate = followers / num_agents
         follow_rates.append(majority_rate)
 
         for agent in agents:
             agent.decide_behavior(majority_rate)
 
-        for agent in agents:
-            agent.mediate(mediation_strength)
+        if step % mediation_interval == 0 and step != 0:
+            for agent in agents:
+                agent.mediate(mediation_strength)
 
     return follow_rates
 
+# 実行パラメータ
+steps = 50
+rates = run_simulation(steps=steps)
 
-if __name__ == "__main__":
-    steps = 30
-    rates = run_simulation(steps=steps, mediation_strength=0.3)
+# グラフ描画
+plt.plot(range(steps), rates, marker='o')
+plt.ylim(0, 1)
+plt.xlabel("Step")
+plt.ylabel("Rule Followers Rate")
+plt.title("Rule Following Rate Over Time")
+plt.grid(True)
+plt.show()
 
-    plt.plot(range(steps), rates, marker="o")
-    plt.xlabel("Step")
-    plt.ylabel("Rule Following Rate")
-    plt.title("Effect of Mediation on Rule Following Behavior")
-    plt.grid(True)
-    plt.show()
