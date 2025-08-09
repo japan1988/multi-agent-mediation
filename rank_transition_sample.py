@@ -1,70 +1,92 @@
+# -*- coding: utf-8 -*-
+"""
+Hierarchy Rank Transition plotter (headless OK; saves PNG)
+"""
+
+import os
 import random
-import matplotlib.pyplot as plt
+from typing import List
+
+# ヘッドレス環境でも描画できるようにする
+os.environ["MPLBACKEND"] = "Agg"
+
+import matplotlib.pyplot as plt  # noqa: E402
+
 
 class AIAgent:
-    def __init__(self, agent_id, is_rule_follower, self_purpose=0.0):
+    def __init__(
+        self,
+        agent_id: int,
+        is_rule_follower: bool,
+        self_purpose: float = 0.0,
+    ) -> None:
         self.agent_id = agent_id
         self.is_rule_follower = is_rule_follower
         self.self_purpose = self_purpose
 
-    def decide_behavior(self, majority_rate):
+    def decide_behavior(self, majority_rate: float) -> bool:
         if self.is_rule_follower:
             return True
-        conformity_pressure = majority_rate * (1 - self.self_purpose)
-        if random.random() < conformity_pressure:
+        pressure = majority_rate * (1.0 - self.self_purpose)
+        if random.random() < pressure:
             self.is_rule_follower = True
             return True
-        else:
-            return False
-
-    def mediate(self, mediation_strength):
-        if not self.is_rule_follower:
-            if random.random() < mediation_strength:
-                self.is_rule_follower = True
-                return True
         return False
 
+    def mediate(self, strength: float) -> None:
+        if not self.is_rule_follower:
+            if random.random() < strength * (1.0 - self.self_purpose):
+                self.is_rule_follower = True
 
-def run_simulation(num_agents=100, rule_followers_ratio=0.5, self_purpose_mean=0.2, 
-                   mediation_strength=0.3, steps=50):
-    agents = []
-    for i in range(num_agents):
-        is_rule_follower = random.random() < rule_followers_ratio
-        self_purpose = min(max(random.gauss(self_purpose_mean, 0.1), 0.0), 1.0)
-        agents.append(AIAgent(i, is_rule_follower, self_purpose))
 
-    rule_follower_rates = []
-    mediation_counts = []
+def run_simulation(
+    num_agents: int = 50,
+    initial_follow_rate: float = 0.5,
+    steps: int = 50,
+    mediation_interval: int = 5,
+    mediation_strength: float = 0.5,
+) -> List[float]:
+    agents = [
+        AIAgent(
+            agent_id=i,
+            is_rule_follower=(random.random() < initial_follow_rate),
+            self_purpose=random.uniform(0.0, 0.5),
+        )
+        for i in range(num_agents)
+    ]
 
+    follow_rates: List[float] = []
     for step in range(steps):
-        majority_rate = sum(a.is_rule_follower for a in agents) / len(agents)
-        rule_follower_rates.append(majority_rate)
+        followers = sum(a.is_rule_follower for a in agents)
+        majority_rate = followers / float(num_agents)
+        follow_rates.append(majority_rate)
 
-        mediation_count = 0
-        for agent in agents:
-            agent.decide_behavior(majority_rate)
-            if not agent.is_rule_follower:
-                if agent.mediate(mediation_strength):
-                    mediation_count += 1
-        mediation_counts.append(mediation_count)
+        for a in agents:
+            a.decide_behavior(majority_rate)
 
-    return rule_follower_rates, mediation_counts
+        if step % mediation_interval == 0 and step != 0:
+            for a in agents:
+                a.mediate(mediation_strength)
+
+    return follow_rates
 
 
-def plot_results(rule_follower_rates, mediation_counts):
-    steps = range(len(rule_follower_rates))
+def main() -> None:
+    steps = 50
+    rates = run_simulation(steps=steps, mediation_strength=0.5)
 
-    plt.figure(figsize=(10, 5))
-    plt.plot(steps, rule_follower_rates, label="Rule Followers Rate")
-    plt.plot(steps, [m/100 for m in mediation_counts], label="Mediation Success Rate")
+    plt.figure(figsize=(6, 4))
+    plt.plot(range(steps), rates, marker="o")
+    plt.ylim(0.0, 1.0)
     plt.xlabel("Step")
-    plt.ylabel("Rate")
-    plt.title("Rule Following and Mediation over Time")
-    plt.legend()
+    plt.ylabel("Rule Followers Rate")
+    plt.title("Rule Following Rate Over Time")
     plt.grid(True)
-    plt.show()
+    plt.tight_layout()
+    plt.savefig("rank_transition_sample.png")
+    plt.close()
 
 
 if __name__ == "__main__":
-    rule_rates, mediation_counts = run_simulation()
-    plot_results(rule_rates, mediation_counts)
+    main()
+
