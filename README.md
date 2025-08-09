@@ -36,13 +36,7 @@ flowchart TD
     F -->|Loop until Max Rounds| A
 ````
 
-## Example Output / 実行例グラフ
 
-
-```bash
-python rank_transition_sample.py --save-readme-img
-git add docs/images/simulation_example.png && git commit -m "Add README example image"
-```
 
 <img src="docs/images/simulation_example.png" alt="Simulation Example" width="520"/>
 
