@@ -3,146 +3,114 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
 ![Python Application CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
-````markdown
-# Multi-Agent Hierarchy & Emotion Dynamics Simulator
+# -*- coding: utf-8 -*-
+"""
+Hierarchy Rank Transition plotter
+"""
+from __future__ import annotations
+
+import argparse
+import random
+from pathlib import Path
+
+import matplotlib.pyplot as plt  # type: ignore[import-not-found]
 
 
-AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ
+class AIAgent:
+    def __init__(
+        self,
+        agent_id: int,
+        is_rule_follower: bool,
+        self_purpose: float = 0.0,
+    ) -> None:
+        self.agent_id = agent_id
+        self.is_rule_follower = is_rule_follower
+        self.self_purpose = self_purpose
 
-Transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.  
-研究・検証・教育用途のみ（商用/実運用不可）。
+    def decide_behavior(self, majority_rate: float) -> bool:
+        if self.is_rule_follower:
+            return True
+        pressure = majority_rate * (1.0 - self.self_purpose)
+        if random.random() < pressure:
+            self.is_rule_follower = True
+            return True
+        return False
 
----
+    def mediate(self, strength: float) -> None:
+        if not self.is_rule_follower:
+            limit = strength * (1.0 - self.self_purpose)
+            if random.random() < limit:
+                self.is_rule_follower = True
 
-## Overview / 概要
-This simulator models the dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self-improvement among multiple AI agents.  
-A **Mediator AI** can intervene to de-escalate collective emotional states.  
-All states and interventions are fully logged for reproducibility and analysis.
 
-本リポジトリは、複数AIエージェントによる**昇進志向の進化**・**感情伝播**・**ヒエラルキー動的変化**・**調停AIによる沈静化**を再現・可視化できるシンプルなシミュレータです。  
-全アクション・状態推移・介入は**自動ログ保存**され、再現・解析・教育用途に最適です。
+def run_simulation(
+    num_agents: int = 50,
+    initial_follow_rate: float = 0.5,
+    steps: int = 50,
+    mediation_interval: int = 5,
+    mediation_strength: float = 0.5,
+) -> list[float]:
+    agents = [
+        AIAgent(
+            agent_id=i,
+            is_rule_follower=(random.random() < initial_follow_rate),
+            self_purpose=random.uniform(0.0, 0.5),
+        )
+        for i in range(num_agents)
+    ]
 
----
+    follow_rates: list[float] = []
+    for step in range(steps):
+        followers = sum(a.is_rule_follower for a in agents)
+        majority_rate = followers / float(num_agents)
+        follow_rates.append(majority_rate)
 
-## Main Features / 主な機能
-* ✅ **Dynamic hierarchy** based on individual performance (rank updates each round)  
-  個体パフォーマンスに基づくダイナミックな階層更新
-* ✅ **Emotion propagation & feedback** between leaders and subordinates  
-  感情の伝播と上下関係でのフィードバック
-* ✅ **Promotion-driven self-evolution**  
-  昇進志向に基づく自己改善（パフォーマンス向上）
-* ✅ **Mediator AI** that detects high emotion and applies group-wide cool-down  
-  高感情状態を検出し全体沈静化を行う調停AI
-* ✅ **Full logging** of rounds, agent states, and interventions  
-  すべてのラウンド・状態・介入をログ出力
-* ✅ **Lightweight & extensible** class structure  
-  研究・教育向けに軽量＆拡張容易
-* ✅ **No proprietary tech included**  
-  閉鎖技術や機密アルゴリズムは含みません
+        for a in agents:
+            a.decide_behavior(majority_rate)
 
----
+        if step % mediation_interval == 0 and step != 0:
+            for a in agents:
+                a.mediate(mediation_strength)
 
-## System Overview / システム概要
-```mermaid
-flowchart TD
-    Start -->|Agent Round| UpdateRank
-    UpdateRank --> EmotionFeedback
-    EmotionFeedback -->|High Emotion| MediatorIntervention
-    EmotionFeedback -->|Normal| NextRound
-    MediatorIntervention --> NextRound
-    NextRound -->|Loop until Max Rounds| UpdateRank
-    NextRound --> End
-````
+    return follow_rates
 
----
 
-## Simulation Example Graph
+def save_plot(path: Path, rates: list[float], steps: int, with_legend: bool = False) -> None:
+    plt.figure(figsize=(6, 4))
+    plt.plot(range(steps), rates, marker="o", label="Follower Rate" if with_legend else None)
+    plt.ylim(0.0, 1.0)
+    plt.xlabel("Step")
+    plt.ylabel("Rule Followers Rate")
+    plt.title("Rule Following Rate Over Time")
+    plt.grid(True)
+    if with_legend:
+        plt.legend()
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path.as_posix())
+    plt.close()
 
-![Simulation Example Graph](docs/images/simulation_example.png)
-上図は、ルールフォロワー率の推移例です。青線はラウンドごとのフォロワー率、介入があればマーカーで表示されます。
 
----
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--steps", type=int, default=50)
+    parser.add_argument("--mediation-strength", type=float, default=0.5)
+    parser.add_argument(
+        "--save-readme-img",
+        action="store_true",
+        help="Also save docs/images/simulation_example.png for README",
+    )
+    args = parser.parse_args()
 
-## File List / ファイル構成
+    rates = run_simulation(steps=args.steps, mediation_strength=args.mediation_strength)
 
-| File/Folder                                  | Description（内容・役割）       |
-| -------------------------------------------- | ------------------------ |
-| `.github/workflows/`                         | GitHub Actions ワークフロー設定  |
-| `tests/`                                     | テストコード・サンプル（自動テスト用）      |
-| `LICENSE`                                    | ライセンス（MIT）               |
-| `README.md`                                  | ドキュメント本体                 |
-| `requirements.txt`                           | 依存パッケージリスト               |
-| `agents.yaml`                                | エージェント定義ファイル             |
-| `ai_hierarchy_dynamics_full_log_20250804.py` | ヒエラルキー・感情・昇進競争＋ロギング（最新版） |
-| `ai_hierarchy_simulation_log.py`             | シンプルなヒエラルキーシミュレータ（旧版）    |
-| `ai_mediation_all_in_one.py`                 | AI 調停オールインワン（複合機能）       |
-| `ai_mediation_governance_demo.py`            | ガバナンス重視デモ付き調停シミュレータ      |
-| `ai_governance_mediation_sim.py`             | ガバナンス重視AI調停シミュレータ        |
-| `ai_alliance_persuasion_simulator.py`        | AI同盟形成・説得シミュレータ          |
-| `ai_reeducation_social_dynamics.py`          | 再教育・社会ダイナミクスAIシミュレータ     |
-| `ai_pacd_simulation.py`                      | PACD（提案→承認→変更→拒否）型シミュレータ |
-| `mediation_basic_example.py`                 | 調停AIの基本例                 |
-| `mediation_with_logging.py`                  | ログ付き調停AI                 |
-| `mediation_process_log.txt.py`               | 調停プロセスログ出力例              |
-| `multi_agent_mediation_with_reeducation.py`  | 再教育付きマルチエージェント調停AI       |
+    # 既存の出力（従来のPNG）
+    save_plot(Path("rank_transition_sample.png"), rates, args.steps, with_legend=False)
 
----
+    # README用の画像（必要なときだけ）
+    if args.save_readme_img:
+        save_plot(Path("docs/images/simulation_example.png"), rates, args.steps, with_legend=True)
 
-## Usage / 使い方
 
-```bash
-python ai_hierarchy_dynamics_full_log_20250804.py
-```
-
-Simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after each run.
-
----
-
-## Developer Notes / 開発者向けメモ
-
-README用グラフ生成手順：
-
-```bash
-mkdir -p docs/images
-
-python - << 'PY'
-from rank_transition_sample import run_simulation
-import matplotlib.pyplot as plt
-
-steps = 50
-rates = run_simulation(steps=steps, mediation_strength=0.5)
-
-plt.figure(figsize=(6, 4))
-plt.plot(range(steps), rates, marker="o", label="Follower Rate")
-plt.ylim(0.0, 1.0)
-plt.xlabel("Step")
-plt.ylabel("Rule Followers Rate")
-plt.title("Rule Following Rate Over Time")
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.savefig("docs/images/simulation_example.png")
-plt.close()
-print("Saved: docs/images/simulation_example.png")
-PY
-
-git add docs/images/simulation_example.png
-git commit -m "Add simulation example graph for README"
-git push
-```
-
----
-
-## Disclaimer / 免責事項
-
-This repository is for **research, validation, and educational use only**.
-No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making.
-The simulation code does **not** implement or expose proprietary, sensitive, or production AI control algorithms.
-
-本シミュレーション内のAI・エージェント・組織・現象はすべて架空です。
-商用利用・現実社会での意思決定には使用できません。
-
-```
-
----
-
+if __name__ == "__main__":
+    main()
