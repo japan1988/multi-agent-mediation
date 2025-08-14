@@ -1,30 +1,86 @@
 # .github/workflows/tasukeru-analysis.yml
-
 name: Auto-Tasukeru CI
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.py"
+      - "**/*.ipynb"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/tasukeru-analysis.yml"
+
+# 最小権限
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: tasukeru-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # forkからのPRでは外部送信しない（情報漏えい対策）
+    if: ${{ github.event.pull_request.head.repo.fork == false }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-      - name: Zip source files
-        run: zip -r source.zip .
-
-      - name: Send to Tasukeru API
+      - name: Create source bundle (filtered)
         run: |
-          curl -X POST https://your-api-domain.com/analyze \  # ←ここにAPIのURLを入れてください
-               -F "file=@source.zip" \
-               -o report.md
+          set -euo pipefail
+          # 送信対象を最小化（.git 等は除外）
+          zip -r source.zip . \
+            -x ".git/*" ".github/*" \
+               "**/*.env" "**/.env" \
+               "**/.venv/*" "**/__pycache__/*" \
+               "**/*.csv" "**/*.parquet" "**/*.zip" \
+               "**/*.pdf" "**/*.png" "**/*.jpg" "**/*.jpeg"
+          du -h source.zip
+
+      - name: Call Tasukeru API
+        env:
+          TASUKERU_URL: ${{ secrets.TASUKERU_URL }}   # 例: https://api.example.com/analyze
+          TASUKERU_TOKEN: ${{ secrets.TASUKERU_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 30秒タイムアウト + 2回リトライ
+          for i in 1 2 3; do
+            curl --fail --show-error --silent \
+                 --max-time 30 \
+                 -X POST "$TASUKERU_URL" \
+                 -H "Authorization: Bearer $TASUKERU_TOKEN" \
+                 -F "file=@source.zip" \
+                 -o report.md && break || sleep 3
+          done
 
       - name: Post report as PR comment
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: report.md
+
+      - name: Upload report artifact (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tasukeru-report
+          path: report.md
+
+  # fork PRは“外部送信なし”のサニティチェックだけ（任意）
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.event.pull_request.head.repo.fork == true }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - run: echo "Fork PR: external analysis is skipped by policy."
