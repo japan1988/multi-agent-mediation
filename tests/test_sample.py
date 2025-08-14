@@ -1,3 +1,4 @@
 def test_always_passes():
     assert True
-# CIテスト用のコメント追加
+# CIトリガー確認用（2回目の変更）
+
