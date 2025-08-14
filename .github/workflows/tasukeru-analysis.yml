@@ -1,0 +1,30 @@
+# .github/workflows/tasukeru-analysis.yml
+
+name: Auto-Tasukeru CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Zip source files
+        run: zip -r source.zip .
+
+      - name: Send to Tasukeru API
+        run: |
+          curl -X POST https://your-api-domain.com/analyze \  # ←ここにAPIのURLを入れてください
+               -F "file=@source.zip" \
+               -o report.md
+
+      - name: Post report as PR comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: report.md
