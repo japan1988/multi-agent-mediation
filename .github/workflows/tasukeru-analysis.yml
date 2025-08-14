@@ -52,7 +52,7 @@ jobs:
           TASUKERU_TOKEN: ${{ secrets.TASUKERU_TOKEN }}
         run: |
           set -euo pipefail
-          # 30秒タイムアウト + 2回リトライ
+          # 30秒タイムアウト + 2回リトライ（合計3回）
           for i in 1 2 3; do
             curl --fail --show-error --silent \
                  --max-time 30 \
@@ -61,6 +61,8 @@ jobs:
                  -F "file=@source.zip" \
                  -o report.md && break || sleep 3
           done
+          # 念のため、空出力は失敗扱い
+          test -s report.md
 
       - name: Post report as PR comment
         uses: peter-evans/create-or-update-comment@v4
