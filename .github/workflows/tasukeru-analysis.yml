@@ -1,5 +1,3 @@
-# .github/workflows/tasukeru-analysis.yml
-
 name: Auto-Tasukeru CI
 
 on:
@@ -17,11 +15,12 @@ jobs:
       - name: Zip source files
         run: zip -r source.zip .
 
-      - name: Send to Tasukeru API
-        run: |
-          curl -X POST https://your-api-domain.com/analyze \  # ←ここにAPIのURLを入れてください
-               -F "file=@source.zip" \
-               -o report.md
+      # 以下は仮URLのため一時的にコメントアウト
+      # - name: Send to Tasukeru API
+      #   run: |
+      #     curl -X POST https://your-api-domain.com/analyze \
+      #       -F "file=@source.zip" \
+      #       -o report.md
 
       - name: Post report as PR comment
         uses: peter-evans/create-or-update-comment@v4
