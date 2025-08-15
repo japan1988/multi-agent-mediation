@@ -3,31 +3,57 @@ name: Python Application CI
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - "**/*.py"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/**"
   pull_request:
     branches: [ "main" ]
+    paths:
+      - "**/*.py"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/**"
+
+# 最小権限
+permissions:
+  contents: read
+
+concurrency:
+  group: pyci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: "pip"             # pipキャッシュを自動利用
+          cache-dependency-path: |
+            requirements.txt
+            requirements-*.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Lint with flake8
         run: |
           pip install flake8
           flake8 .
-
+      
       - name: Type check with mypy
         run: |
           pip install mypy
@@ -36,13 +62,23 @@ jobs:
       - name: Run tests with coverage
         run: |
           pip install pytest coverage
-          coverage run -m pytest
+          coverage run -m pytest -q
+          coverage xml
           coverage report
 
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 7
+
+      # 公開リポはトークン不要。プライベートなら COVERALLS_REPO_TOKEN を使う運用でOK
       - name: Upload coverage to Coveralls
-        run: |
-          pip install coveralls
-          coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.xml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
