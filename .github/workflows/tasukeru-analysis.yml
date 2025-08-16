@@ -10,8 +10,8 @@ on:
       - "pyproject.toml"
       - "requirements*.txt"
       - ".github/workflows/tasukeru-analysis.yml"
+  workflow_dispatch:
 
-# 最小権限
 permissions:
   contents: read
   pull-requests: write
@@ -20,64 +20,157 @@ concurrency:
   group: tasukeru-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  MAX_ZIP_MB: "10"        # 送信上限
+  MAX_FILES: "2000"       # 送信ファイル数上限
+  INCLUDE_PATTERNS: |
+    *.py
+    *.ipynb
+    pyproject.toml
+    requirements*.txt
+
 jobs:
+  # すべてのPRで回る“オフライン代替”（外部送信なし）
+  local-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Prepare local CI deps (PyYAML optional)
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyYAML || true
+      - name: Run offline CI
+        run: |
+          python local_ci.py --config ci_config.json || true
+      - name: Attach offline summary
+        if: always()
+        run: |
+          echo "### 🧪 Local CI (offline)
+          - See artifacts for results.csv / summary.md
+          " >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload offline artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-ci-results
+          path: |
+            runs/**/results.csv
+            runs/**/results.jsonl
+            runs/**/summary.md
+
   analyze:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
-    # forkからのPRでは外部送信しない（情報漏えい対策）
+    needs: [local-ci]
     if: ${{ github.event.pull_request.head.repo.fork == false }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+        with: { fetch-depth: 1 }
 
-      - name: Create source bundle (filtered)
+      # 追跡ファイルのみ + ホワイトリストで送信対象を限定
+      - name: Create source bundle (tracked + allowlist)
+        id: bundle
+        shell: bash
         run: |
           set -euo pipefail
-          # 送信対象を最小化（.git 等は除外）
-          zip -r source.zip . \
-            -x ".git/*" ".github/*" \
-               "**/*.env" "**/.env" \
-               "**/.venv/*" "**/__pycache__/*" \
-               "**/*.csv" "**/*.parquet" "**/*.zip" \
-               "**/*.pdf" "**/*.png" "**/*.jpg" "**/*.jpeg"
-          du -h source.zip
+          mapfile -t patterns < <(echo "${INCLUDE_PATTERNS}")
+          include_args=()
+          for p in "${patterns[@]}"; do
+            [[ -z "$p" ]] && continue
+            include_args+=( ":$p" )
+          done
+          # git archive: 追跡ファイルのみをZIP化（未追跡・.git除外）
+          git archive --format=zip -o source.zip HEAD -- "${include_args[@]}"
+          # 件数・サイズガード
+          files=$(zipinfo -1 source.zip | wc -l | tr -d ' ')
+          bytes=$(stat -c%s source.zip || stat -f%z source.zip)
+          mb=$(( (bytes + 1048575) / 1048576 ))
+          echo "files=$files bytes=$bytes (~${mb}MB)"
+          if [ "$files" -gt "${MAX_FILES}" ]; then
+            echo "Too many files: $files > ${MAX_FILES}"; exit 1; fi
+          if [ "$mb" -gt "${MAX_ZIP_MB}" ]; then
+            echo "Archive too large: ${mb}MB > ${MAX_ZIP_MB}MB"; exit 1; fi
+          # ダイジェスト表示（監査用）
+          (command -v sha256sum >/dev/null && sha256sum source.zip) || shasum -a 256 source.zip
+
+      # Notebookを送る場合は出力を削除（任意・軽量）
+      - name: Strip notebook outputs (optional)
+        if: ${{ hashFiles('**/*.ipynb') != '' }}
+        run: |
+          python - <<'PY'
+          import json, pathlib, zipfile, io
+          z_in = zipfile.ZipFile('source.zip','r')
+          buf = io.BytesIO()
+          z_out = zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED)
+          for info in z_in.infolist():
+            data = z_in.read(info.filename)
+            if info.filename.endswith(".ipynb"):
+              try:
+                nb = json.loads(data.decode("utf-8"))
+                for cell in nb.get("cells", []):
+                  if cell.get("outputs"): cell["outputs"] = []
+                  if "execution_count" in cell: cell["execution_count"] = None
+                data = json.dumps(nb, ensure_ascii=False).encode("utf-8")
+              except Exception:
+                pass
+            z_out.writestr(info, data)
+          z_out.close()
+          open('source.zip','wb').write(buf.getvalue())
+          PY
+
+      - name: Ensure secrets exist (skip if missing)
+        id: have_secrets
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.TASUKERU_URL }}" ] || [ -z "${{ secrets.TASUKERU_TOKEN }}" ]; then
+            echo "has=false" >> $GITHUB_OUTPUT
+          else
+            echo "has=true" >> $GITHUB_OUTPUT
+          fi
 
       - name: Call Tasukeru API
+        if: ${{ steps.have_secrets.outputs.has == 'true' }}
         env:
-          TASUKERU_URL: ${{ secrets.TASUKERU_URL }}   # 例: https://api.example.com/analyze
+          TASUKERU_URL: ${{ secrets.TASUKERU_URL }}
           TASUKERU_TOKEN: ${{ secrets.TASUKERU_TOKEN }}
         run: |
           set -euo pipefail
-          # 30秒タイムアウト + 2回リトライ（合計3回）
+          # 3回リトライ・応答本文も含めて失敗時に見えるように
           for i in 1 2 3; do
-            curl --fail --show-error --silent \
+            curl --fail-with-body --show-error --silent \
                  --max-time 30 \
                  -X POST "$TASUKERU_URL" \
                  -H "Authorization: Bearer $TASUKERU_TOKEN" \
+                 -H "X-Repo:${{ github.repository }}" \
+                 -H "X-PR:${{ github.event.pull_request.number }}" \
                  -F "file=@source.zip" \
                  -o report.md && break || sleep 3
           done
-          # 念のため、空出力は失敗扱い
           test -s report.md
 
       - name: Post report as PR comment
+        if: ${{ steps.have_secrets.outputs.has == 'true' }}
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: report.md
 
-      - name: Upload report artifact (optional)
+      - name: Upload report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tasukeru-report
-          path: report.md
+          path: |
+            report.md
+            source.zip
 
-  # fork PRは“外部送信なし”のサニティチェックだけ（任意）
+  # fork PRは外部送信をしない（方針維持）
   dry-run:
     runs-on: ubuntu-latest
     timeout-minutes: 5
