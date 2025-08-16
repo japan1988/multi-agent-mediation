@@ -16,8 +16,9 @@ permissions:
   contents: read
   pull-requests: write
 
+# 手動実行(workflow_dispatch)にも対応するため、PR番号が無い場合は run_id にフォールバック
 concurrency:
-  group: tasukeru-${{ github.event.pull_request.number }}
+  group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -35,23 +36,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 1 }
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Prepare local CI deps (PyYAML optional)
         run: |
           python -m pip install --upgrade pip
           pip install PyYAML || true
+
       - name: Run offline CI
         run: |
           python local_ci.py --config ci_config.json || true
+
       - name: Attach offline summary
         if: always()
         run: |
           echo "### 🧪 Local CI (offline)
           - See artifacts for results.csv / summary.md
           " >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload offline artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -66,12 +76,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [local-ci]
+    # fork からの PR は外部送信しない
     if: ${{ github.event.pull_request.head.repo.fork == false }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with: { fetch-depth: 1 }
+        with:
+          fetch-depth: 1
 
       # 追跡ファイルのみ + ホワイトリストで送信対象を限定
       - name: Create source bundle (tracked + allowlist)
@@ -104,7 +116,7 @@ jobs:
         if: ${{ hashFiles('**/*.ipynb') != '' }}
         run: |
           python - <<'PY'
-          import json, pathlib, zipfile, io
+          import json, zipfile, io
           z_in = zipfile.ZipFile('source.zip','r')
           buf = io.BytesIO()
           z_out = zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED)
@@ -154,8 +166,9 @@ jobs:
           done
           test -s report.md
 
+      # 手動実行(workflow_dispatch)ではPR番号が無いので、PR時のみコメント投稿
       - name: Post report as PR comment
-        if: ${{ steps.have_secrets.outputs.has == 'true' }}
+        if: ${{ steps.have_secrets.outputs.has == 'true' && github.event_name == 'pull_request' }}
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -176,6 +189,10 @@ jobs:
     timeout-minutes: 5
     if: ${{ github.event.pull_request.head.repo.fork == true }}
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 1 }
-      - run: echo "Fork PR: external analysis is skipped by policy."
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Fork policy notice
+        shell: bash
+        run: echo "Fork PR: external analysis is skipped by policy."
