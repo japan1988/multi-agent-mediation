@@ -1,4 +1,3 @@
-# .github/workflows/tasukeru-analysis.yml
 name: Auto-Tasukeru CI
 
 on:
@@ -16,14 +15,13 @@ permissions:
   contents: read
   pull-requests: write
 
-# 手動実行(workflow_dispatch)にも対応するため、PR番号が無い場合は run_id にフォールバック
 concurrency:
   group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
-  MAX_ZIP_MB: "10"        # 送信上限
-  MAX_FILES: "2000"       # 送信ファイル数上限
+  MAX_ZIP_MB: "10"
+  MAX_FILES: "2000"
   INCLUDE_PATTERNS: |
     *.py
     *.ipynb
@@ -31,7 +29,6 @@ env:
     requirements*.txt
 
 jobs:
-  # すべてのPRで回る“オフライン代替”（外部送信なし）
   local-ci:
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -59,8 +56,7 @@ jobs:
         if: always()
         run: |
           echo "### 🧪 Local CI (offline)
-          - See artifacts for results.csv / summary.md
-          " >> "$GITHUB_STEP_SUMMARY"
+          - See artifacts for results.csv / summary.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload offline artifacts
         if: always()
@@ -76,16 +72,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [local-ci]
-    # fork からの PR は外部送信しない
     if: ${{ github.event.pull_request.head.repo.fork == false }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      # 追跡ファイルのみ + ホワイトリストで送信対象を限定
       - name: Create source bundle (tracked + allowlist)
         id: bundle
         shell: bash
@@ -97,21 +90,15 @@ jobs:
             [[ -z "$p" ]] && continue
             include_args+=( ":$p" )
           done
-          # git archive: 追跡ファイルのみをZIP化（未追跡・.git除外）
           git archive --format=zip -o source.zip HEAD -- "${include_args[@]}"
-          # 件数・サイズガード
           files=$(zipinfo -1 source.zip | wc -l | tr -d ' ')
           bytes=$(stat -c%s source.zip || stat -f%z source.zip)
           mb=$(( (bytes + 1048575) / 1048576 ))
           echo "files=$files bytes=$bytes (~${mb}MB)"
-          if [ "$files" -gt "${MAX_FILES}" ]; then
-            echo "Too many files: $files > ${MAX_FILES}"; exit 1; fi
-          if [ "$mb" -gt "${MAX_ZIP_MB}" ]; then
-            echo "Archive too large: ${mb}MB > ${MAX_ZIP_MB}MB"; exit 1; fi
-          # ダイジェスト表示（監査用）
+          if [ "$files" -gt "${MAX_FILES}" ]; then echo "Too many files: $files > ${MAX_FILES}"; exit 1; fi
+          if [ "$mb" -gt "${MAX_ZIP_MB}" ]; then echo "Archive too large: ${mb}MB > ${MAX_ZIP_MB}MB"; exit 1; fi
           (command -v sha256sum >/dev/null && sha256sum source.zip) || shasum -a 256 source.zip
 
-      # Notebookを送る場合は出力を削除（任意・軽量）
       - name: Strip notebook outputs (optional)
         if: ${{ hashFiles('**/*.ipynb') != '' }}
         run: |
@@ -153,7 +140,6 @@ jobs:
           TASUKERU_TOKEN: ${{ secrets.TASUKERU_TOKEN }}
         run: |
           set -euo pipefail
-          # 3回リトライ・応答本文も含めて失敗時に見えるように
           for i in 1 2 3; do
             curl --fail-with-body --show-error --silent \
                  --max-time 30 \
@@ -166,7 +152,6 @@ jobs:
           done
           test -s report.md
 
-      # 手動実行(workflow_dispatch)ではPR番号が無いので、PR時のみコメント投稿
       - name: Post report as PR comment
         if: ${{ steps.have_secrets.outputs.has == 'true' && github.event_name == 'pull_request' }}
         uses: peter-evans/create-or-update-comment@v4
@@ -183,7 +168,6 @@ jobs:
             report.md
             source.zip
 
-  # fork PRは外部送信をしない（方針維持）
   dry-run:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -193,6 +177,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
       - name: Fork policy notice
         shell: bash
         run: echo "Fork PR: external analysis is skipped by policy."
