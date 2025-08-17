@@ -55,8 +55,7 @@ jobs:
       - name: Attach offline summary
         if: always()
         run: |
-          echo "### 🧪 Local CI (offline)
-          - See artifacts for results.csv / summary.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 🧪 Local CI (offline) - See artifacts for results.csv / summary.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload offline artifacts
         if: always()
