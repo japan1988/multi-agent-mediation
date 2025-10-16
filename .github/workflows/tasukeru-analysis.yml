@@ -27,3 +27,12 @@ env:
     *.ipynb
     pyproject.toml
     requirements*.txt
+
+jobs:
+  check-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show environment
+        run: |
+          echo "This is a minimal valid structure."
+          echo "You can now add your real CI or analysis jobs here."
