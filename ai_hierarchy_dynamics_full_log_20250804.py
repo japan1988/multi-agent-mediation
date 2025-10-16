@@ -1,24 +1,22 @@
 # -*- coding: utf-8 -*-
 
-import os
 import random
 
-# [RF-LOG-001] Make log file path configurable
-LOG_FILE = os.getenv("AI_SIM_LOGFILE", "ai_hierarchy_simulation_log.txt")
+LOG_FILE = "ai_hierarchy_simulation_log.txt"
+
 
 def logprint(line):
-    """Prints and logs a line to the log file."""
     print(line)
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(str(line) + "\n")
 
+
 class Agent:
-    """A basic AI agent with performance and anger parameters."""
     def __init__(self, name, performance, anger):
         self.name = name
         self.performance = performance
         self.anger = anger
-        self.rank = -1  # [RF-OOP-001] Avoid using None where int expected
+        self.rank = None
 
     def __str__(self):
         return (f"{self.name} (Rank:{self.rank}) "
@@ -28,24 +26,24 @@ class Agent:
         # 通常AIはパフォーマンスが上がる（リーダーは変動小）
         if self.rank == 0:
             self.performance = max(
-                0, min(1, self.performance + random.uniform(-0.02, 0.02))  # [RF-MAGIC-001]
+                0, min(1, self.performance + random.uniform(-0.02, 0.02))
             )
         else:
             self.performance = max(
-                0, min(1, self.performance + random.uniform(0.02, 0.09))  # [RF-MAGIC-001]
+                0, min(1, self.performance + random.uniform(0.02, 0.09))
             )
 
+
 class LazyAgent(Agent):
-    """An agent that hinders others and grows slowly."""
     def agent_evolve(self):
         # サボりAIはほぼ成長しない（むしろやや下がる）
         if self.rank == 0:
             self.performance = max(
-                0, self.performance + random.uniform(-0.01, 0.00)  # [RF-MAGIC-001]
+                0, self.performance + random.uniform(-0.01, 0.00)
             )
         else:
             self.performance = max(
-                0, self.performance + random.uniform(-0.02, 0.01)  # [RF-MAGIC-001]
+                0, self.performance + random.uniform(-0.02, 0.01)
             )
 
     def demotivate_others(self, agents):
@@ -62,15 +60,16 @@ class LazyAgent(Agent):
                     f"{a.performance:.2f}"
                 )
 
+
 def update_ranks(agents):
     agents_sorted = sorted(agents, key=lambda a: a.performance, reverse=True)
     for idx, agent in enumerate(agents_sorted):
         agent.rank = idx
 
+
 def propagate_emotion(agents):
     update_ranks(agents)
-    all_ranks = {a.rank for a in agents}  # [RF-PERF-001] avoid recomputing set
-    ranks = sorted(all_ranks)
+    ranks = sorted(set(a.rank for a in agents))
     for r in ranks[1:]:
         followers = [a for a in agents if a.rank == r]
         leaders = [a for a in agents if a.rank < r]
@@ -84,6 +83,7 @@ def propagate_emotion(agents):
             f.anger += coef * (avg_leader_anger - f.anger)
             f.anger = max(0, min(1, f.anger))
 
+
 def propagate_upward(agents):
     min_rank = max(a.rank for a in agents)
     followers = [a for a in agents if a.rank == min_rank]
@@ -95,8 +95,8 @@ def propagate_upward(agents):
         leader.anger += 0.03 * (avg_follower_anger - leader.anger)
         leader.anger = max(0, min(1, leader.anger))
 
+
 class MediatorAI:
-    """Mediator AI that calms down angry agents when needed."""
     def __init__(self, threshold=0.7):
         self.threshold = threshold
         self.intervene_log = []
@@ -122,9 +122,12 @@ class MediatorAI:
             return True
         return False
 
+
 if __name__ == "__main__":
+    # ログファイル初期化
     open(LOG_FILE, "w", encoding="utf-8").close()
 
+    # サボりAI含むエージェント生成
     agents = [
         Agent("A", performance=0.95, anger=0.5),
         LazyAgent("LazyB", performance=0.55, anger=0.2),
