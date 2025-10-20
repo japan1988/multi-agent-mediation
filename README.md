@@ -10,7 +10,6 @@
 > **For research, validation, and educational use only. 商用／実運用用途は不可。**
 
 ---
-
 ## 🧭 System Overview / システム概要
 
 ```mermaid
@@ -22,7 +21,6 @@ flowchart TD
     D -->|No| F[Next Round]
     E --> F
     F -->|Loop until Max Rounds| A
-上図は、ラウンドごとのフォロワー率推移例です。青線はフォロワー率、介入があればマーカーで表示されます。
 
 
 🧩 Overview / 概要
