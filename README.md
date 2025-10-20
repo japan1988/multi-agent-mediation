@@ -25,7 +25,7 @@ flowchart TD
 
 Simulation Example Graph
 
-上図は、ルールフォロワー率の推移例です。青線はラウンドごとのフォロワー率、介入があればマーカーで表示されます。
+
 
 🧩 Overview / 概要
 This simulator models the dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self-improvement among multiple AI agents.
