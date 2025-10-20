@@ -7,7 +7,7 @@
 ![CI Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
 
 > Transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.  
-> **For research, validation, and educational use only**. 商用／実運用用途は不可。
+> **For research, validation, and educational use only. 商用／実運用用途は不可。**
 
 ---
 
@@ -18,14 +18,11 @@ flowchart TD
     A[Start] -->|Agent Round| B[Update Rank]
     B --> C[Emotion Feedback]
     C --> D{High Emotion?}
-    D -- Yes --> E[Mediator Intervention]
-    D -- No --> F[Next Round]
+    D -->|Yes| E[Mediator Intervention]
+    D -->|No| F[Next Round]
     E --> F
     F -->|Loop until Max Rounds| A
-
-Simulation Example Graph
-
-
+上図は、ラウンドごとのフォロワー率推移例です。青線はフォロワー率、介入があればマーカーで表示されます。
 
 🧩 Overview / 概要
 This simulator models the dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self-improvement among multiple AI agents.
@@ -120,4 +117,4 @@ MIT License
 Copyright (c) 2025 japan1988
 
 
-
+---
