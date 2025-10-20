@@ -1,7 +1,3 @@
-
----
-
-````markdown
 # 🧩 Multi-Agent Hierarchy & Emotion Dynamics Simulator
 
 **AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
@@ -176,6 +172,3 @@ Copyright (c) 2025 japan1988
 このバージョンをそのまま `README.md` に上書き保存すれば、  
 GitHub上で 💚 **Mermaid図が正しく表示される** 状態になります。  
 
-必要であれば、次に「🧬 Research Ethics Policy（研究倫理方針）」を正式追記する版も生成できます。  
-追記しますか？
-```
