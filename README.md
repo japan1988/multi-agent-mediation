@@ -155,7 +155,3 @@ MIT License
 Copyright (c) 2025 japan1988
 
 ```
-
-このバージョンをそのまま `README.md` に上書き保存すれば、  
-GitHub上で 💚 **Mermaid図が正しく表示される** 状態になります。  
-
