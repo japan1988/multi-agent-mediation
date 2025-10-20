@@ -24,6 +24,7 @@ flowchart TD
     F -->|Loop until Max Rounds| A
 上図は、ラウンドごとのフォロワー率推移例です。青線はフォロワー率、介入があればマーカーで表示されます。
 
+
 🧩 Overview / 概要
 This simulator models the dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self-improvement among multiple AI agents.
 A Mediator AI can intervene to de-escalate collective emotional states.
