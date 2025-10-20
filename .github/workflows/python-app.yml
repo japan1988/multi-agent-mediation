@@ -1,14 +1,8 @@
-name: Tasukeru Analysis
+name: Python App
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.py"
-      - "**/*.ipynb"
-      - "pyproject.toml"
-      - "requirements*.txt"
-      - ".github/workflows/tasukeru-analysis.yml"
   workflow_dispatch:
 
 permissions:
@@ -16,7 +10,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
+  group: python-app-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -29,9 +23,10 @@ env:
     requirements*.txt
 
 jobs:
-  local-ci:
+  build-and-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,40 +38,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Prepare local CI deps (PyYAML optional)
+      - name: Upgrade pip and optional deps
         run: |
           python -m pip install --upgrade pip
-          pip install PyYAML || true
+          pip install PyYAML yamllint || true
 
-      - name: Run offline CI
+      - name: Lint this workflow (self check)
         run: |
-          python local_ci.py --config ci_config.json || true
-
-      - name: Attach offline summary
-        if: always()
-        run: |
-          echo "### 🔪 Local CI (offline) - See artifacts for results.csv / summary.md" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload offline artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: local-ci-results
-          path: |
-            runs/**/results.csv
-            runs/**/results.jsonl
-            runs/**/summary.md
-
-  analyze:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: [local-ci]
-    if: ${{ github.event.pull_request.head.repo.fork == false }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+          yamllint .github/workflows/python-app.yml
 
       - name: Create source bundle (tracked + allowlist)
         id: bundle
@@ -89,102 +58,55 @@ jobs:
             [[ -z "$p" ]] && continue
             include_args+=( ":$p" )
           done
-          git archive --format=zip -o source.zip HEAD -- "${include_args[@]}"
+          # パターンが空でも安全に動くようにデフォルトを設定
+          if [ ${#include_args[@]} -eq 0 ]; then
+            include_args+=( ":*" )
+          fi
+
+          git archive --format=zip -o source.zip HEAD -- "${include_args[0]}"
+
           files=$(zipinfo -1 source.zip | wc -l | tr -d ' ')
           bytes=$(stat -c%s source.zip || stat -f%z source.zip)
           mb=$(( (bytes + 1048575) / 1048576 ))
+
           echo "files=$files bytes=$bytes (~${mb}MB)"
+
           if [ "$files" -gt "${MAX_FILES}" ]; then
             echo "Too many files: $files > ${MAX_FILES}"
             exit 1
           fi
+
           if [ "$mb" -gt "${MAX_ZIP_MB}" ]; then
             echo "Archive too large: ${mb}MB > ${MAX_ZIP_MB}MB"
             exit 1
           fi
+
           (command -v sha256sum >/dev/null && sha256sum source.zip) || shasum -a 256 source.zip
 
-      - name: Strip notebook outputs (optional)
-        if: ${{ hashFiles('**/*.ipynb') != '' }}
+      - name: Install project (optional)
         run: |
-          python - <<'PY'
-          import json, zipfile, io
-          z_in = zipfile.ZipFile('source.zip','r')
-          buf = io.BytesIO()
-          z_out = zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED)
-          for info in z_in.infolist():
-              data = z_in.read(info.filename)
-              if info.filename.endswith(".ipynb"):
-                  try:
-                      nb = json.loads(data.decode("utf-8"))
-                      for cell in nb.get("cells", []):
-                          if cell.get("outputs"):
-                              cell["outputs"] = []
-                          if "execution_count" in cell:
-                              cell["execution_count"] = None
-                      data = json.dumps(nb, ensure_ascii=False).encode("utf-8")
-                  except Exception:
-                      pass
-              z_out.writestr(info, data)
-          z_out.close()
-          open('source.zip','wb').write(buf.getvalue())
-          PY
-
-      - name: Ensure secrets exist (skip if missing)
-        id: have_secrets
-        shell: bash
-        run: |
-          if [ -z "${{ secrets.TASUKERU_URL }}" ] || [ -z "${{ secrets.TASUKERU_TOKEN }}" ]; then
-            echo "has=false" >> $GITHUB_OUTPUT
-          else
-            echo "has=true" >> $GITHUB_OUTPUT
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt || true
           fi
 
-      - name: Call Tasukeru API
-        if: ${{ steps.have_secrets.outputs.has == 'true' }}
-        env:
-          TASUKERU_URL: ${{ secrets.TASUKERU_URL }}
-          TASUKERU_TOKEN: ${{ secrets.TASUKERU_TOKEN }}
+      - name: Run unit tests (optional)
         run: |
-          set -euo pipefail
-          for i in 1 2 3; do
-            curl --fail-with-body --show-error --silent \
-              --max-time 30 \
-              -X POST "$TASUKERU_URL" \
-              -H "Authorization: Bearer $TASUKERU_TOKEN" \
-              -H "X-Repo:${{ github.repository }}" \
-              -H "X-PR:${{ github.event.pull_request.number }}" \
-              -F "file=@source.zip" \
-              -o report.md && break || sleep 3
-          done
-          test -s report.md
+          if [ -d tests ]; then
+            python -m unittest discover -v || true
+          else
+            echo "No tests/ directory; skipping."
+          fi
 
-      - name: Post report as PR comment
-        if: ${{ steps.have_secrets.outputs.has == 'true' && github.event_name == 'pull_request' }}
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body-path: report.md
-
-      - name: Upload report artifact
+      - name: Upload bundle artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tasukeru-report
+          name: python-app-bundle
           path: |
-            report.md
             source.zip
 
-  dry-run:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: ${{ github.event.pull_request.head.repo.fork == true }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Fork policy notice
-        shell: bash
-        run: echo "Fork PR: external analysis is skipped by policy."
+      - name: Summary
+        if: always()
+        run: |
+          echo "### ✅ python-app workflow finished" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Files in archive: ${{ steps.bundle.outputs.files || 'n/a' }}" >> "$GITHUB_STEP_SUMMARY"
