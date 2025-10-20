@@ -90,20 +90,18 @@ jobs:
             include_args+=( ":$p" )
           done
           git archive --format=zip -o source.zip HEAD -- "${include_args[@]}"
-
           files=$(zipinfo -1 source.zip | wc -l | tr -d ' ')
           bytes=$(stat -c%s source.zip || stat -f%z source.zip)
           mb=$(( (bytes + 1048575) / 1048576 ))
           echo "files=$files bytes=$bytes (~${mb}MB)"
-
           if [ "$files" -gt "${MAX_FILES}" ]; then
-            echo "Too many files: $files > ${MAX_FILES}"; exit 1;
+            echo "Too many files: $files > ${MAX_FILES}"
+            exit 1
           fi
-
           if [ "$mb" -gt "${MAX_ZIP_MB}" ]; then
-            echo "Archive too large: ${mb}MB > ${MAX_ZIP_MB}MB"; exit 1;
+            echo "Archive too large: ${mb}MB > ${MAX_ZIP_MB}MB"
+            exit 1
           fi
-
           (command -v sha256sum >/dev/null && sha256sum source.zip) || shasum -a 256 source.zip
 
       - name: Strip notebook outputs (optional)
