@@ -38,7 +38,8 @@ jobs:
 
       - name: Lint workflow (self check)
         continue-on-error: true
-        run: yamllint -d "{extends: default, rules: {brackets: disable, truthy: disable}}" .github/workflows/python-app.yml
+        run: |
+          yamllint -d '{extends: default, rules: {brackets: disable, truthy: disable}}' .github/workflows/python-app.yml
 
       - name: Install project requirements (optional)
         run: |
