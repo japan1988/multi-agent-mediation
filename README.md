@@ -18,7 +18,7 @@
 
 ---
 
-## 🇬🇧 Overview (English)
+## 🇬🇧 Overview 
 
 **Sharp Puzzle** is a simulation framework designed to visualize and analyze how multiple agents in a hierarchical system adjust their emotions and intentions to resolve conflicts and reach harmony through mediation.
 
