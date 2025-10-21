@@ -1,6 +1,6 @@
 🧩 Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator
 多層エージェントの感情変化と調停過程を可視化・分析するための研究／教育向けシミュレーションフレームワークです。
-
+-----
 🇯🇵 概要 (Overview – Japanese)
 Sharp Puzzle は、階層構造をもつ複数のAIエージェントが、
 感情や意図を変化させながら「対立 → 調停 → 合意」に至るプロセスを
