@@ -1,11 +1,15 @@
 # Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator
+
 _A research and educational framework for studying negotiation, mediation, and hierarchical emotion flow among autonomous AI agents._
 
 [![Build Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml)
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Educational%20%2F%20Research-lightgrey.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-success.svg)](https://github.com/japan1988/multi-agent-mediation/actions)
 [![Last Commit](https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation.svg)](https://github.com/japan1988/multi-agent-mediation/commits/main)
+[![Status](https://img.shields.io/badge/status-active-brightgreen.svg)](https://github.com/japan1988/multi-agent-mediation)
+
+---
 
 ---
 🔷 Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator
