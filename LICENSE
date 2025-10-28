@@ -1,18 +1,27 @@
-Copyright (c) 2024 Japan1988
+─────────────────────────────────────────────
+📜 LICENSE HEADER / ライセンスヘッダー
+─────────────────────────────────────────────
 
-本ソフトウェアおよび付属ドキュメントの利用は、個人・教育・研究目的に限り無償で許可します。
-商用利用・営利目的での使用・再配布・販売は一切禁止します。
-著作権表示およびこのライセンス文を削除しないでください。
-本ソフトウェアは現状有姿（as-is）で提供され、いかなる保証もありません。
-利用により生じたいかなる損害についても、作者は責任を負いません。
+Copyright © 2024–2025 Japan1988  
+All rights reserved.
 
----
+This project is distributed for **educational and research purposes only**.  
+Commercial use, redistribution, or modification without explicit permission from the author is strictly prohibited.
 
-【English Version】
+本プロジェクトの著作権は Japan1988 に帰属します。  
+教育・研究目的に限り使用・複製・改変を許可します。  
+著作者の明示的な許可なく、商用利用・再配布・派生物の販売を行うことを禁止します。
 
-Copyright (c) 2024 Japan1988
+─────────────────────────────────────────────
+Disclaimer / 免責事項  
+─────────────────────────────────────────────
+This software is provided "as is" without any warranty, express or implied.  
+The author shall not be liable for any damages arising from the use of this software.
 
-This software and accompanying documentation may be used free of charge for personal, educational, or research purposes only.
-Commercial use, redistribution, or sale is strictly prohibited.
-Do not remove this license or the copyright notice.
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. THE AUTHOR ASSUMES NO LIABILITY FOR ANY DAMAGES ARISING FROM THE USE OF THIS SOFTWARE.
+本ソフトウェアは現状のまま提供され、明示または黙示を問わずいかなる保証も行いません。  
+利用により生じたいかなる損害についても、著作者は一切の責任を負いません。
+
+─────────────────────────────────────────────
+License Type: Educational / Research Use Only  
+Version: 1.1 (October 2025)
+─────────────────────────────────────────────
