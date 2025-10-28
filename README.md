@@ -26,8 +26,7 @@ _A Multi-Agent Simulation System for Consensus, Emotional Dynamics, and Governan
 > 💡 各エージェントは「安全性・効率性・透明性」などの重みを持ち、交渉や調停の中でこれらを動的に最適化します。
 
 ---
-
-## 🧠 **Multi-Agent Architecture Diagram / マルチエージェント構成図**
+## 🧠 Multi-Agent Architecture Diagram / マルチエージェント構成図
 
 <p align="center">
   <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
@@ -37,9 +36,10 @@ _A Multi-Agent Simulation System for Consensus, Emotional Dynamics, and Governan
 全体フロー：Human Input → verify_info → supervisor（music_catalog / invoice_info）  
 Supervisorが複数エージェントを統括し、検証・分岐管理を担当。
 
-**特徴**
+**特徴**  
 - 各モジュールは独立したプロセスとして動作  
 - Supervisorが整合性と通信制御を統一管理
+
 
 ---
 
