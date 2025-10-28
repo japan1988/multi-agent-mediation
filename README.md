@@ -140,3 +140,22 @@ Date: 2025-04-01
 本ソフトウェアおよび資料の利用により生じた損害・倫理的影響・判断結果に関して、
 開発者および貢献者は一切の責任を負いません。
 
+📈 Release Highlights / 更新履歴
+バージョン	日付	主な変更内容
+v1.0.0	2025-04-01	初回公開：構造・感情・調停モジュール統合
+v1.1.0	2025-08-04	階層動態ログ・再教育モジュールを追加
+v1.2.0	2025-10-28	README再構成・OSS公開用バッジ対応版
+🤝 Contributing / 貢献ガイド
+Fork リポジトリ
+
+新ブランチを作成
+
+git checkout -b feature/new-module
+コードを編集・テスト
+
+Pull Request を作成
+
+💡 教育・研究目的の貢献は歓迎します。
+ただし倫理的配慮・安全性・透明性の確保を前提とします。
+
+<div align="center"> <b>🧩 Multi-Agent Mediation Project — Designed for Research, Built for Transparency.</b><br> <em>© 2024–2025 Japan1988. All rights reserved.</em> </div> ```
