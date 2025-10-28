@@ -1,5 +1,5 @@
-
 📘 Multi-Agent Mediation Framework
+
 目的
 感情・文脈・意思決定の循環構造を可視化し、社会的影響を考慮した行動モデルを構築。
 複数エージェント間の交渉・妥協・調停を通して、**社会的均衡点（Social Equilibrium）**を探る実験的AIフレームワーク。
