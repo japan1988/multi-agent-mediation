@@ -18,7 +18,7 @@ _A research and educational framework for studying negotiation, mediation, and h
 This simulator models how AI agents negotiate and mediate under diverse emotional and hierarchical contexts.  
 複数のAIエージェントが異なる価値観・感情状態を持ちながら、交渉・仲裁・階層制御を行う過程を再現します。
 
-It allows visual exploration of how **emotion dynamics** (anger, relief, harmony) interact with **logical negotiation**.  
+It allows visual exploration of how **emotion dynamics** (anger, relief, harmony) interact with **logical negotiation.**  
 感情（怒り・安心・調和）と論理的交渉の相互作用を視覚的に観察できます。
 
 ---
@@ -38,10 +38,38 @@ It allows visual exploration of how **emotion dynamics** (anger, relief, harmony
 
 ---
 
-## ⚙️ How to Run / 実行方法
+## 📂 Project Directory Tree / ディレクトリツリー構成
 
-1️⃣ **Basic Simulation / 基本シミュレーション**
-```bash
+```plaintext
+multi-agent-mediation/
+├── ai_mediation_all_in_one.py
+├── ai_hierarchy_simulation_log.py
+├── ai_pacd_simulation.py
+├── ai_alliance_persuasion_simulator.py
+├── ai_governance_mediation_sim.py
+├── ai_reeducation_social_dynamics.py
+├── ai_hierarchy_dynamics_full_log_20250804.py
+├── multi_agent_mediation_with_reeducation.py
+├── mediation_basic_example.py
+├── mediation_process_log.tpy
+├── mediation_with_logging.py
+├── dialogue_consistency_mediator_v2_2_research.py
+├── rank_transition_sample.py
+├── agents.yaml
+├── requirements.txt
+├── LICENSE
+├── README.md
+├── tests/
+│   └── test_emotion_dynamics.py
+├── docs/
+│   ├── generate_graph_emotion_dynamics.py
+│   └── graph_emotion_dynamics.png
+└── .github/
+    └── workflows/
+        └── ci.yml
+⚙️ How to Run / 実行方法
+1️⃣ Basic Simulation / 基本シミュレーション
+
 python ai_hierarchy_simulation_log.py
 2️⃣ Generate Emotion Graph / 感情グラフ生成
 
@@ -77,7 +105,7 @@ Language / 言語: Python 3.8+
 
 Dependencies / 依存ライブラリ: matplotlib, unittest
 
-Outputs / 出力結果
+Outputs / 出力結果:
 
 ai_hierarchy_simulation_log.txt — 各ラウンドのパフォーマンスと怒り
 
@@ -110,4 +138,3 @@ If you reference this framework in research or teaching materials, please cite a
 
 Japan1988 (2025). Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator.
 GitHub Repository: https://github.com/japan1988/multi-agent-mediation
-
