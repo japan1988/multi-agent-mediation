@@ -1,89 +1,154 @@
-📘 Multi-Agent Mediation Framework
-A multi-agent simulation system for consensus, emotional dynamics, and governance mediation.
-マルチエージェントによる合意形成・感情動態・調停構造のシミュレーションシステム。
+# 📘 **Multi-Agent Mediation Framework**
+_A Multi-Agent Simulation System for Consensus, Emotional Dynamics, and Governance Mediation_  
+マルチエージェントによる **合意形成・感情動態・調停構造** のシミュレーションシステム  
 
-🔍 Agent Parameters (agents.yaml)
-Key	Range / Type	Meaning / 説明
-name	str	Agent identifier（エージェント名）
-safety	float (0–1)	Safety priority（安全性の優先度）
-efficiency	float (0–1)	Efficiency priority（効率性の優先度）
-transparency	float (0–1)	Transparency priority（透明性の優先度）
-anger	float (0–1)	Initial anger level（初期怒りレベル）
-tolerance	float (0–1)	Agreement tolerance（合意許容度）
-💡 各エージェントは安全性・効率性・透明性などの重みを持ち、交渉や調停でこれらを動的に最適化します。
+[![Build Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-Educational%20%2F%20Research-lightgrey.svg)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation.svg)](https://github.com/japan1988/multi-agent-mediation/commits/main)
+[![Status](https://img.shields.io/badge/status-active-brightgreen.svg)](https://github.com/japan1988/multi-agent-mediation)
 
-🧠 Multi-Agent Architecture Diagram / マルチエージェント構成図
-Overview
+</div>
 
-Overview（概要）
-システム全体のフローを示す構成図。
-「Human Input」から始まり、「verify_info」で検証 → 「supervisor」が複数エージェント（music_catalog, invoice_info）を制御。
+---
 
-Purpose（目的）
-情報の検証と分岐管理を行う上位調停層（Supervisor）の概念を視覚化。
+## 🔍 **Agent Parameters (`agents.yaml`)**
 
-特徴
+| Key | Range / Type | Meaning / 説明 |
+|------|---------------|----------------|
+| `name` | `str` | Agent identifier（エージェント名） |
+| `safety` | `float (0–1)` | Safety priority（安全性の優先度） |
+| `efficiency` | `float (0–1)` | Efficiency priority（効率性の優先度） |
+| `transparency` | `float (0–1)` | Transparency priority（透明性の優先度） |
+| `anger` | `float (0–1)` | Initial anger level（初期怒りレベル） |
+| `tolerance` | `float (0–1)` | Agreement tolerance（合意許容度） |
 
-各モジュールは独立したプロセスとして動作。
+> 💡 各エージェントは「安全性・効率性・透明性」などの重みを持ち、交渉や調停の中でこれらを動的に最適化します。
 
-Supervisorが全体の整合性と通信制御を担当。
+---
 
-🧩 Layered Agent Model / 階層エージェントモデル
-Hierarchy Model
+## 🧠 **Multi-Agent Architecture Diagram / マルチエージェント構成図**
 
-Overview（概要）
-エージェント群を3層構造（Interface / Mediation / Control）で整理。
-各層の役割を視覚的に表しています。
+<p align="center">
+  <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
+</p>
 
-Layer Roles（層の役割）
+**Overview（概要）**  
+全体フロー：Human Input → verify_info → supervisor（music_catalog / invoice_info）  
+Supervisorが複数エージェントを統括し、検証・分岐管理を担当。
 
-🟠 Interface Layer: ユーザーや外部システムとの通信を担当
+**特徴**
+- 各モジュールは独立したプロセスとして動作  
+- Supervisorが整合性と通信制御を統一管理
 
-🟢 Mediation Layer: 調停・解析エージェントによる意思形成
+---
 
-🟣 Control Layer: データ整合・ハッシュ検証・履歴管理
+## 🧩 **Layered Agent Model / 階層エージェントモデル**
 
-技術要素
-Blockchain構造をベースに、Merkle Root Database と Hash Database で整合性を保証。
+<p align="center">
+  <img src="docs/multi_agent_hierarchy_architecture.png" width="700" alt="Layered Model">
+</p>
 
-💫 Context and Sentiment Flow / 文脈・感情フロー構造
-Sentiment Context Model
+**構造概要**  
+3層モデル（Interface / Mediation / Control）で構成。  
+役割ごとに責務を明確化し、エージェントの階層動作を可視化。
 
-Overview（概要）
-現実空間・オンライン空間・意思決定層を結ぶ感情伝播モデル。
+**Layer Roles（層の役割）**
+| 層 | 説明 |
+|----|------|
+| 🟠 Interface Layer | 外部通信・ユーザーI/O担当 |
+| 🟢 Mediation Layer | 意思形成・解析・調停ロジック |
+| 🟣 Control Layer | データ整合・ハッシュ検証・履歴管理 |
 
-Flow Summary（流れの要約）
-1️⃣ 社会・ユーザー → オンライン空間（リソース生成）
-2️⃣ NLP・感情分析エージェントが情報を抽出
-3️⃣ 意思決定機関に対して「ノート＋推奨」としてフィードバック
+> 技術要素：Merkle Root Database＋Hash Database によるデータ整合性の保証。
 
-目的
-感情・文脈・意思決定の循環構造を可視化し、
-社会的影響を考慮したエージェント行動モデルを構築。
+---
 
-⚖️ License & Disclaimer / ライセンス・免責（英日併記）
-English:
-This framework is provided for educational and research purposes only.
-Redistribution or commercial use without permission is strictly prohibited.
-The author and contributors assume no responsibility for damages or decisions resulting from its use.
+## 💫 **Context & Sentiment Flow / 文脈・感情フロー構造**
 
-日本語:
-本フレームワークは 教育・研究目的に限定 して提供されています。
-許可なき再配布・商用利用は禁止されています。
-本ソフトウェアの使用により生じた損害・判断等について、開発者および貢献者は一切の責任を負いません。
+<p align="center">
+  <img src="docs/sentiment_context_flow.png" width="700" alt="Sentiment Context Flow">
+</p>
 
-🧾 Citation Format / 引用形式
-If used in academic or training materials, please cite as follows:
-教育・研究資料で引用する場合は以下を記載してください：
+**Flow Summary（流れの要約）**
+1️⃣ 社会・ユーザー → オンライン空間（リソース生成）  
+2️⃣ NLP・感情分析エージェントが情報を抽出  
+3️⃣ 意思決定層へ「ノート＋推奨」としてフィードバック  
 
-Japan1988 (2025). Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator.
-GitHub Repository: https://github.com/japan1988/multi-agent-mediation
+**目的**  
+感情・文脈・意思決定の循環構造を可視化し、社会的影響を考慮した行動モデルを構築。
 
-🪪 Copyright Notice / 著作権表示
-© 2024–2025 Japan1988. All rights reserved.
+---
+
+## 🗂️ **Repository Structure / ファイル構成**
+
+| Path | Type | Description / 説明 |
+|------|------|--------------------|
+| `agents.yaml` | Config | エージェントパラメータ定義 |
+| `ai_mediation_all_in_one.py` | Core | 調停アルゴリズム統合モジュール |
+| `ai_alliance_persuasion_simulator.py` | Simulator | 同盟交渉・説得シミュレーション |
+| `ai_governance_mediation_sim.py` | Simulator | 政策・ガバナンス調停モデル |
+| `ai_pacd_simulation.py` | Experiment | 段階的再教育AIシミュレーション |
+| `ai_hierarchy_dynamics_full_log_20250804.py` | Logger | ログ強化・階層動態追跡モジュール |
+| `multi_agent_architecture_overview.webp` | Diagram | 構成図（全体） |
+| `multi_agent_hierarchy_architecture.png` | Diagram | 階層モデル図 |
+| `sentiment_context_flow.png` | Diagram | 感情フロー図 |
+| `requirements.txt` | Dependency | Python依存関係 |
+| `.github/workflows/ci.yml` | Workflow | CI/Lintワークフロー |
+| `LICENSE` | License | 教育・研究ライセンス |
+| `README.md` | Documentation | 本ドキュメント |
+
+> 💡 すべての `.py` モジュールは独立実行可能。  
+> `agents.yaml` が全エージェント設定の共通基盤。
+
+---
+
+## ⚖️ **License & Disclaimer / ライセンス・免責**
+
+**License Type:** Educational / Research License v1.1  
+**Date:** 2025-04-01  
+
+### ✅ Permitted / 許可されること
+- 教育・研究目的での非営利使用  
+- コード引用・学術研究・再現実験  
+- 個人環境での再シミュレーション  
+
+### 🚫 Prohibited / 禁止事項
+- 商用利用・無断再配布・再販  
+- 出典明記なしの派生公開  
+- 本AIを人への自動判断に使用すること  
+
+### ⚖️ Liability / 免責
+本ソフトウェアおよび資料の利用により生じた損害・判断結果について、  
+開発者および貢献者は一切の責任を負いません。
+
+---
+
+## 🧾 **Citation Format / 引用形式**
+
+> Japan1988 (2025). *Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator.*  
+> GitHub Repository: [https://github.com/japan1988/multi-agent-mediation](https://github.com/japan1988/multi-agent-mediation)  
+> License: Educational / Research License v1.1
+
+---
+
+## 🪪 **Copyright**
+
+© 2024–2025 Japan1988. All rights reserved.  
 All diagrams and source files are distributed under the Educational/Research License.
-本リポジトリ内のすべての図版・ソースファイルは、教育・研究専用ライセンスの下で配布されています。
 
-🌐 Final Notes
-このREADMEは、構造・感情・文脈を統合的に扱うマルチエージェント・システムの全体像を示しています。
-教育・研究用途での再現・派生プロジェクトは自由に行えますが、倫理と透明性の保持を前提としています。
+---
+
+## 🌐 **Final Notes**
+
+> このリポジトリは、マルチエージェントによる「調停・情動・再教育」構造を研究するために設計されています。  
+> 教育・研究目的での再利用は自由ですが、**倫理と透明性**を守ることを前提とします。  
+
+📁 **最新版コミット:** `f11fa6e`（README更新 / 2025-10-28）  
+📜 **前回更新:** LICENSE v1.1（Educational / Research License）
+
+---
+
+<div align="center">
+<b>🧩 Multi-Agent Mediation Project — Designed for Research, Built for Transparency.</b>
+</div>
