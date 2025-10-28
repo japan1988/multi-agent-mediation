@@ -1,6 +1,8 @@
-# Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator
+# Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator  
+シャープパズル：マルチエージェント階層構造と感情ダイナミクス・シミュレーター
 
-_A research and educational framework for studying negotiation, mediation, and hierarchical emotion flow among autonomous AI agents._
+_A research and educational framework for studying negotiation, mediation, and hierarchical emotion flow among autonomous AI agents._  
+自律型AIエージェント同士の「交渉・仲裁・感情的相互作用・階層的制御」を研究・教育目的で可視化・解析するためのフレームワーク。
 
 [![Build Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
@@ -11,108 +13,101 @@ _A research and educational framework for studying negotiation, mediation, and h
 
 ---
 
-🔷 **Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator**  
-A research and educational framework for studying negotiation, mediation, and hierarchical emotion flow among autonomous AI agents.
+## 🔷 Overview / 概要
 
-個々のAIエージェントが異なる価値観・感情状態を持ちながら交渉・仲裁・合意形成を行う過程を構造的に可視化し、  
-感情と論理の相互作用をシミュレーションできる教育／研究用プロジェクトです。
+This simulator models how AI agents negotiate and mediate under diverse emotional and hierarchical contexts.  
+複数のAIエージェントが異なる価値観・感情状態を持ちながら、交渉・仲裁・階層制御を行う過程を再現します。
 
----
-
-## 📁 Repository Structure
-
-| Path | Description |
-|------|-------------|
-| `ai_mediation_all_in_one.py` | Core negotiation model. Agents adjust priority weights (safety / efficiency / transparency) and compute harmony. |
-| `ai_hierarchy_simulation_log.py` | Hierarchical performance & anger-propagation simulator. Logs every round of evolution. |
-| `mediation_process_log.py` | Consensus process with gradually expanding tolerance. Produces `agreement_process_log.txt`. |
-| `docs/generate_graph_emotion_dynamics.py` | Parses logs and outputs time-series graph `docs/graph_emotion_dynamics.png`. |
-| `tests/test_emotion_dynamics.py` | Unit tests validating priority averaging, compromise generation, and mediation flow. |
-| `.github/workflows/ci.yml` | Continuous-integration workflow running all tests on each push. |
-| `LICENSE` | License file (personal / educational / research use only). |
-| `README.md` | Main documentation file (this document). |
+It allows visual exploration of how **emotion dynamics** (anger, relief, harmony) interact with **logical negotiation**.  
+感情（怒り・安心・調和）と論理的交渉の相互作用を視覚的に観察できます。
 
 ---
 
-## ⚙️ How to Run
+## 📁 Repository Structure / リポジトリ構成
 
-1️⃣ **Basic Simulation**
+| Path | Description / 説明 |
+|------|---------------------|
+| `ai_mediation_all_in_one.py` | Core negotiation model（交渉モデルの中核） |
+| `ai_hierarchy_simulation_log.py` | Hierarchical simulation & anger propagation（階層型シミュレーション） |
+| `mediation_process_log.py` | Consensus process & tolerance-based agreement（合意形成ログ生成） |
+| `docs/generate_graph_emotion_dynamics.py` | Graph generator for emotion flow（感情変化グラフ生成） |
+| `tests/test_emotion_dynamics.py` | Unit tests（単体テスト） |
+| `.github/workflows/ci.yml` | Continuous Integration |
+| `LICENSE` | License file |
+| `README.md` | Main documentation file |
+
+---
+
+## ⚙️ How to Run / 実行方法
+
+1️⃣ **Basic Simulation / 基本シミュレーション**
 ```bash
 python ai_hierarchy_simulation_log.py
-Outputs a detailed anger/performance log → ai_hierarchy_simulation_log.txt.
-
-2️⃣ Generate Graph
+2️⃣ Generate Emotion Graph / 感情グラフ生成
 
 python docs/generate_graph_emotion_dynamics.py ai_hierarchy_simulation_log.txt
-Creates docs/graph_emotion_dynamics.png.
-
-3️⃣ Test Validation
+3️⃣ Test Validation / テスト実行
 
 python -m unittest discover -s tests
-Ensures all logical components are consistent.
-
-🧩 Concept Overview
-The simulator integrates four key layers that together model “emotional governance” in multi-agent systems.
-
-Layer	Function
-Agent	Holds individual goals & priorities (safety / efficiency / transparency).
-Mediator	Calculates harmony and negotiates compromise offers.
-Hierarchy Control	Ranks agents by performance and manages authority flow.
-Emotion Loop	Propagates emotional influence (anger ↔ relief feedback).
-🖼️ Visualisations / ビジュアル化
-To enhance readability, the following figures visually complement the explanation above.
-Both images should be placed under docs/ so that GitHub renders them correctly.
-
-🧩 System Architecture Diagram
-システム構造図（エージェント層 → メディエーター層 → 階層制御層 → 感情ループ）
-
+🧩 Concept Overview / 概念構成
+Layer / 層	Function / 役割
+Agent	Holds goals & priorities（個別目標と優先度）
+Mediator	Negotiates compromise（調整・交渉・妥協案生成）
+Hierarchy Control	Manages authority flow（階層的権限制御）
+Emotion Loop	Propagates emotion feedback（怒り・安心の循環）
+🖼️ System Architecture Diagram / システム構造図
 graph TD
   A[Agent Layer<br>個々の価値・目標・優先度] --> B[Mediator Layer<br>調整・交渉・妥協案生成]
   B --> C[Hierarchy Control Layer<br>序列・権限管理・合意形成]
   C --> D[Emotion Dynamics Loop<br>怒り・安心の循環フィードバック]
   D --> B
   A --> D
-🌀 Emotion Dynamics Example
-感情ダイナミクスの推移例（12ラウンドにおける4エージェントの怒り変化）
+🌀 Emotion Dynamics Example / 感情ダイナミクス例
+12ラウンドにおける4エージェントの怒り変化を示すグラフ
+(Example: docs/graph_emotion_dynamics.png)
 
-(example image: docs/graph_emotion_dynamics.png)
+🧠 Design Philosophy / 設計理念
+Principle	意味
+Transparency / 可視性	全演算ステップをログ化
+Safety / 安全性	外部API呼び出しなし・完全ローカル実行
+Reproducibility / 再現性	乱数シード固定とバージョン依存性明記
+Educational Value / 教育性	授業・研究に使える構造的モジュール設計
+🧪 Technical Details / 技術情報
+Language / 言語: Python 3.8+
 
-🧠 Design Philosophy
-Transparency / 可視性 — Logs every computation step for auditability.
+Dependencies / 依存ライブラリ: matplotlib, unittest
 
-Safety / 安全性 — No external API calls; completely local execution.
+Outputs / 出力結果
 
-Reproducibility / 再現性 — Deterministic random seeds and version-locked dependencies.
+ai_hierarchy_simulation_log.txt — 各ラウンドのパフォーマンスと怒り
 
-Educational Value / 教育性 — Modular Python scripts for classroom or lab exercises.
+agreement_process_log.txt — 合意形成の許容度トレース
 
-🧪 Technical Details
-Language: Python 3.8+
-Dependencies: matplotlib, unittest
+docs/graph_emotion_dynamics.png — 時系列感情グラフ
 
-Outputs
-
-ai_hierarchy_simulation_log.txt – Performance & anger per round
-
-agreement_process_log.txt – Tolerance-based consensus trace
-
-docs/graph_emotion_dynamics.png – Time-series emotion graph
-
-📜 License
+📜 License / ライセンス
 This repository is licensed for personal, educational, and research use only.
+本リポジトリは「個人利用・教育・研究目的」に限り使用を許可します。
+
 Commercial use or redistribution is strictly prohibited.
+商用利用・再配布は禁止されています。
 
-See LICENSE for full terms.
+See LICENSE for full details.
 
-🧾 Citation
+⚠️ Disclaimer / 免責事項
+This software is provided "as is" without warranty of any kind.
+本プロジェクトは現状のまま提供され、いかなる保証も行いません。
+
+Developers and contributors shall not be liable for any direct or indirect damages resulting from use.
+開発者および貢献者は、本ソフトウェアの利用により発生するいかなる損害に対しても責任を負いません。
+
+Use of this framework implies acceptance of these terms.
+本プロジェクトの利用は、上記条件への同意を意味します。
+
+🧾 Citation / 引用方法
 If you reference this framework in research or teaching materials, please cite as:
+研究・教育で引用する場合は以下を明記してください。
 
 Japan1988 (2025). Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator.
 GitHub Repository: https://github.com/japan1988/multi-agent-mediation
-
-✅ Ready for Publication
-✔ Fully validated (unit tests pass)
-✔ Visual assets included
-✔ Markdown layout 100% GitHub-compatible
-
 
