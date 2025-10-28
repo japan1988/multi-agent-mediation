@@ -10,29 +10,14 @@
 <p align="center">
 
 <!-- ⭐ OSS 公開向けバッジ群 -->
-<a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
-  <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub stars">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/issues">
-  <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?logo=github" alt="GitHub issues">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/releases">
-  <img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?include_prereleases&color=brightgreen" alt="Release Version">
-</a>
-<a href="LICENSE">
-  <img src="https://img.shields.io/github/license/japan1988/multi-agent-mediation?color=blue" alt="License">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml">
-  <img src="https://img.shields.io/github/actions/workflow/status/japan1988/multi-agent-mediation/ci.yml?label=CI/CD&logo=githubactions&logoColor=white" alt="CI/CD Status">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/commits/main">
-  <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?color=success&label=Last%20Commit" alt="Last Commit">
-</a>
-<a href="#">
-  <img src="https://img.shields.io/badge/python-3.10%2B-green.svg?logo=python&logoColor=white" alt="Python Version">
-</a>
-<a href="#">
-  <img src="https://img.shields.io/badge/status-stable-brightgreen.svg" alt="Project Status">
+[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/issues)
+[![GitHub release](https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?color=blue)](https://github.com/japan1988/multi-agent-mediation/releases)
+[![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)](./LICENSE)
+[![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions)
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](#)
+[![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](#)
+
 </a>
 
 </p>
