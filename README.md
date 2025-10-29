@@ -1,28 +1,38 @@
 # 📘 **Multi-Agent Mediation Framework**
 
 <p align="center">
+  <!-- GitHub Stats -->
+  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
+    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub stars">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
+    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation" alt="GitHub issues">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/releases">
+    <img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?color=blue" alt="GitHub release">
+  </a>
 
-<a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
-<img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub stars">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/issues">
-<img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation" alt="GitHub issues">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/releases">
-<img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?color=blue" alt="GitHub release">
-</a>
-<a href="./LICENSE">
-<img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen.svg" alt="Educational License">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
-<img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI - Python App">
-</a>
-<img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python">
-<img src="https://img.shields.io/badge/status-stable-brightgreen.svg" alt="Status">
-<img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code Style: Black">
-<img src="https://img.shields.io/badge/use--case-Education%20%26%20Research-blue.svg" alt="Use Case">
-<img src="https://img.shields.io/badge/framework-KAGE%20Compatible-purple.svg" alt="KAGE Compatible">
-[CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
+  <!-- License -->
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen.svg" alt="Educational License">
+  </a>
+
+  <!-- CI / Actions -->
+  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
+    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI - Python App">
+  </a>
+
+  <!-- Python & Status -->
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python">
+  <img src="https://img.shields.io/badge/status-stable-brightgreen.svg" alt="Status">
+
+  <!-- Style & Scope -->
+  <img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code Style: Black">
+  <img src="https://img.shields.io/badge/use--case-Education%20%26%20Research-blue.svg" alt="Use Case">
+  <img src="https://img.shields.io/badge/framework-KAGE%20Compatible-purple.svg" alt="KAGE Compatible">
+
+  <!-- Direct CI badge link -->
+  [CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
 </p>
   
 
