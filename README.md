@@ -12,7 +12,8 @@
 
 </p>
 
----
+このリリースは参考用です。現時点で正式公開の予定はありません。  
+This release is for reference only. No active or planned publication.
 
 ## 🎯 **目的 / Purpose**
 
