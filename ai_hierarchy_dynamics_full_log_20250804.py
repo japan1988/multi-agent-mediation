@@ -74,7 +74,6 @@ def propagate_emotion(agents: list[Agent]) -> None:
             f.anger += coef * (avg_leader_anger - f.anger)
             f.anger = max(0.0, min(1.0, f.anger))
 
-
 def propagate_upward(agents: list[Agent]) -> None:
     """下位→上位へのフィードバック（不満の逆流）"""
-    w
+    
