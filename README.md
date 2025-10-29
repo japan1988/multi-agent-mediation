@@ -6,7 +6,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/issues)
 [![GitHub release](https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?color=blue)](https://github.com/japan1988/multi-agent-mediation/releases)
 [![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)](./LICENSE)
-[![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/ci.yml)
+[![CI - Python App](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](#)
 </p>
