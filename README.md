@@ -1,6 +1,7 @@
 # 📘 **Multi-Agent Mediation Framework**
 
 <p align="center">
+  
 [![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/issues)
 [![GitHub release](https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?color=blue)](https://github.com/japan1988/multi-agent-mediation/releases)
