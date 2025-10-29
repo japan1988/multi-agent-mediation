@@ -1,31 +1,39 @@
 ---
 name: Python App CI
+
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         python-version: [ "3.9", "3.10", "3.11" ]
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
+
       - name: Install dependencies / tools
         run: |
           pip install -r requirements.txt 2>/dev/null || echo "No requirements.txt found"
           pip install -q pytest pytest-cov pytest-xdist ruff yamllint
+
       - name: Lint workflow (self check)
         continue-on-error: true
         run: |
@@ -37,8 +45,10 @@ jobs:
               line-length: disable
             }
           }' .github/workflows/python-app.yml
+
       - name: Ruff check
         run: ruff check .
+
       - name: Run tests (pytest)
         run: |
           if [ -d tests ]; then
@@ -48,6 +58,7 @@ jobs:
           else
             echo "No tests/ directory; skipping."
           fi
+
       - name: Upload coverage.xml
         if: failure() || success()
         uses: actions/upload-artifact@v4
@@ -55,6 +66,7 @@ jobs:
           name: coverage-py${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
+
       - name: Summary
         if: always()
         run: |
