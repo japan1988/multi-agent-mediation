@@ -1,90 +1,65 @@
----
-name: Python App
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 1
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+  - name: Setup Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: ${{ matrix.python-version }}
+      cache: pip
 
-permissions:
-  contents: read
-  pull-requests: write
+  - name: Upgrade pip
+    run: python -m pip install --upgrade pip
 
-concurrency:
-  group: python-app-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  # 依存が無い場合でも、最低限のツールは入れる
+  - name: Install dependencies / tools
+    run: |
+      if [ -f requirements.txt ]; then
+        pip install -r requirements.txt
+      fi
+      # 明示ツール（requirementsに無い場合の保険）
+      pip install -q pytest pytest-cov pytest-xdist ruff yamllint
 
-jobs:
-  build-and-check:
-    name: test (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # ワークフロー自身の軽いYAMLLint（括弧・truthy・行長は緩和）
+  - name: Lint workflow (self check)
+    continue-on-error: true
+    run: |
+      yamllint -d '{extends: default,
+                    rules: {brackets: disable,
+                            truthy: disable,
+                            line-length: disable}}' \
+               .github/workflows/python-app.yml
 
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+  # コードLint（ruff）
+  - name: Ruff check
+    run: ruff check .
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+  # テスト：tests/ が無ければスキップ
+  - name: Run tests (pytest)
+    run: |
+      if [ -d tests ]; then
+        pytest -q -n auto --dist loadfile \
+               --cov=. --cov-report=xml:coverage.xml
+      else
+        echo "No tests/ directory; skipping."
+      fi
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
+  # 失敗時/成功時ともにカバレッジを保存
+  - name: Upload coverage.xml
+    if: failure() || success()
+    uses: actions/upload-artifact@v4
+    with:
+      name: coverage-py${{ matrix.python-version }}
+      path: coverage.xml
+      if-no-files-found: ignore
 
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      # 依存が無い場合でも、最低限のツールは入れる
-      - name: Install dependencies / tools
-        run: |
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          # 明示ツール（requirementsに無い場合の保険）
-          pip install -q pytest pytest-cov pytest-xdist ruff yamllint
-
-      # ワークフロー自身の軽いYAMLLint（括弧・truthyは緩和）
-      - name: Lint workflow (self check)
-        continue-on-error: true
-        run: |
-          yamllint -d '{extends: default,
-                        rules: {brackets: disable, truthy: disable}}' \
-                   .github/workflows/python-app.yml
-
-      # コードLint（ruff）
-      - name: Ruff check
-        run: ruff check .
-
-      # テスト：tests/ が無ければスキップ
-      - name: Run tests (pytest)
-        run: |
-          if [ -d tests ]; then
-            pytest -q -n auto --dist loadfile \
-              --cov=. --cov-report=xml:coverage.xml
-          else
-            echo "No tests/ directory; skipping."
-          fi
-
-      # 失敗時のカバレッジを保存（成功時でも保存したい場合は if を外す）
-      - name: Upload coverage.xml
-        if: failure() || success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-py${{ matrix.python-version }}
-          path: coverage.xml
-          if-no-files-found: ignore
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "### ✅ python-app workflow finished" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Python: ${{ matrix.python-version }}" >> "$GITHUB_STEP_SUMMARY"
+  - name: Summary
+    if: always()
+    run: |
+      {
+        echo "### ✅ python-app workflow finished";
+        echo;
+        echo "- Python: ${{ matrix.python-version }}";
+      } >> "$GITHUB_STEP_SUMMARY"
