@@ -1,66 +1,76 @@
-steps:
-  - name: Checkout
-    uses: actions/checkout@v4
-    with:
-      fetch-depth: 1
+name: Python App CI
 
-  - name: Setup Python
-    uses: actions/setup-python@v5
-    with:
-      python-version: ${{ matrix.python-version }}
-      cache: pip
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
 
-  - name: Upgrade pip
-    run: python -m pip install --upgrade pip
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-  # 依存が無い場合でも、最低限のツールは入れる
-  - name: Install dependencies / tools
-    run: |
-      if [ -f requirements.txt ]; then
-        pip install -r requirements.txt
-      fi
-      # 明示ツール（requirementsに無い場合の保険）
-      pip install -q pytest pytest-cov pytest-xdist ruff yamllint
+    strategy:
+      matrix:
+        python-version: [ "3.9", "3.10", "3.11" ]
 
-  # ワークフロー自身の軽いYAMLLint（括弧・truthy・行長を緩和）
-  - name: Lint workflow (self check)
-    continue-on-error: true
-    run: |
-      yamllint -d '{extends: default,
-                    rules: {brackets: disable,
-                            truthy: disable,
-                            line-length: disable}}' \
-               .github/workflows/python-app.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-  # コードLint（ruff）
-  - name: Ruff check
-    run: ruff check .
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
-  # テスト：tests/ が無ければスキップ
-  - name: Run tests (pytest)
-    run: |
-      if [ -d tests ]; then
-        pytest -q -n auto --dist loadfile \
-               --cov=. --cov-report=xml:coverage.xml
-      else
-        echo "No tests/ directory; skipping."
-      fi
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
 
-  # 成功・失敗を問わずカバレッジを保存
-  - name: Upload coverage.xml
-    if: failure() || success()
-    uses: actions/upload-artifact@v4
-    with:
-      name: coverage-py${{ matrix.python-version }}
-      path: coverage.xml
-      if-no-files-found: ignore
+      - name: Install dependencies / tools
+        run: |
+          pip install -r requirements.txt 2>/dev/null || echo "No requirements.txt found"
+          pip install -q pytest pytest-cov pytest-xdist ruff yamllint
 
-  # 実行サマリを出力
-  - name: Summary
-    if: always()
-    run: |
-      {
-        echo "### ✅ python-app workflow finished";
-        echo;
-        echo "- Python: ${{ matrix.python-version }}";
-      } >> "$GITHUB_STEP_SUMMARY"
+      - name: Lint workflow (self check)
+        continue-on-error: true
+        run: |
+          yamllint -d '{
+            extends: default,
+            rules: {
+              brackets: disable,
+              truthy: disable,
+              line-length: disable
+            }
+          }' .github/workflows/python-app.yml
+
+      - name: Ruff check
+        run: ruff check .
+
+      - name: Run tests (pytest)
+        run: |
+          if [ -d tests ]; then
+            pytest -q -n auto --dist loadfile \
+              --tb=short --durations=10 \
+              --cov=. --cov-report=xml:coverage.xml
+          else
+            echo "No tests/ directory; skipping."
+          fi
+
+      - name: Upload coverage.xml
+        if: failure() || success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ✅ python-app workflow finished";
+            echo;
+            echo "- Python: ${{ matrix.python-version }}";
+          } >> "$GITHUB_STEP_SUMMARY"
