@@ -22,6 +22,7 @@
 <img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code Style: Black">
 <img src="https://img.shields.io/badge/use--case-Education%20%26%20Research-blue.svg" alt="Use Case">
 <img src="https://img.shields.io/badge/framework-KAGE%20Compatible-purple.svg" alt="KAGE Compatible">
+[CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
 </p>
   
 
