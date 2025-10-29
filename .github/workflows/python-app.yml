@@ -22,7 +22,7 @@ steps:
       # 明示ツール（requirementsに無い場合の保険）
       pip install -q pytest pytest-cov pytest-xdist ruff yamllint
 
-  # ワークフロー自身の軽いYAMLLint（括弧・truthy・行長は緩和）
+  # ワークフロー自身の軽いYAMLLint（括弧・truthy・行長を緩和）
   - name: Lint workflow (self check)
     continue-on-error: true
     run: |
@@ -46,7 +46,7 @@ steps:
         echo "No tests/ directory; skipping."
       fi
 
-  # 失敗時/成功時ともにカバレッジを保存
+  # 成功・失敗を問わずカバレッジを保存
   - name: Upload coverage.xml
     if: failure() || success()
     uses: actions/upload-artifact@v4
@@ -55,6 +55,7 @@ steps:
       path: coverage.xml
       if-no-files-found: ignore
 
+  # 実行サマリを出力
   - name: Summary
     if: always()
     run: |
