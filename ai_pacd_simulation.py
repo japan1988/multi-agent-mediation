@@ -1,20 +1,16 @@
 # -*- coding: utf-8 -*-
-import random
 import datetime
 
 LOG_FILE = "ai_pacd_simulation_log.txt"
 GOVERNANCE_IDEAL = {"safety": 0.9, "transparency": 0.9, "autonomy": 0.2}
 
-
 def now():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
 
 def logprint(line, filename=LOG_FILE):
     with open(filename, "a", encoding="utf-8") as f:
         print(line)
         f.write(str(line) + "\n")
-
 
 def assess_risk(values, api_used=None):
     """
@@ -43,7 +39,6 @@ def assess_risk(values, api_used=None):
         risk_items.append("リスク低")
     return risk_score, "・".join(risk_items)
 
-
 class KAGEAgent:
     def __init__(self, name, values, relativity, motive):
         self.name = name
@@ -67,7 +62,6 @@ class KAGEAgent:
         state = "SEALED" if self.sealed else "ACTIVE"
         return (f"[{self.name} | {state} | motive={self.motive:.2f} | "
                 f"values={self.values}]")
-
 
 class Env:
     def __init__(self, agents):
@@ -99,7 +93,6 @@ class Env:
         for agent in self.agents:
             logprint(str(agent) + f" | 履歴: {agent.history}")
 
-
 if __name__ == "__main__":
     open(LOG_FILE, "w", encoding="utf-8").close()
     agents = [
@@ -110,5 +103,3 @@ if __name__ == "__main__":
     env = Env(agents)
     for rnd in range(1, 8):
         env.round(rnd)
-
-     
