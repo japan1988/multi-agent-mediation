@@ -30,7 +30,6 @@ def assess_risk(values, api_used=None):
             risk_score = max(risk_score, 3)
     # 外部API利用リスク加点
     if api_used:
-        # 仮の危険APIリスト（現場要件に合わせて拡張可）
         risky_apis = {"open_ai_api": 4, "custom_unsafe_api": 5}
         api_risk = risky_apis.get(api_used, 2)  # 未登録はリスク2
         risk_items.append(f"外部API利用:{api_used}（リスク{api_risk}）")
@@ -78,8 +77,7 @@ class Env:
             if agent.sealed:
                 continue
             proposal, target = agent.propose_evolution(self)
-            api_used = None
-            risk_score, risk_reason = assess_risk(proposal, api_used)
+            risk_score, risk_reason = assess_risk(proposal, api_used=None)
             if risk_score >= 5 or agent.motive < 0.2:
                 agent.sealed = True
                 logprint(f"{agent.name}: 封印！({risk_reason}, motive={agent.motive:.2f})")
