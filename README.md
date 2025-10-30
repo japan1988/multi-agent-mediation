@@ -1,4 +1,5 @@
 # 📘 **Multi-Agent Mediation Framework**
+
 <p align="center">
   <!-- 📊 Repository Status -->
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
@@ -6,9 +7,6 @@
   </a>
   <a href="https://github.com/japan1988/multi-agent-mediation/issues">
     <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/releases">
-    <img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?style=flat-square&color=blue" alt="Latest Release">
   </a>
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License">
@@ -24,7 +22,6 @@
   <img src="https://img.shields.io/badge/framework-Research%20AI%20Framework-blueviolet.svg?style=flat-square" alt="Framework: Research AI">
   <img src="https://img.shields.io/badge/KAGE-Compatible-purple.svg?style=flat-square" alt="KAGE Compatible">
 </p>
-
   <!-- License -->
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen.svg" alt="Educational License">
