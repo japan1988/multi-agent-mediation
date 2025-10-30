@@ -1,23 +1,28 @@
 # 📘 **Multi-Agent Mediation Framework**
 <p align="center">
-
-<!-- GitHub Stats -->
-<a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
-<img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub stars">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/issues">
-<img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation" alt="GitHub issues">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/releases">
-<img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?color=blue" alt="GitHub release">
-</a>
-<a href="./LICENSE">
-<img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen.svg" alt="Educational License">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
-<img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI - Python App">
-</a>
-<br>
+  <!-- ① Repo KPIs -->
+  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
+    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
+    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/releases">
+    <img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?style=flat-square" alt="Latest Release">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License: Educational/Research">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
+    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI: Python App (main)">
+  </a>
+  <br/>
+  <!-- ② Tech meta -->
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square" alt="Python 3.10+">
+  <img src="https://img.shields.io/badge/code%20style-Black-000000.svg?style=flat-square" alt="Code Style: Black">
+  <img src="https://img.shields.io/badge/use--case-Education%20%26%20Research-blue.svg?style=flat-square" alt="Use Case: Education & Research">
+  <img src="https://img.shields.io/badge/KAGE-Compatible-purple.svg?style=flat-square" alt="KAGE Compatible">
+</p>
 <!-- Environment / Framework Badges -->
 <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python">
 <img src="https://img.shields.io/badge/status-stable-brightgreen.svg" alt="Status">
