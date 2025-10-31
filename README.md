@@ -1,5 +1,5 @@
 # 📘 **Multi-Agent Mediation Framework**
-
+> 🚧 **Status:** Final Build Packaging in Progress (v1.0 Release Candidate)
 <p align="center">
   <!-- 📊 Repository Status -->
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
