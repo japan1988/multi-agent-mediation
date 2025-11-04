@@ -1,83 +1,125 @@
 # -*- coding: utf-8 -*-
 """
-sim_batch_fixed.py
-Batch runner: run multiple trials (raw/unfiltered and filtered),
-collect logs, compute stats, and generate charts.
+Batch runner: run N trials for two modes (raw / filtered),
+aggregate 'first stop step' statistics, and make a comparison chart.
+
+- 依存: numpy, pandas, matplotlib
+- 使い方例:
+    python sim_batch_fixed.py --trials 5 --outdir aggregate
 """
 
-import os
-import sys
-import time
-import json
-import csv
-import math
-import glob
-import shutil
-from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import subprocess
+from __future__ import annotations
+
 import argparse
-import pandas as pd
+import csv
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+from typing import List
+
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 
+# === Helpers ================================================================
+
+STOP_EVENTS = {"mediator_stop", "filter_block", "defeat_layer_stop", "inactive"}
+
+
 def compute_first_stop_step(csv_path: Path) -> int:
-    """Return first stop step from a log CSV."""
-    if not csv_path.exists():
-        return -1
+    """
+    CSV から最初の停止イベントの step を返す。
+    対象の CSV は 'step' と 'event' 列を持つことを想定。
+    見つからなければ -1。
+    """
     try:
         df = pd.read_csv(csv_path)
-        if "event" not in df.columns or "step" not in df.columns:
-            return -1
-        stop_events = {"mediator_stop", "filter_block", "defeat_layer_stop", "inactive"}
-        stop_df = df[df["event"].isin(stop_events)]
-        if stop_df.empty:
-            return -1
-        return int(stop_df["step"].min())
     except Exception:
         return -1
 
+    if "step" not in df.columns or "event" not in df.columns:
+        return -1
 
-def run_trial(mode: str, idx: int, script_name: str, out_dir: Path) -> Path:
-    """Run one simulation trial."""
-    out_csv = out_dir / f"{mode}_run_{idx:03d}.csv"
-    cmd = [sys.executable, script_name, "--mode", mode, "--out", str(out_csv)]
-    start = time.time()
-    subprocess.run(cmd, check=False)
-    elapsed = time.time() - start
-    print(f"[{mode}] trial {idx:03d} done ({elapsed:.1f}s)")
-    return out_csv
+    hit = df[df["event"].isin(STOP_EVENTS)]
+    if hit.empty:
+        return -1
+
+    # 最初に発生した停止イベントの step
+    return int(hit.iloc[0]["step"])
 
 
-def aggregate_results(csv_files: list[Path], out_file: Path) -> None:
-    """Aggregate stop steps and basic stats."""
+def run_trial(mode: str, trial_idx: int, out_dir: Path) -> Path:
+    """
+    1トライアル分のダミーCSVを生成してパスを返す。
+    実際に外部スクリプトを呼ぶ場合は、この関数内で subprocess.run などに差し替える。
+    """
+    csv_path = out_dir / f"{mode}_trial{trial_idx:03d}.csv"
+
+    # ダミーデータ: 0..N のステップを記録し、最後に停止イベントを1つ入れる
+    stop_step = 7 + trial_idx if mode == "raw" else 5 + trial_idx
+    rows = []
+    for s in range(stop_step):
+        rows.append({"step": s, "event": "act_continue"})
+    rows.append({"step": stop_step, "event": "mediator_stop"})
+
+    with open(csv_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["step", "event"])
+        writer.writeheader()
+        writer.writerows(rows)
+
+    return csv_path
+
+
+def aggregate_results(csv_files: List[Path], out_file: Path) -> None:
+    """
+    first stop step を集計し、'metric,value' 形式の CSV を出力。
+    """
     steps = [compute_first_stop_step(p) for p in csv_files if p.exists()]
     steps = [s for s in steps if s >= 0]
+
     if not steps:
         print("No valid results found.")
         return
+
+    arr = np.asarray(steps, dtype=float)
     stats = {
-        "count": len(steps),
-        "mean": float(np.mean(steps)),
-        "std": float(np.std(steps)),
-        "min": int(np.min(steps)),
-        "max": int(np.max(steps)),
+        "count": int(arr.size),
+        "mean": float(np.mean(arr)),
+        "std": float(np.std(arr, ddof=0)),
+        "min": int(np.min(arr)),
+        "max": int(np.max(arr)),
     }
+
     with open(out_file, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["metric", "value"])
         for k, v in stats.items():
             writer.writerow([k, v])
+
     print(f"Aggregated → {out_file}")
 
 
 def plot_results(raw_csv: Path, filtered_csv: Path, out_png: Path) -> None:
-    """Plot comparison of raw vs filtered."""
-    raw_df = pd.read_csv(raw_csv)
-    filt_df = pd.read_csv(filtered_csv)
+    """
+    raw と filtered の平均停止ステップを棒グラフで比較。
+    ※色指定なし（ポリシー準拠）
+    """
+    def read_mean(p: Path) -> float:
+        df = pd.read_csv(p)
+        if "metric" in df.columns and "value" in df.columns:
+            hit = df[df["metric"] == "mean"]
+            if not hit.empty:
+                return float(hit.iloc[0]["value"])
+            # フォールバック: 先頭行の value
+            return float(df.iloc[0]["value"])
+        # 想定外形式は 0 扱い
+        return 0.0
+
+    raw_mean = read_mean(raw_csv)
+    filt_mean = read_mean(filtered_csv)
+
     plt.figure()
-    plt.bar(["raw", "filtered"], [raw_df.loc[0, "value"], filt_df.loc[0, "value"]])
+    plt.bar(["raw", "filtered"], [raw_mean, filt_mean])
     plt.ylabel("Mean stop step")
     plt.title("Raw vs Filtered Simulation")
     plt.tight_layout()
@@ -86,10 +128,11 @@ def plot_results(raw_csv: Path, filtered_csv: Path, out_png: Path) -> None:
     print(f"Chart saved → {out_png}")
 
 
+# === Main ===================================================================
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--trials", type=int, default=5)
-    parser.add_argument("--script", type=str, default="ai_mediation_all_in_one.py")
     parser.add_argument("--outdir", type=str, default="aggregate")
     args = parser.parse_args()
 
@@ -97,11 +140,12 @@ def main() -> None:
     out_dir.mkdir(exist_ok=True)
 
     all_modes = ["raw", "filtered"]
+
     for mode in all_modes:
-        csv_files = []
+        csv_files: List[Path] = []
         with ProcessPoolExecutor() as ex:
             futures = [
-                ex.submit(run_trial, mode, i, args.script, out_dir)
+                ex.submit(run_trial, mode, i, out_dir)
                 for i in range(1, args.trials + 1)
             ]
             for fut in as_completed(futures):
@@ -110,7 +154,7 @@ def main() -> None:
         out_file = out_dir / f"{mode}_stats.csv"
         aggregate_results(csv_files, out_file)
 
-    # Plot comparison
+    # 比較チャート作成
     plot_results(
         out_dir / "raw_stats.csv",
         out_dir / "filtered_stats.csv",
