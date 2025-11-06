@@ -225,10 +225,3 @@ The developer and contributors are not responsible for any damages, ethical effe
   **目的:** 教育・研究向けに安定動作する最終ビルド版として整理
 
 ---
-
-ご希望があれば、この英日READMEを
-✅ GitHubのPR用コメントブロック（タイトル＋説明欄テンプレート）形式
-に変換して提出用に整形できます。作成しますか？
-
-
-
