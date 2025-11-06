@@ -1,4 +1,3 @@
----
 
 # 📘 **Multi-Agent Mediation Framework / マルチエージェント調停フレームワーク**
 
