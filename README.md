@@ -20,7 +20,6 @@
   <img src="https://img.shields.io/badge/code%20style-Black-000000.svg?style=flat-square" alt="Code Style: Black">
   <img src="https://img.shields.io/badge/use--case-Education%20%26%20Research-blue.svg?style=flat-square" alt="Use Case: Education & Research">
   <img src="https://img.shields.io/badge/framework-Research%20AI%20Framework-blueviolet.svg?style=flat-square" alt="Framework: Research AI">
-  <img src="https://img.shields.io/badge/KAGE-Compatible-purple.svg?style=flat-square" alt="KAGE Compatible">
 </p>
   <!-- License -->
   <a href="./LICENSE">
