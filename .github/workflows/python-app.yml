@@ -1,3 +1,4 @@
+---
 name: Python App CI
 
 on:
@@ -29,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.9", "3.10", "3.11" ]  # 必要なら "3.12" も追加可
+        python-version: [ "3.9", "3.10", "3.11" ]
 
     steps:
       - name: Checkout
@@ -51,10 +52,9 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
-          # 最低限のCI用ツール（requirementsに無い時の保険）
           pip install -q pytest pytest-cov pytest-xdist ruff yamllint
 
-      # ワークフロー自身の軽いYAMLLint（括弧・truthy・行長を緩める）
+      # ワークフロー自身のYAMLを lint
       - name: Lint workflow (self check)
         continue-on-error: true
         run: |
@@ -77,69 +77,3 @@ jobs:
 
       - name: Upload coverage xml
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.python-version }}
-          path: coverage.xml
-
-      - name: Upload pytest logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-failure-logs-${{ matrix.python-version }}
-          path: |
-            .pytest_cache
-            **/.pytest_cache
-            **/pytest*.log
-            **/junit-*.xml
-          if-no-files-found: ignore
-
-  # 各Pythonバージョンのcoverage.xmlをまとめて結合（必要な場合）
-  coverage-combine:
-    name: coverage combine
-    runs-on: ubuntu-latest
-    needs: [ build ]
-    if: always()
-    steps:
-      - name: Download coverage artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: covs
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install coverage
-        run: pip install coverage
-
-      - name: Combine coverage
-        run: |
-          python - << 'PY'
-          import pathlib, sys, xml.etree.ElementTree as ET
-          base = pathlib.Path("covs")
-          files = list(base.rglob("coverage.xml"))
-          if not files:
-              print("no coverage.xml found")
-              sys.exit(0)
-          # coverage.py の combine XML は標準機能が薄いので、最小限のXMLマージ
-          # （同一ファイル構成前提／CIの可視化用の粗い統合）
-          first = ET.parse(files[0])
-          root = first.getroot()
-          packages = root.find("packages")
-          for f in files[1:]:
-              t = ET.parse(f).getroot()
-              pkgs = t.find("packages")
-              if pkgs is not None:
-                  for p in pkgs.findall("package"):
-                      packages.append(p)
-          first.write("coverage-merged.xml", encoding="utf-8", xml_declaration=True)
-          print(f"Merged {len(files)} coverage files -> coverage-merged.xml")
-          PY
-
-      - name: Upload merged coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-merged
-          path: coverage-merged.xml
