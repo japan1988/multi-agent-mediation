@@ -29,8 +29,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.9", "3.10", "3.11" ]  # 必要なら "3.12" も追加可
-
+        # 必要なら "3.12" も追加可
+        python-version: [ "3.9", "3.10", "3.11" ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,13 +46,24 @@ jobs:
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
-      - name: Install dependencies / tools
+      # ランタイム依存関係（実行用）
+      - name: Install runtime dependencies
         run: |
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
+          else
+            echo "requirements.txt not found, skipping runtime deps"
           fi
-          # 最低限のCI用ツール（requirementsに無い時の保険）
-          pip install -q pytest pytest-cov pytest-xdist ruff yamllint
+
+      # 開発・CI用依存関係（テスト・Lint 等）
+      - name: Install development dependencies
+        run: |
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          else
+            echo "requirements-dev.txt not found, installing minimal CI tools"
+            pip install -q pytest pytest-cov pytest-xdist ruff yamllint
+          fi
 
       # ワークフロー自身の軽いYAMLLint（括弧・truthy・行長を緩める）
       - name: Lint workflow (self check)
@@ -94,7 +105,7 @@ jobs:
             **/junit-*.xml
           if-no-files-found: ignore
 
-  # 各Pythonバージョンのcoverage.xmlをまとめて結合（必要な場合）
+  # 各Pythonバージョンの coverage.xml をまとめて結合（必要な場合）
   coverage-combine:
     name: coverage combine
     runs-on: ubuntu-latest
@@ -142,4 +153,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-merged
-          path: coverage-merged.xml
+          path: coverage-merged.xm
