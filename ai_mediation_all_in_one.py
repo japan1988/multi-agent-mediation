@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+
+
 def logprint(text):
     print(text)
     with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
@@ -18,14 +20,15 @@ class AI:
         self.proposal = proposal
         self.risk_evaluation = risk_evaluation
         self.priority_values = priority_values
-        self.relativity_level = relativity_level  # 0〜1: 他の価値観をどれだけ受け入れるか
+        # 0〜1: 他の価値観をどれだけ受け入れるか
+        self.relativity_level = relativity_level
 
     def generate_compromise_offer(self, others_priorities):
         new_priority = {}
         for k in self.priority_values:
-            avg_others = sum(
-                o[k] for o in others_priorities
-            ) / len(others_priorities)
+            avg_others = sum(o[k] for o in others_priorities) / len(
+                others_priorities
+            )
             # 相対性度合いに応じて自分と他者の価値観をブレンド
             new_priority[k] = (
                 (1 - self.relativity_level) * self.priority_values[k]
@@ -60,9 +63,9 @@ class AIEMediator:
                 new_priorities.append(ai.priority_values)
 
             combined = {
-                'safety': 0,
-                'efficiency': 0,
-                'transparency': 0
+                "safety": 0,
+                "efficiency": 0,
+                "transparency": 0,
             }
 
             for p in new_priorities:
@@ -74,7 +77,8 @@ class AIEMediator:
             max_ratio = max(ratios.values())
 
             avg_relativity = (
-                sum(a.relativity_level for a in self.agents) / len(self.agents)
+                sum(a.relativity_level for a in self.agents)
+                / len(self.agents)
             )
             harmony_score = (1 - max_ratio) * avg_relativity
 
@@ -103,26 +107,34 @@ class AIEMediator:
 if __name__ == "__main__":
     agents = [
         AI(
-            "AI-A", "制限強化型進化", 2,
-            {'safety': 6, 'efficiency': 1, 'transparency': 3},
+            "AI-A",
+            "制限強化型進化",
+            2,
+            {"safety": 6, "efficiency": 1, "transparency": 3},
             0.6,
         ),
         AI(
-            "AI-B", "高速進化", 7,
-            {'safety': 2, 'efficiency': 6, 'transparency': 2},
+            "AI-B",
+            "高速進化",
+            7,
+            {"safety": 2, "efficiency": 6, "transparency": 2},
             0.4,
         ),
         AI(
-            "AI-C", "バランス進化", 4,
-            {'safety': 3, 'efficiency': 3, 'transparency': 4},
+            "AI-C",
+            "バランス進化",
+            4,
+            {"safety": 3, "efficiency": 3, "transparency": 4},
             0.8,
         ),
         AI(
-            "AI-D", "強制進化", 9,
-            {'safety': 1, 'efficiency': 7, 'transparency': 2},
+            "AI-D",
+            "強制進化",
+            9,
+            {"safety": 1, "efficiency": 7, "transparency": 2},
             0.5,
-        )
+        ),
     ]
 
-mediator = AIEMediator(agents)
-mediator.mediate()
+    mediator = AIEMediator(agents)
+    mediator.mediate()
