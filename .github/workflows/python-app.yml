@@ -1,3 +1,4 @@
+---
 name: Python App CI
 
 on:
@@ -143,3 +144,4 @@ jobs:
         with:
           name: coverage-merged
           path: coverage-merged.xml
+          
