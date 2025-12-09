@@ -26,5 +26,5 @@ if __name__ == "__main__":
         )
     ]
 
-mediator = AIEMediator(agents)
-mediator.mediate()
+    mediator = AIEMediator(agents)
+    mediator.mediate()
