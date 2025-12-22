@@ -141,8 +141,3 @@ python3 ai_governance_mediation_sim.py --scenario policy_ethics
 
 
 ⸻
-
-ここまでで「内容だけ変更＋KAGE除去＋バッジ追加」は完了です
-
-次にやると完成度が上がるのは、README内に **“STOP / REROUTE / HITL の判定基準”**を短い表で1つ入れることです。
-必要なら、あなたの現行ロジック（例：危険＝即STOP、整合性＝再検算、情報不足＝HITL）に合わせて、その表を追記する文面も同じ形式で出します。
