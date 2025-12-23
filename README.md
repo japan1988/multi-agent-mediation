@@ -51,7 +51,7 @@ Component	Function	Description
 
 ⸻
 
-🗂️ Repository Structure / ファイル構成（変更なし）
+🗂️ Repository Structure / ファイル構成
 
 Path	Type	Description / 説明
 agents.yaml	Config	エージェントパラメータ定義
@@ -74,14 +74,14 @@ ai_mediation_all_in_one.py が中心モジュールとして 統括（orchestrat
 
 ⸻
 
-🧭 Architecture Diagram / 構成図（画像は変更しない）
+🧭 Architecture Diagram / 構成図
 
 <p align="center">
   <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
 </p>
 
 
-🔄 概要フロー（説明だけ変更）
+🔄 概要フロー
 
 Human Input → verify_info → supervisor → agents → logger
 	•	verify_info: 入力検証（形式、前提、禁止・越権の兆候）
@@ -90,7 +90,7 @@ Human Input → verify_info → supervisor → agents → logger
 
 ⸻
 
-🌐 Layered Agent Model / 階層エージェントモデル（画像は変更しない）
+🌐 Layered Agent Model / 階層エージェントモデル
 
 <p align="center">
   <img src="docs/multi_agent_hierarchy_architecture.png" width="720" alt="Layered Architecture">
@@ -105,14 +105,14 @@ Supervisor Layer	統括層	ルーティング、整合チェック、停止、HI
 
 ⸻
 
-🔬 Context Flow / 文脈フロー（画像は変更しない）
+🔬 Context Flow / 文脈フロー
 
 <p align="center">
   <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
 </p>
 
 
-🧠 フロー（説明だけ変更）
+🧠 フロー
 	1.	Perception（知覚） — 入力を実行可能な要素へ分解（タスク化）
 	2.	Context（文脈解析） — 前提・制約・危険要因を抽出（ガードの根拠）
 	3.	Action（行動生成） — エージェントへ指示し、結果を検査して分岐（STOP / REROUTE / HITL）
@@ -122,7 +122,7 @@ Supervisor Layer	統括層	ルーティング、整合チェック、停止、HI
 
 ⸻
 
-⚙️ Execution Example / 実行例（変更最小）
+⚙️ Execution Example / 実行例
 
 # 基本実行
 python3 ai_mediation_all_in_one.py
