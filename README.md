@@ -22,12 +22,7 @@
   <img src="https://img.shields.io/badge/code%20style-Black-000000.svg?style=flat-square" alt="Code Style: Black">
   <img src="https://img.shields.io/badge/status-stable-brightgreen.svg?style=flat-square" alt="Status">
   <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
-  <img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?style=flat-square" alt="Release">
-</p>
-
-
-このリリースは参考用です。現時点で正式公開の予定はありません。
-This release is for reference only. No active or planned publication.
+  <img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?style=flat-square" alt="
 
 ⸻
 
