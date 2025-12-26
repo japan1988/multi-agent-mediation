@@ -13,6 +13,7 @@ on:
       - "**.md"
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -30,6 +31,10 @@ jobs:
       matrix:
         python-version: ["3.9", "3.10", "3.11"]
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,15 +46,23 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
+            setup.cfg
 
       - name: Upgrade pip
         run: python -m pip install --upgrade pip
 
       - name: Install dependencies / tools
         run: |
-          set -e
+          set -euo pipefail
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
+          fi
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
           fi
           # CI用ツール（requirementsに無い時の保険）
           pip install pytest pytest-cov pytest-xdist ruff yamllint
@@ -57,19 +70,23 @@ jobs:
       - name: Lint workflow (self check)
         continue-on-error: true
         run: |
-          yamllint -d '{
-            extends: default,
-            rules: {
-              brackets: disable,
-              truthy: disable,
-              line-length: {max: 140, level: warning}
-            }
-          }' .github/workflows/python-app.yml
+          set -euo pipefail
+          cat > .yamllint-ci.yml <<'YAML'
+          extends: default
+          rules:
+            brackets: disable
+            truthy: disable
+            line-length:
+              max: 140
+              level: warning
+          YAML
+          yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
 
       # Ruffは「出力は出すがCIは落とさない」設定（導入初期の赤連発を避ける）
       # 厳格化したい場合は --exit-zero を外してください。
       - name: Ruff check (report only)
         run: |
+          set -euo pipefail
           ruff --version
           ruff check . --output-format=github --exit-zero
 
@@ -80,7 +97,7 @@ jobs:
         env:
           PYTHONWARNINGS: ignore::DeprecationWarning
         run: |
-          set -e
+          set -euo pipefail
           pytest -q -n auto --dist loadfile \
             --cov=. --cov-report=xml:coverage.xml --cov-report=term || \
             (code=$?; if [ "$code" -eq 5 ]; then echo "No tests collected (exit 5) -> treat as success"; exit 0; else exit "$code"; fi)
@@ -90,7 +107,7 @@ jobs:
         env:
           PYTHONWARNINGS: ignore::DeprecationWarning
         run: |
-          set -e
+          set -euo pipefail
           pytest -q -n auto --dist loadfile || \
             (code=$?; if [ "$code" -eq 5 ]; then echo "No tests collected (exit 5) -> treat as success"; exit 0; else exit "$code"; fi)
 
