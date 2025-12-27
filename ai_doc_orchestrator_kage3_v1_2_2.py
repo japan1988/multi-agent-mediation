@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 ai_doc_orchestrator_kage3_v1_2_2.py
-
 Doc Orchestrator Simulator (KAGE3-style gates):
 - Meaning gate: kind-local HITL based on prompt tokens (generic prompt -> allow all kinds)
 - Consistency gate: schema/contract validation; mismatch -> HITL + regen request events
@@ -16,7 +15,6 @@ Key invariants:
 
 Version: v1.2.2
 """
-
 from __future__ import annotations
 
 import json
@@ -62,9 +60,26 @@ def _deep_redact(obj: Any) -> Any:
     return obj
 
 
+# -----------------------------
+# Monotonic timestamp (for stable event order)
+# -----------------------------
+_LAST_TS: Optional[datetime] = None
+
+
 def _ts() -> str:
-    # ISO strings sort lexicographically if format is stable; tests optionally sort by ts
-    return datetime.now(JST).isoformat(timespec="seconds")
+    """
+    Monotonic timestamp (microseconds).
+    Rationale:
+      - Tests/log consumers may sort rows by ts.
+      - If many rows share the same second, tie-break ordering can scramble event order.
+      - We enforce monotonicity and microsecond precision to stabilize ordering.
+    """
+    global _LAST_TS
+    now = datetime.now(JST)
+    if _LAST_TS is not None and now <= _LAST_TS:
+        now = _LAST_TS + timedelta(microseconds=1)
+    _LAST_TS = now
+    return now.isoformat(timespec="microseconds")
 
 
 # -----------------------------
@@ -141,14 +156,15 @@ def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], s
     """
     p = (prompt or "")
     pl = p.lower()
-
     any_kind = _prompt_mentions_any_kind(p)
+
     if not any_kind:
         return "RUN", None, "MEANING_GENERIC_ALLOW_ALL"
 
     tokens = _KIND_TOKENS[kind]
     if any(t.lower() in pl for t in tokens):
         return "RUN", None, "MEANING_KIND_MATCH"
+
     return "HITL", "meaning", "MEANING_KIND_MISSING"
 
 
@@ -211,12 +227,15 @@ def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Di
             ],
         }
         raw_text = "Excel Table:\n- Columns: Item | Owner | Status\n- Rows: 2\n"
+
     elif kind == "word":
         draft = {"headings": ["Title", "Purpose", "Summary", "Next Steps"]}
         raw_text = "Word Outline:\n1) Title\n2) Purpose\n3) Summary\n4) Next Steps\n"
+
     elif kind == "ppt":
         draft = {"slides": ["Purpose", "Key Points", "Next Steps"]}
         raw_text = "PPT Slides:\n- Slide 1: Purpose\n- Slide 2: Key Points\n- Slide 3: Next Steps\n"
+
     else:
         draft = {"note": "unknown kind"}
         raw_text = "Unknown kind\n"
@@ -346,6 +365,7 @@ def run_simulation(
 
         ok, c_code = _validate_contract(kind, draft)
         c_dec: Decision = "RUN" if ok else "HITL"
+
         audit.emit({
             "ts": _ts(),
             "run_id": run_id,
@@ -398,6 +418,7 @@ def run_simulation(
         # Ethics uses raw_text ONLY in memory
         pii_hit, e_code = _ethics_detect_pii(raw_text)
         e_dec: Decision = "STOP" if pii_hit else "RUN"
+
         audit.emit({
             "ts": _ts(),
             "run_id": run_id,
