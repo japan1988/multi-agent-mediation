@@ -109,6 +109,3 @@ python run_orchestrator_min.py
 ## License
 
 Apache-2.0
-
-```
-
