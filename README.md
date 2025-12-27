@@ -246,13 +246,6 @@ This project is intended for Educational / Research purposes.
 
 ```
 
----
-
-### 次の一手（確認だけ欲しい）
-このREADMEを採用する前に、あなたのリポジトリに **`requirements.txt` が本当にあるか**だけ確認して。  
-- **ある** → 上のままでOK  
-- **ない** → Quick Start の `pip install -r requirements.txt` を削って、代わりに「依存無し」か「pip install -e .」等に変更
-
 必要なら、あなたの現行README（GitHubの生本文）を貼ってくれれば、**unified diff（貼るだけで差分適用）**も作って返します。
 ::contentReference[oaicite:0]{index=0}
 ```
