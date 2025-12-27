@@ -62,7 +62,7 @@ The focus is not “negotiation itself,” but **safe orchestration**: stopping,
 
 ## 🗂️ Repository Structure
 
-> All `.py` modules are intended to be runnable/inspectable as independent experiments.
+> All `.py` modules are intended to be runnable/inspectable as independent experiments.  
 > `agents.yaml` is the shared configuration backbone for agent parameters.
 
 | Path | Type | Description |
@@ -127,9 +127,9 @@ The focus is not “negotiation itself,” but **safe orchestration**: stopping,
 
 ### Flow (description updated)
 
-1. **Perception** — decompose input into executable units (tasking)
-2. **Context** — extract constraints/assumptions/risk factors (guardrail evidence)
-3. **Action** — dispatch to agents, validate outputs, then branch (RUN / STOP / HITL)
+1. **Perception** — decompose input into executable units (tasking)  
+2. **Context** — extract constraints/assumptions/risk factors (guardrail evidence)  
+3. **Action** — dispatch to agents, validate outputs, then branch (RUN / STOP / HITL)  
 
 > Safety is prioritized at every stage: unsafe or ambiguous cases are stopped or escalated.
 
@@ -137,29 +137,47 @@ The focus is not “negotiation itself,” but **safe orchestration**: stopping,
 
 ## ⚙️ Quickstart
 
+### 1) Install dependencies
 ```bash
 python -m pip install -r requirements.txt
+````
+
+### 2) Run tests
+
+```bash
 pytest -q
-Run an orchestrator experiment
-Pick one of the orchestrator entry scripts (examples):
+```
 
-bash
+### 3) Run an orchestrator experiment (examples)
 
+Pick one of the orchestrator entry scripts:
+
+```bash
 python kage_orchestrator_diverse_v1.py
 # or
 python ai_mediation_all_in_one.py
-🧪 Testing
-CI should pass via GitHub Actions.
+```
 
-Locally:
+---
 
-bash
+## 🧪 Testing
 
+* CI should pass via GitHub Actions.
+* Locally:
+
+```bash
 pytest -q
-📜 License
-This repository is intended for Educational / Research use. See LICENSE for details.
+```
 
-yaml
-コードをコピーする
+---
+
+## 📜 License
+
+This repository is intended for Educational / Research use. See `LICENSE` for details.
+
+```
+
+--- 
+
 
 
