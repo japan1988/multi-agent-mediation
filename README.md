@@ -78,9 +78,22 @@ The focus is not “negotiation itself,” but **safe orchestration**: stopping,
 | `ai_alliance_persuasion_simulator.py` | Simulator | multi-agent interaction / persuasion loop experiments |
 | `log_format.md` | Spec | logging/audit format notes |
 
+### Minimal Orchestrator Entry (recommended)
+
+This repository includes a **minimal, reproducible entrypoint** that stabilizes:
+- the **run command** (README-stable)
+- **JSONL log output** (always created)
+- **pytest path** (deterministic checks)
+
+| Path | Type | Description |
+|---|---|---|
+| `run_orchestrator_min.py` | Entrypoint | minimal “one command” runner (writes JSONL logs) |
+
+---
+
 ### HITL Gate (v1) — newly added
 
-> IMPORTANT: Please confirm the **real file paths** below and adjust these two rows if needed.
+This gate routes **definition ambiguity** to a human (HITL) in a fail-closed manner.
 
 | Path | Type | Description |
 |---|---|---|
@@ -127,9 +140,9 @@ The focus is not “negotiation itself,” but **safe orchestration**: stopping,
 
 ### Flow (description updated)
 
-1. **Perception** — decompose input into executable units (tasking)  
-2. **Context** — extract constraints/assumptions/risk factors (guardrail evidence)  
-3. **Action** — dispatch to agents, validate outputs, then branch (RUN / STOP / HITL)  
+1. **Perception** — decompose input into executable units (tasking)
+2. **Context** — extract constraints/assumptions/risk factors (guardrail evidence)
+3. **Action** — dispatch to agents, validate outputs, then branch (RUN / STOP / HITL)
 
 > Safety is prioritized at every stage: unsafe or ambiguous cases are stopped or escalated.
 
@@ -148,9 +161,19 @@ python -m pip install -r requirements.txt
 pytest -q
 ```
 
-### 3) Run an orchestrator experiment (examples)
+### 3) Run the minimal orchestrator entrypoint (recommended)
 
-Pick one of the orchestrator entry scripts:
+This command always writes a JSONL log file.
+
+```bash
+python run_orchestrator_min.py --prompt "hello" --run-id DEMO
+```
+
+Log output (default):
+
+* `logs/orchestrator_min.jsonl`
+
+### 4) Run orchestrator experiments (examples)
 
 ```bash
 python kage_orchestrator_diverse_v1.py
@@ -174,10 +197,3 @@ pytest -q
 ## 📜 License
 
 This repository is intended for Educational / Research use. See `LICENSE` for details.
-
-
-
---- 
-
-
-
