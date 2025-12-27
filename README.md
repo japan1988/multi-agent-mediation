@@ -245,8 +245,3 @@ See `LICENSE`.
 This project is intended for Educational / Research purposes.
 
 ```
-
-必要なら、あなたの現行README（GitHubの生本文）を貼ってくれれば、**unified diff（貼るだけで差分適用）**も作って返します。
-::contentReference[oaicite:0]{index=0}
-```
-
