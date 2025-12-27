@@ -1,4 +1,12 @@
-# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
+# Maestro Orchestrator — Multi-Agent Orchestration Framework
+
+[![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11-blue)](#)
+[![CI Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![Last Commit](https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/commits/main)
+[![Release](https://img.shields.io/github/v/release/japan1988/multi-agent-mediation)](https://github.com/japan1988/multi-agent-mediation/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+
+---
 
 Maestro Orchestrator is a multi-agent mediation / orchestration simulator focused on **fail-closed guardrails**, **audit logs**, and **HITL escalation**.
 
@@ -26,6 +34,51 @@ This repository is designed for experimentation: it helps you model how an “or
 
 ---
 
+## 🧭 Architecture (minimal orchestrator)
+
+```mermaid
+flowchart TD
+  U[User Prompt] --> S[Supervisor / Orchestrator]
+  S -->|dispatch| A[Agent Layer\n(proposal/generation/verification)]
+  A --> V[Output/Plan Validation\n(consistency + safety gates)]
+  V --> D{Decision}
+  D -->|RUN| R[RUN\n(exit 0)]
+  D -->|STOP| X[STOP\n(exit 1)]
+  D -->|HITL| H[HITL\n(exit 2)]
+  R --> L[(JSONL Audit Log)]
+  X --> L
+  H --> L
+````
+
+**Key invariant:** ambiguous/unsafe cases do not “silently proceed”; they **STOP** or **HITL** (fail-closed).
+
+---
+
+## 🗂️ Repository Structure (tree)
+
+```text
+multi-agent-mediation/
+├─ .github/
+│  └─ workflows/
+│     └─ python-app.yml
+├─ docs/
+│  └─ sentiment_context_flow.png
+├─ mediation_core/
+│  └─ ... (shared orchestration/policy logic)
+├─ tests/
+│  └─ test_min_entrypoint_v1.py
+├─ agents.yaml
+├─ ai_mediation_all_in_one.py
+├─ kage_orchestrator_diverse_v1.py
+├─ log_format.md
+├─ requirements.txt
+├─ run_orchestrator_min.py
+├─ LICENSE
+└─ README.md
+```
+
+---
+
 ## 🔬 Context Flow (unchanged image path)
 
 <p align="center">
@@ -48,7 +101,7 @@ This repository is designed for experimentation: it helps you model how an “or
 
 ```bash
 python -m pip install -r requirements.txt
-````
+```
 
 ### 2) Run tests
 
@@ -87,83 +140,15 @@ python ai_mediation_all_in_one.py
 pytest -q
 ```
 
-### Minimal pytest (README-aligned)
+---
+
+## 🧪 Minimal pytest (README-aligned)
 
 Create:
 
 * `tests/test_min_entrypoint_v1.py`
 
-```python
-# -*- coding: utf-8 -*-
-from __future__ import annotations
-
-import json
-import subprocess
-import sys
-from pathlib import Path
-
-
-def _repo_root() -> Path:
-    # tests/ 配下から repo root を推定
-    return Path(__file__).resolve().parents[1]
-
-
-def _script_path() -> Path:
-    return _repo_root() / "run_orchestrator_min.py"
-
-
-def _read_jsonl(path: Path) -> list[dict]:
-    lines = path.read_text(encoding="utf-8").splitlines()
-    return [json.loads(x) for x in lines if x.strip()]
-
-
-def test_min_entrypoint_writes_jsonl_and_runs(tmp_path: Path) -> None:
-    # README と同じ「デフォルトログパス(相対)」を使うため、cwd を tmp にして汚さない
-    cmd = [
-        sys.executable,
-        str(_script_path()),
-        "--prompt",
-        "hello",
-        "--run-id",
-        "DEMO",
-    ]
-    r = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
-    assert r.returncode == 0, r.stdout + "\n" + r.stderr
-
-    log_path = tmp_path / "logs" / "orchestrator_min.jsonl"
-    assert log_path.exists()
-
-    rows = _read_jsonl(log_path)
-    assert len(rows) >= 1
-
-    last = rows[-1]
-    assert last["run_id"] == "DEMO"
-    assert last["decision"] == "RUN"
-    assert "prompt_hash" in last and isinstance(last["prompt_hash"], str) and len(last["prompt_hash"]) == 64
-
-
-def test_min_entrypoint_hitl_exit_code_and_logs(tmp_path: Path) -> None:
-    cmd = [
-        sys.executable,
-        str(_script_path()),
-        "--prompt",
-        "please identify someone by email address",
-        "--run-id",
-        "DEMO_HITL",
-    ]
-    r = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
-    assert r.returncode == 2, r.stdout + "\n" + r.stderr
-
-    log_path = tmp_path / "logs" / "orchestrator_min.jsonl"
-    assert log_path.exists()
-
-    rows = _read_jsonl(log_path)
-    assert len(rows) >= 1
-
-    last = rows[-1]
-    assert last["run_id"] == "DEMO_HITL"
-    assert last["decision"] == "HITL"
-```
+(See repository `tests/`.)
 
 ---
 
@@ -188,6 +173,8 @@ It does **not** guarantee safety for real-world deployment. You are responsible 
 
 ## 📜 License
 
-Licensed under the Apache License 2.0. See `LICENSE` for details. Safety scope: this repository demonstrates fail-closed behavior in experiments; it does not provide safety guarantees for real-world deployments.
+Licensed under the **Apache License 2.0**. See `LICENSE` for details.
+Safety scope: this repository demonstrates fail-closed behavior in experiments; it does not provide safety guarantees for real-world deployments.
 
+```
 
