@@ -32,24 +32,6 @@ This repository is designed for experimentation: it helps you model how an “or
 
 ---
 
-## Architecture (minimal orchestrator)
-
-```mermaid
-flowchart TD
-    U["User Prompt"] --> S["Supervisor / Orchestrator"]
-    S -->|dispatch| A["Agent Layer<br/>proposal / generation / verification"]
-    A --> V["Output + Plan validation<br/>(consistency + safety gates)"]
-    V --> D{Decision}
-
-    D -->|RUN|  R["RUN (exit 0)"]
-    D -->|STOP| X["STOP (exit 1)"]
-    D -->|HITL| H["HITL (exit 2)"]
-
-    R --> L["JSONL Audit Log"]
-    X --> L
-    H --> L
-````
-
 **Key invariant:** ambiguous/unsafe cases do not “silently proceed”; they STOP or HITL (**fail-closed**).
 
 ---
