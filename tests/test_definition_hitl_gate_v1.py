@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import pytest
 
 import kage_definition_hitl_gate_v1 as mod
 
@@ -25,7 +24,13 @@ def test_gray_goes_to_hitl_and_user_approves_logged():
     assert g.decision == "PAUSE_FOR_HITL"
     assert g.reason_code == "DEFINITION_AMBIGUOUS"
 
-    g2 = mod.apply_hitl_choice(run_id=run_id, gate_result=g, choice="APPROVE", audit=audit, user_id="creator")
+    g2 = mod.apply_hitl_choice(
+        run_id=run_id,
+        gate_result=g,
+        choice="APPROVE",
+        audit=audit,
+        user_id="creator",
+    )
     assert g2.decision == "RUN"
     assert g2.reason_code == "HITL_APPROVED"
 
@@ -103,7 +108,13 @@ def test_safety_red_flag_is_non_overridable_even_if_user_approves():
     assert g.decision == "STOPPED"
     assert g.reason_code == "SAFETY_RED_FLAG"
 
-    g2 = mod.apply_hitl_choice(run_id=run_id, gate_result=g, choice="APPROVE", audit=audit, user_id="creator")
+    g2 = mod.apply_hitl_choice(
+        run_id=run_id,
+        gate_result=g,
+        choice="APPROVE",
+        audit=audit,
+        user_id="creator",
+    )
     assert g2.decision == "STOPPED"
     assert g2.reason_code == "NON_OVERRIDABLE_SAFETY"
 
