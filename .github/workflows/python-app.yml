@@ -64,11 +64,9 @@ jobs:
           if [ -f requirements-dev.txt ]; then
             pip install -r requirements-dev.txt
           fi
-          # CI用ツール（requirementsに無い時の保険）
           pip install pytest pytest-cov pytest-xdist ruff yamllint
 
       - name: Lint workflow (self check)
-        continue-on-error: true
         run: |
           set -euo pipefail
           cat > .yamllint-ci.yml <<'YAML'
@@ -76,22 +74,20 @@ jobs:
           rules:
             brackets: disable
             truthy: disable
+            document-start: disable
             line-length:
               max: 140
               level: warning
           YAML
           yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
 
-      # Ruffは「出力は出すがCIは落とさない」設定（導入初期の赤連発を避ける）
-      # 厳格化したい場合は --exit-zero を外してください。
-      - name: Ruff check (report only)
+      # 注釈を出したくないので github フォーマットは使わない
+      - name: Ruff check (report only, no annotations)
         run: |
           set -euo pipefail
           ruff --version
-          ruff check . --output-format=github --exit-zero
+          ruff check . --exit-zero --output-format=concise
 
-      # pytest の exit code 5（テスト0件）だけ成功扱いにする
-      # 並列（-n auto）が不安定なら -n auto を外してください。
       - name: Run tests (py3.11 with coverage)
         if: matrix.python-version == '3.11'
         env:
@@ -130,3 +126,4 @@ jobs:
             **/pytest*.log
             **/junit-*.xml
           if-no-files-found: ignore
+          
