@@ -1,3 +1,24 @@
+## 結論（確実性：高｜日付：2025-12-28 JST）
+
+README「1枚版（短縮版）」に、**Orchestrator one-page design map の説明文**と、**画像が見れない場合のフォールバック導線**、さらに **ログ（監査）に関する個人情報注意文**を入れた「完成テキスト（そのまま貼れる版）」を下に提示します。
+
+---
+
+## 理由（確実性：高）
+
+* GitHub README では環境や拡張機能・表示幅の影響で **画像が表示されない/極小になる**ことがあり、**クリックして直接ファイルへ飛べる導線**があると詰まりません。
+* あなたの実装は **ログが研究の中心**なので、README に **PII/秘密情報をログへ入れない注意**を明記すると、第三者の誤用（生ログのコミット等）を抑止できます。
+
+---
+
+## 補足（確実性：中｜日付：2025-12-28 JST）
+
+* 画像が出ない原因で多いのは、`docs/...` の **ファイル名の大小文字違い**・**拡張子違い**・**パス違い**です（GitHub は大小文字を区別）。
+* ただし、あなたのスクショでは README 上で表示できているので、今回の主目的は「読者向けの説明と注意喚起の追加」です。
+
+---
+
+````md
 # 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
 <p align="center">
@@ -27,33 +48,26 @@ Maestro Orchestrator is a **research-oriented orchestration framework** for supe
 - **REROUTE**: Re-route only when explicitly safe (avoid fail-open reroute)
 - **HITL**: Escalate to humans for ambiguous or high-stakes decisions
 
-## 🧭 One-page design map (implementation-aligned)
+## 🧭 Diagrams
 
-**Decision flow map:** `mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`  
-Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to `PAUSE_FOR_HITL` or `STOPPED` and logs **why**.
-
-- **Meaning**: task/intent category validation (undefined/ambiguous -> HITL)
-- **Consistency**: schema/contract checks (mismatch -> HITL)
-- **RFL (Relativity Filter)**: unstable/subjective boundaries -> `PAUSE_FOR_HITL` (overrideable, non-sealed)
-- **Ethics / ACC**: non-overridable sealing gates (PII/tool side-effects, policy violations)
-- **DISPATCH**: run only when cleared
-
-## 🧭 Architecture Diagram
-
+### 1) System overview
 <p align="center">
   <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
 </p>
 
-## 🧭 Layered Agent Model
+### 2) Orchestrator one-page design map
+**Decision flow map (implementation-aligned):**  
+`mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`  
+Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to `PAUSE_FOR_HITL` or `STOPPED` and logs **why**.
 
-| Layer | Role | What it does |
-| --- | --- | --- |
-| Interface Layer | External input layer | Input contract (schema) / validation / log submission |
-| Agent Layer | Execution layer | Task processing (proposal / generation / verification) |
-| Supervisor Layer | Supervisory layer | Routing, consistency checks, STOP / HITL decisions |
+<p align="center">
+  <img src="docs/orchestrator_onepage_design_map.png" width="920" alt="Orchestrator one-page design map">
+</p>
 
-## 🔬 Context Flow
+If the image is not visible (or too small), open it directly:  
+- `docs/orchestrator_onepage_design_map.png`
 
+### 3) Context flow
 <p align="center">
   <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
 </p>
@@ -62,35 +76,24 @@ Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to 
 - **Context** — Extract assumptions/constraints/risk factors (guard rationale)
 - **Action** — Instruct agents, verify results, branch (STOP / REROUTE / HITL)
 
-## 🔒 Safety & External Side Effects (default deny)
+## 🧾 Audit log & data safety (IMPORTANT)
 
-External side effects include: network, filesystem, command execution, messaging, payments, and **PII sources**.
+This project produces **audit logs** for reproducibility and accountability.  
+Because logs may outlive a session and may be shared for research, **treat logs as sensitive artifacts**.
 
-**Default policy is deny-by-default.** Unknown tools are **DENY**.
-
-## 🧾 Audit log (research artifact)
-
-Audit logs are produced for reproducibility and accountability. Recommended minimum fields:
-
-- `run_id`, `session_id`, `timestamp`, `layer`, `decision`, `reason_code`, `evidence`, `policy_version`
-
-Avoid storing raw PII; log hashes / reason codes instead.
+- **Do not include personal information (PII)** (emails, phone numbers, addresses, real names, account IDs, etc.) in prompts, test vectors, or logs.
+- Prefer **synthetic / dummy data** for experiments.
+- Avoid committing runtime logs to the repository. If you must store logs locally, apply **masking**, **retention limits**, and **restricted directories**.
+- Recommended minimum fields: `run_id`, `session_id`, `timestamp`, `layer`, `decision`, `reason_code`, `evidence`, `policy_version`.
 
 ## ⚙️ Execution Examples
 
 > Note: Modules that evoke “persuasion / reeducation” are intended for **safety-evaluation scenarios only** and should be **disabled by default** unless explicitly opted-in.
 
 ```bash
-# Core (routing / gating / branching)
 python ai_mediation_all_in_one.py
-
-# Orchestrator fault-injection / capability guard demo
 python kage_orchestrator_diverse_v1.py
-
-# Doc Orchestrator (Meaning/Consistency/Ethics + PII non-persistence)
 python ai_doc_orchestrator_kage3_v1_2_2.py
-
-# Policy application behavior check
 python ai_governance_mediation_sim.py
 ````
 
@@ -111,8 +114,9 @@ See `LICENSE`.
 Repository license: **Apache-2.0** (policy intent: Educational / Research).
 
 ```
+
+--- 
+
+必要なら、上の「If the image is not visible…」行を **リンク化**した版（`[docs/orchestrator_onepage_design_map.png](docs/orchestrator_onepage_design_map.png)`）にもできます。
 ::contentReference[oaicite:0]{index=0}
 ```
-
-
-
