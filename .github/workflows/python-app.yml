@@ -126,4 +126,3 @@ jobs:
             **/pytest*.log
             **/junit-*.xml
           if-no-files-found: ignore
-
