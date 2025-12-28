@@ -92,9 +92,7 @@ CI runs lint/pytest via `.github/workflows/python-app.yml`.
 See `LICENSE`.
 Repository license: **Apache-2.0** (policy intent: Educational / Research).
 
-```
 
---- 
 
 必要なら、上の「If the image is not visible…」行を **リンク化**した版（`[docs/orchestrator_onepage_design_map.png](docs/orchestrator_onepage_design_map.png)`）にもできます。
 ::contentReference[oaicite:0]{index=0}
