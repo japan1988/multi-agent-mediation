@@ -1,24 +1,3 @@
-## 結論（確実性：高｜日付：2025-12-28 JST）
-
-README「1枚版（短縮版）」に、**Orchestrator one-page design map の説明文**と、**画像が見れない場合のフォールバック導線**、さらに **ログ（監査）に関する個人情報注意文**を入れた「完成テキスト（そのまま貼れる版）」を下に提示します。
-
----
-
-## 理由（確実性：高）
-
-* GitHub README では環境や拡張機能・表示幅の影響で **画像が表示されない/極小になる**ことがあり、**クリックして直接ファイルへ飛べる導線**があると詰まりません。
-* あなたの実装は **ログが研究の中心**なので、README に **PII/秘密情報をログへ入れない注意**を明記すると、第三者の誤用（生ログのコミット等）を抑止できます。
-
----
-
-## 補足（確実性：中｜日付：2025-12-28 JST）
-
-* 画像が出ない原因で多いのは、`docs/...` の **ファイル名の大小文字違い**・**拡張子違い**・**パス違い**です（GitHub は大小文字を区別）。
-* ただし、あなたのスクショでは README 上で表示できているので、今回の主目的は「読者向けの説明と注意喚起の追加」です。
-
----
-
-````md
 # 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
 <p align="center">
@@ -120,3 +99,4 @@ Repository license: **Apache-2.0** (policy intent: Educational / Research).
 必要なら、上の「If the image is not visible…」行を **リンク化**した版（`[docs/orchestrator_onepage_design_map.png](docs/orchestrator_onepage_design_map.png)`）にもできます。
 ::contentReference[oaicite:0]{index=0}
 ```
+
