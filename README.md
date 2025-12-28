@@ -41,7 +41,7 @@ This project is **not “negotiation itself”**. It is supervision and control:
 
 ---
 
-## 🔒 Safety model (fail-closed)
+## 🔒 Safety model 
 
 - If forbidden intent, overreach, low confidence, or ambiguous sensitive intent is detected in **input/output/plan**, the system **does not auto-execute**.  
   → It falls back to **STOP** or **HITL** (`PAUSE_FOR_HITL`).
@@ -55,14 +55,13 @@ Unknown tools are **DENY**.
 
 ---
 
-## 🧭 Diagrams (start here)
-
+## 🧭 Diagrams 
 ### 1) System overview
 <p align="center">
   <img src="docs/multi_agent_architecture_overview.webp" width="820" alt="System Overview">
 </p>
 
-### 2) Orchestrator one-page design map (latest)
+### 2) Orchestrator one-page design map 
 Decision flow map: **Meaning → Consistency → HITL → Ethics → ACC → DISPATCH**, designed to be **fail-closed**.
 <p align="center">
   <img src="docs/orchestrator_onepage_design_map.png" width="980" alt="Orchestrator One-page Design Map">
@@ -75,7 +74,7 @@ Decision flow map: **Meaning → Consistency → HITL → Ethics → ACC → DIS
 
 ---
 
-## 🗂️ Repository structure (minimal)
+## 🗂️ Repository structure
 
 | Path | Description |
 | --- | --- |
@@ -111,7 +110,7 @@ python ai_governance_mediation_sim.py
 
 ---
 
-## 🧪 Tests (focused)
+## 🧪 Tests
 
 ```bash
 # all tests
