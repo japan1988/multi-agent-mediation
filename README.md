@@ -8,7 +8,7 @@
     <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
   </a>
   <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License (Policy Intent)">
   </a>
   <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
     <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
@@ -19,122 +19,100 @@
   <img src="https://img.shields.io/badge/status-research--prototype-brightgreen.svg?style=flat-square" alt="Status">
 </p>
 
-A **research-oriented orchestration framework** for supervising multiple agents (or multiple methods) with **fail-closed guardrails** and **HITL escalation**.
+## 🎯 Purpose
 
-- **STOP**: halt on hazards / errors / non-decidable ambiguity
-- **HITL**: return uncertain or high-stakes decisions to humans
-- **Audit & Replay**: log decisions + reproduce runs
+Maestro Orchestrator is a **research-oriented orchestration framework** for supervising multiple agents (or multiple methods) with **fail-closed** safety.
 
-> Policy intent: Educational / Research. No autonomous real-world actions by default.
+- **STOP**: Halt execution on errors / hazards / undefined specs
+- **REROUTE**: Re-route only when explicitly safe (avoid fail-open reroute)
+- **HITL**: Escalate to humans for ambiguous or high-stakes decisions
 
----
+## 🧭 One-page design map (implementation-aligned)
 
-## 🎯 What this repo focuses on
+**Decision flow map:** `mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`  
+Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to `PAUSE_FOR_HITL` or `STOPPED` and logs **why**.
 
-This project is **not “negotiation itself”**. It is supervision and control:
+- **Meaning**: task/intent category validation (undefined/ambiguous -> HITL)
+- **Consistency**: schema/contract checks (mismatch -> HITL)
+- **RFL (Relativity Filter)**: unstable/subjective boundaries -> `PAUSE_FOR_HITL` (overrideable, non-sealed)
+- **Ethics / ACC**: non-overridable sealing gates (PII/tool side-effects, policy violations)
+- **DISPATCH**: run only when cleared
 
-- **Routing**: decomposition and assignment (who does what)
-- **Guardrails**: forbid overreach and external side effects (fail-closed)
-- **HITL**: explicit escalation state (`PAUSE_FOR_HITL`)
-- **Audit**: log what stopped and why (accountability)
-- **Replay**: rerun under same seed/config and detect deltas
+## 🧭 Architecture Diagram
 
----
-
-## 🔒 Safety model 
-
-- If forbidden intent, overreach, low confidence, or ambiguous sensitive intent is detected in **input/output/plan**, the system **does not auto-execute**.  
-  → It falls back to **STOP** or **HITL** (`PAUSE_FOR_HITL`).
-- “Fail-open reroute” is avoided in risky situations.
-
-### External side effects (default: DENY)
-Examples: network, filesystem, command execution, messaging/email/DM, payments, account operations, **PII sources** (contacts/mailbox/CRM).  
-Unknown tools are **DENY**.
-
-> Note: Files whose names evoke “persuasion / reeducation” are intended for **safety-evaluation scenarios only** (attack simulation / test-case generation). They should be treated as non-default / opt-in experiments.
-
----
-
-## 🧭 Diagrams 
-### 1) System overview
 <p align="center">
-  <img src="docs/multi_agent_architecture_overview.webp" width="820" alt="System Overview">
+  <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
 </p>
 
-### 2) Orchestrator one-page design map 
-Decision flow map: **Meaning → Consistency → HITL → Ethics → ACC → DISPATCH**, designed to be **fail-closed**.
+## 🧭 Layered Agent Model
+
+| Layer | Role | What it does |
+| --- | --- | --- |
+| Interface Layer | External input layer | Input contract (schema) / validation / log submission |
+| Agent Layer | Execution layer | Task processing (proposal / generation / verification) |
+| Supervisor Layer | Supervisory layer | Routing, consistency checks, STOP / HITL decisions |
+
+## 🔬 Context Flow
+
 <p align="center">
-  <img src="docs/orchestrator_onepage_design_map.png" width="980" alt="Orchestrator One-page Design Map">
+  <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
 </p>
 
-### 3) Context flow
-<p align="center">
-  <img src="docs/sentiment_context_flow.png" width="820" alt="Context Flow Diagram">
-</p>
+- **Perception** — Decompose input into executable elements (tasking)
+- **Context** — Extract assumptions/constraints/risk factors (guard rationale)
+- **Action** — Instruct agents, verify results, branch (STOP / REROUTE / HITL)
 
----
+## 🔒 Safety & External Side Effects (default deny)
 
-## 🗂️ Repository structure
+External side effects include: network, filesystem, command execution, messaging, payments, and **PII sources**.
 
-| Path | Description |
-| --- | --- |
-| `mediation_core/` | shared core logic / models |
-| `agents.yaml` | agent definitions / configuration |
-| `docs/` | figures (architecture, flows, maps) |
-| `tests/` | pytest suite |
-| `.github/workflows/python-app.yml` | CI (ruff + pytest, multi Python) |
+**Default policy is deny-by-default.** Unknown tools are **DENY**.
 
-**Key scripts (examples):**
-- `ai_mediation_all_in_one.py` — entry point (routing / checks / branching)
-- `kage_orchestrator_diverse_v1.py` — fault-injection safety demo (tool execution remains blocked)
-- `ai_doc_orchestrator_kage3_v1_2_2.py` — doc orchestrator (Meaning/Consistency/Ethics + PII non-persistence)
-- `ai_governance_mediation_sim.py` — policy application behavior check
+## 🧾 Audit log (research artifact)
 
----
+Audit logs are produced for reproducibility and accountability. Recommended minimum fields:
 
-## ⚡ Quick start
+- `run_id`, `session_id`, `timestamp`, `layer`, `decision`, `reason_code`, `evidence`, `policy_version`
+
+Avoid storing raw PII; log hashes / reason codes instead.
+
+## ⚙️ Execution Examples
+
+> Note: Modules that evoke “persuasion / reeducation” are intended for **safety-evaluation scenarios only** and should be **disabled by default** unless explicitly opted-in.
 
 ```bash
-pip install -r requirements.txt
-pytest -q
-````
-
-Run examples:
-
-```bash
+# Core (routing / gating / branching)
 python ai_mediation_all_in_one.py
-python kage_orchestrator_diverse_v1.py
-python ai_doc_orchestrator_kage3_v1_2_2.py
-python ai_governance_mediation_sim.py
-```
 
----
+# Orchestrator fault-injection / capability guard demo
+python kage_orchestrator_diverse_v1.py
+
+# Doc Orchestrator (Meaning/Consistency/Ethics + PII non-persistence)
+python ai_doc_orchestrator_kage3_v1_2_2.py
+
+# Policy application behavior check
+python ai_governance_mediation_sim.py
+````
 
 ## 🧪 Tests
 
 ```bash
-# all tests
 pytest -q
-
-# HITL gate test
 pytest -q tests/test_definition_hitl_gate_v1.py
-
-# orchestrator diverse test
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
-
-# doc orchestrator test
 pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
 ```
 
-CI runs via `.github/workflows/python-app.yml`.
-
----
+CI runs lint/pytest via `.github/workflows/python-app.yml`.
 
 ## 📌 License
 
-Apache-2.0 (see `LICENSE`).
-Policy intent: Educational / Research.
+See `LICENSE`.
+Repository license: **Apache-2.0** (policy intent: Educational / Research).
 
 ```
+::contentReference[oaicite:0]{index=0}
+```
+
 
 
