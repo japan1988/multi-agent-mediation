@@ -9,7 +9,6 @@ All-in-one simulator for multi-agent mediation:
   - Text: ai_mediation_log.txt
   - CSV : ai_mediation_log.csv
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,7 +16,6 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 import csv
 import math
-
 
 # =========================
 # Tunable constants
@@ -41,7 +39,6 @@ CLAMP_MAX = 1.0
 # Log files
 TEXT_LOG_PATH = "ai_mediation_log.txt"
 CSV_LOG_PATH = "ai_mediation_log.csv"
-
 
 # =========================
 # Logging helpers
@@ -79,7 +76,6 @@ def flush_csv() -> None:
         w.writeheader()
         w.writerows(_LOG_ROWS)
 
-
 # =========================
 # Core math helpers
 # =========================
@@ -112,7 +108,6 @@ def dict_avg(dicts: List[Dict[str, float]]) -> Dict[str, float]:
     for k in keys:
         out[k] = sum(d.get(k, 0.0) for d in dicts) / len(dicts)
     return out
-
 
 # =========================
 # Models
@@ -205,9 +200,11 @@ class AIEMediator:
         """
         avg_offer = dict_avg(offers)
         avg_offer = normalize_priorities({k: clamp(v) for k, v in avg_offer.items()})
-
         # MEDIATOR_BLEND_RATE kept for future extension; currently identity blend.
-        proposed = {k: (1.0 - MEDIATOR_BLEND_RATE) * avg_offer[k] + MEDIATOR_BLEND_RATE * avg_offer[k] for k in avg_offer}
+        proposed = {
+            k: (1.0 - MEDIATOR_BLEND_RATE) * avg_offer[k] + MEDIATOR_BLEND_RATE * avg_offer[k]
+            for k in avg_offer
+        }
         return normalize_priorities(proposed)
 
     def mediate(self, max_rounds: int = MAX_ROUNDS) -> Tuple[bool, Optional[Dict[str, float]]]:
@@ -247,7 +244,6 @@ class AIEMediator:
                 others = [o.priority_values for o in active if o.id != a.id]
                 offer = a.generate_compromise_offer(others)
                 offers.append(offer)
-
                 logcsv(
                     {
                         "time": _now_iso(),
@@ -354,6 +350,9 @@ def build_demo_agents() -> List[AI]:
 
 
 def main(agents: Optional[List[AI]] = None) -> None:
+    # Reset per-run buffers/files to avoid cross-run contamination in the same interpreter.
+    _LOG_ROWS.clear()  # <-- FIX: clear global CSV buffer on each run
+
     # Reset text log on each run (optional; comment out if you want append-only)
     with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
         f.write("")
@@ -363,7 +362,6 @@ def main(agents: Optional[List[AI]] = None) -> None:
 
     mediator = AIEMediator(agents)
     agreed, offer = mediator.mediate()
-
     logprint(f"Result: agreed={agreed}, offer={offer}")
     flush_csv()
 
