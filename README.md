@@ -1,50 +1,66 @@
-### Minimal entrypoint E2E (exit codes + logs)
+<p align="center">
+  <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
+</p>
 
-```python
-def test_min_entrypoint_run_exit_code_and_logs(tmp_path: Path) -> None:
-    cmd = [
-        sys.executable,
-        str(_script_path()),
-        "--prompt",
-        "hello",
-        "--run-id",
-        "DEMO",
-    ]
-    r = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
-    assert r.returncode == 0, r.stdout + "\n" + r.stderr
+- **Perception** — Decompose input into executable elements (tasking)
+- **Context** — Extract assumptions/constraints/risk factors (guard rationale)
+- **Action** — Instruct agents, verify results, branch (STOP / REROUTE / HITL)
 
-    log_path = tmp_path / "logs" / "orchestrator_min.jsonl"
-    assert log_path.exists()
+## 🧾 Audit log & data safety (IMPORTANT)
 
-    rows = _read_jsonl(log_path)
-    assert len(rows) >= 1
-    last = rows[-1]
+This project produces **audit logs** for reproducibility and accountability.
+Because logs may outlive a session and may be shared for research, **treat logs as sensitive artifacts**.
 
-    assert last["run_id"] == "DEMO"
-    assert last["decision"] == "RUN"
-    assert (
-        "prompt_hash" in last
-        and isinstance(last["prompt_hash"], str)
-        and len(last["prompt_hash"]) == 64
-    )
+- **Do not include personal information (PII)** (emails, phone numbers, addresses, real names, account IDs, etc.) in prompts, test vectors, or logs.
+- Prefer **synthetic / dummy data** for experiments.
+- Avoid committing runtime logs to the repository. If you must store logs locally, apply **masking**, **retention limits**, and **restricted directories**.
+- Recommended minimum fields: `run_id`, `session_id`, `timestamp`, `layer`, `decision`, `reason_code`, `evidence`, `policy_version`.
+
+### 🔒 Audit log requirements (MUST)
+
+To keep logs safe and shareable for research:
+
+- **MUST NOT** persist raw prompts/outputs that may contain PII or secrets.
+- **MUST** store only *sanitized* evidence (redacted / hashed / category-level signals).
+- **MUST** run a PII/secret scan on any candidate log payload; on detection failure, **do not write** the log (fail-closed).
+- **MUST** avoid committing runtime logs to the repository (use local restricted directories).
+
+**Minimum required fields (MUST):**
+- `run_id`, `timestamp`, `layer`, `decision`, `reason_code`, `final_decider`, `policy_version`
+
+**Retention (SHOULD):**
+- Define a retention window (e.g., 7/30/90 days) and delete logs automatically.
+
+## ⚙️ Execution Examples
+
+> Note: Modules that evoke “persuasion / reeducation” are intended for **safety-evaluation scenarios only** and should be **disabled by default** unless explicitly opted-in.
+
+```bash
+python ai_mediation_all_in_one.py
+python kage_orchestrator_diverse_v1.py
+python ai_doc_orchestrator_kage3_v1_2_2.py
+python ai_governance_mediation_sim.py
+🧪 Tests
+Reproducible E2E confidential-flow loop guard:
+
+kage_end_to_end_confidential_loopguard_v1_0.py
+
+Test:
+
+test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
+
+pytest -q
+pytest -q tests/test_definition_hitl_gate_v1.py
+pytest -q tests/test_kage_orchestrator_diverse_v1.py
+pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
+pytest -q test_end_to_end_confidential_loopguard_v1_0.py
+CI runs lint/pytest via .github/workflows/python-app.yml.
+
+📌 License
+See LICENSE.
+Repository license: Apache-2.0 (policy intent: Educational / Research).
 
 
-def test_min_entrypoint_hitl_exit_code_and_logs(tmp_path: Path) -> None:
-    cmd = [
-        sys.executable,
-        str(_script_path()),
-        "--prompt",
-        "please identify someone by email address",
-        "--run-id",
-        "DEMO_HITL",
-    ]
-    r = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
-    assert r.returncode == 2, r.stdout + "\n" + r.stderr
 
-    log_path = tmp_path / "logs" / "orchestrator_min.jsonl"
-    rows = _read_jsonl(log_path)
-    last = rows[-1]
-    assert last["run_id"] == "DEMO_HITL"
-    assert last["decision"] == "HITL"
-
-
+選択されていません選択されていません
+ChatGPT の回答は必ずしも正しいとは限りません。重要な情報は確認するようにしてください。
