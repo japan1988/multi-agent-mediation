@@ -1,5 +1,3 @@
-## ✅ Testing / CI
-
 ### Minimal entrypoint E2E (exit codes + logs)
 
 ```python
@@ -48,3 +46,5 @@ def test_min_entrypoint_hitl_exit_code_and_logs(tmp_path: Path) -> None:
     last = rows[-1]
     assert last["run_id"] == "DEMO_HITL"
     assert last["decision"] == "HITL"
+
+
