@@ -385,7 +385,7 @@ def main() -> int:
                 path="logs/session_001.jsonl",
                 run_id=run_id,
                 task_id="governance_mediation",
-                truncate=False,  # <-- critical fix: preserve existing audit trail
+                truncate=False,  # critical fix: preserve existing audit trail
             )
             arl.emit(
                 event="EXCEPTION",
