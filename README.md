@@ -125,25 +125,27 @@ python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_doc_orchestrator_kage3_v1_2_2.py
 python ai_governance_mediation_sim.py
-🧪 Tests
+```
+
+## 🧪 Tests
+
 Reproducible E2E confidential-flow loop guard:
-
-kage_end_to_end_confidential_loopguard_v1_0.py
-
-Test (CI green on Python 3.9–3.11):
-
-tests/test_end_to_end_confidential_loopguard_v1_0.py
+- `kage_end_to_end_confidential_loopguard_v1_0.py`
+- `tests/test_end_to_end_confidential_loopguard_v1_0.py` (CI green on Python 3.9–3.11)
 
 Run:
 
+```bash
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
 pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_2.py
 pytest -q tests/test_end_to_end_confidential_loopguard_v1_0.py
-CI runs lint/pytest via .github/workflows/python-app.yml.
+```
 
-📌 License
-See LICENSE.
+CI runs lint/pytest via `.github/workflows/python-app.yml`.
+
+## 📌 License
+
+See `LICENSE`.  
 Repository license: Apache-2.0 (policy intent: Educational / Research).
-
