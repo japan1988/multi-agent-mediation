@@ -126,7 +126,7 @@ Reproducible E2E confidential-flow loop guard: kage_end_to_end_confidential_loop
 Test: test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
 
 bash
-コードをコピーする
+
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
