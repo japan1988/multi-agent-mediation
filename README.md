@@ -136,8 +136,6 @@ tests/test_end_to_end_confidential_loopguard_v1_0.py
 
 Run:
 
-bash
-コードをコピーする
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
@@ -148,3 +146,4 @@ CI runs lint/pytest via .github/workflows/python-app.yml.
 📌 License
 See LICENSE.
 Repository license: Apache-2.0 (policy intent: Educational / Research).
+
