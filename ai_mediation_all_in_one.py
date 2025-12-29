@@ -315,12 +315,13 @@ class AIEMediator:
         return (False, final_offer)
 
 
-def main() -> None:
-    # Reset text log on each run (optional; comment out if you want append-only)
-    with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
-        f.write("")
-
-    agents = [
+def build_demo_agents() -> List[AI]:
+    """
+    Construct the demo agent set used by the CLI entry point.
+    Keeping this as a helper avoids instantiating agents (and a mediator)
+    at module import time, so consumers can safely import the models.
+    """
+    return [
         AI(
             id="AI-A",
             proposal="制限強化型進化",
@@ -350,6 +351,15 @@ def main() -> None:
             relativity_level=0.50,
         ),
     ]
+
+
+def main(agents: Optional[List[AI]] = None) -> None:
+    # Reset text log on each run (optional; comment out if you want append-only)
+    with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
+        f.write("")
+
+    if agents is None:
+        agents = build_demo_agents()
 
     mediator = AIEMediator(agents)
     agreed, offer = mediator.mediate()
