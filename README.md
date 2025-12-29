@@ -1,13 +1,23 @@
-<a href="./LICENSE">
-  <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License (Policy Intent)">
-</a>
-<a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
-  <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
-</a>
-<br/>
-<img src="https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat-square" alt="Python Version">
-<img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
-<img src="https://img.shields.io/badge/status-research--prototype-brightgreen.svg?style=flat-square" alt="Status">
+# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
+> 日本語版: [README.ja.md](README.ja.md)
+
+<p align="center">
+  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
+    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
+    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License (Policy Intent)">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
+    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
+  </a>
+  <br/>
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat-square" alt="Python Version">
+  <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
+  <img src="https://img.shields.io/badge/status-research--prototype-brightgreen.svg?style=flat-square" alt="Status">
 </p>
 
 ## 🎯 Purpose
@@ -82,7 +92,7 @@ If the image is not visible (or too small), open it directly:
 
 ## 🧾 Audit log & data safety (IMPORTANT)
 
-This project produces **audit logs** for reproducibility and accountability.
+This project produces **audit logs** for reproducibility and accountability.  
 Because logs may outlive a session and may be shared for research, **treat logs as sensitive artifacts**.
 
 - **Do not include personal information (PII)** (emails, phone numbers, addresses, real names, account IDs, etc.) in prompts, test vectors, or logs.
@@ -114,24 +124,33 @@ python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_doc_orchestrator_kage3_v1_2_2.py
 python ai_governance_mediation_sim.py
-🧪 Tests
+````
+
+## 🧪 Tests
+
 Reproducible E2E confidential-flow loop guard:
 
-kage_end_to_end_confidential_loopguard_v1_0.py
+* `kage_end_to_end_confidential_loopguard_v1_0.py`
 
 Test:
 
-test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
+* `test_end_to_end_confidential_loopguard_v1_0.py` (CI green on Python 3.9–3.11)
 
+```bash
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
 pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
 pytest -q test_end_to_end_confidential_loopguard_v1_0.py
-CI runs lint/pytest via .github/workflows/python-app.yml.
+```
 
-📌 License
+CI runs lint/pytest via `.github/workflows/python-app.yml`.
+
+## 📌 License
+
 See LICENSE.
 Repository license: Apache-2.0 (policy intent: Educational / Research).
+
+```
 
 
