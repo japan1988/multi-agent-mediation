@@ -30,7 +30,7 @@ Maestro Orchestrator is a **research-oriented orchestration framework** for supe
 
 ### Positioning (safety-first)
 
-Maestro Orchestrator prioritizes **preventing unsafe or undefined execution** over maximizing autonomous task completion.
+Maestro Orchestrator prioritizes **preventing unsafe or undefined execution** over maximizing autonomous task completion.  
 When risk or ambiguity is detected, it **fails closed** and escalates to `PAUSE_FOR_HITL` or `STOPPED`, with audit logs explaining **why**.
 
 **Trade-off:** This design may *over-stop by default*; safety and traceability are prioritized over throughput.
@@ -71,7 +71,7 @@ REROUTE is **allowed only when all conditions are met**. Otherwise, the system m
 ### 2) Orchestrator one-page design map
 
 **Decision flow map (implementation-aligned):**  
-`mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`  
+`mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`
 
 Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to `PAUSE_FOR_HITL` or `STOPPED` and logs **why**.
 
@@ -130,9 +130,11 @@ Reproducible E2E confidential-flow loop guard:
 
 kage_end_to_end_confidential_loopguard_v1_0.py
 
-Test:
+Test (CI green on Python 3.9–3.11):
 
-tests/test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
+tests/test_end_to_end_confidential_loopguard_v1_0.py
+
+Run:
 
 bash
 コードをコピーする
@@ -146,6 +148,3 @@ CI runs lint/pytest via .github/workflows/python-app.yml.
 📌 License
 See LICENSE.
 Repository license: Apache-2.0 (policy intent: Educational / Research).
-
-markdown
-コードをコピーする
