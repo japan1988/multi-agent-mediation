@@ -207,7 +207,10 @@ class AIEMediator:
         avg_offer = normalize_priorities({k: clamp(v) for k, v in avg_offer.items()})
 
         # MEDIATOR_BLEND_RATE kept for future extension; currently identity blend.
-        proposed = {k: (1.0 - MEDIATOR_BLEND_RATE) * avg_offer[k] + MEDIATOR_BLEND_RATE * avg_offer[k] for k in avg_offer}
+        proposed = {
+            k: (1.0 - MEDIATOR_BLEND_RATE) * avg_offer[k] + MEDIATOR_BLEND_RATE * avg_offer[k]
+            for k in avg_offer
+        }
         return normalize_priorities(proposed)
 
     def mediate(self, max_rounds: int = MAX_ROUNDS) -> Tuple[bool, Optional[Dict[str, float]]]:
@@ -315,12 +318,9 @@ class AIEMediator:
         return (False, final_offer)
 
 
-def main() -> None:
-    # Reset text log on each run (optional; comment out if you want append-only)
-    with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
-        f.write("")
-
-    agents = [
+def build_demo_agents() -> List[AI]:
+    # Demo agents are defined in a function to prevent any import-time execution surprises.
+    return [
         AI(
             id="AI-A",
             proposal="制限強化型進化",
@@ -351,6 +351,13 @@ def main() -> None:
         ),
     ]
 
+
+def main() -> None:
+    # Reset text log on each run (optional; comment out if you want append-only)
+    with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
+        f.write("")
+
+    agents = build_demo_agents()
     mediator = AIEMediator(agents)
     agreed, offer = mediator.mediate()
 
