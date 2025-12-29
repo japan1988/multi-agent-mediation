@@ -70,8 +70,8 @@ REROUTE is **allowed only when all conditions are met**. Otherwise, the system m
 
 ### 2) Orchestrator one-page design map
 
-**Decision flow map (implementation-aligned):**
-`mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`
+**Decision flow map (implementation-aligned):**  
+`mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`  
 
 Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to `PAUSE_FOR_HITL` or `STOPPED` and logs **why**.
 
@@ -79,7 +79,7 @@ Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to 
   <img src="docs/orchestrator_onepage_design_map.png" width="920" alt="Orchestrator one-page design map">
 </p>
 
-If the image is not visible (or too small), open it directly:
+If the image is not visible (or too small), open it directly:  
 - `docs/orchestrator_onepage_design_map.png`
 
 ### 3) Context flow
@@ -93,7 +93,7 @@ If the image is not visible (or too small), open it directly:
 
 ## 🧾 Audit log & data safety (IMPORTANT)
 
-This project produces **audit logs** for reproducibility and accountability.
+This project produces **audit logs** for reproducibility and accountability.  
 Because logs may outlive a session and may be shared for research, **treat logs as sensitive artifacts**.
 
 - **Do not include personal information (PII)** (emails, phone numbers, addresses, real names, account IDs, etc.) in prompts, test vectors, or logs.
@@ -132,14 +132,13 @@ kage_end_to_end_confidential_loopguard_v1_0.py
 
 Test:
 
-test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
+tests/test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
 
 bash
 コードをコピーする
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
-# Adjust the next two lines to match your repo layout (tests/ or repo root):
 pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_2.py
 pytest -q tests/test_end_to_end_confidential_loopguard_v1_0.py
 CI runs lint/pytest via .github/workflows/python-app.yml.
@@ -147,3 +146,6 @@ CI runs lint/pytest via .github/workflows/python-app.yml.
 📌 License
 See LICENSE.
 Repository license: Apache-2.0 (policy intent: Educational / Research).
+
+markdown
+コードをコピーする
