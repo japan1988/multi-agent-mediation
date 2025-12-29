@@ -69,6 +69,7 @@ REROUTE is **allowed only when all conditions are met**. Otherwise, the system m
 </p>
 
 ### 2) Orchestrator one-page design map
+
 **Decision flow map (implementation-aligned):**
 `mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`
 
@@ -92,7 +93,7 @@ If the image is not visible (or too small), open it directly:
 
 ## 🧾 Audit log & data safety (IMPORTANT)
 
-This project produces **audit logs** for reproducibility and accountability.  
+This project produces **audit logs** for reproducibility and accountability.
 Because logs may outlive a session and may be shared for research, **treat logs as sensitive artifacts**.
 
 - **Do not include personal information (PII)** (emails, phone numbers, addresses, real names, account IDs, etc.) in prompts, test vectors, or logs.
@@ -124,33 +125,25 @@ python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_doc_orchestrator_kage3_v1_2_2.py
 python ai_governance_mediation_sim.py
-````
-
-## 🧪 Tests
-
+🧪 Tests
 Reproducible E2E confidential-flow loop guard:
 
-* `kage_end_to_end_confidential_loopguard_v1_0.py`
+kage_end_to_end_confidential_loopguard_v1_0.py
 
 Test:
 
-* `test_end_to_end_confidential_loopguard_v1_0.py` (CI green on Python 3.9–3.11)
+test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
 
-```bash
+bash
+コードをコピーする
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
-pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
-pytest -q test_end_to_end_confidential_loopguard_v1_0.py
-```
+# Adjust the next two lines to match your repo layout (tests/ or repo root):
+pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_2.py
+pytest -q tests/test_end_to_end_confidential_loopguard_v1_0.py
+CI runs lint/pytest via .github/workflows/python-app.yml.
 
-CI runs lint/pytest via `.github/workflows/python-app.yml`.
-
-## 📌 License
-
+📌 License
 See LICENSE.
 Repository license: Apache-2.0 (policy intent: Educational / Research).
-
-```
-
-
