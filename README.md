@@ -1,5 +1,5 @@
 # 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
-
+> 日本語版: [README.ja.md](README.ja.md)
 <p align="center">
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
     <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
