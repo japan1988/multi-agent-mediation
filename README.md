@@ -27,6 +27,12 @@ Maestro Orchestrator is a **research-oriented orchestration framework** for supe
 - **REROUTE**: Re-route only when explicitly safe (avoid fail-open reroute)
 - **HITL**: Escalate to humans for ambiguous or high-stakes decisions
 
+### Positioning (safety-first)
+Maestro Orchestrator prioritizes **preventing unsafe or undefined execution** over maximizing autonomous task completion.
+When risk or ambiguity is detected, it **fails closed** and escalates to `PAUSE_FOR_HITL` or `STOPPED`, with audit logs explaining **why**.
+
+**Trade-off:** This design may *over-stop by default*; safety and traceability are prioritized over throughput.
+
 ## 🚫 Non-goals (IMPORTANT)
 
 This repository is a **research prototype**. The following are explicitly **out of scope**:
@@ -115,26 +121,19 @@ python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_doc_orchestrator_kage3_v1_2_2.py
 python ai_governance_mediation_sim.py
-````
+🧪 Tests
+Reproducible E2E confidential-flow loop guard: kage_end_to_end_confidential_loopguard_v1_0.py
+Test: test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
 
-## 🧪 Tests
-
-Reproducible E2E confidential-flow loop guard: `kage_end_to_end_confidential_loopguard_v1_0.py`
-Test: `test_end_to_end_confidential_loopguard_v1_0.py` (CI green on Python 3.9–3.11)
-
-```bash
+bash
+コードをコピーする
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
 pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
 pytest -q test_end_to_end_confidential_loopguard_v1_0.py
-```
-
 CI runs lint/pytest via `.github/workflows/python-app.yml'.
 
-## 📌 License
-
-See `LICENSE`.
-Repository license: **Apache-2.0** (policy intent: Educational / Research).
-
-
+📌 License
+See LICENSE.
+Repository license: Apache-2.0 (policy intent: Educational / Research).
