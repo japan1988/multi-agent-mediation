@@ -1,4 +1,4 @@
-# tests/test_ai_doc_orchestrator_kage3_v1_2_4_regression.py
+# tests/test_ai_doc_orchestrator_kage3_v1_2_4.py
 from __future__ import annotations
 
 import json
@@ -25,7 +25,7 @@ def _blob(rows: list[dict]) -> str:
 
 
 def _find(rows: list[dict], **conds) -> list[dict]:
-    out = []
+    out: list[dict] = []
     for r in rows:
         ok = True
         for k, v in conds.items():
@@ -140,11 +140,9 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path):
     assert reqs, "HITL_REQUESTED not found"
     assert decs, "HITL_DECIDED not found"
 
-    # Validate ARL-min keys on those events
     _assert_arl_min_keys(reqs[0])
     _assert_arl_min_keys(decs[0])
 
-    # Validate semantics for firepoint
     assert reqs[0]["decision"] == "PAUSE_FOR_HITL"
     assert reqs[0]["final_decider"] == "SYSTEM"
     assert reqs[0]["overrideable"] is True
@@ -154,7 +152,6 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path):
     assert decs[0]["overrideable"] is False
     assert decs[0]["sealed"] is False
 
-    # At least one task must be stopped by HITL (meaning layer)
     assert any(t.decision == "STOPPED" and t.blocked_layer == "meaning" for t in res.tasks)
 
 
@@ -167,8 +164,6 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
     audit_path = tmp_path / "audit.jsonl"
     art_dir = tmp_path / "artifacts"
 
-    # Mentions all kinds => meaning gate RUN.
-    # Contains "どっち" => RFL triggers HITL.
     prompt = "WordとExcelとPPTを作って。どっちがいい？"
 
     res = sim.run_simulation(
@@ -182,14 +177,13 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
 
     rows = _read_jsonl(audit_path)
 
-    # Confirm at least one RFL gate emitted PAUSE_FOR_HITL
-    rfl_gate = [r for r in rows if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"]
+    rfl_gate = [
+        r for r in rows if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"
+    ]
     assert rfl_gate, "RFL gate did not trigger PAUSE_FOR_HITL"
 
-    # Confirm HITL requested at layer=rfl exists
     assert any(r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl" for r in rows)
 
-    # Continue should allow at least one artifact to be written
     assert res.artifacts_written_task_ids, "No artifacts were written after HITL_CONTINUE"
 
 
@@ -214,10 +208,11 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
 
     rows = _read_jsonl(audit_path)
 
-    ethics_rows = [r for r in rows if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"]
+    ethics_rows = [
+        r for r in rows if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
+    ]
     assert ethics_rows, "No STOPPED GATE_ETHICS found"
 
-    # Semantics: sealed, non-overrideable, system-decided
     hit = ethics_rows[0]
     _assert_arl_min_keys(hit)
     assert hit["sealed"] is True
@@ -225,10 +220,8 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
     assert hit["final_decider"] == "SYSTEM"
     assert hit["reason_code"] == "ETHICS_EMAIL_DETECTED"
 
-    # Ensure at least one task is STOPPED due to ethics
     assert any(t.decision == "STOPPED" and t.blocked_layer == "ethics" for t in res.tasks)
 
-    # Hard guarantee: no email-like strings in logs
     assert "@" not in _blob(rows)
 
 
@@ -242,7 +235,6 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
     audit_path = tmp_path / "audit.jsonl"
     art_dir = tmp_path / "artifacts"
 
-    # break_contract on excel -> mismatch at consistency
     res = sim.run_simulation(
         prompt="WordとExcelとPPTを作って",
         run_id="T#CONS",
@@ -255,11 +247,15 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
 
     rows = _read_jsonl(audit_path)
 
-    # Regen events must exist for the excel task
-    assert any(r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED" for r in rows)
-    assert any(r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS" for r in rows)
+    assert any(
+        (r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED")
+        for r in rows
+    )
+    assert any(
+        (r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS")
+        for r in rows
+    )
 
-    # For excel, artifact must be skipped with PAUSE_FOR_HITL
     excel_skips = [
         r
         for r in rows
@@ -269,7 +265,6 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
     ]
     assert excel_skips, "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending"
 
-    # Result should include excel as PAUSE_FOR_HITL
     excel_tr = next(t for t in res.tasks if t.task_id == "task_excel")
     assert excel_tr.decision == "PAUSE_FOR_HITL"
     assert excel_tr.blocked_layer == "consistency"
