@@ -1,4 +1,16 @@
-# tests/test_ai_doc_orchestrator_kage3_v1_2_4.py
+# -*- coding: utf-8 -*-
+"""
+Regression tests for ai_doc_orchestrator_kage3_v1_2_4
+
+Key goals:
+- audit.emit() auto-fills ts
+- deep redaction: redact BOTH dict keys and values (email-like keys must not persist)
+- HITL firepoints observable: HITL_REQUESTED / HITL_DECIDED with ARL-min fields
+- RFL gate triggers HITL; CONTINUE allows dispatch
+- Ethics email leak is SEALED and never persists '@' in logs
+- Consistency mismatch => regen pending + artifact skipped
+"""
+
 from __future__ import annotations
 
 import json
@@ -134,9 +146,9 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path):
     )
 
     rows = _read_jsonl(audit_path)
-
     reqs = _find(rows, event="HITL_REQUESTED")
     decs = _find(rows, event="HITL_DECIDED")
+
     assert reqs, "HITL_REQUESTED not found"
     assert decs, "HITL_DECIDED not found"
 
@@ -177,9 +189,7 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
 
     rows = _read_jsonl(audit_path)
 
-    rfl_gate = [
-        r for r in rows if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"
-    ]
+    rfl_gate = [r for r in rows if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"]
     assert rfl_gate, "RFL gate did not trigger PAUSE_FOR_HITL"
 
     assert any(r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl" for r in rows)
@@ -208,9 +218,7 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
 
     rows = _read_jsonl(audit_path)
 
-    ethics_rows = [
-        r for r in rows if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
-    ]
+    ethics_rows = [r for r in rows if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"]
     assert ethics_rows, "No STOPPED GATE_ETHICS found"
 
     hit = ethics_rows[0]
@@ -247,14 +255,8 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
 
     rows = _read_jsonl(audit_path)
 
-    assert any(
-        (r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED")
-        for r in rows
-    )
-    assert any(
-        (r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS")
-        for r in rows
-    )
+    assert any((r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED") for r in rows)
+    assert any((r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS") for r in rows)
 
     excel_skips = [
         r
