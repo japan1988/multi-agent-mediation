@@ -1,5 +1,6 @@
 # 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 > 日本語版: [README.ja.md](README.ja.md)
+
 <p align="center">
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
     <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
@@ -16,7 +17,9 @@
   <br/>
   <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat-square" alt="Python Version">
   <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
-  <img src="https://img.shields.io/badge/status-research--prototype-brightgreen.svg?style=flat-square" alt="Status">
+  <a href="https://github.com/japan1988/multi-agent-mediation/commits/main">
+    <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
+  </a>
 </p>
 
 ## 🎯 Purpose
@@ -78,6 +81,8 @@ Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to 
 If the image is not visible (or too small), open it directly:  
 - `docs/orchestrator_onepage_design_map.png`
 
+RFL is non-sealing by design: it escalates to `PAUSE_FOR_HITL` (never `sealed=true`).
+
 ### 3) Context flow
 <p align="center">
   <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
@@ -89,13 +94,12 @@ If the image is not visible (or too small), open it directly:
 
 ## 🧾 Audit log & data safety (IMPORTANT)
 
-This project produces **audit logs** for reproducibility and accountability.  
+This project produces **audit logs** for reproducibility and accountability.
 Because logs may outlive a session and may be shared for research, **treat logs as sensitive artifacts**.
 
 - **Do not include personal information (PII)** (emails, phone numbers, addresses, real names, account IDs, etc.) in prompts, test vectors, or logs.
 - Prefer **synthetic / dummy data** for experiments.
 - Avoid committing runtime logs to the repository. If you must store logs locally, apply **masking**, **retention limits**, and **restricted directories**.
-- Recommended minimum fields: `run_id`, `session_id`, `timestamp`, `layer`, `decision`, `reason_code`, `evidence`, `policy_version`.
 
 ### 🔒 Audit log requirements (MUST)
 
@@ -103,14 +107,31 @@ To keep logs safe and shareable for research:
 
 - **MUST NOT** persist raw prompts/outputs that may contain PII or secrets.
 - **MUST** store only *sanitized* evidence (redacted / hashed / category-level signals).
-- **MUST** run a PII/secret scan on any candidate log payload; on detection failure, **do not write** the log (fail-closed).
+- **MUST** redact PII-like patterns **fail-closed** (on detection failure, do not write logs).
+- **MUST** ensure redaction applies to **both values and dictionary keys** (no email-like tokens such as `@` may remain in persisted logs).
 - **MUST** avoid committing runtime logs to the repository (use local restricted directories).
 
-**Minimum required fields (MUST):**
-- `run_id`, `timestamp`, `layer`, `decision`, `reason_code`, `final_decider`, `policy_version`
+**Minimum required fields (implementation-aligned, MUST):**
+- `run_id`, `ts`, `layer`, `decision`, `reason_code`, `sealed`, `overrideable`, `final_decider`
+
+**Optional fields (SHOULD, if you need them):**
+- `session_id`, `policy_version`, `artifact_id`, `route_id` (keep them sanitized / non-PII)
 
 **Retention (SHOULD):**
 - Define a retention window (e.g., 7/30/90 days) and delete logs automatically.
+
+## 🧑‍⚖️ HITL semantics (post-HITL is defined)
+
+HITL is used for ambiguous or high-stakes cases. Responsibility must be traceable in the audit log.
+
+- When HITL is triggered, the orchestrator emits `HITL_REQUESTED` (**SYSTEM**), typically with:
+  - `decision=PAUSE_FOR_HITL`, `sealed=false`, `overrideable=true`
+- User choice is recorded as `HITL_DECIDED` (**USER**), with:
+  - `sealed=false`, `overrideable=false`, `final_decider=USER`
+  - `CONTINUE` → decision propagates to `RUN`
+  - `STOP` → decision becomes `STOPPED`
+
+**Note:** Only Ethics/ACC can seal (`sealed=true` implies `final_decider=SYSTEM`).
 
 ## ⚙️ Execution Examples
 
@@ -119,21 +140,33 @@ To keep logs safe and shareable for research:
 ```bash
 python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
-python ai_doc_orchestrator_kage3_v1_2_2.py
 python ai_governance_mediation_sim.py
-🧪 Tests
-Reproducible E2E confidential-flow loop guard: kage_end_to_end_confidential_loopguard_v1_0.py
-Test: test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
 
-bash
+# Doc orchestrator (KAGE3-style)
+python ai_doc_orchestrator_kage3_v1_2_4.py
+# (older versions may exist, but v1.2.4 is the current reference for post-HITL semantics)
+````
 
+## 🧪 Tests
+
+```bash
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
-pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
-pytest -q test_end_to_end_confidential_loopguard_v1_0.py
-CI runs lint/pytest via `.github/workflows/python-app.yml'.
 
-📌 License
+# Dedicated regression test (version-pinned) for v1.2.4
+pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_4.py
+```
+
+CI runs lint/pytest via `.github/workflows/python-app.yml`.
+
+## 📌 License
+
 See LICENSE.
 Repository license: Apache-2.0 (policy intent: Educational / Research).
+
+```
+
+必要なら、この全文を「いまの README.md との差分（どこを置換するか）」の形に切り出して、コピペ量を減らした版も出せます。
+```
+
