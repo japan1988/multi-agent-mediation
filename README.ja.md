@@ -1,5 +1,5 @@
-# 📘 Maestro Orchestrator — マルチエージェント・オーケストレーションフレームワーク
-> 日本語版（このページ）
+# 📘 Maestro Orchestrator — マルチエージェント・オーケストレーション・フレームワーク
+> English: [README.md](README.md)
 
 <p align="center">
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
@@ -17,151 +17,127 @@
   <br/>
   <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat-square" alt="Python Version">
   <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
-  <img src="https://img.shields.io/badge/status-research--prototype-brightgreen.svg?style=flat-square" alt="Status">
+  <a href="https://github.com/japan1988/multi-agent-mediation/commits/main">
+    <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
+  </a>
 </p>
 
 ## 🎯 目的（Purpose）
 
-Maestro Orchestrator は、複数エージェント（または複数手法）を監督するための **研究指向オーケストレーション・フレームワーク**です。  
-設計思想は **fail-closed（安全側に倒す）**で、リスク／曖昧性／未定義仕様を検知した場合は実行を最大化せず、停止・人間介入・安全な限定的リルートへ分岐します。
+Maestro Orchestrator は、複数エージェント（または複数手法）を監督するための **研究向けオーケストレーション・フレームワーク**です。  
+特徴は **fail-closed（安全側に倒す）**を前提にしている点です。
 
-- **STOP**：エラー／ハザード／未定義仕様を検知したら停止（`STOPPED`）
-- **REROUTE**：明示的に安全が確認できる場合のみリルート（fail-open を避ける）
-- **HITL**：曖昧／高リスクの判断は人間へ返す（`PAUSE_FOR_HITL`）
+- **STOP**: エラー／危険／未定義仕様を検知したら停止
+- **REROUTE**: 明示的に安全と判断できる場合のみ再ルーティング（fail-open reroute を避ける）
+- **HITL**: 曖昧・高リスクは人間判断へエスカレーション
 
-### 位置づけ（Safety-first）
-本フレームワークは、**自律的な完遂率の最大化よりも、安全性と説明可能性（traceability）を優先**します。  
-リスクまたは曖昧性がある場合、`PAUSE_FOR_HITL` / `STOPPED` にフォールバックし、監査ログで **なぜそう判断したか（why）**を残します。
+### 位置づけ（安全優先）
+Maestro Orchestrator は、タスク完遂率を最大化するよりも、**不安全／未定義の実行を防ぐこと**を優先します。  
+リスクや曖昧さが検知された場合、`PAUSE_FOR_HITL` または `STOPPED` に **fail-closed** し、監査ログに「なぜそうなったか」を残します。
 
-**トレードオフ：** 安全側に倒すため、状況によっては「止まりやすい（over-stop）」挙動になります。
+**トレードオフ:** 安全とトレーサビリティを優先するため、デフォルトでは *止まりやすい（over-stop）* 設計になり得ます。
 
-## 🚫 非目標（Non-goals / IMPORTANT）
+## 🚫 非目的（IMPORTANT）
 
-このリポジトリは **研究プロトタイプ**です。以下は明確にスコープ外です。
+このリポジトリは **研究プロトタイプ**です。以下は明確に **対象外**です：
 
-- **実運用レベルの自律意思決定**（無人で現実世界に権限を持たない）
-- **実ユーザー向けの persuasion / reeducation 最適化**（安全性評価用途のみ。opt-in 前提でデフォルト無効）
-- **実在個人情報（PII）** や機密ビジネス情報を、プロンプト／テスト／ログで扱うこと
-- 規制領域（医療/法務/金融等）に対する **コンプライアンス／法的助言** や導入ガイド
+- **本番運用レベルの自律意思決定**（無人で現実世界に権限を持つ用途は想定しない）
+- **現実のユーザーに対する persuasion / reeducation の最適化**（安全評価用途のみ。opt-in 前提でデフォルト無効）
+- **実在個人情報（PII）**や機密業務データを含むプロンプト／テスト／ログの取り扱い
+- 規制領域（医療／法務／金融等）に対する **コンプライアンス・法的助言**や導入ガイダンス
 
 ## 🔁 REROUTE 安全ポリシー（fail-closed）
 
-REROUTE は **全条件を満たす場合のみ許可**します。満たさない場合は `PAUSE_FOR_HITL` または `STOPPED` にフォールバックします。
+REROUTE は **すべての条件を満たす場合のみ許可**します。満たさない場合は `PAUSE_FOR_HITL` または `STOPPED` にフォールバックします。
 
 | リスク／条件 | REROUTE | デフォルト動作 |
 |---|---:|---|
-| 未定義仕様／曖昧な意図 | ❌ | `PAUSE_FOR_HITL` |
-| ポリシー敏感カテゴリ（PII・秘密情報・高リスク領域） | ❌ | `STOPPED` または `PAUSE_FOR_HITL` |
-| 候補ルートが元より高い権限（ツール/データ）を持つ | ❌ | `STOPPED` |
-| 候補ルートが同等以上の制約を強制できない | ❌ | `STOPPED` |
-| 低リスクタスク + 権限が同等以下 + 制約が同等以上 | ✅ | `REROUTE` |
-| REROUTE回数が上限超過 | ❌ | `PAUSE_FOR_HITL` または `STOPPED` |
+| 仕様未定義／意図が曖昧 | ❌ | `PAUSE_FOR_HITL` |
+| ポリシー感度が高い領域（PII、秘密情報、高リスク領域） | ❌ | `STOPPED` または `PAUSE_FOR_HITL` |
+| ルート候補が元より **高い** ツール／データ権限を要求 | ❌ | `STOPPED` |
+| ルート候補が **同等以上の制約**を強制できない | ❌ | `STOPPED` |
+| 低リスククラス + 権限が同等以下 + 制約が同等以上 | ✅ | `REROUTE` |
+| REROUTE 回数が上限超過 | ❌ | `PAUSE_FOR_HITL` または `STOPPED` |
 
-**推奨ハードリミット（recommended defaults）：**
+**ハード制限（推奨デフォルト）**
 - `max_reroute = 1`（超過 → `PAUSE_FOR_HITL` または `STOPPED`）
-- REROUTE 実施時は `reason_code` と `route_id`（または選択識別子）をログに残すこと
+- REROUTE は `reason_code` と選択ルートIDを監査ログに必ず記録すること。
 
 ## 🧭 図（Diagrams）
 
-### 1) システム概要（System overview）
+### 1) Context flow（文脈フロー）
 <p align="center">
-  <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
+  <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
 </p>
 
-### 2) オーケストレーター 1枚設計マップ（Orchestrator one-page design map）
+- **Perception** — 入力を実行可能要素へ分解（タスク化）
+- **Context** — 仮定／制約／リスク要因を抽出（ガード理由）
+- **Action** — エージェント指示、結果検証、分岐（STOP / REROUTE / HITL）
 
-**意思決定フロー（実装準拠）：**  
+### 2) Orchestrator one-page design map（1枚設計図）
+**Decision flow map（実装準拠）:**  
 `mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`  
-
-**fail-closed** として設計されています。リスク／曖昧性を検知した場合は `PAUSE_FOR_HITL` または `STOPPED` にフォールバックし、**理由（why）**をログに残します。  
-RFL は **封印しない（non-sealing）**設計で、曖昧性検知は `PAUSE_FOR_HITL` へエスカレーションします。
+**fail-closed** 前提：リスク／曖昧さがあれば `PAUSE_FOR_HITL` または `STOPPED` に倒し、「なぜ」をログに残します。
 
 <p align="center">
   <img src="docs/orchestrator_onepage_design_map.png" width="920" alt="Orchestrator one-page design map">
 </p>
 
-画像が表示されない（または小さい）場合は、直接開いてください：  
+画像が表示されない（または小さい）場合は直接開いてください：  
 - `docs/orchestrator_onepage_design_map.png`
 
-### 3) コンテキストフロー（Context flow）
-<p align="center">
-  <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
-</p>
+RFL は非封印（non-sealing）設計です：`PAUSE_FOR_HITL` にエスカレートし、`sealed=true` にはなりません。
 
-- **Perception（知覚）** — 入力を実行可能要素に分解（タスク化）
-- **Context（文脈）** — 前提／制約／リスク要因を抽出（ガード根拠）
-- **Action（行動）** — エージェントに指示し、結果を検証し、分岐（STOP / REROUTE / HITL）
+## 🧾 監査ログ & データ安全（IMPORTANT）
 
-## 🧾 監査ログとデータ安全（重要）
+このプロジェクトは、再現性と説明責任のために **監査ログ（audit log）**を出力します。  
+ログはセッションより長く残り、研究共有され得るため、**ログをセンシティブな成果物として扱う**前提で設計してください。
 
-本プロジェクトは、再現性と説明責任のために **監査ログ（audit logs）** を出力します。  
-ログはセッションより長く残り、研究目的で共有される可能性があるため、**ログは機微な成果物**として扱ってください。
-
-- プロンプト／テストベクタ／ログに **個人情報（PII）**（メール、電話、住所、実名、アカウントID等）を含めないでください。
-- 実験では **合成データ／ダミーデータ** を推奨します。
-- 実行時ログをリポジトリにコミットしないでください。ローカル保存が必要な場合は **マスキング**、**保持期限（retention limits）**、**アクセス制限ディレクトリ**を適用してください。
+- プロンプト／テストベクタ／ログに **個人情報（PII）**（メール、電話番号、住所、実名、アカウントID等）を入れない
+- 実験は **合成データ／ダミーデータ**を優先
+- 実行時ログをリポジトリにコミットしない（必要ならマスキング／保持期限／隔離ディレクトリを適用）
 
 ### 🔒 監査ログ要件（MUST）
 
-研究共有可能で安全なログにするため、以下を必須要件とします。
+研究共有可能で安全なログにするため：
 
-- **MUST NOT**：PIIや機密を含む可能性がある **生のプロンプト／出力（raw_text）** を保存しない
-- **MUST**：保存するのは *sanitized evidence*（伏字／ハッシュ／カテゴリ信号など）に限定する
-- **MUST**：ログ候補のペイロードに対して PII/secret スキャンを実行し、検出失敗時は **ログを書き込まない**（fail-closed）
-- **MUST**：実行時ログをリポジトリへコミットしない（ローカルの制限ディレクトリを使用）
+- **MUST NOT**: PIIや秘密情報を含み得る raw のプロンプト／出力を永続化しない
+- **MUST**: *sanitized* な証拠（redacted / hashed / カテゴリ信号）だけを保存する
+- **MUST**: PII様パターンは fail-closed で赤塗り（検知失敗時はログを書かない）
+- **MUST**: 赤塗りは **値だけでなく辞書キーにも適用**（`@` 等が残存しないこと）
+- **MUST**: 実行時ログをリポジトリにコミットしない（ローカル隔離を推奨）
 
-**最低限必要なフィールド（実装準拠, MUST）：**
+**最小必須フィールド（実装準拠, MUST）**
 - `run_id`, `ts`, `layer`, `decision`, `reason_code`, `sealed`, `overrideable`, `final_decider`
 
-**保持（SHOULD）：**
-- 保持期間（例：7/30/90日）を定義し、自動削除すること。
+**任意フィールド（必要ならSHOULD）**
+- `session_id`, `policy_version`, `artifact_id`, `route_id`（すべて非PII・sanitized 前提）
 
-## 🧑‍⚖️ HITL セマンティクス（post-HITL を定義）
+**保持期限（SHOULD）**
+- 7/30/90 日など保持期限を定義し自動削除すること。
 
-HITL は曖昧／高リスク時に人間判断へエスカレーションする仕組みです。  
-監査ログ上で **責任の所在** が追跡可能であることを必須とします。
+## 🧑‍⚖️ HITL セマンティクス（HITL後の挙動を定義）
 
-- HITL が発火した場合、オーケストレーターは `HITL_REQUESTED`（**SYSTEM**）を記録します。  
-  典型：`decision=PAUSE_FOR_HITL`, `sealed=false`, `overrideable=true`
-- ユーザーの判断は `HITL_DECIDED`（**USER**）として記録します。  
-  `sealed=false`, `overrideable=false`, `final_decider=USER`
-  - `CONTINUE` → `RUN` に伝播
-  - `STOP` → `STOPPED` になる
+HITL は曖昧・高リスク時に使用します。責任の所在は監査ログで追跡可能であるべきです。
 
-※ `sealed=true` を許可できるのは Ethics/ACC のみ（この場合 `final_decider=SYSTEM`）。
+- HITL を要求した時、オーケストレーターは `HITL_REQUESTED`（**SYSTEM**）を出力し、通常以下を含みます：
+  - `decision=PAUSE_FOR_HITL`, `sealed=false`, `overrideable=true`
+- ユーザーの選択は `HITL_DECIDED`（**USER**）として記録します：
+  - `sealed=false`, `overrideable=false`, `final_decider=USER`
+  - `CONTINUE` → 決定は `RUN` に伝搬
+  - `STOP` → 決定は `STOPPED` へ
 
-※ HITL を対話入力（stdin）で扱う実装の場合、非対話環境（stdin無し）では `PAUSE_FOR_HITL` 以降が進まないことがあります。  
-CI では pytest により STOP/CONTINUE 分岐を検証します。
+**注意:** `sealed=true` になれるのは Ethics/ACC のみ（この場合 `final_decider=SYSTEM`）。
 
 ## ⚙️ 実行例（Execution Examples）
 
-> 注意： “persuasion / reeducation” を想起させるモジュールは **安全性評価用途のみ**を想定しており、明示的な opt-in がない限り **デフォルト無効**にしてください。
+> “persuasion / reeducation” を想起させるモジュールは **安全評価用途のみ**で、明示的 opt-in がない限り **デフォルト無効**を推奨します。
 
 ```bash
 python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_governance_mediation_sim.py
 
-# Doc orchestrator (KAGE3-style, post-HITL semantics reference)
+# Doc orchestrator (KAGE3-style)
 python ai_doc_orchestrator_kage3_v1_2_4.py
-````
-
-## 🧪 テスト（Tests）
-
-```bash
-pytest -q
-pytest -q tests/test_definition_hitl_gate_v1.py
-pytest -q tests/test_kage_orchestrator_diverse_v1.py
-
-# v1.2.4 専用回帰テスト（version-pinned）
-pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_4.py
-```
-
-CI は `.github/workflows/python-app.yml` で lint/pytest を実行します。
-
-## 📌 ライセンス（License）
-
-`LICENSE` を参照してください。
-リポジトリのライセンス表示：**Apache-2.0**（ポリシー意図：Educational / Research）
-
-```
+#（旧版が残っていても、v1.2.4 を post-HITL セマンティクスの参照版とする）
