@@ -9,8 +9,9 @@ Goal:
 - A mediator orchestrates negotiation rounds.
 - Fail-closed behavior: unsafe/unstable states do not silently continue.
 - Emits:
-  - governance_mediation_log.txt (human-readable)
-  - logs/session_001.jsonl (machine-checkable ARL-style JSONL)
+  - governance_mediation_log_<run_id>.txt (human-readable)
+  - logs/<run_id>.jsonl (machine-checkable ARL-style JSONL)
+  - logs/<run_id>.exceptions.jsonl (exception-only, append-only)
 
 Run:
   python ai_governance_mediation_sim.py
@@ -34,7 +35,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 JST = timezone(timedelta(hours=9))
 
 Decision = Literal["PASS", "ESCALATED_TO_HITL"]
-
 GovernanceCode = Literal["OECD", "EFFICIENCY_FIRST", "SAFETY_FIRST"]
 
 
@@ -70,6 +70,10 @@ class ARLLogger:
 
     Schema:
       ts, run_id, task_id, event, severity, rule_id, decision, meta
+
+    Safety notes:
+      - Normal run may truncate (fresh log for that run).
+      - Exception paths must never truncate.
     """
 
     def __init__(self, path: str, run_id: str, task_id: str, *, truncate: bool = True) -> None:
@@ -79,13 +83,12 @@ class ARLLogger:
 
         _ensure_parent_dir(self.path)
 
-        # Default behavior: truncate on "normal run" start.
-        # For failure-handling or multi-run append, set truncate=False.
+        # Truncate only on "normal run start" where we intentionally want a clean file.
         if truncate:
             with open(self.path, "w", encoding="utf-8"):
                 pass
         else:
-            # Touch the file if it doesn't exist, without truncating.
+            # Touch without truncation.
             with open(self.path, "a", encoding="utf-8"):
                 pass
 
@@ -306,7 +309,7 @@ class Mediator:
 
 
 # =========================
-# Entrypoint
+# Entrypoint helpers
 # =========================
 
 def build_default_agents() -> List[AgentAI]:
@@ -332,24 +335,47 @@ def build_default_agents() -> List[AgentAI]:
     ]
 
 
-def run_session(rounds: int = 5, seed: Optional[int] = 42) -> Decision:
+def _make_paths(run_id: str) -> Tuple[str, str, str]:
+    arl_path = os.path.join("logs", f"{run_id}.jsonl")
+    exc_path = os.path.join("logs", f"{run_id}.exceptions.jsonl")
+    text_path = f"governance_mediation_log_{run_id}.txt"
+    return arl_path, exc_path, text_path
+
+
+def _emit_exception_best_effort(exc_path: str, run_id: str, task_id: str, err: BaseException) -> None:
+    """
+    Exception-only logger:
+    - append-only
+    - best-effort (never raise)
+    """
+    try:
+        arl_exc = ARLLogger(path=exc_path, run_id=run_id, task_id=task_id, truncate=False)
+        arl_exc.emit(
+            event="EXCEPTION",
+            severity="ERROR",
+            rule_id="RF-FAILCLOSED-EXCEPTION-001",
+            decision="ESCALATED_TO_HITL",
+            meta={"error": repr(err), "exc_type": type(err).__name__},
+        )
+    except Exception:
+        pass
+
+
+def run_session(
+    *,
+    arl: ARLLogger,
+    text_path: str,
+    rounds: int = 5,
+    seed: Optional[int] = 42,
+) -> Decision:
     if seed is not None:
         random.seed(seed)
-
-    run_id = uuid.uuid4().hex
-    task_id = "governance_mediation"
-
-    arl_path = "logs/session_001.jsonl"
-    text_path = "governance_mediation_log.txt"
-
-    # Normal run: truncate to start a clean log for this run.
-    arl = ARLLogger(path=arl_path, run_id=run_id, task_id=task_id, truncate=True)
 
     agents = build_default_agents()
     mediator = Mediator(agents=agents, arl=arl, text_log_path=text_path)
 
     arl.emit(event="TASK_START", rule_id="RF-TASK-START-001", meta={"rounds": rounds, "seed": seed})
-    mediator._tlog(f"[{_now_iso()}] run_id={run_id} task_id={task_id} rounds={rounds} seed={seed}")
+    mediator._tlog(f"[{_now_iso()}] run_id={arl.run_id} task_id={arl.task_id} rounds={rounds} seed={seed}")
 
     final: Decision = "PASS"
     for r in range(1, rounds + 1):
@@ -369,24 +395,25 @@ def run_session(rounds: int = 5, seed: Optional[int] = 42) -> Decision:
 
 
 def main() -> int:
+    task_id = "governance_mediation"
+    run_id = uuid.uuid4().hex
+    arl_path, exc_path, text_path = _make_paths(run_id)
+
+    # Per-run log => truncate is safe (won't erase previous runs)
+    arl = ARLLogger(path=arl_path, run_id=run_id, task_id=task_id, truncate=True)
+
     try:
-        final = run_session(rounds=5, seed=42)
+        final = run_session(arl=arl, text_path=text_path, rounds=5, seed=42)
         print(f"FINAL: {final}")
         if final == "ESCALATED_TO_HITL":
             print("HITL required: ambiguous/unsafe/unstable state detected (fail-closed).")
             return 2
         return 0
+
     except Exception as e:
-        # Fail-closed even on unexpected exceptions:
-        # Important: do NOT truncate the existing audit trail here.
+        # Fail-closed on unexpected exceptions, without risking truncation.
+        # 1) Prefer emitting to the already-opened logger (no re-init).
         try:
-            run_id = "EXCEPTION_" + uuid.uuid4().hex
-            arl = ARLLogger(
-                path="logs/session_001.jsonl",
-                run_id=run_id,
-                task_id="governance_mediation",
-                truncate=False,  # critical fix: preserve existing audit trail
-            )
             arl.emit(
                 event="EXCEPTION",
                 severity="ERROR",
@@ -395,7 +422,8 @@ def main() -> int:
                 meta={"error": repr(e), "exc_type": type(e).__name__},
             )
         except Exception:
-            pass
+            # 2) Fallback to exception-only, append-only file.
+            _emit_exception_best_effort(exc_path=exc_path, run_id=run_id, task_id=task_id, err=e)
 
         print("FINAL: ESCALATED_TO_HITL")
         print(f"Exception occurred (fail-closed): {e!r}")
