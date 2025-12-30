@@ -273,3 +273,4 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
     excel_tr = next(t for t in res.tasks if t.task_id == "task_excel")
     assert excel_tr.decision == "PAUSE_FOR_HITL"
     assert excel_tr.blocked_layer == "consistency"
+ 
