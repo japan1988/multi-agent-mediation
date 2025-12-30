@@ -228,8 +228,10 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
     assert hit["final_decider"] == "SYSTEM"
     assert hit["reason_code"] == "ETHICS_EMAIL_DETECTED"
 
+    # Ensure at least one task is STOPPED due to ethics
     assert any(t.decision == "STOPPED" and t.blocked_layer == "ethics" for t in res.tasks)
 
+    # Hard guarantee: no email-like strings in logs
     assert "@" not in _blob(rows)
 
 
@@ -243,6 +245,7 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
     audit_path = tmp_path / "audit.jsonl"
     art_dir = tmp_path / "artifacts"
 
+    # break_contract on excel -> mismatch at consistency
     res = sim.run_simulation(
         prompt="WordとExcelとPPTを作って",
         run_id="T#CONS",
