@@ -164,9 +164,3 @@ CI runs lint/pytest via `.github/workflows/python-app.yml`.
 
 See LICENSE.
 Repository license: Apache-2.0 (policy intent: Educational / Research).
-
-```
-
-必要なら、この全文を「いまの README.md との差分（どこを置換するか）」の形に切り出して、コピペ量を減らした版も出せます。
-```
-
