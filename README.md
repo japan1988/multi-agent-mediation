@@ -64,10 +64,14 @@ REROUTE is **allowed only when all conditions are met**. Otherwise, the system m
 
 ## 🧭 Diagrams
 
-### 1) System overview
+### 1) Context flow
 <p align="center">
-  <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
+  <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
 </p>
+
+- **Perception** — Decompose input into executable elements (tasking)
+- **Context** — Extract assumptions/constraints/risk factors (guard rationale)
+- **Action** — Instruct agents, verify results, branch (STOP / REROUTE / HITL)
 
 ### 2) Orchestrator one-page design map
 **Decision flow map (implementation-aligned):**  
@@ -82,15 +86,6 @@ If the image is not visible (or too small), open it directly:
 - `docs/orchestrator_onepage_design_map.png`
 
 RFL is non-sealing by design: it escalates to `PAUSE_FOR_HITL` (never `sealed=true`).
-
-### 3) Context flow
-<p align="center">
-  <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
-</p>
-
-- **Perception** — Decompose input into executable elements (tasking)
-- **Context** — Extract assumptions/constraints/risk factors (guard rationale)
-- **Action** — Instruct agents, verify results, branch (STOP / REROUTE / HITL)
 
 ## 🧾 Audit log & data safety (IMPORTANT)
 
@@ -145,22 +140,3 @@ python ai_governance_mediation_sim.py
 # Doc orchestrator (KAGE3-style)
 python ai_doc_orchestrator_kage3_v1_2_4.py
 # (older versions may exist, but v1.2.4 is the current reference for post-HITL semantics)
-````
-
-## 🧪 Tests
-
-```bash
-pytest -q
-pytest -q tests/test_definition_hitl_gate_v1.py
-pytest -q tests/test_kage_orchestrator_diverse_v1.py
-
-# Dedicated regression test (version-pinned) for v1.2.4
-pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_4.py
-```
-
-CI runs lint/pytest via `.github/workflows/python-app.yml`.
-
-## 📌 License
-
-See LICENSE.
-Repository license: Apache-2.0 (policy intent: Educational / Research).
