@@ -165,9 +165,3 @@ CI は `.github/workflows/python-app.yml` で lint/pytest を実行します。
 リポジトリのライセンス表示：**Apache-2.0**（ポリシー意図：Educational / Research）
 
 ```
-
----
-
-必要なら、この日本語版に **「README上部が長い問題」対策**として、バッジを **推奨最小構成（5〜7個）**に圧縮した版も同時に出せます。
-```
-
