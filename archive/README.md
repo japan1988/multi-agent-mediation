@@ -1,31 +1,17 @@
-# Archive (research history)
+Comment (paste as-is)
 
-This directory contains **archived / legacy / exploratory** materials kept for traceability and comparison.
+CI is still red because pytest is collecting legacy tests under tests/ that import modules which are no longer present at repo root:
 
-## Policy
-- **Not part of active entrypoints.**
-- **Not guaranteed to run.** (Compatibility may intentionally drift.)
-- **CI should not depend on this directory** unless explicitly wired.
-- Prefer keeping only the **current/recommended** entrypoints at repo root.
+tests/test_ai_doc_orchestrator_kage3_v1_2_4.py → ModuleNotFoundError: ai_doc_orchestrator_kage3_v1_2_4
 
-## Why keep this?
-- Preserve research history and comparisons
-- Reduce clutter in repo root while keeping reproducibility
-- Keep old variants without implying “current / recommended”
+tests/test_ai_doc_orchestrator_kage3_v1_3_5.py → ModuleNotFoundError: ai_doc_orchestrator_kage3_v1_3_5
 
-## Structure (convention)
-- `orchestrator_versions/` : older orchestrator variants
-- `experiments/` : one-off runs / exploratory scripts
-- `legacy_tests/` : tests not used by current CI
+tests/test_doc_orchestrator_with_mediator_v1_0.py → ModuleNotFoundError: ai_doc_orchestrator_with_mediator_v1_0
 
-## Planned moves (initial)
-- `ai_doc_orchestrator_kage3_v1_2_2.py` → `archive/orchestrator_versions/`
-- `ai_doc_orchestrator_kage3_v1_2_4.py` → `archive/orchestrator_versions/`
+pytest.ini excludes archive/, but these failing tests live in tests/, so they are still part of the CI suite.
 
-## Move checklist (must-do before moving)
-1) Search references (GitHub search):
-   - `ai_doc_orchestrator_kage3_v1_2_2`
-   - `ai_doc_orchestrator_kage3_v1_2_4`
-   If referenced by imports/tests/docs, update paths or keep in root.
-2) Move via `git mv` (recommended) or GitHub UI rename.
-3) Run CI/tests.
+Next step (recommended):
+
+Move version-pinned tests from tests/ to archive/legacy_tests/ (or mark them skipped), keeping only maintained tests in tests/.
+
+CI stays green, while legacy variants remain runnable manually (best-effort).
