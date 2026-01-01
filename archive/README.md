@@ -1,16 +1,49 @@
-CommeFollow-up push on this PR:
+# Archive (research history)
 
-This PR intentionally focuses on defining the maintained CI test surface via `pytest.ini` (collection scope), not on rewriting historical tests.
+This directory contains archived / legacy / exploratory materials kept for traceability and comparison.
 
-Background:
-- Some version-pinned / historical tests under `tests/` still import old module names (archived/renamed entrypoints), which can trigger `ModuleNotFoundError` during collection.
+## Policy
 
-What this PR does:
-- Adds `pytest.ini` to standardize the intended maintained test surface (and exclude `archive/` from recursion).
+- Not part of active entrypoints.
+- Not guaranteed to run. (Compatibility may intentionally drift.)
+- CI should not depend on this directory unless explicitly wired.
+- Prefer keeping only the current/recommended entrypoints at repo root.
 
-What will be handled next (separate PR):
-- Move version-pinned legacy tests out of the active CI suite (e.g., `tests/` → `archive/legacy_tests/`) or mark them as skipped, so CI collects only maintained tests.
+## Why keep this?
 
-Rationale:
-- Keep research history for traceability while keeping `main` CI green and stable.
-nt (paste as-is)
+- Preserve research history and comparisons
+- Reduce clutter in repo root while keeping reproducibility
+- Keep old variants without implying "current / recommended"
+
+## Structure (convention)
+
+- `orchestrator_versions/`: older orchestrator variants
+- `experiments/`: one-off runs / exploratory scripts
+- `legacy_tests/`: tests not used by current CI
+
+## Planned moves (initial)
+
+- `ai_doc_orchestrator_kage3_v1_2_2.py` → `archive/orchestrator_versions/`
+- `ai_doc_orchestrator_kage3_v1_2_4.py` → `archive/orchestrator_versions/`
+
+## Move checklist (must-do before moving)
+
+1. Search references (GitHub search):
+   - `ai_doc_orchestrator_kage3_v1_2_2`
+   - `ai_doc_orchestrator_kage3_v1_2_4`
+   - If referenced by imports/tests/docs, update paths or keep in root.
+2. Move via `git mv` (recommended) or GitHub UI rename.
+3. Run CI/tests.
+
+## How to use (optional)
+
+- To run maintained tests (CI suite):
+  - `pytest -q`
+
+- To run archived tests (best-effort, may fail):
+  - CI excludes `archive/` via `pytest.ini` (`norecursedirs = archive`).
+  - Run locally by overriding config, e.g.:
+    - `pytest -q -c /dev/null archive/legacy_tests`
+    - (Windows) `pytest -q -c NUL archive/legacy_tests`
+
+Note: `archive/` is best-effort; only maintained entrypoints/tests are expected to stay green.
