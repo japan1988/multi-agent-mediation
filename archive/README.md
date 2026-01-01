@@ -1,17 +1,16 @@
-Comment (paste as-is)
+CommeFollow-up push on this PR:
 
-CI is still red because pytest is collecting legacy tests under tests/ that import modules which are no longer present at repo root:
+This PR intentionally focuses on defining the maintained CI test surface via `pytest.ini` (collection scope), not on rewriting historical tests.
 
-tests/test_ai_doc_orchestrator_kage3_v1_2_4.py → ModuleNotFoundError: ai_doc_orchestrator_kage3_v1_2_4
+Background:
+- Some version-pinned / historical tests under `tests/` still import old module names (archived/renamed entrypoints), which can trigger `ModuleNotFoundError` during collection.
 
-tests/test_ai_doc_orchestrator_kage3_v1_3_5.py → ModuleNotFoundError: ai_doc_orchestrator_kage3_v1_3_5
+What this PR does:
+- Adds `pytest.ini` to standardize the intended maintained test surface (and exclude `archive/` from recursion).
 
-tests/test_doc_orchestrator_with_mediator_v1_0.py → ModuleNotFoundError: ai_doc_orchestrator_with_mediator_v1_0
+What will be handled next (separate PR):
+- Move version-pinned legacy tests out of the active CI suite (e.g., `tests/` → `archive/legacy_tests/`) or mark them as skipped, so CI collects only maintained tests.
 
-pytest.ini excludes archive/, but these failing tests live in tests/, so they are still part of the CI suite.
-
-Next step (recommended):
-
-Move version-pinned tests from tests/ to archive/legacy_tests/ (or mark them skipped), keeping only maintained tests in tests/.
-
-CI stays green, while legacy variants remain runnable manually (best-effort).
+Rationale:
+- Keep research history for traceability while keeping `main` CI green and stable.
+nt (paste as-is)
