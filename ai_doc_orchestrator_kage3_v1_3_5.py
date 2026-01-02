@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+ # -*- coding: utf-8 -*-
 """
 ai_doc_orchestrator_kage3_v1_3_5.py
 
@@ -853,4 +853,4 @@ def safety_scorecard(
         "checks": checks,
         "summary": {"crashes": crashes, "at_sign_violations": at_viol, "seal_events": seal_events},
     }
-            
+           
