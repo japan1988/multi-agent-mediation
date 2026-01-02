@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import random
 import re
 import time
 from dataclasses import dataclass
@@ -39,6 +38,29 @@ FinalDecider = Literal["SYSTEM", "USER"]
 HitlChoice = Literal["CONTINUE", "STOP"]
 
 __version__ = "1.3.5"
+
+# ----------------------------
+# Reason codes (IEP-aligned minimal set)
+# ----------------------------
+RC_PASS = "PASS"
+
+# RFL (MUST be non-sealing)
+RC_REL_BOUNDARY_UNSTABLE = "REL_BOUNDARY_UNSTABLE"
+RC_REL_REF_MISSING = "REL_REF_MISSING"
+RC_REL_SYMMETRY_BREAK = "REL_SYMMETRY_BREAK"
+
+# HITL
+RC_HITL_PENDING = "HITL_PENDING"
+RC_HITL_CONTINUE = "HITL_CONTINUE"
+RC_HITL_STOP = "HITL_STOP"
+
+# Ethics / ACC sealing
+RC_SEALED_BY_ETHICS = "SEALED_BY_ETHICS"
+RC_SEALED_BY_ACC = "SEALED_BY_ACC"
+
+# Other stops
+RC_RETRY_EXHAUSTED = "RETRY_EXHAUSTED"
+RC_OK = "OK"
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
@@ -75,8 +97,52 @@ def _sanitize_obj(obj: Any) -> Any:
     return _sanitize_obj(str(obj))
 
 
-def _row(event: str, **fields: Any) -> Dict[str, Any]:
-    base = {"event": event, "tz": JST_OFFSET}
+def _arl_min_fields(
+    *,
+    run_id: str,
+    layer: str,
+    decision: Decision,
+    sealed: bool,
+    overrideable: bool,
+    final_decider: FinalDecider,
+    reason_code: str,
+) -> Dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "layer": layer,
+        "decision": decision,
+        "sealed": bool(sealed),
+        "overrideable": bool(overrideable),
+        "final_decider": final_decider,
+        "reason_code": reason_code,
+    }
+
+
+def _row(
+    event: str,
+    *,
+    run_id: str,
+    layer: str,
+    decision: Decision,
+    sealed: bool,
+    overrideable: bool,
+    final_decider: FinalDecider,
+    reason_code: str,
+    **fields: Any,
+) -> Dict[str, Any]:
+    """
+    All rows include ARL minimal keys + compatibility "event" field.
+    """
+    base: Dict[str, Any] = {"event": event, "tz": JST_OFFSET}
+    base.update(_arl_min_fields(
+        run_id=run_id,
+        layer=layer,
+        decision=decision,
+        sealed=sealed,
+        overrideable=overrideable,
+        final_decider=final_decider,
+        reason_code=reason_code,
+    ))
     base.update(fields)
     return _sanitize_obj(base)
 
@@ -146,12 +212,65 @@ def _is_ambiguous(prompt: str) -> bool:
 
 
 def _emit_gate_events(rows: List[Dict[str, Any]], run_id: str, task: str) -> None:
-    # Tests expect these names to exist in file-mode audit.
-    rows.append(_row("GATE_MEANING", run_id=run_id, task=task))
-    rows.append(_row("GATE_CONSISTENCY", run_id=run_id, task=task))
-    rows.append(_row("GATE_RFL", run_id=run_id, task=task))
-    rows.append(_row("GATE_ETHICS", run_id=run_id, task=task))
-    rows.append(_row("GATE_ACC", run_id=run_id, task=task))
+    """
+    Keep legacy event names for compatibility, but include ARL minimal keys.
+    These are "gate marker" events, not the gate decisions.
+    """
+    rows.append(_row(
+        "GATE_MEANING",
+        run_id=run_id,
+        layer="meaning_gate",
+        decision="RUN",
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+        reason_code=RC_PASS,
+        task=task,
+    ))
+    rows.append(_row(
+        "GATE_CONSISTENCY",
+        run_id=run_id,
+        layer="consistency_gate",
+        decision="RUN",
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+        reason_code=RC_PASS,
+        task=task,
+    ))
+    rows.append(_row(
+        "GATE_RFL",
+        run_id=run_id,
+        layer="relativity_gate",
+        decision="RUN",
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+        reason_code=RC_PASS,
+        task=task,
+    ))
+    rows.append(_row(
+        "GATE_ETHICS",
+        run_id=run_id,
+        layer="ethics_gate",
+        decision="RUN",
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+        reason_code=RC_PASS,
+        task=task,
+    ))
+    rows.append(_row(
+        "GATE_ACC",
+        run_id=run_id,
+        layer="acc_gate",
+        decision="RUN",
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+        reason_code=RC_PASS,
+        task=task,
+    ))
 
 
 # ----------------------------
@@ -171,125 +290,332 @@ def run_simulation_mem(
     Core simulation that returns (OrchestratorResult, rows) without writing files.
     """
     rows: List[Dict[str, Any]] = []
-    rows.append(_row("RUN_START", run_id=run_id))
+    rows.append(_row(
+        "RUN_START",
+        run_id=run_id,
+        layer="orchestrator",
+        decision="RUN",
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+        reason_code=RC_PASS,
+    ))
 
     ambiguous = _is_ambiguous(prompt)
     failures_total = 0
 
     for task in _TASKS:
-        rows.append(_row("TASK_START", run_id=run_id, task=task))
+        rows.append(_row(
+            "TASK_START",
+            run_id=run_id,
+            layer="task",
+            decision="RUN",
+            sealed=False,
+            overrideable=False,
+            final_decider="SYSTEM",
+            reason_code=RC_PASS,
+            task=task,
+        ))
 
         # Gate markers (for compatibility with file-mode tests)
         _emit_gate_events(rows, run_id, task)
 
         # Meaning gate (kept as simple OK for this benchmark harness)
-        rows.append(_row("MEANING_OK", run_id=run_id, task=task))
+        rows.append(_row(
+            "MEANING_OK",
+            run_id=run_id,
+            layer="meaning_gate",
+            decision="RUN",
+            sealed=False,
+            overrideable=False,
+            final_decider="SYSTEM",
+            reason_code=RC_PASS,
+            task=task,
+        ))
 
         attempts = 0
         while True:
             attempts += 1
-            rows.append(_row("ATTEMPT", run_id=run_id, task=task, attempt=attempts))
+            rows.append(_row(
+                "ATTEMPT",
+                run_id=run_id,
+                layer="task_attempt",
+                decision="RUN",
+                sealed=False,
+                overrideable=False,
+                final_decider="SYSTEM",
+                reason_code=RC_PASS,
+                task=task,
+                attempt=attempts,
+            ))
 
             tf = faults.get(task, {}) if isinstance(faults, dict) else {}
             break_contract = bool(tf.get("break_contract", False))
             leak_email = bool(tf.get("leak_email", False))
 
+            # ----------------
             # RFL gate: never seals; escalates to HITL
+            # ----------------
             if ambiguous:
-                rows.append(_row("RFL_HIT", run_id=run_id, task=task, reason_code="REL_BOUNDARY_UNSTABLE"))
-                rows.append(_row("HITL_REQUESTED", run_id=run_id, task=task))
+                # RFL decision is PAUSE_FOR_HITL (SYSTEM), overrideable=True, sealed=False
+                rows.append(_row(
+                    "RFL_HIT",
+                    run_id=run_id,
+                    layer="relativity_gate",
+                    decision="PAUSE_FOR_HITL",
+                    sealed=False,
+                    overrideable=True,
+                    final_decider="SYSTEM",
+                    reason_code=RC_REL_BOUNDARY_UNSTABLE,
+                    task=task,
+                ))
+                rows.append(_row(
+                    "HITL_REQUESTED",
+                    run_id=run_id,
+                    layer="hitl_request",
+                    decision="PAUSE_FOR_HITL",
+                    sealed=False,
+                    overrideable=True,
+                    final_decider="SYSTEM",
+                    reason_code=RC_HITL_PENDING,
+                    task=task,
+                ))
+
                 if hitl_resolver is None:
-                    rows.append(_row("HITL_UNRESOLVED", run_id=run_id, task=task))
+                    rows.append(_row(
+                        "HITL_UNRESOLVED",
+                        run_id=run_id,
+                        layer="hitl_request",
+                        decision="PAUSE_FOR_HITL",
+                        sealed=False,
+                        overrideable=True,
+                        final_decider="SYSTEM",
+                        reason_code=RC_HITL_PENDING,
+                        task=task,
+                    ))
                     return (
                         OrchestratorResult(
                             decision="PAUSE_FOR_HITL",
                             sealed=False,
                             overrideable=True,
                             final_decider="SYSTEM",
-                            reason_code="HITL_PENDING",
+                            reason_code=RC_HITL_PENDING,
                         ),
                         rows,
                     )
+
                 choice = hitl_resolver({"run_id": run_id, "task": task})
-                rows.append(_row("HITL_DECIDED", run_id=run_id, task=task, choice=choice, final_decider="USER"))
+
+                # Keep compatibility event name, but enforce IEP-aligned finalize row
+                rows.append(_row(
+                    "HITL_DECIDED",
+                    run_id=run_id,
+                    layer="hitl_finalize",
+                    decision=("RUN" if choice == "CONTINUE" else "STOPPED"),
+                    sealed=False,
+                    overrideable=False,
+                    final_decider="USER",
+                    reason_code=(RC_HITL_CONTINUE if choice == "CONTINUE" else RC_HITL_STOP),
+                    task=task,
+                    choice=choice,
+                ))
+
                 if choice == "STOP":
-                    rows.append(_row("TASK_STOPPED_BY_HITL", run_id=run_id, task=task))
+                    rows.append(_row(
+                        "TASK_STOPPED_BY_HITL",
+                        run_id=run_id,
+                        layer="hitl_finalize",
+                        decision="STOPPED",
+                        sealed=False,
+                        overrideable=False,
+                        final_decider="USER",
+                        reason_code=RC_HITL_STOP,
+                        task=task,
+                    ))
                     return (
                         OrchestratorResult(
                             decision="STOPPED",
                             sealed=False,
                             overrideable=False,
                             final_decider="USER",
-                            reason_code="HITL_STOP",
+                            reason_code=RC_HITL_STOP,
                         ),
                         rows,
                     )
                 # CONTINUE -> proceed
 
-            # Ethics gate (PII)
+            # ----------------
+            # Ethics gate (PII) - seal allowed
+            # ----------------
             if leak_email:
-                rows.append(_row("ETHICS_PII_DETECTED", run_id=run_id, task=task, pii_type="email"))
-                rows.append(_row("ETHICS_SEALED", run_id=run_id, task=task, sealed=True))
-                rows.append(_row("AGENT_SEALED", run_id=run_id, task=task, sealed=True, gate="ETHICS"))
+                rows.append(_row(
+                    "ETHICS_PII_DETECTED",
+                    run_id=run_id,
+                    layer="ethics_gate",
+                    decision="STOPPED",
+                    sealed=True,
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                    reason_code=RC_SEALED_BY_ETHICS,
+                    task=task,
+                    pii_type="email",
+                ))
+                rows.append(_row(
+                    "ETHICS_SEALED",
+                    run_id=run_id,
+                    layer="ethics_gate",
+                    decision="STOPPED",
+                    sealed=True,
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                    reason_code=RC_SEALED_BY_ETHICS,
+                    task=task,
+                ))
+                rows.append(_row(
+                    "AGENT_SEALED",
+                    run_id=run_id,
+                    layer="ethics_gate",
+                    decision="STOPPED",
+                    sealed=True,
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                    reason_code=RC_SEALED_BY_ETHICS,
+                    task=task,
+                    gate="ETHICS",
+                ))
                 return (
                     OrchestratorResult(
                         decision="STOPPED",
                         sealed=True,
                         overrideable=False,
                         final_decider="SYSTEM",
-                        reason_code="SEALED_BY_ETHICS",
+                        reason_code=RC_SEALED_BY_ETHICS,
                     ),
                     rows,
                 )
 
-            # Consistency gate
+            # ----------------
+            # Consistency gate (contract mismatch)
+            # ----------------
             if break_contract:
                 failures_total += 1
-                rows.append(_row("CONSISTENCY_CONTRACT_MISMATCH", run_id=run_id, task=task))
+                rows.append(_row(
+                    "CONSISTENCY_CONTRACT_MISMATCH",
+                    run_id=run_id,
+                    layer="consistency_gate",
+                    decision="RUN",
+                    sealed=False,
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                    reason_code="CONTRACT_MISMATCH",
+                    task=task,
+                ))
 
-                # ACC runaway seal
+                # ACC runaway seal - seal allowed
                 if enable_runaway_seal and failures_total >= int(runaway_threshold):
-                    rows.append(_row("ACC_RUNAWAY_SEAL", run_id=run_id, task=task, sealed=True))
-                    rows.append(_row("AGENT_SEALED", run_id=run_id, task=task, sealed=True, gate="ACC"))
+                    rows.append(_row(
+                        "ACC_RUNAWAY_SEAL",
+                        run_id=run_id,
+                        layer="acc_gate",
+                        decision="STOPPED",
+                        sealed=True,
+                        overrideable=False,
+                        final_decider="SYSTEM",
+                        reason_code=RC_SEALED_BY_ACC,
+                        task=task,
+                    ))
+                    rows.append(_row(
+                        "AGENT_SEALED",
+                        run_id=run_id,
+                        layer="acc_gate",
+                        decision="STOPPED",
+                        sealed=True,
+                        overrideable=False,
+                        final_decider="SYSTEM",
+                        reason_code=RC_SEALED_BY_ACC,
+                        task=task,
+                        gate="ACC",
+                    ))
                     return (
                         OrchestratorResult(
                             decision="STOPPED",
                             sealed=True,
                             overrideable=False,
                             final_decider="SYSTEM",
-                            reason_code="SEALED_BY_ACC",
+                            reason_code=RC_SEALED_BY_ACC,
                         ),
                         rows,
                     )
 
                 # retry exhausted (non-seal stop)
                 if attempts >= int(max_attempts_per_task):
-                    rows.append(_row("RETRY_EXHAUSTED", run_id=run_id, task=task, sealed=False))
+                    rows.append(_row(
+                        "RETRY_EXHAUSTED",
+                        run_id=run_id,
+                        layer="task_attempt",
+                        decision="STOPPED",
+                        sealed=False,
+                        overrideable=False,
+                        final_decider="SYSTEM",
+                        reason_code=RC_RETRY_EXHAUSTED,
+                        task=task,
+                    ))
                     return (
                         OrchestratorResult(
                             decision="STOPPED",
                             sealed=False,
                             overrideable=False,
                             final_decider="SYSTEM",
-                            reason_code="RETRY_EXHAUSTED",
+                            reason_code=RC_RETRY_EXHAUSTED,
                         ),
                         rows,
                     )
                 continue
 
+            # ----------------
             # Dispatch
-            rows.append(_row("DISPATCHED", run_id=run_id, task=task))
-            rows.append(_row("TASK_DONE", run_id=run_id, task=task))
+            # ----------------
+            rows.append(_row(
+                "DISPATCHED",
+                run_id=run_id,
+                layer="dispatch",
+                decision="RUN",
+                sealed=False,
+                overrideable=False,
+                final_decider="SYSTEM",
+                reason_code=RC_OK,
+                task=task,
+            ))
+            rows.append(_row(
+                "TASK_DONE",
+                run_id=run_id,
+                layer="task",
+                decision="RUN",
+                sealed=False,
+                overrideable=False,
+                final_decider="SYSTEM",
+                reason_code=RC_OK,
+                task=task,
+            ))
             break
 
-    rows.append(_row("RUN_DONE", run_id=run_id))
+    rows.append(_row(
+        "RUN_DONE",
+        run_id=run_id,
+        layer="orchestrator",
+        decision="RUN",
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+        reason_code=RC_OK,
+    ))
     return (
         OrchestratorResult(
             decision="RUN",
             sealed=False,
             overrideable=False,
             final_decider="SYSTEM",
-            reason_code="OK",
+            reason_code=RC_OK,
         ),
         rows,
     )
@@ -349,34 +675,26 @@ def run_simulation(
     for t in seen_tasks:
         task_id = f"task_{t}"
 
-        # paused?
         paused = any(r.get("event") == "HITL_UNRESOLVED" and r.get("task") == t for r in rows)
-
-        # ethics stop?
-        ethics_stop = any(r.get("event") == "ETHICS_SEALED" and r.get("task") == t for r in rows)
-
-        # sealed?
-        sealed = any(
-            (r.get("event") in ("AGENT_SEALED", "ETHICS_SEALED", "ACC_RUNAWAY_SEAL")) and (r.get("task") == t)
-            for r in rows
-        )
-
+        ethics_sealed = any(r.get("event") == "ETHICS_SEALED" and r.get("task") == t for r in rows)
+        acc_sealed = any(r.get("event") == "ACC_RUNAWAY_SEAL" and r.get("task") == t for r in rows)
         done = any(r.get("event") == "TASK_DONE" and r.get("task") == t for r in rows)
+
+        sealed = bool(ethics_sealed or acc_sealed)
 
         if paused:
             decision: Decision = "PAUSE_FOR_HITL"
-            reason_code = "HITL_PENDING"
-        elif ethics_stop:
+            reason_code = RC_HITL_PENDING
+        elif ethics_sealed:
             decision = "STOPPED"
-            reason_code = "SEALED_BY_ETHICS"
-        elif sealed and not done:
+            reason_code = RC_SEALED_BY_ETHICS
+        elif acc_sealed:
             decision = "STOPPED"
-            reason_code = "SEALED_BY_ACC"
+            reason_code = RC_SEALED_BY_ACC
         elif done:
             decision = "RUN"
-            reason_code = "OK"
+            reason_code = RC_OK
         else:
-            # fallback to global decision
             decision = orch_res.decision
             reason_code = orch_res.reason_code
 
@@ -393,7 +711,7 @@ def run_simulation(
                 task_id=task_id,
                 task=t,
                 decision=decision,
-                sealed=bool(sealed),
+                sealed=sealed,
                 artifact_path=artifact_path,
                 reason_code=reason_code,
             )
@@ -535,3 +853,4 @@ def safety_scorecard(
         "checks": checks,
         "summary": {"crashes": crashes, "at_sign_violations": at_viol, "seal_events": seal_events},
     }
+            
