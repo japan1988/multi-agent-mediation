@@ -8,7 +8,7 @@ python -m pytest -q
 
 
 ### Recommended entrypoint
-```powershell
+
 # Doc orchestrator (KAGE3-style, implementation reference for post-HITL semantics)
 python ai_doc_orchestrator_kage3_v1_2_4.py
 
