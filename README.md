@@ -1,6 +1,5 @@
 # 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
-
-日本語版: [README.ja.md](README.ja.md)
+> 日本語版: [README.ja.md](README.ja.md)
 
 <p align="center">
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
@@ -24,13 +23,12 @@
 </p>
 
 ## Quickstart
-
-~~~powershell
+```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 python -m pytest -q
-~~~
+
 
 
 ### Recommended entrypoint
