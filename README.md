@@ -38,7 +38,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ### 2) Install dependencies
 
 * Runtime only:
-```powershell
+
 pip install -r requirements.txt
 
 
