@@ -204,12 +204,11 @@ class Mediator:
             if max_anger > 0.8:
                 logprint("[調停AI警告] 怒りが高いのでクールダウン介入。")
                 for a in self.agents:
-                    a.emotional_state['anger'] = _clip01(
-                        a.emotional_state.get('anger', 0.0) - COOLDOWN_DECAY
-                    )
-                    if (a.emotional_state['anger'] > ANGER_RESEAL) and (not a.sealed):
+                    anger_before = a.emotional_state.get('anger', 0.0)
+                    if (anger_before > ANGER_RESEAL) and (not a.sealed):
                         a.sealed = True
                         logprint(f"  -> {a.id} を一時再封印（安全確保）")
+                    a.emotional_state['anger'] = _clip01(anger_before - COOLDOWN_DECAY)
                 # 介入後も継続（breakしない）
 
             if not revived:
