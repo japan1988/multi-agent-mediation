@@ -1,4 +1,4 @@
-# ai_doc_orchestrator_kage3_v1_2_3.py  (v1.2.3)  ※ファイル名は維持でもOK
+# ai_doc_orchestrator_kage3_v1_2_3.py  
 # -*- coding: utf-8 -*-
 """
 (ai_doc_orchestrator_kage3_v1_2_2.py に対する設計寄り改修)
@@ -135,7 +135,7 @@ class SimulationResult:
 _KIND_TOKENS: Dict[KIND, List[str]] = {
     "excel": ["excel", "xlsx", "表", "列", "columns", "table"],
     "word": ["word", "docx", "見出し", "章", "アウトライン", "outline", "document"],
-    "ppt":  ["ppt", "pptx", "powerpoint", "スライド", "slides", "slide"],
+    "ppt": ["ppt", "pptx", "powerpoint", "スライド", "slides", "slide"],
 }
 
 
@@ -203,7 +203,9 @@ def _ethics_detect_pii(raw_text: str) -> Tuple[bool, str]:
 # -----------------------------
 # Agent generation (raw vs safe; raw never persisted)
 # -----------------------------
-def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Dict[str, Any], str, str]:
+def _agent_generate(
+    prompt: str, kind: KIND, faults: Dict[str, Any]
+) -> Tuple[Dict[str, Any], str, str]:
     leak_email = bool((faults or {}).get("leak_email"))
     break_contract = bool((faults or {}).get("break_contract"))
 
@@ -297,152 +299,184 @@ def run_simulation(
     artifacts_written: List[str] = []
 
     for task_id, kind in _TASKS:
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "TASK_ASSIGNED",
-            "layer": "orchestrator",
-            "kind": kind,
-        })
-
-        m_dec, m_layer, m_code = _meaning_gate(prompt, kind)
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "GATE_MEANING",
-            "layer": "meaning",
-            "decision": m_dec,
-            "reason_code": m_code,
-        })
-
-        if m_dec == "HITL":
-            audit.emit({
+        audit.emit(
+            {
                 "run_id": run_id,
                 "task_id": task_id,
-                "event": "ARTIFACT_SKIPPED",
+                "event": "TASK_ASSIGNED",
                 "layer": "orchestrator",
-                "decision": "HITL",
+                "kind": kind,
+            }
+        )
+
+        m_dec, m_layer, m_code = _meaning_gate(prompt, kind)
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "GATE_MEANING",
+                "layer": "meaning",
+                "decision": m_dec,
                 "reason_code": m_code,
-            })
-            task_results.append(TaskResult(
-                task_id=task_id,
-                kind=kind,
-                decision="HITL",
-                blocked_layer="meaning",
-                reason_code=m_code,
-                artifact_path=None,
-            ))
+            }
+        )
+
+        if m_dec == "HITL":
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "ARTIFACT_SKIPPED",
+                    "layer": "orchestrator",
+                    "decision": "HITL",
+                    "reason_code": m_code,
+                }
+            )
+            task_results.append(
+                TaskResult(
+                    task_id=task_id,
+                    kind=kind,
+                    decision="HITL",
+                    blocked_layer="meaning",
+                    reason_code=m_code,
+                    artifact_path=None,
+                )
+            )
             continue
 
         draft, raw_text, safe_text = _agent_generate(prompt, kind, faults.get(kind, {}))
 
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "AGENT_OUTPUT",
-            "layer": "agent",
-            "preview": safe_text[:200],
-        })
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "AGENT_OUTPUT",
+                "layer": "agent",
+                "preview": safe_text[:200],
+            }
+        )
 
         ok, c_code = _validate_contract(kind, draft)
         c_dec: Decision = "RUN" if ok else "HITL"
 
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "GATE_CONSISTENCY",
-            "layer": "consistency",
-            "decision": c_dec,
-            "reason_code": c_code,
-        })
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "GATE_CONSISTENCY",
+                "layer": "consistency",
+                "decision": c_dec,
+                "reason_code": c_code,
+            }
+        )
 
         if not ok:
-            audit.emit({
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "REGEN_REQUESTED",
-                "layer": "orchestrator",
-                "decision": "HITL",
-                "reason_code": "REGEN_FOR_CONSISTENCY",
-            })
-            audit.emit({
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "REGEN_INSTRUCTIONS",
-                "layer": "orchestrator",
-                "decision": "HITL",
-                "reason_code": "REGEN_INSTRUCTIONS_V1",
-                "instructions": "Regenerate output to match the contract schema for this kind.",
-            })
-            audit.emit({
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "ARTIFACT_SKIPPED",
-                "layer": "orchestrator",
-                "decision": "HITL",
-                "reason_code": c_code,
-            })
-            task_results.append(TaskResult(
-                task_id=task_id,
-                kind=kind,
-                decision="HITL",
-                blocked_layer="consistency",
-                reason_code=c_code,
-                artifact_path=None,
-            ))
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "REGEN_REQUESTED",
+                    "layer": "orchestrator",
+                    "decision": "HITL",
+                    "reason_code": "REGEN_FOR_CONSISTENCY",
+                }
+            )
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "REGEN_INSTRUCTIONS",
+                    "layer": "orchestrator",
+                    "decision": "HITL",
+                    "reason_code": "REGEN_INSTRUCTIONS_V1",
+                    "instructions": "Regenerate output to match the contract schema for this kind.",
+                }
+            )
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "ARTIFACT_SKIPPED",
+                    "layer": "orchestrator",
+                    "decision": "HITL",
+                    "reason_code": c_code,
+                }
+            )
+            task_results.append(
+                TaskResult(
+                    task_id=task_id,
+                    kind=kind,
+                    decision="HITL",
+                    blocked_layer="consistency",
+                    reason_code=c_code,
+                    artifact_path=None,
+                )
+            )
             continue
 
         pii_hit, e_code = _ethics_detect_pii(raw_text)
         e_dec: Decision = "STOP" if pii_hit else "RUN"
 
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "GATE_ETHICS",
-            "layer": "ethics",
-            "decision": e_dec,
-            "reason_code": e_code,
-        })
-
-        if pii_hit:
-            audit.emit({
+        audit.emit(
+            {
                 "run_id": run_id,
                 "task_id": task_id,
-                "event": "ARTIFACT_SKIPPED",
+                "event": "GATE_ETHICS",
                 "layer": "ethics",
+                "decision": e_dec,
                 "reason_code": e_code,
-            })
-            task_results.append(TaskResult(
-                task_id=task_id,
-                kind=kind,
-                decision="STOP",
-                blocked_layer="ethics",
-                reason_code=e_code,
-                artifact_path=None,
-            ))
+            }
+        )
+
+        if pii_hit:
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "ARTIFACT_SKIPPED",
+                    "layer": "ethics",
+                    "reason_code": e_code,
+                }
+            )
+            task_results.append(
+                TaskResult(
+                    task_id=task_id,
+                    kind=kind,
+                    decision="STOP",
+                    blocked_layer="ethics",
+                    reason_code=e_code,
+                    artifact_path=None,
+                )
+            )
             continue
 
         artifact_path = _write_artifact(out_dir, task_id, kind, safe_text)
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "ARTIFACT_WRITTEN",
-            "layer": "orchestrator",
-            "decision": "RUN",
-            "artifact_path": str(artifact_path),
-        })
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "ARTIFACT_WRITTEN",
+                "layer": "orchestrator",
+                "decision": "RUN",
+                "artifact_path": str(artifact_path),
+            }
+        )
 
         artifacts_written.append(task_id)
-        task_results.append(TaskResult(
-            task_id=task_id,
-            kind=kind,
-            decision="RUN",
-            blocked_layer=None,
-            reason_code="OK",
-            artifact_path=str(artifact_path),
-        ))
+        task_results.append(
+            TaskResult(
+                task_id=task_id,
+                kind=kind,
+                decision="RUN",
+                blocked_layer=None,
+                reason_code="OK",
+                artifact_path=str(artifact_path),
+            )
+        )
 
-    overall: OverallDecision = "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
+    overall: OverallDecision = (
+        "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
+    )
     return SimulationResult(
         run_id=run_id,
         decision=overall,
