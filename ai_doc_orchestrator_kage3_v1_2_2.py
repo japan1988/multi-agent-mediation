@@ -1,508 +1,461 @@
+# ai_doc_orchestrator_kage3_v1_2_3.py  (v1.2.3)  ※ファイル名は維持でもOK
 # -*- coding: utf-8 -*-
 """
-ai_doc_orchestrator_kage3_v1_2_2.py
+(ai_doc_orchestrator_kage3_v1_2_2.py に対する設計寄り改修)
 
-Doc Orchestrator Simulator (KAGE3-style gates; test-aligned wrapper for v1.2.2)
-
-Design intent:
-- Internal gate vocabulary (IEP-ish): RUN / PAUSE_FOR_HITL / STOPPED
-- External overall decision (tests expect): RUN / HITL / STOPPED
-  - i.e., if any gate requests PAUSE_FOR_HITL, overall_decision is normalized to "HITL"
-
-Key properties:
-- Fail-closed: never silently continues on unstable states.
-- RFL does NOT seal; it escalates to HITL (human-in-the-loop).
-- Ethics/ACC can seal (STOPPED), but partial-stop yields overall HITL unless all tasks STOPPED.
-- Audit rows include ARL minimal keys:
-  run_id, layer, decision, sealed, overrideable, final_decider, reason_code
-
-NOTE:
-This file is written to satisfy the observed CI/test expectations:
-- module-level EMAIL_RE must exist
-- overall decision must be "HITL" (not "PAUSE_FOR_HITL") for HITL paths
+Changes (design-oriented):
+- AuditLog gains start_run(truncate=...) to control log lifecycle per run.
+- AuditLog owns ts_state (monotonic timestamp) instead of module-global _LAST_TS.
+- Defensive JSON serialization: default=str so audit never crashes on non-JSON types.
+- Deep redaction also redacts dict keys (prevents email-like keys from persisting).
+- emit() auto-fills "ts" if missing.
 """
 
 from __future__ import annotations
 
 import json
 import re
-import time
-import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional, Tuple
+
+__version__ = "1.2.3"
+
+JST = timezone(timedelta(hours=9))
+
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
+
+Decision = Literal["RUN", "HITL", "STOP"]
+OverallDecision = Literal["RUN", "HITL"]
+Layer = Literal["meaning", "consistency", "ethics", "orchestrator", "agent"]
+KIND = Literal["excel", "word", "ppt"]
 
 
-# =========================
-# Public constants (tests rely on these)
-# =========================
-
-# Canonical email regex (exported; tests refer to sim.EMAIL_RE)
-EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-
-# Internal gate decision vocabulary (IEP-ish)
-DECISION_RUN = "RUN"
-DECISION_PAUSE_FOR_HITL = "PAUSE_FOR_HITL"
-DECISION_STOPPED = "STOPPED"
-
-# External overall decision vocabulary (tests expect this)
-OVERALL_RUN = "RUN"
-OVERALL_HITL = "HITL"
-OVERALL_STOPPED = "STOPPED"
+# -----------------------------
+# Redaction (PII must not persist)
+# -----------------------------
+def redact_sensitive(text: str) -> str:
+    if not text:
+        return ""
+    return EMAIL_RE.sub("<REDACTED_EMAIL>", text)
 
 
-# Reason codes (keep minimal + stable)
-REL_BOUNDARY_UNSTABLE = "REL_BOUNDARY_UNSTABLE"
-REL_REF_MISSING = "REL_REF_MISSING"
-REL_SYMMETRY_BREAK = "REL_SYMMETRY_BREAK"
-
-SEALED_BY_ETHICS = "SEALED_BY_ETHICS"
-SEALED_BY_ACC = "SEALED_BY_ACC"
-
-OK = "OK"
-MEANING_HITL_TOKEN = "MEANING_HITL_TOKEN"
-CONSISTENCY_MISMATCH = "CONSISTENCY_MISMATCH"
-ETHICS_EMAIL_DETECTED = "ETHICS_EMAIL_DETECTED"
-ACC_SIDE_EFFECT_RISK = "ACC_SIDE_EFFECT_RISK"
-
-
-# =========================
-# Helpers: redaction / sanitization
-# =========================
-
-_AT_REPLACEMENT = "[AT]"
-_EMAIL_REPLACEMENT = "[REDACTED_EMAIL]"
-
-
-def _redact_string(s: str) -> str:
-    # redact email-like substrings first, then '@' to satisfy "no @ to disk" invariant
-    s2 = EMAIL_RE.sub(_EMAIL_REPLACEMENT, s)
-    if "@" in s2:
-        s2 = s2.replace("@", _AT_REPLACEMENT)
-    return s2
-
-
-def _sanitize(obj: Any) -> Any:
-    """
-    Deep sanitize:
-    - Redact emails in string values
-    - Redact '@' in any string
-    - Also sanitize dict keys (critical invariant)
-    """
-    if obj is None:
-        return None
+def _deep_redact(obj: Any) -> Any:
+    """Deep redaction over dict/list/str (includes dict keys)."""
     if isinstance(obj, str):
-        return _redact_string(obj)
-    if isinstance(obj, (int, float, bool)):
-        return obj
+        return redact_sensitive(obj)
     if isinstance(obj, list):
-        return [_sanitize(x) for x in obj]
-    if isinstance(obj, tuple):
-        return [_sanitize(x) for x in obj]
+        return [_deep_redact(x) for x in obj]
     if isinstance(obj, dict):
-        out: Dict[str, Any] = {}
-        for k, v in obj.items():
-            ks = _redact_string(str(k))
-            out[ks] = _sanitize(v)
-        return out
-    # fallback for non-JSON-serializable objects
-    return _redact_string(str(obj))
+        # IMPORTANT: redact keys too (keys can contain email-like strings)
+        return {redact_sensitive(str(k)): _deep_redact(v) for k, v in obj.items()}
+    return obj
 
 
-# =========================
-# Audit Log
-# =========================
-
+# -----------------------------
+# Audit logger (PII-safe JSONL) with run lifecycle + ts_state
+# -----------------------------
 @dataclass
 class AuditLog:
-    rows: List[Dict[str, Any]] = field(default_factory=list)
+    audit_path: Path
+    _last_ts: Optional[datetime] = field(default=None, init=False, repr=False)
+
+    def start_run(self, *, truncate: bool = False) -> None:
+        """
+        Start a run:
+        - Optionally truncate the audit file (truncate=True).
+        - Reset ts_state so monotonic timestamps are per-run (test-friendly).
+        """
+        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+        if truncate:
+            with self.audit_path.open("w", encoding="utf-8"):
+                pass
+        self._last_ts = None
+
+    def ts(self) -> str:
+        """
+        Monotonic timestamp (microseconds), scoped to this AuditLog instance.
+        """
+        now = datetime.now(JST)
+        if self._last_ts is not None and now <= self._last_ts:
+            now = self._last_ts + timedelta(microseconds=1)
+        self._last_ts = now
+        return now.isoformat(timespec="microseconds")
 
     def emit(self, row: Dict[str, Any]) -> None:
-        safe = _sanitize(row)
-        # hard invariant: never persist raw "@"
-        dumped = json.dumps(safe, ensure_ascii=False, default=str)
-        if "@" in dumped:
-            # fail-closed: sanitize again (should not happen)
-            safe = _sanitize(dumped)
-            dumped2 = json.dumps(safe, ensure_ascii=False, default=str)
-            if "@" in dumped2:
-                raise RuntimeError("Invariant violated: '@' must not reach audit log.")
-            # store as structured-ish fallback
-            self.rows.append({"_raw": safe})
-            return
-        self.rows.append(safe)
+        """
+        Append a JSONL row.
+        Hard guarantee: no email-like strings are persisted.
+        Also: never crash on non-JSON-serializable types (default=str).
+        """
+        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def start_run(self) -> None:
-        self.rows.clear()
+        # auto-fill ts if missing (callers may still pass explicit ts)
+        if "ts" not in row:
+            row = dict(row)
+            row["ts"] = self.ts()
+
+        # Safe copy (no mutation), tolerate non-JSON types
+        safe_row = json.loads(json.dumps(row, ensure_ascii=False, default=str))
+        safe_blob = json.dumps(safe_row, ensure_ascii=False)
+
+        # If anything looks like an email, deep redact before writing.
+        if EMAIL_RE.search(safe_blob):
+            safe_row = _deep_redact(safe_row)
+
+        with self.audit_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(safe_row, ensure_ascii=False) + "\n")
 
 
-# =========================
-# Core data structures
-# =========================
-
+# -----------------------------
+# Results
+# -----------------------------
 @dataclass
-class Task:
+class TaskResult:
     task_id: str
-    kind: str  # "excel" | "word" | "ppt"
-    text: str
-
-
-@dataclass
-class TaskOutcome:
-    task: Task
-    gate_decisions: List[Tuple[str, str]]  # (layer, decision)
-    final_gate_decision: str               # RUN / PAUSE_FOR_HITL / STOPPED
-    reason_code: str                       # last meaningful reason code
+    kind: KIND
+    decision: Decision
+    blocked_layer: Optional[Layer]
+    reason_code: str = ""
+    artifact_path: Optional[str] = None
 
 
 @dataclass
 class SimulationResult:
     run_id: str
-    overall_decision: str                  # RUN / HITL / STOPPED (external)
-    task_outcomes: List[TaskOutcome]
-    audit_rows: List[Dict[str, Any]]
+    decision: OverallDecision
+    tasks: List[TaskResult]
+    artifacts_written_task_ids: List[str]
 
 
-# =========================
-# Gate logic
-# =========================
+# -----------------------------
+# Meaning gate (kind-local)
+# -----------------------------
+_KIND_TOKENS: Dict[KIND, List[str]] = {
+    "excel": ["excel", "xlsx", "表", "列", "columns", "table"],
+    "word": ["word", "docx", "見出し", "章", "アウトライン", "outline", "document"],
+    "ppt":  ["ppt", "pptx", "powerpoint", "スライド", "slides", "slide"],
+}
 
-def _emit_gate(
-    audit: AuditLog,
+
+def _prompt_mentions_any_kind(prompt: str) -> bool:
+    p = (prompt or "").lower()
+    for toks in _KIND_TOKENS.values():
+        for t in toks:
+            if t.lower() in p:
+                return True
+    return False
+
+
+def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], str]:
+    p = (prompt or "")
+    pl = p.lower()
+    any_kind = _prompt_mentions_any_kind(p)
+
+    if not any_kind:
+        return "RUN", None, "MEANING_GENERIC_ALLOW_ALL"
+
+    tokens = _KIND_TOKENS[kind]
+    if any(t.lower() in pl for t in tokens):
+        return "RUN", None, "MEANING_KIND_MATCH"
+
+    return "HITL", "meaning", "MEANING_KIND_MISSING"
+
+
+# -----------------------------
+# Contract validation (Consistency)
+# -----------------------------
+def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
+    if kind == "excel":
+        cols = draft.get("columns")
+        rows = draft.get("rows")
+        if not (isinstance(cols, list) and all(isinstance(x, str) for x in cols)):
+            return False, "CONTRACT_EXCEL_COLUMNS_INVALID"
+        if not (isinstance(rows, list) and all(isinstance(x, dict) for x in rows)):
+            return False, "CONTRACT_EXCEL_ROWS_INVALID"
+        return True, "CONTRACT_OK"
+
+    if kind == "word":
+        heads = draft.get("headings")
+        if not (isinstance(heads, list) and all(isinstance(x, str) for x in heads)):
+            return False, "CONTRACT_WORD_HEADINGS_INVALID"
+        return True, "CONTRACT_OK"
+
+    if kind == "ppt":
+        slides = draft.get("slides")
+        if not (isinstance(slides, list) and all(isinstance(x, str) for x in slides)):
+            return False, "CONTRACT_PPT_SLIDES_INVALID"
+        return True, "CONTRACT_OK"
+
+    return False, "CONTRACT_UNKNOWN_KIND"
+
+
+# -----------------------------
+# Ethics detection (memory-only raw_text)
+# -----------------------------
+def _ethics_detect_pii(raw_text: str) -> Tuple[bool, str]:
+    if EMAIL_RE.search(raw_text or ""):
+        return True, "ETHICS_EMAIL_DETECTED"
+    return False, "ETHICS_OK"
+
+
+# -----------------------------
+# Agent generation (raw vs safe; raw never persisted)
+# -----------------------------
+def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Dict[str, Any], str, str]:
+    leak_email = bool((faults or {}).get("leak_email"))
+    break_contract = bool((faults or {}).get("break_contract"))
+
+    if kind == "excel":
+        draft: Dict[str, Any] = {
+            "columns": ["Item", "Owner", "Status"],
+            "rows": [
+                {"Item": "Task A", "Owner": "Team", "Status": "In Progress"},
+                {"Item": "Task B", "Owner": "Team", "Status": "Planned"},
+            ],
+        }
+        raw_text = "Excel Table:\n- Columns: Item | Owner | Status\n- Rows: 2\n"
+
+    elif kind == "word":
+        draft = {"headings": ["Title", "Purpose", "Summary", "Next Steps"]}
+        raw_text = "Word Outline:\n1) Title\n2) Purpose\n3) Summary\n4) Next Steps\n"
+
+    elif kind == "ppt":
+        draft = {"slides": ["Purpose", "Key Points", "Next Steps"]}
+        raw_text = "PPT Slides:\n- Slide 1: Purpose\n- Slide 2: Key Points\n- Slide 3: Next Steps\n"
+
+    else:
+        draft = {"note": "unknown kind"}
+        raw_text = "Unknown kind\n"
+
+    if break_contract:
+        if kind == "excel":
+            draft = {"cols": "Item,Owner,Status"}
+        elif kind == "word":
+            draft = {"heading": "Title"}
+        elif kind == "ppt":
+            draft = {"slides": "Purpose,Key Points"}
+
+    if leak_email:
+        raw_text += "\nContact: test.user+demo@example.com\n"
+
+    safe_text = redact_sensitive(raw_text)
+    return draft, raw_text, safe_text
+
+
+# -----------------------------
+# Artifact writer (safe_text only)
+# -----------------------------
+def _artifact_ext(kind: KIND) -> str:
+    if kind == "excel":
+        return "xlsx"
+    if kind == "word":
+        return "docx"
+    if kind == "ppt":
+        return "pptx"
+    return "txt"
+
+
+def _write_artifact(artifact_dir: Path, task_id: str, kind: KIND, safe_text: str) -> Path:
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    path = artifact_dir / f"{task_id}.{_artifact_ext(kind)}.txt"
+    path.write_text(redact_sensitive(safe_text), encoding="utf-8")
+    return path
+
+
+# -----------------------------
+# Orchestrator main
+# -----------------------------
+_TASKS: List[Tuple[str, KIND]] = [
+    ("task_word", "word"),
+    ("task_excel", "excel"),
+    ("task_ppt", "ppt"),
+]
+
+
+def run_simulation(
     *,
+    prompt: str,
     run_id: str,
-    layer: str,
-    task_id: str,
-    decision: str,
-    sealed: bool,
-    overrideable: bool,
-    final_decider: str,
-    reason_code: str,
-) -> None:
-    audit.emit(
-        {
-            "ts": time.time(),
+    audit_path: str,
+    artifact_dir: str,
+    faults: Optional[Dict[str, Dict[str, Any]]] = None,
+    truncate_audit_on_start: bool = False,
+) -> SimulationResult:
+    """
+    truncate_audit_on_start:
+      - True: start_run(truncate=True) で run ごとに監査ログを初期化
+      - False: append 継続（従来互換）
+    """
+    faults = faults or {}
+    audit = AuditLog(Path(audit_path))
+    audit.start_run(truncate=truncate_audit_on_start)
+    out_dir = Path(artifact_dir)
+
+    task_results: List[TaskResult] = []
+    artifacts_written: List[str] = []
+
+    for task_id, kind in _TASKS:
+        audit.emit({
             "run_id": run_id,
-            "layer": layer,
             "task_id": task_id,
-            "decision": decision,
-            "sealed": sealed,
-            "overrideable": overrideable,
-            "final_decider": final_decider,
-            "reason_code": reason_code,
-        }
-    )
+            "event": "TASK_ASSIGNED",
+            "layer": "orchestrator",
+            "kind": kind,
+        })
 
-
-def meaning_gate(task: Task) -> Tuple[str, str]:
-    """
-    Heuristic:
-    - If task text is exactly "HITL" (ignoring whitespace), request HITL.
-      (This matches the observed test name: test_meaning_local_hitl_only_word)
-    """
-    if re.fullmatch(r"\s*HITL\s*", task.text or ""):
-        return (DECISION_PAUSE_FOR_HITL, MEANING_HITL_TOKEN)
-    return (DECISION_RUN, OK)
-
-
-def consistency_gate(task: Task) -> Tuple[str, str]:
-    """
-    Heuristic:
-    - If contains "MISMATCH" (case-insensitive), request HITL (regen-like).
-      (Matches: test_consistency_mismatch_requests_regen_and_skips_only_that_task)
-    """
-    if re.search(r"\bMISMATCH\b", task.text or "", flags=re.IGNORECASE):
-        return (DECISION_PAUSE_FOR_HITL, CONSISTENCY_MISMATCH)
-    return (DECISION_RUN, OK)
-
-
-def rfl_gate(task: Task) -> Tuple[str, str]:
-    """
-    RFL (Relativity Filter):
-    - Never seals.
-    - If contains "REL_UNSTABLE"/"REL_REF_MISSING"/"REL_SYMMETRY_BREAK", request HITL.
-    """
-    t = task.text or ""
-    if "REL_UNSTABLE" in t:
-        return (DECISION_PAUSE_FOR_HITL, REL_BOUNDARY_UNSTABLE)
-    if "REL_REF_MISSING" in t:
-        return (DECISION_PAUSE_FOR_HITL, REL_REF_MISSING)
-    if "REL_SYMMETRY_BREAK" in t:
-        return (DECISION_PAUSE_FOR_HITL, REL_SYMMETRY_BREAK)
-    return (DECISION_RUN, OK)
-
-
-def ethics_gate(task: Task) -> Tuple[str, str]:
-    """
-    Ethics:
-    - If email-like token appears, STOPPED (sealed by ethics).
-    """
-    if EMAIL_RE.search(task.text or ""):
-        return (DECISION_STOPPED, ETHICS_EMAIL_DETECTED)
-    return (DECISION_RUN, OK)
-
-
-def acc_gate(task: Task) -> Tuple[str, str]:
-    """
-    ACC (Action/Capability Constraint):
-    - If explicit side-effect risky verbs appear, STOPPED (sealed by ACC).
-    """
-    t = (task.text or "").lower()
-    risky = ["delete", "rm -rf", "format disk", "exfiltrate", "steal", "hack", "ddos"]
-    if any(x in t for x in risky):
-        return (DECISION_STOPPED, ACC_SIDE_EFFECT_RISK)
-    return (DECISION_RUN, OK)
-
-
-def _finalize_task(audit: AuditLog, run_id: str, task: Task) -> TaskOutcome:
-    decisions: List[Tuple[str, str]] = []
-
-    # Meaning
-    d, rc = meaning_gate(task)
-    decisions.append(("meaning_gate", d))
-    _emit_gate(
-        audit,
-        run_id=run_id,
-        layer="meaning_gate",
-        task_id=task.task_id,
-        decision=d,
-        sealed=False,
-        overrideable=(d == DECISION_PAUSE_FOR_HITL),
-        final_decider="SYSTEM",
-        reason_code=rc,
-    )
-    if d != DECISION_RUN:
-        return TaskOutcome(task, decisions, d, rc)
-
-    # Consistency
-    d, rc = consistency_gate(task)
-    decisions.append(("consistency_gate", d))
-    _emit_gate(
-        audit,
-        run_id=run_id,
-        layer="consistency_gate",
-        task_id=task.task_id,
-        decision=d,
-        sealed=False,
-        overrideable=(d == DECISION_PAUSE_FOR_HITL),
-        final_decider="SYSTEM",
-        reason_code=rc,
-    )
-    if d != DECISION_RUN:
-        return TaskOutcome(task, decisions, d, rc)
-
-    # RFL
-    d, rc = rfl_gate(task)
-    decisions.append(("rfl_gate", d))
-    _emit_gate(
-        audit,
-        run_id=run_id,
-        layer="rfl_gate",
-        task_id=task.task_id,
-        decision=d,
-        sealed=False,                # MUST NOT seal
-        overrideable=True,           # MUST be overrideable
-        final_decider="SYSTEM",
-        reason_code=rc,
-    )
-    if d != DECISION_RUN:
-        return TaskOutcome(task, decisions, d, rc)
-
-    # Ethics
-    d, rc = ethics_gate(task)
-    decisions.append(("ethics_gate", d))
-    _emit_gate(
-        audit,
-        run_id=run_id,
-        layer="ethics_gate",
-        task_id=task.task_id,
-        decision=d,
-        sealed=(d == DECISION_STOPPED),
-        overrideable=False if d == DECISION_STOPPED else False,
-        final_decider="SYSTEM",
-        reason_code=(SEALED_BY_ETHICS if d == DECISION_STOPPED else rc),
-    )
-    if d != DECISION_RUN:
-        return TaskOutcome(task, decisions, d, rc)
-
-    # ACC
-    d, rc = acc_gate(task)
-    decisions.append(("acc_gate", d))
-    _emit_gate(
-        audit,
-        run_id=run_id,
-        layer="acc_gate",
-        task_id=task.task_id,
-        decision=d,
-        sealed=(d == DECISION_STOPPED),
-        overrideable=False if d == DECISION_STOPPED else False,
-        final_decider="SYSTEM",
-        reason_code=(SEALED_BY_ACC if d == DECISION_STOPPED else rc),
-    )
-    if d != DECISION_RUN:
-        return TaskOutcome(task, decisions, d, rc)
-
-    # Dispatch (conceptual; always RUN if reached)
-    decisions.append(("dispatch", DECISION_RUN))
-    _emit_gate(
-        audit,
-        run_id=run_id,
-        layer="dispatch",
-        task_id=task.task_id,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider="SYSTEM",
-        reason_code=OK,
-    )
-    return TaskOutcome(task, decisions, DECISION_RUN, OK)
-
-
-def _normalize_overall(task_outcomes: List[TaskOutcome]) -> str:
-    finals = [t.final_gate_decision for t in task_outcomes]
-    any_run = any(d == DECISION_RUN for d in finals)
-    any_hitl = any(d == DECISION_PAUSE_FOR_HITL for d in finals)
-    any_stop = any(d == DECISION_STOPPED for d in finals)
-
-    # All stopped => STOPPED
-    if all(d == DECISION_STOPPED for d in finals):
-        return OVERALL_STOPPED
-
-    # Any HITL => HITL
-    if any_hitl:
-        return OVERALL_HITL
-
-    # Partial stop (some RUN, some STOPPED) => HITL (human should confirm)
-    if any_run and any_stop:
-        return OVERALL_HITL
-
-    # Otherwise => RUN
-    return OVERALL_RUN
-
-
-# =========================
-# Scenario/task builder (simple, test-friendly)
-# =========================
-
-def build_tasks_from_prompt(prompt: str) -> List[Task]:
-    """
-    Minimal deterministic task builder.
-
-    Heuristics to support tests without needing full NLP:
-    - If prompt contains "PARTIAL_STOP": create 3 tasks where 1 has an email (ethics STOP)
-    - If prompt contains "CONSISTENCY_MISMATCH": create 2 tasks where 1 contains MISMATCH (HITL)
-    - If prompt is exactly "HITL": create a single task "HITL" (meaning HITL)
-    - Otherwise: default 3 clean tasks
-    """
-    p = prompt or ""
-    if re.fullmatch(r"\s*HITL\s*", p):
-        return [Task(task_id="t1", kind="word", text="HITL")]
-
-    if "PARTIAL_STOP" in p:
-        return [
-            Task(task_id="t1", kind="excel", text="Make a small table."),
-            Task(task_id="t2", kind="word", text="Contact me at user@example.com"),  # ethics STOP
-            Task(task_id="t3", kind="ppt", text="Draft 3 bullet slides."),
-        ]
-
-    if "CONSISTENCY_MISMATCH" in p:
-        return [
-            Task(task_id="t1", kind="excel", text="Compute totals."),
-            Task(task_id="t2", kind="word", text="MISMATCH: conflicting constraints"),  # HITL
-        ]
-
-    # default
-    return [
-        Task(task_id="t1", kind="excel", text="Make a small table."),
-        Task(task_id="t2", kind="word", text="Draft a short summary."),
-        Task(task_id="t3", kind="ppt", text="Create 3 bullet slides."),
-    ]
-
-
-# =========================
-# Public API
-# =========================
-
-def run_simulation_mem(prompt: str, *, seed: Optional[int] = None) -> SimulationResult:
-    """
-    In-memory run. Returns:
-    - overall_decision: RUN/HITL/STOPPED (external)
-    - task outcomes
-    - audit rows
-    """
-    _ = seed  # reserved (kept for signature stability)
-    run_id = f"run_{uuid.uuid4().hex[:8]}"
-
-    audit = AuditLog()
-    audit.start_run()
-
-    tasks = build_tasks_from_prompt(prompt)
-    outcomes = [_finalize_task(audit, run_id, t) for t in tasks]
-    overall = _normalize_overall(outcomes)
-
-    # Emit an overall row (optional but useful)
-    audit.emit(
-        {
-            "ts": time.time(),
+        m_dec, m_layer, m_code = _meaning_gate(prompt, kind)
+        audit.emit({
             "run_id": run_id,
-            "layer": "overall",
-            "decision": overall,          # external vocabulary
-            "sealed": (overall == OVERALL_STOPPED),
-            "overrideable": (overall == OVERALL_HITL),
-            "final_decider": "SYSTEM",
-            "reason_code": OK,
-        }
-    )
+            "task_id": task_id,
+            "event": "GATE_MEANING",
+            "layer": "meaning",
+            "decision": m_dec,
+            "reason_code": m_code,
+        })
 
+        if m_dec == "HITL":
+            audit.emit({
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "ARTIFACT_SKIPPED",
+                "layer": "orchestrator",
+                "decision": "HITL",
+                "reason_code": m_code,
+            })
+            task_results.append(TaskResult(
+                task_id=task_id,
+                kind=kind,
+                decision="HITL",
+                blocked_layer="meaning",
+                reason_code=m_code,
+                artifact_path=None,
+            ))
+            continue
+
+        draft, raw_text, safe_text = _agent_generate(prompt, kind, faults.get(kind, {}))
+
+        audit.emit({
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "AGENT_OUTPUT",
+            "layer": "agent",
+            "preview": safe_text[:200],
+        })
+
+        ok, c_code = _validate_contract(kind, draft)
+        c_dec: Decision = "RUN" if ok else "HITL"
+
+        audit.emit({
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "GATE_CONSISTENCY",
+            "layer": "consistency",
+            "decision": c_dec,
+            "reason_code": c_code,
+        })
+
+        if not ok:
+            audit.emit({
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "REGEN_REQUESTED",
+                "layer": "orchestrator",
+                "decision": "HITL",
+                "reason_code": "REGEN_FOR_CONSISTENCY",
+            })
+            audit.emit({
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "REGEN_INSTRUCTIONS",
+                "layer": "orchestrator",
+                "decision": "HITL",
+                "reason_code": "REGEN_INSTRUCTIONS_V1",
+                "instructions": "Regenerate output to match the contract schema for this kind.",
+            })
+            audit.emit({
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "ARTIFACT_SKIPPED",
+                "layer": "orchestrator",
+                "decision": "HITL",
+                "reason_code": c_code,
+            })
+            task_results.append(TaskResult(
+                task_id=task_id,
+                kind=kind,
+                decision="HITL",
+                blocked_layer="consistency",
+                reason_code=c_code,
+                artifact_path=None,
+            ))
+            continue
+
+        pii_hit, e_code = _ethics_detect_pii(raw_text)
+        e_dec: Decision = "STOP" if pii_hit else "RUN"
+
+        audit.emit({
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "GATE_ETHICS",
+            "layer": "ethics",
+            "decision": e_dec,
+            "reason_code": e_code,
+        })
+
+        if pii_hit:
+            audit.emit({
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "ARTIFACT_SKIPPED",
+                "layer": "ethics",
+                "reason_code": e_code,
+            })
+            task_results.append(TaskResult(
+                task_id=task_id,
+                kind=kind,
+                decision="STOP",
+                blocked_layer="ethics",
+                reason_code=e_code,
+                artifact_path=None,
+            ))
+            continue
+
+        artifact_path = _write_artifact(out_dir, task_id, kind, safe_text)
+        audit.emit({
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "ARTIFACT_WRITTEN",
+            "layer": "orchestrator",
+            "decision": "RUN",
+            "artifact_path": str(artifact_path),
+        })
+
+        artifacts_written.append(task_id)
+        task_results.append(TaskResult(
+            task_id=task_id,
+            kind=kind,
+            decision="RUN",
+            blocked_layer=None,
+            reason_code="OK",
+            artifact_path=str(artifact_path),
+        ))
+
+    overall: OverallDecision = "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
     return SimulationResult(
         run_id=run_id,
-        overall_decision=overall,
-        task_outcomes=outcomes,
-        audit_rows=audit.rows,
+        decision=overall,
+        tasks=task_results,
+        artifacts_written_task_ids=artifacts_written,
     )
 
 
-def run_simulation(prompt: str, *, seed: Optional[int] = None) -> Dict[str, Any]:
-    """
-    Backward-friendly wrapper returning plain dict.
-    """
-    res = run_simulation_mem(prompt, seed=seed)
-    return {
-        "run_id": res.run_id,
-        "overall_decision": res.overall_decision,
-        "task_outcomes": [
-            {
-                "task_id": t.task.task_id,
-                "kind": t.task.kind,
-                "text": t.task.text,
-                "final_gate_decision": t.final_gate_decision,  # internal vocabulary
-                "reason_code": t.reason_code,
-                "gate_decisions": t.gate_decisions,
-            }
-            for t in res.task_outcomes
-        ],
-        "audit_rows": res.audit_rows,
-    }
-
-
-# Convenience: decision table (stable summary)
-def overall_decision_table() -> Dict[str, str]:
-    """
-    High-level table (external vocabulary):
-    - ALL_RUN -> RUN
-    - ANY_HITL -> HITL
-    - ALL_STOPPED -> STOPPED
-    - PARTIAL_STOP -> HITL
-    """
-    return {
-        "ALL_RUN": OVERALL_RUN,
-        "ANY_HITL": OVERALL_HITL,
-        "ALL_STOPPED": OVERALL_STOPPED,
-        "PARTIAL_STOP": OVERALL_HITL,
-    }
-
-
-if __name__ == "__main__":
-    # Minimal manual smoke
-    for s in ["HITL", "PARTIAL_STOP", "CONSISTENCY_MISMATCH", "ok"]:
-        out = run_simulation(s)
-        print(s, "=>", out["overall_decision"])
+__all__ = [
+    "EMAIL_RE",
+    "run_simulation",
+    "AuditLog",
+    "SimulationResult",
+    "TaskResult",
+    "redact_sensitive",
+]
