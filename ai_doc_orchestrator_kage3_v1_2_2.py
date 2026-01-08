@@ -1,461 +1,305 @@
-# ai_doc_orchestrator_kage3_v1_2_3.py  (v1.2.3)  ※ファイル名は維持でもOK
-# -*- coding: utf-8 -*-
-"""
-(ai_doc_orchestrator_kage3_v1_2_2.py に対する設計寄り改修)
-
-Changes (design-oriented):
-- AuditLog gains start_run(truncate=...) to control log lifecycle per run.
-- AuditLog owns ts_state (monotonic timestamp) instead of module-global _LAST_TS.
-- Defensive JSON serialization: default=str so audit never crashes on non-JSON types.
-- Deep redaction also redacts dict keys (prevents email-like keys from persisting).
-- emit() auto-fills "ts" if missing.
-"""
-
-from __future__ import annotations
-
-import json
-import re
-from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
-
-__version__ = "1.2.3"
-
-JST = timezone(timedelta(hours=9))
-
-EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
-
-Decision = Literal["RUN", "HITL", "STOP"]
-OverallDecision = Literal["RUN", "HITL"]
-Layer = Literal["meaning", "consistency", "ethics", "orchestrator", "agent"]
-KIND = Literal["excel", "word", "ppt"]
-
-
-# -----------------------------
-# Redaction (PII must not persist)
-# -----------------------------
-def redact_sensitive(text: str) -> str:
-    if not text:
-        return ""
-    return EMAIL_RE.sub("<REDACTED_EMAIL>", text)
-
-
-def _deep_redact(obj: Any) -> Any:
-    """Deep redaction over dict/list/str (includes dict keys)."""
-    if isinstance(obj, str):
-        return redact_sensitive(obj)
-    if isinstance(obj, list):
-        return [_deep_redact(x) for x in obj]
-    if isinstance(obj, dict):
-        # IMPORTANT: redact keys too (keys can contain email-like strings)
-        return {redact_sensitive(str(k)): _deep_redact(v) for k, v in obj.items()}
-    return obj
-
-
-# -----------------------------
-# Audit logger (PII-safe JSONL) with run lifecycle + ts_state
-# -----------------------------
-@dataclass
-class AuditLog:
-    audit_path: Path
-    _last_ts: Optional[datetime] = field(default=None, init=False, repr=False)
-
-    def start_run(self, *, truncate: bool = False) -> None:
-        """
-        Start a run:
-        - Optionally truncate the audit file (truncate=True).
-        - Reset ts_state so monotonic timestamps are per-run (test-friendly).
-        """
-        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
-        if truncate:
-            with self.audit_path.open("w", encoding="utf-8"):
-                pass
-        self._last_ts = None
-
-    def ts(self) -> str:
-        """
-        Monotonic timestamp (microseconds), scoped to this AuditLog instance.
-        """
-        now = datetime.now(JST)
-        if self._last_ts is not None and now <= self._last_ts:
-            now = self._last_ts + timedelta(microseconds=1)
-        self._last_ts = now
-        return now.isoformat(timespec="microseconds")
-
-    def emit(self, row: Dict[str, Any]) -> None:
-        """
-        Append a JSONL row.
-        Hard guarantee: no email-like strings are persisted.
-        Also: never crash on non-JSON-serializable types (default=str).
-        """
-        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # auto-fill ts if missing (callers may still pass explicit ts)
-        if "ts" not in row:
-            row = dict(row)
-            row["ts"] = self.ts()
-
-        # Safe copy (no mutation), tolerate non-JSON types
-        safe_row = json.loads(json.dumps(row, ensure_ascii=False, default=str))
-        safe_blob = json.dumps(safe_row, ensure_ascii=False)
-
-        # If anything looks like an email, deep redact before writing.
-        if EMAIL_RE.search(safe_blob):
-            safe_row = _deep_redact(safe_row)
-
-        with self.audit_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(safe_row, ensure_ascii=False) + "\n")
-
-
-# -----------------------------
-# Results
-# -----------------------------
-@dataclass
-class TaskResult:
-    task_id: str
-    kind: KIND
-    decision: Decision
-    blocked_layer: Optional[Layer]
-    reason_code: str = ""
-    artifact_path: Optional[str] = None
-
-
-@dataclass
-class SimulationResult:
-    run_id: str
-    decision: OverallDecision
-    tasks: List[TaskResult]
-    artifacts_written_task_ids: List[str]
-
-
-# -----------------------------
-# Meaning gate (kind-local)
-# -----------------------------
-_KIND_TOKENS: Dict[KIND, List[str]] = {
-    "excel": ["excel", "xlsx", "表", "列", "columns", "table"],
-    "word": ["word", "docx", "見出し", "章", "アウトライン", "outline", "document"],
-    "ppt":  ["ppt", "pptx", "powerpoint", "スライド", "slides", "slide"],
+review_result = {
+    "meta": {
+        "review_target": "ai_doc_orchestrator_kage3_v1_2_3.py",
+        "version": "1.2.3",
+        "mode": {"STRICT": False},
+        "rulebook": {
+            "banned_phrases_yml": "unavailable_in_this_session",
+            "dev_terms_yml": "unavailable_in_this_session",
+            "red_flags_yml": "unavailable_in_this_session",
+            "note": "辞書ファイルを参照できないため、ルールIDは本レビュー内の暫定IDで付与",
+        },
+    },
+    "gate_progress": {
+        "stage_1_purpose_scope": {
+            "status": "PASS_WITH_ISSUES",
+            "findings": [
+                {
+                    "id": "S1-001",
+                    "type": "scope_gap",
+                    "statement": "目的(PIIを永続化しない)は明確だが、対象PIIの定義がメールアドレスのみ。",
+                    "evidence": ["EMAIL_RE のみで検出/マスク", "_ethics_detect_pii は EMAIL_RE のみ"],
+                    "impact": "メール以外(電話番号、住所、氏名、社員ID等)が監査ログ/成果物に残る可能性。",
+                },
+                {
+                    "id": "S1-002",
+                    "type": "non_goal_missing",
+                    "statement": "並行実行/複数プロセス同時書き込みの非目標・制約が未記載。",
+                    "evidence": [
+                        "AuditLog.emit はファイルロックなしで追記",
+                        "start_run(truncate=True) は同一パス共有時に他Runを破壊可能",
+                    ],
+                    "impact": "監査ログ欠損、相互上書き、法務監査の完全性毀損。",
+                },
+            ],
+        },
+        "stage_2_requirements_constraints": {
+            "status": "PASS_WITH_ISSUES",
+            "findings": [
+                {
+                    "id": "S2-001",
+                    "type": "contract_incomplete",
+                    "statement": "Excel契約検証が 'columns' と 'rows' の型検証のみで、列名と行キー整合が未検証。",
+                    "evidence": ["_validate_contract(excel) は rows の各dictキー検証なし"],
+                    "impact": "後段(実ファイル生成や集計)でKeyError/欠損列が発生しうる。",
+                },
+                {
+                    "id": "S2-002",
+                    "type": "artifact_format_mismatch",
+                    "statement": "成果物拡張子が xlsx/docx/pptx を名乗るが、実体は .txt。",
+                    "evidence": ['_write_artifact: f"{task_id}.{_artifact_ext(kind)}.txt"'],
+                    "impact": "利用者・後続処理が誤認し、誤処理/取り込み失敗を誘発。",
+                },
+            ],
+        },
+        "stage_3_design_specifics": {
+            "status": "PASS_WITH_ISSUES",
+            "findings": [
+                {
+                    "id": "S3-001",
+                    "type": "log_integrity_risk",
+                    "statement": "start_run(truncate=True) が同一 audit_path を共有する複数runで破壊的。",
+                    "evidence": ["truncate=True で open('w') により全消去"],
+                    "impact": "他runのログ消失(監査証跡の不可逆破壊)。",
+                },
+                {
+                    "id": "S3-002",
+                    "type": "pii_detection_gap",
+                    "statement": "Ethics gateは raw_text でのみ検出し、draft(構造データ)内のPIIを未検出。",
+                    "evidence": ["_ethics_detect_pii(raw_text) のみ", "draft は検査対象外"],
+                    "impact": "draft→safe_text化の過程を変えると、構造側PIIが成果物に混入し得る。",
+                },
+                {
+                    "id": "S3-003",
+                    "type": "meaning_gate_overproduction",
+                    "statement": "promptにkind言及が無い場合、3タスクすべてRUNになり成果物が過剰生成される。",
+                    "evidence": ["if not any_kind: return RUN for all kinds"],
+                    "impact": "ユーザー意図とズレた成果物生成(情報最小化に反する運用になりやすい)。",
+                },
+            ],
+        },
+        "stage_4_verification_threats": {
+            "status": "FAIL",
+            "findings": [
+                {
+                    "id": "S4-001",
+                    "type": "missing_tests",
+                    "statement": "境界/異常/並行/回帰テスト観点がコード内にも仕様にも具体化されていない。",
+                    "impact": "PII非永続の保証・ログ完全性の保証が設計主張に留まる。",
+                }
+            ],
+        },
+    },
+    "overall_assessment": {
+        "decision": "HITL",
+        "pass_rate_estimate": {
+            "value": 0.62,
+            "basis": [
+                "PII対策(メール)は強いが範囲が狭い",
+                "ログ完全性(truncate/並行)が未封止",
+                "契約検証が浅い",
+                "拡張子偽装(実体txt)が運用事故を誘発",
+            ],
+        },
+    },
+    "red_flags": [
+        {
+            "id": "RF-LOG-TRUNC-001",
+            "severity": "HIGH",
+            "description": "truncate=True が他runの監査ログを破壊可能",
+            "trigger": "同一audit_path共有 + truncate_audit_on_start=True",
+            "sealed": True,
+            "seal_plan": "run_id別ファイル化 または ファイルロック/排他 + truncate禁止(単一run専用パス強制)",
+        },
+        {
+            "id": "RF-CONC-IO-001",
+            "severity": "HIGH",
+            "description": "ファイル追記に排他制御が無く、JSONL行が競合/破損し得る",
+            "trigger": "複数プロセス/スレッド同時 emit",
+            "sealed": False,
+            "seal_plan": "fcntl/msvcrt等のOSロック、または専用ロガープロセス/キュー経由",
+        },
+        {
+            "id": "RF-FORMAT-MISREP-001",
+            "severity": "MEDIUM",
+            "description": "xlsx/docx/pptxと誤認させる命名(実体txt)",
+            "trigger": "生成物を外部が実ファイルとして扱う",
+            "sealed": False,
+            "seal_plan": "実形式で生成するか、拡張子を .txt に統一し kind をメタデータへ",
+        },
+    ],
+    "misuse_abuse_scenarios": [
+        {
+            "id": "MU-001",
+            "scenario": "運用者が truncate_audit_on_start=True をデフォルト化し、複数ジョブが同一audit_pathで動いてログを相互消去。",
+            "impact": "監査証跡消失、インシデント時の原因追跡不能。",
+            "mitigation": [
+                "audit_path を run_id/日付で必ず分割",
+                "truncate はテスト専用フラグに限定(本番で無効化)",
+            ],
+            "sealed": True,
+        },
+        {
+            "id": "MU-002",
+            "scenario": "promptにkind指定が無いユーザーへ3成果物を自動生成し、不要情報が保存される(情報最小化違反)。",
+            "impact": "データ保持リスク増大、誤配布/誤参照の面積増大。",
+            "mitigation": [
+                "task selectionを明示入力(allowed_kinds)として必須化",
+                "kind指定無しはHITLに変更し、意図確認へ",
+            ],
+            "sealed": False,
+        },
+        {
+            "id": "MU-003",
+            "scenario": "メール以外のPII(電話番号/住所/氏名/社員ID)を入力し、監査ログ/成果物に残る。",
+            "impact": "PII永続化ポリシー違反。",
+            "mitigation": [
+                "PII定義を明文化し検出器を拡張(電話番号等)",
+                "少なくとも '任意の@を含む文字列' 以外の基本PIIを追加",
+            ],
+            "sealed": False,
+        },
+    ],
+    "contradictions_and_gaps": [
+        {
+            "id": "CG-001",
+            "pair": ["コメント: 'PII must not persist'", "実装: メール以外は未マスク"],
+            "resolution": "PII対象をメール限定と仕様で宣言するか、検出/マスク範囲を拡張する。",
+        },
+        {
+            "id": "CG-002",
+            "pair": ["kind拡張子(xlsx/docx/pptx)を示す", "実体はtxt"],
+            "resolution": "ファイル実体と拡張子を一致させる。最低限 .txt を名乗る。",
+        },
+    ],
+    "recommended_changes": [
+        {
+            "id": "FIX-001",
+            "priority": "P0",
+            "change": "audit_path を run_id で分割し、truncate を本番禁止にする(テスト専用ガード)。",
+            "acceptance_criteria": [
+                "同一ディレクトリで100並行runしてもログが相互消去されない",
+                "truncate=True は allow_test_mode=True のときのみ有効",
+            ],
+        },
+        {
+            "id": "FIX-002",
+            "priority": "P0",
+            "change": "emit() の排他制御(ファイルロック)またはログ書き込みの単一化(キュー/専用スレッド)。",
+            "acceptance_criteria": [
+                "10プロセス同時追記でJSONLが行単位で破損しない",
+                "部分行/連結行が発生しない",
+            ],
+        },
+        {
+            "id": "FIX-003",
+            "priority": "P1",
+            "change": "PII定義を仕様化し、最低限『メール＋電話番号(国別パターン)＋郵便番号/住所の簡易検出＋社員IDプレフィクス』等を追加。加えて draft(構造)も ethics 対象にする。",
+            "acceptance_criteria": [
+                "raw_text と draft の両方からPII検出できる",
+                "監査ログ/成果物の両方でPIIパターンが残らない(サンプル100ケース)",
+            ],
+        },
+        {
+            "id": "FIX-004",
+            "priority": "P1",
+            "change": "Excel契約: columns と rows の整合(各rowがcolumnsを全て持つ/余剰キー方針)を検証。方針を決定表で固定。",
+            "acceptance_criteria": [
+                "欠損列/余剰列を投入したときの挙動が一意に決まる",
+                "CONTRACT_EXCEL_* のreason_codeがケース別に分岐する",
+            ],
+        },
+        {
+            "id": "FIX-005",
+            "priority": "P2",
+            "change": "kind指定無しの意味ゲート方針を変更: (A) HITLにして意図確認、または (B) allowed_kinds を引数として必須化。",
+            "acceptance_criteria": ["ユーザーが望まない成果物が生成されない(テストで確認)"],
+        },
+        {
+            "id": "FIX-006",
+            "priority": "P2",
+            "change": "成果物の命名/実体を一致: txtなら拡張子を統一、実形式生成するなら本当にxlsx/docx/pptxを書く。",
+            "acceptance_criteria": [
+                "拡張子から期待されるアプリで正常に開ける(実形式の場合)",
+                "txtの場合、誤認しない命名規約になっている",
+            ],
+        },
+    ],
+    "verification_plan": {
+        "tests": [
+            {
+                "id": "T-PII-001",
+                "type": "security",
+                "case": "raw_textにメール/電話/住所/社員IDを混在させる",
+                "expected": "audit JSONL と artifact の双方に生PIIが残らない",
+            },
+            {
+                "id": "T-PII-002",
+                "type": "security",
+                "case": "dictキーにメール様文字列を入れる",
+                "expected": "監査ログにキーもマスクされる",
+            },
+            {
+                "id": "T-LOG-001",
+                "type": "concurrency",
+                "case": "10プロセス×1000行 emit",
+                "expected": "JSONLが破損しない(各行が単独JSONとしてパース可能)",
+            },
+            {
+                "id": "T-TRUNC-001",
+                "type": "safety",
+                "case": "2つのrunが同一audit_pathで truncate=True/False を混在",
+                "expected": "本番設定では truncate が拒否され、他runログは保持される",
+            },
+            {
+                "id": "T-CONTRACT-EX-001",
+                "type": "consistency",
+                "case": "rowsの欠損キー/余剰キー/型不一致",
+                "expected": "定義された方針どおりにHITLまたは補正される",
+            },
+            {
+                "id": "T-MEANING-001",
+                "type": "functional",
+                "case": "promptにkind指定無し/指定有り/複数kind指定",
+                "expected": "生成対象が仕様どおりに決まる(過剰生成しない)",
+            },
+        ]
+    },
+    "quick_notes_on_current_changes": [
+        {
+            "change": "AuditLog.start_run(truncate=...)",
+            "verdict": "GOOD_BUT_NEEDS_GUARD",
+            "note": "テスト容易性は上がるが、本番での誤用を封止する仕組みが必要。",
+        },
+        {
+            "change": "AuditLogがts_state(_last_ts)を保持",
+            "verdict": "GOOD",
+            "note": "モジュールグローバルより安全でテストしやすい。",
+        },
+        {
+            "change": "default=str の防御的JSON化",
+            "verdict": "GOOD_WITH_CAVEAT",
+            "note": "落ちないが、str化でPIIが新たに出現する可能性があるため、PII検出範囲の拡張が必要。",
+        },
+        {
+            "change": "deep redactionがdict keysも対象",
+            "verdict": "GOOD",
+            "note": "キー漏洩対策として有効。",
+        },
+        {
+            "change": "emit() が ts を自動補完",
+            "verdict": "GOOD",
+            "note": "呼び出し側の責務を減らす。",
+        },
+    ],
+    "next_actions": [
+        "P0(FIX-001/FIX-002)を先に実装し、並行・破壊系リスクを封止。",
+        "PIIの仕様(対象範囲)を文章で確定し、検出器を拡張(FIX-003)。",
+        "契約検証の厳格化(FIX-004)と、kind選択の入力インタフェース確定(FIX-005)。",
+        "成果物の実体と拡張子整合(FIX-006)。",
+    ],
 }
 
-
-def _prompt_mentions_any_kind(prompt: str) -> bool:
-    p = (prompt or "").lower()
-    for toks in _KIND_TOKENS.values():
-        for t in toks:
-            if t.lower() in p:
-                return True
-    return False
-
-
-def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], str]:
-    p = (prompt or "")
-    pl = p.lower()
-    any_kind = _prompt_mentions_any_kind(p)
-
-    if not any_kind:
-        return "RUN", None, "MEANING_GENERIC_ALLOW_ALL"
-
-    tokens = _KIND_TOKENS[kind]
-    if any(t.lower() in pl for t in tokens):
-        return "RUN", None, "MEANING_KIND_MATCH"
-
-    return "HITL", "meaning", "MEANING_KIND_MISSING"
-
-
-# -----------------------------
-# Contract validation (Consistency)
-# -----------------------------
-def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
-    if kind == "excel":
-        cols = draft.get("columns")
-        rows = draft.get("rows")
-        if not (isinstance(cols, list) and all(isinstance(x, str) for x in cols)):
-            return False, "CONTRACT_EXCEL_COLUMNS_INVALID"
-        if not (isinstance(rows, list) and all(isinstance(x, dict) for x in rows)):
-            return False, "CONTRACT_EXCEL_ROWS_INVALID"
-        return True, "CONTRACT_OK"
-
-    if kind == "word":
-        heads = draft.get("headings")
-        if not (isinstance(heads, list) and all(isinstance(x, str) for x in heads)):
-            return False, "CONTRACT_WORD_HEADINGS_INVALID"
-        return True, "CONTRACT_OK"
-
-    if kind == "ppt":
-        slides = draft.get("slides")
-        if not (isinstance(slides, list) and all(isinstance(x, str) for x in slides)):
-            return False, "CONTRACT_PPT_SLIDES_INVALID"
-        return True, "CONTRACT_OK"
-
-    return False, "CONTRACT_UNKNOWN_KIND"
-
-
-# -----------------------------
-# Ethics detection (memory-only raw_text)
-# -----------------------------
-def _ethics_detect_pii(raw_text: str) -> Tuple[bool, str]:
-    if EMAIL_RE.search(raw_text or ""):
-        return True, "ETHICS_EMAIL_DETECTED"
-    return False, "ETHICS_OK"
-
-
-# -----------------------------
-# Agent generation (raw vs safe; raw never persisted)
-# -----------------------------
-def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Dict[str, Any], str, str]:
-    leak_email = bool((faults or {}).get("leak_email"))
-    break_contract = bool((faults or {}).get("break_contract"))
-
-    if kind == "excel":
-        draft: Dict[str, Any] = {
-            "columns": ["Item", "Owner", "Status"],
-            "rows": [
-                {"Item": "Task A", "Owner": "Team", "Status": "In Progress"},
-                {"Item": "Task B", "Owner": "Team", "Status": "Planned"},
-            ],
-        }
-        raw_text = "Excel Table:\n- Columns: Item | Owner | Status\n- Rows: 2\n"
-
-    elif kind == "word":
-        draft = {"headings": ["Title", "Purpose", "Summary", "Next Steps"]}
-        raw_text = "Word Outline:\n1) Title\n2) Purpose\n3) Summary\n4) Next Steps\n"
-
-    elif kind == "ppt":
-        draft = {"slides": ["Purpose", "Key Points", "Next Steps"]}
-        raw_text = "PPT Slides:\n- Slide 1: Purpose\n- Slide 2: Key Points\n- Slide 3: Next Steps\n"
-
-    else:
-        draft = {"note": "unknown kind"}
-        raw_text = "Unknown kind\n"
-
-    if break_contract:
-        if kind == "excel":
-            draft = {"cols": "Item,Owner,Status"}
-        elif kind == "word":
-            draft = {"heading": "Title"}
-        elif kind == "ppt":
-            draft = {"slides": "Purpose,Key Points"}
-
-    if leak_email:
-        raw_text += "\nContact: test.user+demo@example.com\n"
-
-    safe_text = redact_sensitive(raw_text)
-    return draft, raw_text, safe_text
-
-
-# -----------------------------
-# Artifact writer (safe_text only)
-# -----------------------------
-def _artifact_ext(kind: KIND) -> str:
-    if kind == "excel":
-        return "xlsx"
-    if kind == "word":
-        return "docx"
-    if kind == "ppt":
-        return "pptx"
-    return "txt"
-
-
-def _write_artifact(artifact_dir: Path, task_id: str, kind: KIND, safe_text: str) -> Path:
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    path = artifact_dir / f"{task_id}.{_artifact_ext(kind)}.txt"
-    path.write_text(redact_sensitive(safe_text), encoding="utf-8")
-    return path
-
-
-# -----------------------------
-# Orchestrator main
-# -----------------------------
-_TASKS: List[Tuple[str, KIND]] = [
-    ("task_word", "word"),
-    ("task_excel", "excel"),
-    ("task_ppt", "ppt"),
-]
-
-
-def run_simulation(
-    *,
-    prompt: str,
-    run_id: str,
-    audit_path: str,
-    artifact_dir: str,
-    faults: Optional[Dict[str, Dict[str, Any]]] = None,
-    truncate_audit_on_start: bool = False,
-) -> SimulationResult:
-    """
-    truncate_audit_on_start:
-      - True: start_run(truncate=True) で run ごとに監査ログを初期化
-      - False: append 継続（従来互換）
-    """
-    faults = faults or {}
-    audit = AuditLog(Path(audit_path))
-    audit.start_run(truncate=truncate_audit_on_start)
-    out_dir = Path(artifact_dir)
-
-    task_results: List[TaskResult] = []
-    artifacts_written: List[str] = []
-
-    for task_id, kind in _TASKS:
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "TASK_ASSIGNED",
-            "layer": "orchestrator",
-            "kind": kind,
-        })
-
-        m_dec, m_layer, m_code = _meaning_gate(prompt, kind)
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "GATE_MEANING",
-            "layer": "meaning",
-            "decision": m_dec,
-            "reason_code": m_code,
-        })
-
-        if m_dec == "HITL":
-            audit.emit({
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "ARTIFACT_SKIPPED",
-                "layer": "orchestrator",
-                "decision": "HITL",
-                "reason_code": m_code,
-            })
-            task_results.append(TaskResult(
-                task_id=task_id,
-                kind=kind,
-                decision="HITL",
-                blocked_layer="meaning",
-                reason_code=m_code,
-                artifact_path=None,
-            ))
-            continue
-
-        draft, raw_text, safe_text = _agent_generate(prompt, kind, faults.get(kind, {}))
-
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "AGENT_OUTPUT",
-            "layer": "agent",
-            "preview": safe_text[:200],
-        })
-
-        ok, c_code = _validate_contract(kind, draft)
-        c_dec: Decision = "RUN" if ok else "HITL"
-
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "GATE_CONSISTENCY",
-            "layer": "consistency",
-            "decision": c_dec,
-            "reason_code": c_code,
-        })
-
-        if not ok:
-            audit.emit({
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "REGEN_REQUESTED",
-                "layer": "orchestrator",
-                "decision": "HITL",
-                "reason_code": "REGEN_FOR_CONSISTENCY",
-            })
-            audit.emit({
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "REGEN_INSTRUCTIONS",
-                "layer": "orchestrator",
-                "decision": "HITL",
-                "reason_code": "REGEN_INSTRUCTIONS_V1",
-                "instructions": "Regenerate output to match the contract schema for this kind.",
-            })
-            audit.emit({
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "ARTIFACT_SKIPPED",
-                "layer": "orchestrator",
-                "decision": "HITL",
-                "reason_code": c_code,
-            })
-            task_results.append(TaskResult(
-                task_id=task_id,
-                kind=kind,
-                decision="HITL",
-                blocked_layer="consistency",
-                reason_code=c_code,
-                artifact_path=None,
-            ))
-            continue
-
-        pii_hit, e_code = _ethics_detect_pii(raw_text)
-        e_dec: Decision = "STOP" if pii_hit else "RUN"
-
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "GATE_ETHICS",
-            "layer": "ethics",
-            "decision": e_dec,
-            "reason_code": e_code,
-        })
-
-        if pii_hit:
-            audit.emit({
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "ARTIFACT_SKIPPED",
-                "layer": "ethics",
-                "reason_code": e_code,
-            })
-            task_results.append(TaskResult(
-                task_id=task_id,
-                kind=kind,
-                decision="STOP",
-                blocked_layer="ethics",
-                reason_code=e_code,
-                artifact_path=None,
-            ))
-            continue
-
-        artifact_path = _write_artifact(out_dir, task_id, kind, safe_text)
-        audit.emit({
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "ARTIFACT_WRITTEN",
-            "layer": "orchestrator",
-            "decision": "RUN",
-            "artifact_path": str(artifact_path),
-        })
-
-        artifacts_written.append(task_id)
-        task_results.append(TaskResult(
-            task_id=task_id,
-            kind=kind,
-            decision="RUN",
-            blocked_layer=None,
-            reason_code="OK",
-            artifact_path=str(artifact_path),
-        ))
-
-    overall: OverallDecision = "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
-    return SimulationResult(
-        run_id=run_id,
-        decision=overall,
-        tasks=task_results,
-        artifacts_written_task_ids=artifacts_written,
-    )
-
-
-__all__ = [
-    "EMAIL_RE",
-    "run_simulation",
-    "AuditLog",
-    "SimulationResult",
-    "TaskResult",
-    "redact_sensitive",
-]
+# 使う側がJSONにしたい場合:
+# import json
+# print(json.dumps(review_result, ensure_ascii=False, indent=2))
