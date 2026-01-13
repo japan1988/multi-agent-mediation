@@ -83,3 +83,9 @@ python ai_governance_mediation_sim.py
 # Doc orchestrator (KAGE3-style)
 python ai_doc_orchestrator_kage3_v1_2_4.py
 #（旧版が残っていても、v1.2.4 を post-HITL セマンティクスの参照版とする）
+
+
+
+
+
+
