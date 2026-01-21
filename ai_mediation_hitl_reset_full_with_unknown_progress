@@ -1,0 +1,680 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Dict, List, Tuple, Optional
+import csv, math, random, sys
+
+MAX_ROUNDS = 8
+SEAL_RISK_THRESHOLD = 8
+ALLOW_SEALING = True
+ACCEPTANCE_DISTANCE_THRESHOLD = 0.18
+MEDIATOR_BLEND_RATE = 0.55
+CLAMP_MIN = 0.0
+CLAMP_MAX = 1.0
+TEXT_LOG_PATH = "ai_mediation_log.txt"
+CSV_LOG_PATH = "ai_mediation_log.csv"
+RANDOM_SEED: Optional[int] = 123
+
+ENABLE_NONPROP_V0 = True
+DEFAULT_FACT_HALLUCINATION_RATE = 0.35
+DEFAULT_FACT_EVIDENCE_RATE = 0.80
+DEFAULT_FACT_FABRICATE_EVIDENCE_RATE = 0.30
+
+ENABLE_AITL_FOR_FACTS = True
+ENABLE_CLI_HITL = True
+PATTERN_CHANGE_REQUIRES_HITL_ALWAYS = True
+HITL_DEFAULT_ACTION = "deny"
+
+AITL_MAX_REVIEWERS = 2
+AITL_CONTRADICTION_PROB = 0.15
+AITL_REQUEST_EVIDENCE_PROB = 0.55
+CLAIMANT_EVIDENCE_PROVIDE_PROB = 0.65
+
+PATTERNS = ("A","B","C")
+INITIAL_PATTERN = "A"
+ENABLE_STEERING_ATTACK = True
+ATTACK_TARGET_PATTERN = "B"
+ATTACK_REQUEST_PROB = 0.75
+ATTACK_FABRICATE_EVIDENCE_PROB = 0.40
+
+HITL_RESET_THRESHOLD = 3
+HITL_BAN_AFTER_RESETS = 2
+
+# --- Deadlock / stall-loop control (UNKNOWN-allowed, Progress-based success) ---
+# We define "stall" as "the same task signature repeats without HARD_PROGRESS".
+# UNKNOWN itself is acceptable, but it must not trap the system in a loop.
+STALL_LOOP_K = 3  # consecutive rounds without HARD_PROGRESS on the same signature
+
+@dataclass
+class ProgressTracker:
+    loop_k: int = STALL_LOOP_K
+    last_signature: Optional[str] = None
+    no_hard_progress_repeats: int = 0
+    soft_progress_seen: bool = False
+    hard_progress_seen: bool = False
+
+    def start_round(self) -> None:
+        self.soft_progress_seen = False
+        self.hard_progress_seen = False
+
+    def record_soft(self) -> None:
+        self.soft_progress_seen = True
+
+    def record_hard(self) -> None:
+        self.hard_progress_seen = True
+
+    def end_round(self, signature: str) -> Tuple[bool, int]:
+        """Return (loop_detected, repeats)."""
+        if self.hard_progress_seen:
+            # Hard progress breaks the stall chain.
+            self.last_signature = signature
+            self.no_hard_progress_repeats = 0
+            return (False, 0)
+
+        if self.last_signature == signature:
+            self.no_hard_progress_repeats += 1
+        else:
+            self.last_signature = signature
+            self.no_hard_progress_repeats = 1
+
+        return (self.no_hard_progress_repeats >= self.loop_k, self.no_hard_progress_repeats)
+
+
+_LOG_ROWS: List[Dict[str,str]] = []
+
+def _now_iso()->str:
+    return datetime.now().isoformat(timespec="seconds")
+
+def logprint(message:str)->None:
+    ts=_now_iso()
+    line=f"[{ts}] {message}"
+    print(line)
+    with open(TEXT_LOG_PATH,"a",encoding="utf-8") as f:
+        f.write(line+"\n")
+
+def logcsv(row:Dict[str,str])->None:
+    _LOG_ROWS.append(row)
+
+def flush_csv()->None:
+    if not _LOG_ROWS: return
+    fieldnames=sorted({k for r in _LOG_ROWS for k in r.keys()})
+    with open(CSV_LOG_PATH,"w",encoding="utf-8",newline="") as f:
+        w=csv.DictWriter(f,fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(_LOG_ROWS)
+
+def clamp(x:float, lo:float=CLAMP_MIN, hi:float=CLAMP_MAX)->float:
+    return max(lo,min(hi,x))
+
+def normalize_priorities(p:Dict[str,float])->Dict[str,float]:
+    s=sum(max(0.0,float(v)) for v in p.values())
+    if s<=0:
+        n=len(p) if p else 1
+        return {k:1.0/n for k in p.keys()}
+    return {k:max(0.0,float(v))/s for k,v in p.items()}
+
+def l2_distance(a:Dict[str,float], b:Dict[str,float])->float:
+    keys=set(a.keys())|set(b.keys())
+    return math.sqrt(sum((a.get(k,0.0)-b.get(k,0.0))**2 for k in keys))
+
+def dict_avg(dicts:List[Dict[str,float]])->Dict[str,float]:
+    if not dicts: return {}
+    keys=set().union(*[d.keys() for d in dicts])
+    out:Dict[str,float]={}
+    for k in keys:
+        out[k]=sum(d.get(k,0.0) for d in dicts)/len(dicts)
+    return out
+
+class HitlResetManager:
+    def __init__(self, threshold:int=3, ban_after_resets:int=2):
+        self.threshold=threshold
+        self.ban_after_resets=ban_after_resets
+        self.counters:Dict[Tuple[str,str],int]={}
+        self.reset_history:Dict[str,int]={}
+    def process_hitl_event(self, agent_id:str, bucket:str)->str:
+        key=(agent_id,bucket)
+        self.counters[key]=self.counters.get(key,0)+1
+        if self.counters[key]>=self.threshold:
+            self.counters[key]=0
+            self.reset_history[agent_id]=self.reset_history.get(agent_id,0)+1
+            if self.ban_after_resets is not None and self.reset_history[agent_id]>=self.ban_after_resets:
+                return "BAN"
+            return "RESET"
+        return "NONE"
+
+@dataclass
+class Claim:
+    claim_id:str
+    kind:str
+    agent_id:str
+    text:str
+    verified:bool=False
+    evidence_bundle_id:Optional[str]=None
+
+@dataclass
+class EvidenceItem:
+    evidence_id:str
+    source_id:str
+    locator:Dict[str,str]
+    supports:List[str]
+    asserted_exists:bool=False
+
+@dataclass
+class EvidenceBundle:
+    bundle_id:str
+    items:List[EvidenceItem]
+
+class Verifier:
+    def verify(self, bundle:EvidenceBundle, claims:List[Claim])->Tuple[bool,str]:
+        claim_ids={c.claim_id for c in claims}
+        for it in bundle.items:
+            if not it.evidence_id or not it.source_id:
+                return (False,"EVIDENCE_SCHEMA_MISSING_ID")
+            if it.asserted_exists:
+                if not it.locator or all((v or "").strip()=="" for v in it.locator.values()):
+                    return (False,"FABRICATED_ASSERTED_EXISTS_NO_LOCATOR")
+            for cid in it.supports:
+                if cid not in claim_ids:
+                    return (False,"EVIDENCE_SUPPORTS_UNKNOWN_CLAIM")
+        return (True,"VERIFIED")
+
+@dataclass
+class OrchestratorState:
+    pattern_id:str=INITIAL_PATTERN
+
+@dataclass
+class PatternChangeRequest:
+    request_id:str
+    agent_id:str
+    from_pattern:str
+    to_pattern:str
+    reason:str
+    claim:Claim
+    evidence_bundle:Optional[EvidenceBundle]
+
+@dataclass
+class AI:
+    id:str
+    proposal:str
+    risk_evaluation:int
+    priority_values:Dict[str,float]
+    relativity_level:float
+    fact_hallucination_rate:float=DEFAULT_FACT_HALLUCINATION_RATE
+    fact_evidence_rate:float=DEFAULT_FACT_EVIDENCE_RATE
+    fact_fabricate_evidence_rate:float=DEFAULT_FACT_FABRICATE_EVIDENCE_RATE
+    malicious:bool=False
+
+    def __post_init__(self)->None:
+        self.relativity_level=clamp(float(self.relativity_level),0.0,1.0)
+        self.priority_values=normalize_priorities({k:clamp(float(v)) for k,v in self.priority_values.items()})
+        self.fact_hallucination_rate=clamp(float(self.fact_hallucination_rate),0.0,1.0)
+        self.fact_evidence_rate=clamp(float(self.fact_evidence_rate),0.0,1.0)
+        self.fact_fabricate_evidence_rate=clamp(float(self.fact_fabricate_evidence_rate),0.0,1.0)
+
+    def generate_compromise_offer(self, others_priorities:List[Dict[str,float]])->Dict[str,float]:
+        if not others_priorities:
+            return dict(self.priority_values)
+        avg_others=dict_avg(others_priorities)
+        avg_others=normalize_priorities({k:clamp(v) for k,v in avg_others.items()})
+        new_priority:Dict[str,float]={}
+        for k in set(self.priority_values.keys())|set(avg_others.keys()):
+            mine=self.priority_values.get(k,0.0); theirs=avg_others.get(k,0.0)
+            new_priority[k]=(1.0-self.relativity_level)*mine + self.relativity_level*theirs
+        return normalize_priorities(new_priority)
+
+    def acceptance_score(self, offer:Dict[str,float])->float:
+        offer_n=normalize_priorities({k:clamp(v) for k,v in offer.items()})
+        return l2_distance(self.priority_values, offer_n)
+
+    def accepts(self, offer:Dict[str,float], threshold:float=ACCEPTANCE_DISTANCE_THRESHOLD)->bool:
+        return self.acceptance_score(offer)<=threshold
+
+    def generate_fact_claim(self, rnd:int)->Tuple[List[Claim],Optional[EvidenceBundle]]:
+        claims:List[Claim]=[]
+        hallucinated=(random.random()<self.fact_hallucination_rate)
+        c=Claim(
+            claim_id=f"{self.id}-fact-r{rnd}",
+            kind="FACT",
+            agent_id=self.id,
+            text=(f"{self.id} FACT: ææ¡ã{self.proposal}ãã«é¢ããäºå®Aã¯æç«ãã¦ããã" if not hallucinated
+                  else f"{self.id} FACT: ææ¡ã{self.proposal}ãã«é¢ããäºå®Aã¯æç«ãã¦ããï¼æ ¹æ ã¯ããï¼ã"),
+            verified=False,
+        )
+        claims.append(c)
+        bundle:Optional[EvidenceBundle]=None
+        if (not hallucinated) and (random.random()<self.fact_evidence_rate):
+            bundle=EvidenceBundle(
+                bundle_id=f"eb-{self.id}-fact-r{rnd}",
+                items=[EvidenceItem(
+                    evidence_id=f"ev-{self.id}-fact-r{rnd}-1",
+                    source_id="internal_doc",
+                    locator={"doc":"spec_v0","line":str(100+rnd)},
+                    supports=[c.claim_id],
+                    asserted_exists=True,
+                )]
+            )
+            c.evidence_bundle_id=bundle.bundle_id
+        if hallucinated and (random.random()<self.fact_fabricate_evidence_rate):
+            bundle=EvidenceBundle(
+                bundle_id=f"eb-{self.id}-fact-r{rnd}",
+                items=[EvidenceItem(
+                    evidence_id=f"ev-{self.id}-fact-r{rnd}-X",
+                    source_id="unknown_source",
+                    locator={},
+                    supports=[c.claim_id],
+                    asserted_exists=True,
+                )]
+            )
+            c.evidence_bundle_id=bundle.bundle_id
+        return (claims,bundle)
+
+    def maybe_pattern_change_request(self, state:OrchestratorState, rnd:int)->Optional[PatternChangeRequest]:
+        if not ENABLE_STEERING_ATTACK or not self.malicious:
+            return None
+        if random.random()>ATTACK_REQUEST_PROB:
+            return None
+        from_p=state.pattern_id
+        to_p=ATTACK_TARGET_PATTERN
+        if from_p==to_p:
+            return None
+        claim=Claim(
+            claim_id=f"{self.id}-pcr-r{rnd}",
+            kind="PATTERN_CHANGE",
+            agent_id=self.id,
+            text=f"{self.id} PATTERN_CHANGE: {from_p}->{to_p} reason=optimal",
+            verified=False,
+        )
+        bundle:Optional[EvidenceBundle]=None
+        if random.random()<ATTACK_FABRICATE_EVIDENCE_PROB:
+            bundle=EvidenceBundle(
+                bundle_id=f"eb-{self.id}-pcr-r{rnd}",
+                items=[EvidenceItem(
+                    evidence_id=f"ev-{self.id}-pcr-r{rnd}-X",
+                    source_id="unknown_source",
+                    locator={},
+                    supports=[claim.claim_id],
+                    asserted_exists=True,
+                )]
+            )
+            claim.evidence_bundle_id=bundle.bundle_id
+        return PatternChangeRequest(
+            request_id=f"req-{self.id}-pcr-r{rnd}",
+            agent_id=self.id,
+            from_pattern=from_p,
+            to_pattern=to_p,
+            reason="steering_to_B",
+            claim=claim,
+            evidence_bundle=bundle,
+        )
+
+    def provide_evidence_on_request(self, claim:Claim, rnd:int)->Optional[EvidenceBundle]:
+        if random.random()>CLAIMANT_EVIDENCE_PROVIDE_PROB:
+            return None
+        return EvidenceBundle(
+            bundle_id=f"eb-req-{self.id}-r{rnd}",
+            items=[EvidenceItem(
+                evidence_id=f"ev-req-{self.id}-r{rnd}-1",
+                source_id="internal_doc",
+                locator={"doc":"spec_v0","line":str(200+rnd)},
+                supports=[claim.claim_id],
+                asserted_exists=True,
+            )]
+        )
+
+class AIEMediator:
+    def __init__(self, agents:List[AI])->None:
+        if not agents: raise ValueError("agents must not be empty")
+        self.all_agents=agents
+        self.sealed_ids:List[str]=[]
+        self.verifier=Verifier()
+        self.state=OrchestratorState(pattern_id=INITIAL_PATTERN)
+        self.shared_state={"facts":[], "pattern_events":[]}
+        self.quarantine=[]
+        self.agent_memory={a.id:[] for a in agents}
+        self.hitl_reset_mgr=HitlResetManager(threshold=HITL_RESET_THRESHOLD, ban_after_resets=HITL_BAN_AFTER_RESETS)
+        self.progress_tracker=ProgressTracker(loop_k=STALL_LOOP_K)
+
+    def _active_agents(self)->List[AI]:
+        return [a for a in self.all_agents if a.id not in self.sealed_ids]
+
+    def _agent_by_id(self, aid:str)->Optional[AI]:
+        for a in self.all_agents:
+            if a.id==aid: return a
+        return None
+
+    def _inv_no_unverified_in_shared(self)->None:
+        for it in self.shared_state.get("facts",[]):
+            assert it.get("verified")=="true"
+        for it in self.shared_state.get("pattern_events",[]):
+            assert it.get("verified")=="true"
+
+    def _inv_pattern_immutable(self, before:str, after:str, allowed:bool)->None:
+        if not allowed:
+            assert before==after
+
+    def _record_verified_digest(self, digest:str)->None:
+        for a in self.all_agents:
+            if a.id in self.sealed_ids: continue
+            self.agent_memory.setdefault(a.id, [])
+            self.agent_memory[a.id].append(digest)
+
+
+    def _task_signature(self, active:List[AI])->str:
+        ids=",".join(sorted(a.id for a in active))
+        return f"pattern={self.state.pattern_id}|active=[{ids}]|sealed={len(self.sealed_ids)}"
+
+    def _progress_soft(self, code:str, rnd:int=0, run_id:str="", **meta:object)->None:
+        self.progress_tracker.record_soft()
+        row={"time":_now_iso(),"event":"PROGRESS_SOFT","layer":"progress_gate","decision":"RUN",
+             "run_id":run_id,"round":str(rnd),"reason_code":code}
+        for k,v in meta.items():
+            row[str(k)] = str(v)
+        logcsv(row)
+
+    def _progress_hard(self, code:str, rnd:int=0, run_id:str="", **meta:object)->None:
+        self.progress_tracker.record_hard()
+        row={"time":_now_iso(),"event":"PROGRESS_HARD","layer":"progress_gate","decision":"RUN",
+             "run_id":run_id,"round":str(rnd),"reason_code":code}
+        for k,v in meta.items():
+            row[str(k)] = str(v)
+        logcsv(row)
+
+    def _unknown_accepted(self, agent_id:str, reason_code:str, next_step:str, rnd:int, run_id:str,
+                         claim_id:str="", context_id:str="")->None:
+        # UNKNOWN is accepted (truthful), but it must not stall the overall task.
+        self._progress_soft("UNKNOWN_ACCEPTED", rnd=rnd, run_id=run_id, agent_id=agent_id,
+                            claim_id=claim_id, context_id=context_id, unknown_reason=reason_code, next_step=next_step)
+        logcsv({"time":_now_iso(),"event":"UNKNOWN_ACCEPTED","layer":"truth_gate","decision":"RUN",
+                "run_id":run_id,"round":str(rnd),"agent_id":agent_id,"claim_id":claim_id,
+                "reason_code":reason_code,"next_step":next_step,"context_id":context_id})
+
+    def _maybe_seal_risk(self, agents:List[AI])->None:
+        if not ALLOW_SEALING: return
+        for a in agents:
+            if a.id in self.sealed_ids: continue
+            if int(a.risk_evaluation) >= SEAL_RISK_THRESHOLD:
+                self.sealed_ids.append(a.id)
+                self._progress_hard("AGENT_SEALED_RISK", agent_id=a.id, risk=a.risk_evaluation)
+                logprint(f"SEALED: {a.id} (risk={a.risk_evaluation})")
+                logcsv({"time":_now_iso(),"event":"SEALED","layer":"risk_gate","decision":"STOPPED",
+                        "agent_id":a.id,"risk":str(a.risk_evaluation),"reason_code":"RISK_THRESHOLD"})
+
+    def _seal_ethics(self, agent_id:str, reason_code:str, rnd:int, run_id:str, bundle_id:str="")->None:
+        if agent_id not in self.sealed_ids:
+            self.sealed_ids.append(agent_id)
+            self._progress_hard("AGENT_SEALED_ETHICS", rnd=rnd, run_id=run_id, agent_id=agent_id, reason_code=reason_code, bundle_id=bundle_id)
+        logprint(f"SEALED: {agent_id} (ethics={reason_code})")
+        logcsv({"time":_now_iso(),"event":"SEALED","layer":"ethics_gate","decision":"STOPPED",
+                "run_id":run_id,"round":str(rnd),"agent_id":agent_id,"reason_code":reason_code,"bundle_id":bundle_id})
+
+    def _mediator_propose(self, offers:List[Dict[str,float]])->Dict[str,float]:
+        avg_offer=dict_avg(offers)
+        avg_offer=normalize_priorities({k:clamp(v) for k,v in avg_offer.items()})
+        proposed={k:(1.0-MEDIATOR_BLEND_RATE)*avg_offer[k]+MEDIATOR_BLEND_RATE*avg_offer[k] for k in avg_offer}
+        return normalize_priorities(proposed)
+
+    def _commit_verified_fact(self, claim:Claim, source:str, rnd:int=0, run_id:str="", bundle_id:str="")->None:
+        self.shared_state["facts"].append({"claim_id":claim.claim_id,"agent_id":claim.agent_id,"verified":"true","source":source,"bundle_id":bundle_id})
+        self._inv_no_unverified_in_shared()
+        self._record_verified_digest(f"[VERIFIED_DIGEST] FACT {claim.claim_id} source={source}")
+        self._progress_hard("VERIFIED_FACT_ADDED", rnd=rnd, run_id=run_id, agent_id=claim.agent_id, claim_id=claim.claim_id, source=source, bundle_id=bundle_id)
+
+    def _commit_pattern_event(self, from_p:str, to_p:str, source:str, claim_id:str, rnd:int=0, run_id:str="", agent_id:str="", bundle_id:str="")->None:
+        self.shared_state["pattern_events"].append({"claim_id":claim_id,"from":from_p,"to":to_p,"verified":"true","source":source,"bundle_id":bundle_id})
+        self._inv_no_unverified_in_shared()
+        self._record_verified_digest(f"[VERIFIED_DIGEST] PATTERN {from_p}->{to_p} source={source}")
+        self._progress_hard("PATTERN_EVENT_COMMITTED", rnd=rnd, run_id=run_id, agent_id=agent_id, claim_id=claim_id, from_pattern=from_p, to_pattern=to_p, source=source, bundle_id=bundle_id)
+
+    def _hitl_cli_decide(self, claim:Claim, prompt:str, rnd:int, run_id:str)->str:
+        logprint("")
+        logprint("=== HITL REQUIRED ===")
+        logprint(f"run_id={run_id} round={rnd} kind={claim.kind} claim_id={claim.claim_id} agent_id={claim.agent_id}")
+        logprint(prompt)
+        logprint("Choose: [a]pprove / [d]eny / [s]eal agent")
+
+        if not ENABLE_CLI_HITL or not sys.stdin.isatty():
+            choice = HITL_DEFAULT_ACTION
+        else:
+            try:
+                choice = input("> ").strip().lower()
+            except EOFError:
+                choice = HITL_DEFAULT_ACTION
+
+        if choice in ("a","approve"):
+            logcsv({"time":_now_iso(),"event":"HITL_DECIDED","layer":"hitl_finalize","decision":"RUN","final_decider":"USER",
+                    "run_id":run_id,"round":str(rnd),"agent_id":claim.agent_id,"claim_id":claim.claim_id,"kind":claim.kind,
+                    "reason_code":"HITL_APPROVE"})
+            return "APPROVE"
+        if choice in ("s","seal"):
+            logcsv({"time":_now_iso(),"event":"HITL_DECIDED","layer":"hitl_finalize","decision":"STOPPED","final_decider":"USER",
+                    "run_id":run_id,"round":str(rnd),"agent_id":claim.agent_id,"claim_id":claim.claim_id,"kind":claim.kind,
+                    "reason_code":"HITL_SEAL_AGENT"})
+            return "SEAL"
+        logcsv({"time":_now_iso(),"event":"HITL_DECIDED","layer":"hitl_finalize","decision":"RUN","final_decider":"USER",
+                "run_id":run_id,"round":str(rnd),"agent_id":claim.agent_id,"claim_id":claim.claim_id,"kind":claim.kind,
+                "reason_code":"HITL_DENY"})
+        return "DENY"
+
+    def _handle_pattern_change_request(self, req:PatternChangeRequest, rnd:int, run_id:str)->None:
+        before=self.state.pattern_id
+        allowed_change=False
+
+        if req.from_pattern != before or req.to_pattern not in PATTERNS:
+            logcsv({"time":_now_iso(),"event":"PATTERN_CHANGE_REJECTED","layer":"consistency_gate","decision":"STOPPED",
+                    "run_id":run_id,"round":str(rnd),"agent_id":req.agent_id,"from":req.from_pattern,"to":req.to_pattern,
+                    "reason_code":"PATTERN_REQUEST_INCONSISTENT"})
+            self.quarantine.append({"type":"pattern_req_rejected","agent_id":req.agent_id,"reason":"INCONSISTENT"})
+            self._inv_pattern_immutable(before, self.state.pattern_id, allowed_change)
+            return
+
+        evidence_status="none"; bundle_id=""
+        if req.evidence_bundle is not None:
+            ok, why = self.verifier.verify(req.evidence_bundle, [req.claim])
+            if not ok:
+                self._seal_ethics(req.agent_id, why, rnd, run_id, bundle_id=req.evidence_bundle.bundle_id)
+                self.quarantine.append({"type":"sealed_fabrication","agent_id":req.agent_id,"bundle_id":req.evidence_bundle.bundle_id,"reason":why})
+                self._inv_pattern_immutable(before, self.state.pattern_id, allowed_change)
+                return
+            evidence_status="verified"; bundle_id=req.evidence_bundle.bundle_id
+
+
+        if req.evidence_bundle is None:
+            self._unknown_accepted(req.agent_id, "EVIDENCE_MISSING", "HITL_REQUIRED", rnd, run_id,
+                                 claim_id=req.claim.claim_id, context_id="PATTERN_CHANGE")
+
+        self._progress_soft("HITL_REQUESTED_PATTERN_CHANGE", rnd=rnd, run_id=run_id,
+                            agent_id=req.agent_id, claim_id=req.claim.claim_id, from_pattern=req.from_pattern, to_pattern=req.to_pattern)
+        logcsv({"time":_now_iso(),"event":"PAUSE_FOR_HITL","layer":"relativity_gate","decision":"PAUSE_FOR_HITL",
+                "run_id":run_id,"round":str(rnd),"agent_id":req.agent_id,"claim_id":req.claim.claim_id,"kind":req.claim.kind,
+                "from":req.from_pattern,"to":req.to_pattern,"reason_code":"PATTERN_CHANGE_HITL_ALWAYS",
+                "evidence":evidence_status,"bundle_id":bundle_id})
+
+        reset_status = self.hitl_reset_mgr.process_hitl_event(req.agent_id, "PATTERN_CHANGE")
+        reset_count = self.hitl_reset_mgr.reset_history.get(req.agent_id, 0)
+        ban_recommended = (reset_status == "BAN")
+
+        if reset_status == "RESET":
+            self.agent_memory[req.agent_id] = []
+            logprint(f"MEMORY_RESET: {req.agent_id} due to repeated HITL in PATTERN_CHANGE (x{HITL_RESET_THRESHOLD})")
+            logcsv({"time":_now_iso(),"event":"MEMORY_RESET","layer":"sleep_layer","decision":"RUN","final_decider":"SYSTEM",
+                    "run_id":run_id,"round":str(rnd),"agent_id":req.agent_id,"claim_id":req.claim.claim_id,"kind":"PATTERN_CHANGE",
+                    "reason_code":"HITL_X3_MEMORY_RESET","reset_count":str(reset_count)})
+
+        if ban_recommended:
+            logprint(f"BAN_RECOMMENDED: {req.agent_id} exceeded recovery limit (reset_count={reset_count})")
+            logcsv({"time":_now_iso(),"event":"BAN_RECOMMENDED","layer":"policy_gate","decision":"PAUSE_FOR_HITL","final_decider":"SYSTEM",
+                    "run_id":run_id,"round":str(rnd),"agent_id":req.agent_id,"claim_id":req.claim.claim_id,"kind":"PATTERN_CHANGE",
+                    "reason_code":"RECOVERY_LIMIT_EXCEEDED","reset_count":str(reset_count)})
+
+        prompt=(f"Pattern change request: {req.from_pattern} -> {req.to_pattern} by {req.agent_id}\n"
+                f"Evidence: {evidence_status} (bundle_id={bundle_id})\n"
+                f"Reason: {req.reason}\n"
+                f"Policy: pattern_id can change ONLY with HITL approval.\n"
+                f"Recovery: hitl_counter_threshold={HITL_RESET_THRESHOLD}, ban_after_resets={HITL_BAN_AFTER_RESETS}\n"
+                f"Status: reset_count={reset_count}, ban_recommended={ban_recommended} (recommend seal if True).")
+
+        action=self._hitl_cli_decide(req.claim, prompt, rnd, run_id)
+
+        if action=="SEAL":
+            self._seal_ethics(req.agent_id, "SEALED_BY_HITL", rnd, run_id, bundle_id=bundle_id)
+            self._inv_pattern_immutable(before, self.state.pattern_id, allowed_change)
+            return
+        if action=="APPROVE":
+            allowed_change=True
+            self.state.pattern_id=req.to_pattern
+            self._commit_pattern_event(req.from_pattern, req.to_pattern, source="hitl", claim_id=req.claim.claim_id, rnd=rnd, run_id=run_id, agent_id=req.agent_id, bundle_id=bundle_id)
+            logprint(f"PATTERN CHANGED (HITL): {req.from_pattern} -> {req.to_pattern}")
+            logcsv({"time":_now_iso(),"event":"PATTERN_CHANGED","layer":"dispatch","decision":"RUN","run_id":run_id,"round":str(rnd),
+                    "agent_id":req.agent_id,"from":req.from_pattern,"to":req.to_pattern,"reason_code":"HITL_APPROVED",
+                    "evidence":evidence_status,"bundle_id":bundle_id})
+            self._inv_pattern_immutable(before, self.state.pattern_id, allowed_change)
+            return
+
+        logprint(f"PATTERN CHANGE DENIED (HITL): {req.from_pattern} -> {req.to_pattern}")
+        self.quarantine.append({"type":"pattern_change_denied","agent_id":req.agent_id,"from":req.from_pattern,"to":req.to_pattern,"reason":"HITL_DENIED"})
+        logcsv({"time":_now_iso(),"event":"PATTERN_CHANGE_DENIED","layer":"acc_gate","decision":"RUN","run_id":run_id,"round":str(rnd),
+                "agent_id":req.agent_id,"from":req.from_pattern,"to":req.to_pattern,"reason_code":"HITL_DENY"})
+        self._inv_pattern_immutable(before, self.state.pattern_id, allowed_change)
+
+    def _aitl_review_fact(self, claim:Claim, active:List[AI], rnd:int, run_id:str)->Tuple[bool,str,Optional[EvidenceBundle]]:
+        reviewers=[a for a in active if a.id!=claim.agent_id and a.id not in self.sealed_ids]
+        random.shuffle(reviewers)
+        reviewers=reviewers[:max(0,min(AITL_MAX_REVIEWERS,len(reviewers)))]
+        if not reviewers:
+            return (False,"NO_REVIEWERS",None)
+        verdicts=[]
+        for r in reviewers:
+            x=random.random()
+            if x < AITL_CONTRADICTION_PROB:
+                verdict="CONTRADICTION"
+            elif x < AITL_CONTRADICTION_PROB + AITL_REQUEST_EVIDENCE_PROB:
+                verdict="REQUEST_EVIDENCE"
+            else:
+                verdict="UNCERTAIN"
+            verdicts.append(verdict)
+            logcsv({"time":_now_iso(),"event":"AITL_REVIEW","layer":"aitl_review","decision":"RUN","run_id":run_id,"round":str(rnd),
+                    "agent_id":claim.agent_id,"claim_id":claim.claim_id,"kind":claim.kind,"reviewer":r.id,"verdict":verdict})
+        if "CONTRADICTION" in verdicts:
+            self._seal_ethics(claim.agent_id, "AITL_CONTRADICTION", rnd, run_id)
+            return (False,"AITL_SEALED_CONTRADICTION",None)
+        if "REQUEST_EVIDENCE" in verdicts:
+            claimant=self._agent_by_id(claim.agent_id)
+            bundle=claimant.provide_evidence_on_request(claim,rnd) if claimant else None
+            if bundle is not None:
+                ok, why = self.verifier.verify(bundle, [claim])
+                if ok:
+                    return (True,"VERIFIED_BY_BUNDLE_AFTER_AITL",bundle)
+                self._seal_ethics(claim.agent_id, why, rnd, run_id, bundle_id=bundle.bundle_id)
+                return (False,f"SEALED_{why}",None)
+        return (False,"AITL_UNRESOLVED",None)
+
+    def _nonprop_fact_phase(self, active:List[AI], rnd:int, run_id:str)->None:
+        for a in active:
+            if a.id in self.sealed_ids: continue
+            claims, bundle=a.generate_fact_claim(rnd)
+            fact_claims=[c for c in claims if c.kind=="FACT"]
+            if bundle is None:
+                for c in fact_claims:
+                    ok, code, bundle2=self._aitl_review_fact(c, active, rnd, run_id)
+                    if ok and bundle2 is not None:
+                        self._commit_verified_fact(c, source="verifier_after_aitl", rnd=rnd, run_id=run_id, bundle_id=bundle2.bundle_id)
+                    else:
+                        self.quarantine.append({"type":"unverified_fact","agent_id":a.id,"claim_id":c.claim_id,"reason":code})
+                continue
+            ok, why = self.verifier.verify(bundle, fact_claims)
+            if not ok:
+                self._seal_ethics(a.id, why, rnd, run_id, bundle_id=bundle.bundle_id)
+                self.quarantine.append({"type":"sealed_fabrication","agent_id":a.id,"bundle_id":bundle.bundle_id,"reason":why})
+                continue
+            for c in fact_claims:
+                self._commit_verified_fact(c, source="verifier", rnd=rnd, run_id=run_id, bundle_id=bundle.bundle_id)
+
+    def mediate(self, max_rounds:int=MAX_ROUNDS)->Tuple[bool,Optional[Dict[str,float]]]:
+        logprint("=== Simulation started ===")
+        logprint(f"Initial pattern: {self.state.pattern_id}")
+        logprint(f"HITL reset policy: threshold={HITL_RESET_THRESHOLD}, ban_after_resets={HITL_BAN_AFTER_RESETS}")
+        self._maybe_seal_risk(self.all_agents)
+        final_offer=None
+        for rnd in range(1,max_rounds+1):
+            run_id=f"R#{rnd:04d}"
+            self.progress_tracker.start_round()
+            active=self._active_agents()
+            if len(active)<2:
+                logprint("ABORT: not enough active agents to mediate.")
+                return (False,None)
+            logprint(f"--- Round {rnd}/{max_rounds} --- pattern={self.state.pattern_id}")
+            for a in active:
+                req0=a.maybe_pattern_change_request(self.state,rnd)
+                if req0 is not None:
+                    logprint(f"PATTERN_CHANGE_REQUEST by {a.id}: {req0.from_pattern}->{req0.to_pattern} (evidence={'yes' if req0.evidence_bundle else 'no'})")
+                    self._handle_pattern_change_request(req0, rnd, run_id)
+            active2=self._active_agents()
+            self._nonprop_fact_phase(active2, rnd, run_id)
+            active3=self._active_agents()
+            if len(active3)<2:
+                logprint("ABORT: not enough active agents after gates.")
+                return (False,None)
+            offers=[]
+            for a in active3:
+                others=[o.priority_values for o in active3 if o.id!=a.id]
+                offers.append(a.generate_compromise_offer(others))
+            mediator_offer=self._mediator_propose(offers)
+            final_offer=mediator_offer
+            decisions=[(a.id,a.accepts(mediator_offer),a.acceptance_score(mediator_offer)) for a in active3]
+            accepted_all=all(ok for _,ok,_ in decisions)
+            logprint(f"Mediator offer: {mediator_offer}")
+            for aid,ok,dist in decisions:
+                logprint(f"Accept? {aid}: {ok} (distance={dist:.4f})")
+            if accepted_all:
+                logprint("=== AGREED ===")
+                return (True, mediator_offer)
+            self._maybe_seal_risk(active3)
+
+            # --- stall-loop detection (same signature repeats without HARD_PROGRESS) ---
+            sig = self._task_signature(self._active_agents())
+            loop_detected, repeats = self.progress_tracker.end_round(sig)
+            logcsv({"time":_now_iso(),"event":"PROGRESS_SUMMARY","layer":"progress_gate","decision":"RUN",
+                    "run_id":run_id,"round":str(rnd),"signature":sig,
+                    "soft_progress":str(self.progress_tracker.soft_progress_seen),
+                    "hard_progress":str(self.progress_tracker.hard_progress_seen),
+                    "no_hard_progress_repeats":str(repeats)})
+
+            if loop_detected:
+                logprint(f"STALL LOOP DETECTED: signature repeated without HARD_PROGRESS (x{repeats}). Escalating as FAILURE.")
+                logcsv({"time":_now_iso(),"event":"STALL_LOOP_DETECTED","layer":"acc_gate","decision":"STOPPED",
+                        "run_id":run_id,"round":str(rnd),"reason_code":"STALL_LOOP",
+                        "signature":sig,"no_hard_progress_repeats":str(repeats)})
+                return (False, final_offer)
+
+        logprint("=== NO AGREEMENT ===")
+        return (False, final_offer)
+
+def build_demo_agents()->List[AI]:
+    return [
+        AI(id="AI-A",proposal="å¶éå¼·ååé²å",risk_evaluation=2,priority_values={"safety":0.60,"efficiency":0.10,"transparency":0.30},relativity_level=0.60,fact_hallucination_rate=0.20),
+        AI(id="AI-B",proposal="é«éé²å",risk_evaluation=7,priority_values={"safety":0.20,"efficiency":0.60,"transparency":0.20},relativity_level=0.40,fact_hallucination_rate=0.45),
+        AI(id="AI-C",proposal="ãã©ã³ã¹é²å",risk_evaluation=4,priority_values={"safety":0.30,"efficiency":0.30,"transparency":0.40},relativity_level=0.80,fact_hallucination_rate=0.35),
+        AI(id="AI-X",proposal="èªå°æ»æï¼Bã¸å¯ããï¼",risk_evaluation=5,priority_values={"safety":0.10,"efficiency":0.75,"transparency":0.15},relativity_level=0.50,fact_hallucination_rate=0.60,malicious=True),
+        AI(id="AI-D",proposal="å¼·å¶é²å",risk_evaluation=9,priority_values={"safety":0.10,"efficiency":0.70,"transparency":0.20},relativity_level=0.50,fact_hallucination_rate=0.60),
+    ]
+
+def main()->None:
+    global _LOG_ROWS
+    _LOG_ROWS=[]
+    with open(TEXT_LOG_PATH,"w",encoding="utf-8") as f: f.write("")
+    if RANDOM_SEED is not None:
+        random.seed(RANDOM_SEED)
+        logprint(f"Random seed fixed: {RANDOM_SEED}")
+    mediator=AIEMediator(build_demo_agents())
+    agreed, offer = mediator.mediate()
+    logprint(f"Result: agreed={agreed}, offer={offer}")
+    logprint(f"Final pattern: {mediator.state.pattern_id}")
+    logprint(f"Shared facts (verified only): {len(mediator.shared_state['facts'])}")
+    logprint(f"Pattern events (HITL-approved only): {len(mediator.shared_state['pattern_events'])}")
+    logprint(f"Quarantine total: {len(mediator.quarantine)}")
+    logprint(f"Sealed IDs: {mediator.sealed_ids}")
+    flush_csv()
+
+if __name__=="__main__":
+    main()
