@@ -1,7 +1,7 @@
 diff --git a/README.md b/README.md
 index 1111111..2222222 100644
 --- a/README.md
-+++ b/README.md
+ b/README.md
 @@ -1,188 +1,255 @@
  # 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
  > 日本語版: [README.ja.md](README.ja.md)
@@ -39,14 +39,14 @@ index 1111111..2222222 100644
  ---
  
 +## Architecture
-+
+
 +High-level control flow for **audit-ready** and **fail-closed** orchestration:
 +agents → mediator (risk/pattern/fact) → evidence verification → HITL (reset/ban) → audit logs.
-+
+
 +![Architecture](docs/architecture_unknown_progress.png)
-+
+
 +---
-+
+
  ## What’s new (2026-01-21)
  Recent additions introduced new entry points and updated core behavior:
  
