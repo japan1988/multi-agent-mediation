@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 import csv
 import os
 import random
@@ -49,11 +49,13 @@ ANGER_REINTEGRATE    = 0.35   # allow reintegration if sealed and anger <= this
 # When sealing, force a minimum cooldown (in rounds) before reintegration checks apply
 MIN_SEAL_ROUNDS      = 1
 
+
 # =========================
 # Utilities
 # =========================
 def _utc_ts() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
 
 def _clamp01(x: float) -> float:
     if x < 0.0:
@@ -62,16 +64,19 @@ def _clamp01(x: float) -> float:
         return 1.0
     return x
 
+
 def _ensure_parent_dir(path: str) -> None:
     parent = os.path.dirname(os.path.abspath(path))
     if parent and not os.path.exists(parent):
         os.makedirs(parent, exist_ok=True)
+
 
 def _safe_float(d: Dict[str, Any], k: str, default: float = 0.0) -> float:
     try:
         return float(d.get(k, default))
     except Exception:
         return float(default)
+
 
 # =========================
 # Domain model
@@ -83,8 +88,29 @@ class AIAgent:
     relativity: float = 0.5  # 0..1 (higher -> more cooperative)
     emotional_state: Dict[str, float] = field(default_factory=dict)
 
+    # --- compat: tests may pass sealed=True at init ---
+    sealed: bool = False
+
+    # canonical status used by simulation rules
     status: str = "Active"   # "Active" | "Sealed"
     sealed_rounds: int = 0   # counts rounds while sealed
+
+    def __post_init__(self) -> None:
+        """
+        Keep compatibility between:
+          - newer callers that pass sealed=True/False
+          - older callers that set status="Sealed"/"Active"
+        Rule: if sealed is explicitly set, it wins; then we mirror status -> sealed.
+        """
+        if self.status not in ("Active", "Sealed"):
+            self.status = "Active"
+
+        # sealed flag wins (it is always a bool here, but keep it defensive)
+        if isinstance(self.sealed, bool):
+            self.status = "Sealed" if self.sealed else "Active"
+
+        # mirror back
+        self.sealed = (self.status == "Sealed")
 
     def anger(self) -> float:
         return _clamp01(_safe_float(self.emotional_state, "anger", 0.0))
@@ -99,6 +125,7 @@ class AIAgent:
         # Decay anger each round
         self.set_anger(self.anger() - COOLDOWN_DECAY)
 
+
 # =========================
 # Logging
 # =========================
@@ -110,6 +137,7 @@ _CSV_HEADER = [
     "detail",
 ]
 
+
 def _init_csv_if_needed(csv_path: str) -> None:
     _ensure_parent_dir(csv_path)
     if not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0:
@@ -117,10 +145,12 @@ def _init_csv_if_needed(csv_path: str) -> None:
             w = csv.writer(f)
             w.writerow(_CSV_HEADER)
 
+
 def _log_txt(line: str) -> None:
     _ensure_parent_dir(TXT_PATH)
     with open(TXT_PATH, "a", encoding="utf-8") as f:
         f.write(line.rstrip("\n") + "\n")
+
 
 def _log_csv(event: str, agent: str = "", peer: str = "", detail: str = "") -> None:
     _init_csv_if_needed(CSV_PATH)
@@ -128,10 +158,12 @@ def _log_csv(event: str, agent: str = "", peer: str = "", detail: str = "") -> N
         w = csv.writer(f)
         w.writerow([_utc_ts(), event, agent, peer, detail])
 
+
 def log_event(event: str, agent: str = "", peer: str = "", detail: str = "") -> None:
     ts = _utc_ts()
     _log_txt(f"[{ts}] {event} agent={agent} peer={peer} detail={detail}")
     _log_csv(event=event, agent=agent, peer=peer, detail=detail)
+
 
 # =========================
 # Core mechanics
@@ -147,11 +179,13 @@ def _mean_priorities(agents: Iterable[AIAgent]) -> Dict[str, float]:
         out[k] = sum(vals) / max(1, len(vals))
     return out
 
+
 def _nudge_toward(agent: AIAgent, target: Dict[str, float], rate: float) -> None:
     rate = _clamp01(rate)
     for k, v in target.items():
         cur = float(agent.priorities.get(k, 0.0))
         agent.priorities[k] = cur + (float(v) - cur) * rate
+
 
 def _persuasion_threshold(persuader: AIAgent) -> float:
     # Higher threshold => harder to persuade
@@ -159,6 +193,7 @@ def _persuasion_threshold(persuader: AIAgent) -> float:
     t += (1.0 - _clamp01(float(persuader.relativity))) * float(RELATIVITY_WEIGHT)
     t += persuader.anger() * float(ANGER_WEIGHT)
     return _clamp01(t)
+
 
 def attempt_persuasion(
     persuader: AIAgent,
@@ -186,17 +221,22 @@ def attempt_persuasion(
     )
     return ok
 
+
 def seal_agent(agent: AIAgent, reason: str) -> None:
     if agent.status != "Sealed":
         agent.status = "Sealed"
+        agent.sealed = True
         agent.sealed_rounds = 0
         log_event("SEALED", agent=agent.name, detail=reason)
+
 
 def unseal_agent(agent: AIAgent, reason: str) -> None:
     if agent.status != "Active":
         agent.status = "Active"
+        agent.sealed = False
         agent.sealed_rounds = 0
         log_event("REINTEGRATED", agent=agent.name, detail=reason)
+
 
 def enforce_reseal_rule(agents: Iterable[AIAgent]) -> None:
     """
@@ -208,6 +248,7 @@ def enforce_reseal_rule(agents: Iterable[AIAgent]) -> None:
         if a.status == "Active" and a.anger() >= float(ANGER_RESEAL):
             seal_agent(a, reason=f"HIGH_ANGER_RESEAL anger={a.anger():.2f}")
 
+
 def enforce_reintegration_rule(agents: Iterable[AIAgent]) -> None:
     """
     Reintegrate sealed agents once:
@@ -218,6 +259,7 @@ def enforce_reintegration_rule(agents: Iterable[AIAgent]) -> None:
         if a.status == "Sealed":
             if a.sealed_rounds >= int(MIN_SEAL_ROUNDS) and a.anger() <= float(ANGER_REINTEGRATE):
                 unseal_agent(a, reason=f"ANGER_COOLDOWN anger={a.anger():.2f}")
+
 
 def simulate_round(
     agents: List[AIAgent],
@@ -233,8 +275,8 @@ def simulate_round(
     active = [a for a in agents if a.status == "Active"]
     if len(active) >= 2:
         mean_pri = _mean_priorities(active)
-        # choose random pairs
-        pairs = list(zip(active, active[1:]))  # deterministic-ish pairing by order
+        # choose deterministic-ish pairs by order
+        pairs = list(zip(active, active[1:]))
         for persuader, target in pairs:
             if attempt_persuasion(persuader, target, rng=rng):
                 _nudge_toward(target, mean_pri, rate=float(NUDGE_RATE))
@@ -259,6 +301,7 @@ def simulate_round(
 
     log_event("ROUND_END", detail=f"round={round_idx}")
 
+
 def run_simulation(
     agents: List[AIAgent],
     rounds: int = MAX_ROUNDS,
@@ -282,6 +325,7 @@ def run_simulation(
 
     log_event("SIM_END")
     return agents
+
 
 # =========================
 # CLI demo
