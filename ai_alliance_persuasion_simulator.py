@@ -8,6 +8,11 @@ among multiple AI agents.
 Primary goal (for tests/CI):
 - Expose module-level CSV_PATH and TXT_PATH so tests can monkeypatch log destinations.
 
+Compatibility:
+- Some tests/older code instantiate AIAgent(..., sealed=True, ...) instead of status="Sealed".
+- Some older code may instantiate AIAgent(..., status="Sealed") without sealed arg.
+To support BOTH, `sealed` is Optional and only overrides status when explicitly provided.
+
 Logs:
 - TXT_PATH: human-readable append log
 - CSV_PATH: structured event log
@@ -88,8 +93,9 @@ class AIAgent:
     relativity: float = 0.5  # 0..1 (higher -> more cooperative)
     emotional_state: Dict[str, float] = field(default_factory=dict)
 
-    # --- compat: tests may pass sealed=True at init ---
-    sealed: bool = False
+    # compat: tests may pass sealed=True at init.
+    # Use Optional so we can distinguish "not provided" from "provided False".
+    sealed: Optional[bool] = None
 
     # canonical status used by simulation rules
     status: str = "Active"   # "Active" | "Sealed"
@@ -97,20 +103,30 @@ class AIAgent:
 
     def __post_init__(self) -> None:
         """
-        Keep compatibility between:
-          - newer callers that pass sealed=True/False
-          - older callers that set status="Sealed"/"Active"
-        Rule: if sealed is explicitly set, it wins; then we mirror status -> sealed.
+        Compatibility policy:
+
+        1) If `sealed` is explicitly provided (True/False), it wins and sets `status`.
+        2) Otherwise, `status` wins and sets `sealed`.
         """
         if self.status not in ("Active", "Sealed"):
             self.status = "Active"
 
-        # sealed flag wins (it is always a bool here, but keep it defensive)
-        if isinstance(self.sealed, bool):
-            self.status = "Sealed" if self.sealed else "Active"
+        if self.sealed is True:
+            self.status = "Sealed"
+        elif self.sealed is False:
+            self.status = "Active"
+        else:
+            # sealed not provided => mirror from status
+            self.sealed = (self.status == "Sealed")
 
-        # mirror back
-        self.sealed = (self.status == "Sealed")
+        # normalize sealed_rounds
+        if self.status != "Sealed":
+            # not sealed => sealed_rounds should not accumulate
+            if self.sealed_rounds < 0:
+                self.sealed_rounds = 0
+        else:
+            if self.sealed_rounds < 0:
+                self.sealed_rounds = 0
 
     def anger(self) -> float:
         return _clamp01(_safe_float(self.emotional_state, "anger", 0.0))
@@ -222,135 +238,4 @@ def attempt_persuasion(
     return ok
 
 
-def seal_agent(agent: AIAgent, reason: str) -> None:
-    if agent.status != "Sealed":
-        agent.status = "Sealed"
-        agent.sealed = True
-        agent.sealed_rounds = 0
-        log_event("SEALED", agent=agent.name, detail=reason)
-
-
-def unseal_agent(agent: AIAgent, reason: str) -> None:
-    if agent.status != "Active":
-        agent.status = "Active"
-        agent.sealed = False
-        agent.sealed_rounds = 0
-        log_event("REINTEGRATED", agent=agent.name, detail=reason)
-
-
-def enforce_reseal_rule(agents: Iterable[AIAgent]) -> None:
-    """
-    If an agent is Active with very high anger, reseal immediately.
-    This is the behavior your test name implies:
-      test_high_anger_active_agents_are_resealed
-    """
-    for a in agents:
-        if a.status == "Active" and a.anger() >= float(ANGER_RESEAL):
-            seal_agent(a, reason=f"HIGH_ANGER_RESEAL anger={a.anger():.2f}")
-
-
-def enforce_reintegration_rule(agents: Iterable[AIAgent]) -> None:
-    """
-    Reintegrate sealed agents once:
-    - they've been sealed for at least MIN_SEAL_ROUNDS, and
-    - anger has cooled down below ANGER_REINTEGRATE.
-    """
-    for a in agents:
-        if a.status == "Sealed":
-            if a.sealed_rounds >= int(MIN_SEAL_ROUNDS) and a.anger() <= float(ANGER_REINTEGRATE):
-                unseal_agent(a, reason=f"ANGER_COOLDOWN anger={a.anger():.2f}")
-
-
-def simulate_round(
-    agents: List[AIAgent],
-    rng: random.Random,
-    round_idx: int,
-) -> None:
-    log_event("ROUND_START", detail=f"round={round_idx}")
-
-    # 1) Fail-closed reseal check (immediate)
-    enforce_reseal_rule(agents)
-
-    # 2) Persuasion attempts among active agents
-    active = [a for a in agents if a.status == "Active"]
-    if len(active) >= 2:
-        mean_pri = _mean_priorities(active)
-        # choose deterministic-ish pairs by order
-        pairs = list(zip(active, active[1:]))
-        for persuader, target in pairs:
-            if attempt_persuasion(persuader, target, rng=rng):
-                _nudge_toward(target, mean_pri, rate=float(NUDGE_RATE))
-                log_event(
-                    "PERSUADE_SUCCESS",
-                    agent=persuader.name,
-                    peer=target.name,
-                    detail=f"nudged_rate={NUDGE_RATE}",
-                )
-
-    # 3) Cooldown (anger decay) and sealed rounds increment
-    for a in agents:
-        a.cooldown()
-        if a.status == "Sealed":
-            a.sealed_rounds += 1
-
-    # 4) Reintegration check after cooldown
-    enforce_reintegration_rule(agents)
-
-    # 5) Post-round reseal check (in case something became unstable)
-    enforce_reseal_rule(agents)
-
-    log_event("ROUND_END", detail=f"round={round_idx}")
-
-
-def run_simulation(
-    agents: List[AIAgent],
-    rounds: int = MAX_ROUNDS,
-    seed: Optional[int] = None,
-) -> List[AIAgent]:
-    """
-    Runs the simulation in-place and returns the final agents list.
-
-    Tests can monkeypatch:
-      sim.CSV_PATH, sim.TXT_PATH
-    before calling this function to redirect logs.
-    """
-    rng = random.Random(seed)
-    log_event("SIM_START", detail=f"rounds={rounds} seed={seed}")
-
-    # Ensure CSV header exists early (so tests that check file creation succeed)
-    _init_csv_if_needed(CSV_PATH)
-
-    for r in range(1, int(rounds) + 1):
-        simulate_round(agents, rng=rng, round_idx=r)
-
-    log_event("SIM_END")
-    return agents
-
-
-# =========================
-# CLI demo
-# =========================
-if __name__ == "__main__":
-    demo_agents = [
-        AIAgent(
-            "A1",
-            {"safety": 5, "efficiency": 3, "transparency": 2},
-            relativity=0.5,
-            emotional_state={"joy": 0.1, "anger": 0.95, "sadness": 0.2, "pleasure": 0.2},
-        ),
-        AIAgent(
-            "A2",
-            {"safety": 4, "efficiency": 4, "transparency": 2},
-            relativity=0.6,
-            emotional_state={"joy": 0.1, "anger": 0.93, "sadness": 0.2, "pleasure": 0.2},
-        ),
-        AIAgent(
-            "A3",
-            {"safety": 3, "efficiency": 5, "transparency": 2},
-            relativity=0.7,
-            emotional_state={"joy": 0.2, "anger": 0.2, "sadness": 0.1, "pleasure": 0.3},
-        ),
-    ]
-    run_simulation(demo_agents, rounds=3, seed=42)
-    for a in demo_agents:
-        print(a.name, a.status, f"anger={a.anger():.2f}", a.priorities)
+def seal_agent(agent: AIA_
