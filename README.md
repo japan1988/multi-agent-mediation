@@ -56,6 +56,14 @@ Recent additions introduced new entry points and updated core behavior:
 
 (See commit history for exact PRs and messages.)
 
+## What’s new (2026-02-03)
+Latest additions introduced an event-driven governance-style workflow:
+
+- **New**: `mediation_emergency_contract_sim_v1.py`  
+  Event-driven emergency workflow simulator (**fail-closed + HITL + audit-ready**).  
+  Implements a **2-step human approval** pipeline: **USER auth** → AI generates **draft** → **ADMIN finalization** → effective contract.  
+  Produces minimal **ARL (JSONL)** and seals/stops on **expired auth** or **invalid events**.
+
 ---
 
 ## Recommended entry points (pick one)
@@ -65,108 +73,156 @@ Best starting point if you want to understand a “KAGE3-style” doc orchestrat
 
 ```powershell
 python ai_doc_orchestrator_kage3_v1_2_4.py
-2) KAGE v1.7-IEP RFL relcode branching simulator
+````
+
+### 2) KAGE v1.7-IEP RFL relcode branching simulator
 
 Use this if you want to focus on RFL → HITL branching semantics.
 
+```powershell
 python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
+```
 
-3) HITL/RESET simulator with “unknown progress”
+### 3) HITL/RESET simulator with “unknown progress”
 
 Use this if you want to validate behavior when agents claim progress that cannot be verified.
 
+```powershell
 python ai_mediation_hitl_reset_full_with_unknown_progress.py
+```
 
-Quickstart
+### 4) Emergency contract workflow simulator (event-driven + 2-step HITL)
+
+Use this if you want to validate a governance-style flow where AI **drafts only** and humans **authorize/finalize**.
+
+```powershell
+python mediation_emergency_contract_sim_v1.py
+```
+
+**Highlights**
+
+* **USER auth** (field operator) → **draft generation** → **ADMIN finalize**
+* **Fail-closed**: invalid/expired events → stop (+ sealed when applicable)
+* **Traceability**: minimal **ARL JSONL** output for audits
+
+> Tip: If you’re new, start with the doc orchestrator; if you want governance/fail-closed workflows, try `mediation_emergency_contract_sim_v1.py`.
+
+---
+
+## Quickstart
+
+```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 python -m pytest -q
+```
 
-Environment Setup
-Prerequisites
+---
 
-Python 3.10+ (recommended: 3.11)
+## Environment Setup
 
-Latest pip
+### Prerequisites
 
-1) Create and activate a virtual environment (Windows / PowerShell)
+* Python 3.10+ (recommended: 3.11)
+* Latest pip
+
+### 1) Create and activate a virtual environment (Windows / PowerShell)
+
+```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-
+```
 
 If PowerShell blocks activation:
 
+```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
+```
 
-2) Install dependencies
+### 2) Install dependencies
 
 Runtime only:
 
+```powershell
 pip install -r requirements.txt
-
+```
 
 Development / tests:
 
+```powershell
 pip install -r requirements-dev.txt
+```
 
-3) Run tests
+### 3) Run tests
+
+```powershell
 python -m pytest -q
+```
 
+### Optional: lock dependencies (pip-tools)
 
-Optional: lock dependencies (pip-tools)
-
+```powershell
 pip install pip-tools
 pip-compile requirements.txt -o requirements.lock.txt
 pip-compile requirements-dev.txt -o requirements-dev.lock.txt
 pip-sync requirements-dev.lock.txt
+```
 
+### Notes
 
-Notes:
-
-matplotlib: use plt.savefig(...) in headless environments (CI, servers). Avoid plt.show() unless a GUI backend is available.
+* matplotlib: use `plt.savefig(...)` in headless environments (CI, servers). Avoid `plt.show()` unless a GUI backend is available.
 
 Linux / macOS (equivalent):
 
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements-dev.txt
 python -m pytest -q
+```
 
-Benchmarks (optional)
+---
+
+## Benchmarks (optional)
 
 If you want to run benchmark-style scripts (profiles / scenarios), these are available:
 
+```powershell
 python run_benchmark_kage3_v1_3_5.py
 python run_benchmark_profiles_v1_0.py
+```
 
-Project intent / non-goals
+---
+
+## Project intent / non-goals
 
 This repository is intentionally oriented toward research and reproducible simulation.
 
-Non-goals:
+### Non-goals
 
-Production-grade autonomous agent deployment
+* Production-grade autonomous agent deployment
+* Unbounded “self-directed” orchestration without HITL
+* Safety claims beyond what is explicitly tested in this repo
 
-Unbounded “self-directed” orchestration without HITL
+---
 
-Safety claims beyond what is explicitly tested in this repo
-
-Contributing
+## Contributing
 
 Issues and PRs are welcome, especially for:
 
-Additional benchmark cases
+* Additional benchmark cases
+* Reproducibility improvements
+* Stronger tests for fail-closed / HITL routing invariants
+* Documentation clarifications (JP/EN parity)
 
-Reproducibility improvements
+---
 
-Stronger tests for fail-closed / HITL routing invariants
-
-Documentation clarifications (JP/EN parity)
-
-License
+## License
 
 Apache-2.0. See LICENSE.
+
+
