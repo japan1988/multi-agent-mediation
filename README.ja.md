@@ -125,24 +125,3 @@ HITL は曖昧・高リスク時に使用します。責任の所在は監査ロ
 python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_governance_mediation_sim.py
-````
-
-### Unknown progress + HITL/RESET
-
-```bash
-python ai_mediation_hitl_reset_full_with_unknown_progress.py
-```
-
-### KAGE v1.7-IEP: RFL relcode branching（RFL -> HITL, non-sealing）
-
-```bash
-python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
-```
-
-### Doc orchestrator（KAGE3-style）
-
-```bash
-python ai_doc_orchestrator_kage3_v1_2_4.py
-
-
-
