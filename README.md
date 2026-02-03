@@ -56,13 +56,21 @@ Recent additions introduced new entry points and updated core behavior:
 
 (See commit history for exact PRs and messages.)
 
+---
+
 ## What’s new (2026-02-03)
 Latest additions introduced an event-driven governance-style workflow:
 
 - **New**: `mediation_emergency_contract_sim_v1.py`  
-  Event-driven emergency workflow simulator (**fail-closed + HITL + audit-ready**).  
-  Implements a **2-step human approval** pipeline: **USER auth** → AI generates **draft** → **ADMIN finalization** → effective contract.  
-  Produces minimal **ARL (JSONL)** and seals/stops on **expired auth** or **invalid events**.
+  Event-driven emergency workflow simulator (fail-closed + HITL + audit-ready).  
+  Implements a 2-step human approval pipeline: USER auth → AI generates draft → ADMIN finalization → effective contract.  
+  Produces minimal ARL (JSONL) and seals/stops on expired auth or invalid events.
+
+- **New**: `copilot_mediation_min.py`  
+  Copilot Python SDK minimal example (tool call + local HITL + fail-closed routing + ARL minimal log).
+
+- **Updated**: `.github/workflows/python-app.yml`  
+  CI workflow hardened (pytest + ruff + yamllint) with concurrency and artifact upload.
 
 ---
 
@@ -73,156 +81,168 @@ Best starting point if you want to understand a “KAGE3-style” doc orchestrat
 
 ```powershell
 python ai_doc_orchestrator_kage3_v1_2_4.py
-````
-
-### 2) KAGE v1.7-IEP RFL relcode branching simulator
-
+2) KAGE v1.7-IEP RFL relcode branching simulator
 Use this if you want to focus on RFL → HITL branching semantics.
 
-```powershell
+powershell
+コードをコピーする
 python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
-```
-
-### 3) HITL/RESET simulator with “unknown progress”
-
+3) HITL/RESET simulator with “unknown progress”
 Use this if you want to validate behavior when agents claim progress that cannot be verified.
 
-```powershell
+powershell
+コードをコピーする
+# NOTE: if the file exists without ".py", run it as-is or rename to .py for consistency.
 python ai_mediation_hitl_reset_full_with_unknown_progress.py
-```
+4) Emergency contract workflow simulator (event-driven + 2-step HITL)
+Use this if you want to validate a governance-style flow where AI drafts only and humans authorize/finalize.
 
-### 4) Emergency contract workflow simulator (event-driven + 2-step HITL)
-
-Use this if you want to validate a governance-style flow where AI **drafts only** and humans **authorize/finalize**.
-
-```powershell
+powershell
+コードをコピーする
 python mediation_emergency_contract_sim_v1.py
-```
+Highlights
 
-**Highlights**
+USER auth (field operator) → draft generation → ADMIN finalize
 
-* **USER auth** (field operator) → **draft generation** → **ADMIN finalize**
-* **Fail-closed**: invalid/expired events → stop (+ sealed when applicable)
-* **Traceability**: minimal **ARL JSONL** output for audits
+Fail-closed: invalid/expired events → stop (+ sealed when applicable)
 
-> Tip: If you’re new, start with the doc orchestrator; if you want governance/fail-closed workflows, try `mediation_emergency_contract_sim_v1.py`.
+Traceability: minimal ARL JSONL output for audits
 
----
+Tip: If you’re new, start with the doc orchestrator; if you want governance/fail-closed workflows, try mediation_emergency_contract_sim_v1.py.
 
-## Quickstart
+Repository layout (quick file map)
+This repo is script-heavy. Use this map to find the right entry point fast.
 
-```powershell
+Core / implementation references
+mediation_core/
+Core dataclasses / shared models used by simulators and orchestrators.
+
+ai_doc_orchestrator_kage3_v1_2_4.py
+KAGE3-style doc orchestrator reference (audit-ready + post-HITL semantics).
+
+ai_doc_orchestrator_kage3_v1_3_5.py
+Newer doc orchestrator variant; keep v1_2_4 as a stable reference if you prefer minimal surface.
+
+HITL / fail-closed simulators (bench-style)
+ai_mediation_hitl_reset_full_with_unknown_progress (or .py)
+Unknown-progress + HITL/RESET simulator (claims of progress that cannot be verified).
+
+ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
+KAGE v1.7-IEP aligned RFL relcode branching (RFL is non-sealing → HITL).
+
+Governance / event-driven workflow
+mediation_emergency_contract_sim_v1.py
+Event-driven emergency workflow: USER auth → AI drafts → ADMIN finalize → effective.
+Fail-closed on invalid/expired events; outputs minimal ARL (JSONL).
+
+Social / alliance dynamics simulator
+ai_alliance_persuasion_simulator.py
+Alliance/persuasion/sealing/cooldown/reintegration simulator.
+Exposes CSV_PATH / TXT_PATH for tests (monkeypatch-friendly).
+
+Copilot SDK minimal
+copilot_mediation_min.py
+Copilot Python SDK minimal working example + local HITL + ARL minimal log.
+
+Bench runners / scripts / tests / CI
+scripts/
+Helper CLIs / runners.
+
+benchmarks/
+Scenario runners (optional).
+
+tests/ and test_*.py
+Maintained test surface for CI.
+
+.github/workflows/python-app.yml
+CI workflow (pytest + ruff + yamllint).
+
+Quickstart
+powershell
+コードをコピーする
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
 python -m pytest -q
-```
+Environment Setup
+Prerequisites
+Python 3.10+ (recommended: 3.11)
 
----
+Latest pip
 
-## Environment Setup
-
-### Prerequisites
-
-* Python 3.10+ (recommended: 3.11)
-* Latest pip
-
-### 1) Create and activate a virtual environment (Windows / PowerShell)
-
-```powershell
+1) Create and activate a virtual environment (Windows / PowerShell)
+powershell
+コードをコピーする
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-```
-
 If PowerShell blocks activation:
 
-```powershell
+powershell
+コードをコピーする
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
-```
-
-### 2) Install dependencies
-
+2) Install dependencies
 Runtime only:
 
-```powershell
+powershell
+コードをコピーする
 pip install -r requirements.txt
-```
-
 Development / tests:
 
-```powershell
+powershell
+コードをコピーする
 pip install -r requirements-dev.txt
-```
-
-### 3) Run tests
-
-```powershell
+3) Run tests
+powershell
+コードをコピーする
 python -m pytest -q
-```
-
-### Optional: lock dependencies (pip-tools)
-
-```powershell
+Optional: lock dependencies (pip-tools)
+powershell
+コードをコピーする
 pip install pip-tools
 pip-compile requirements.txt -o requirements.lock.txt
 pip-compile requirements-dev.txt -o requirements-dev.lock.txt
 pip-sync requirements-dev.lock.txt
-```
-
-### Notes
-
-* matplotlib: use `plt.savefig(...)` in headless environments (CI, servers). Avoid `plt.show()` unless a GUI backend is available.
+Notes
+matplotlib: use plt.savefig(...) in headless environments (CI, servers). Avoid plt.show() unless a GUI backend is available.
 
 Linux / macOS (equivalent):
 
-```bash
+bash
+コードをコピーする
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements-dev.txt
 python -m pytest -q
-```
-
----
-
-## Benchmarks (optional)
-
+Benchmarks (optional)
 If you want to run benchmark-style scripts (profiles / scenarios), these are available:
 
-```powershell
+bash
+コードをコピーする
 python run_benchmark_kage3_v1_3_5.py
 python run_benchmark_profiles_v1_0.py
-```
-
----
-
-## Project intent / non-goals
-
+Project intent / non-goals
 This repository is intentionally oriented toward research and reproducible simulation.
 
-### Non-goals
+Non-goals
+Production-grade autonomous agent deployment
 
-* Production-grade autonomous agent deployment
-* Unbounded “self-directed” orchestration without HITL
-* Safety claims beyond what is explicitly tested in this repo
+Unbounded “self-directed” orchestration without HITL
 
----
+Safety claims beyond what is explicitly tested in this repo
 
-## Contributing
-
+Contributing
 Issues and PRs are welcome, especially for:
 
-* Additional benchmark cases
-* Reproducibility improvements
-* Stronger tests for fail-closed / HITL routing invariants
-* Documentation clarifications (JP/EN parity)
+Additional benchmark cases
 
----
+Reproducibility improvements
 
-## License
+Stronger tests for fail-closed / HITL routing invariants
 
+Documentation clarifications (JP/EN parity)
+
+License
 Apache-2.0. See LICENSE.
-
-
