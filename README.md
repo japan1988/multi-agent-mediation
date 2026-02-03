@@ -85,20 +85,17 @@ python ai_doc_orchestrator_kage3_v1_2_4.py
 Use this if you want to focus on RFL → HITL branching semantics.
 
 powershell
-コードをコピーする
 python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
 3) HITL/RESET simulator with “unknown progress”
 Use this if you want to validate behavior when agents claim progress that cannot be verified.
 
 powershell
-コードをコピーする
 # NOTE: if the file exists without ".py", run it as-is or rename to .py for consistency.
 python ai_mediation_hitl_reset_full_with_unknown_progress.py
 4) Emergency contract workflow simulator (event-driven + 2-step HITL)
 Use this if you want to validate a governance-style flow where AI drafts only and humans authorize/finalize.
 
 powershell
-コードをコピーする
 python mediation_emergency_contract_sim_v1.py
 Highlights
 
@@ -159,7 +156,6 @@ CI workflow (pytest + ruff + yamllint).
 
 Quickstart
 powershell
-コードをコピーする
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
@@ -172,34 +168,28 @@ Latest pip
 
 1) Create and activate a virtual environment (Windows / PowerShell)
 powershell
-コードをコピーする
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 If PowerShell blocks activation:
 
 powershell
-コードをコピーする
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 2) Install dependencies
 Runtime only:
 
 powershell
-コードをコピーする
 pip install -r requirements.txt
 Development / tests:
 
 powershell
-コードをコピーする
 pip install -r requirements-dev.txt
 3) Run tests
 powershell
-コードをコピーする
 python -m pytest -q
 Optional: lock dependencies (pip-tools)
 powershell
-コードをコピーする
 pip install pip-tools
 pip-compile requirements.txt -o requirements.lock.txt
 pip-compile requirements-dev.txt -o requirements-dev.lock.txt
@@ -210,7 +200,6 @@ matplotlib: use plt.savefig(...) in headless environments (CI, servers). Avoid p
 Linux / macOS (equivalent):
 
 bash
-コードをコピーする
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -220,7 +209,6 @@ Benchmarks (optional)
 If you want to run benchmark-style scripts (profiles / scenarios), these are available:
 
 bash
-コードをコピーする
 python run_benchmark_kage3_v1_3_5.py
 python run_benchmark_profiles_v1_0.py
 Project intent / non-goals
