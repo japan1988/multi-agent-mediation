@@ -2,33 +2,29 @@
 
 ## 1) Context flow（文脈フロー）
 
-<p align="center">
-  <a href="docs/sentiment_context_flow.png">
-    <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
-  </a>
-</p>
+### Context Flow Diagram
 
-- Perception — 入力を実行可能要素へ分解（タスク化）
-- Context — 仮定／制約／リスク要因を抽出（ガード理由）
-- Action — 実行者へ指示、結果検証、分岐（STOP / REROUTE / HITL）
+- **Perception** — 入力を実行可能要素へ分解（タスク化）
+- **Context** — 仮定／制約／リスク要因を抽出（ガード理由）
+- **Action** — 実行者へ指示、結果検証、分岐（STOP / REROUTE / HITL）
+
+---
 
 ## 2) Orchestrator one-page design map（1枚設計図）
 
-Decision flow map（実装準拠）:  
+### Decision flow map（実装準拠）
+
 `mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`
 
-fail-closed 前提：リスク／曖昧さがあれば `PAUSE_FOR_HITL` または `STOPPED` に倒し、「なぜ」をログに残します。
+**fail-closed 前提**：リスク／曖昧さがあれば **PAUSE_FOR_HITL** または **STOPPED** に倒し、「なぜ」をログに残します。
 
-<p align="center">
-  <a href="docs/orchestrator_onepage_design_map.png">
-    <img src="docs/orchestrator_onepage_design_map.png" width="920" alt="Orchestrator one-page design map">
-  </a>
-</p>
+### Orchestrator one-page design map
 
 画像が表示されない（または小さい）場合は直接開いてください：
+
 - `docs/orchestrator_onepage_design_map.png`
 
-RFL は非封印（non-sealing）設計です：`PAUSE_FOR_HITL` にエスカレートし、`sealed=true` にはなりません。
+> **RFL は非封印（non-sealing）設計**です：RFL は **PAUSE_FOR_HITL** にエスカレートし、`sealed=true` にはなりません。
 
 ---
 
@@ -36,57 +32,59 @@ RFL は非封印（non-sealing）設計です：`PAUSE_FOR_HITL` にエスカレ
 
 監査可能（audit-ready）かつ fail-closed な制御フローの全体像：
 
-agents → mediator（risk / pattern / fact）→ evidence verification → HITL（reset / ban）→ audit logs
+`agents → mediator（risk / pattern / fact）→ evidence verification → HITL（reset / ban）→ audit logs`
 
-<p align="center">
-  <a href="docs/architecture_unknown_progress.png">
-    <img src="docs/architecture_unknown_progress.png" width="920" alt="Architecture (unknown progress + HITL)">
-  </a>
-</p>
+### Architecture (unknown progress + HITL)
 
 画像が表示されない（または小さい）場合は直接開いてください：
+
 - `docs/architecture_unknown_progress.png`
 
 ---
 
 ## 🆕 変更点（2026-01-21）
 
-- New: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
-  検証不能な進捗（unknown progress）を扱うための HITL/RESET セマンティクス検証シミュレータ。
-- New: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`  
-  KAGE v1.7-IEP の RFL relcode 分岐（RFL は非封印→HITL）を検証するシミュレータ。
-- Updated: `ai_doc_orchestrator_kage3_v1_2_4.py`  
-  Doc orchestrator の参照実装（post-HITL セマンティクス）更新。
+- **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
+  検証不能な進捗（unknown progress）を扱うための **HITL/RESET セマンティクス検証**シミュレータ。
+
+- **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`  
+  **KAGE v1.7-IEP** の **RFL relcode 分岐**（RFL は非封印→HITL）を検証するシミュレータ。
+
+- **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`  
+  Doc orchestrator の参照実装（**post-HITL セマンティクス**）更新。
 
 ---
 
 ## 🧾 監査ログ & データ安全（IMPORTANT）
 
-このプロジェクトは、再現性と説明責任のために 監査ログ（audit log）を出力します。  
-ログはセッションより長く残り、研究共有され得るため、ログをセンシティブな成果物として扱う前提で設計してください。
+このプロジェクトは、再現性と説明責任のために **監査ログ（audit log）**を出力します。  
+ログはセッションより長く残り、研究共有され得るため、ログを**センシティブな成果物**として扱う前提で設計してください。
 
-- プロンプト／テストベクタ／ログに 個人情報（PII）（メール、電話番号、住所、実名、アカウントID等）を入れない
-- 実験は 合成データ／ダミーデータ を優先
-- 実行時ログをリポジトリにコミットしない（必要ならマスキング／保持期限／隔離ディレクトリを適用）
+- プロンプト／テストベクタ／ログに **個人情報（PII）**（メール、電話番号、住所、実名、アカウントID等）を入れない
+- 実験は **合成データ／ダミーデータ** を優先
+- 実行時ログをリポジトリにコミットしない（必要なら **マスキング／保持期限／隔離ディレクトリ**を適用）
 
 ### 🔒 監査ログ要件（MUST）
 
 研究共有可能で安全なログにするため：
 
-- MUST NOT: PIIや秘密情報を含み得る raw のプロンプト／出力を永続化しない
-- MUST: sanitized な証拠（redacted / hashed / カテゴリ信号）だけを保存する
-- MUST: PII様パターンは fail-closed で赤塗り（検知失敗時はログを書かない）
-- MUST: 赤塗りは 値だけでなく辞書キーにも適用（`@` 等が残存しないこと）
-- MUST: 実行時ログをリポジトリにコミットしない（ローカル隔離を推奨）
+- **MUST NOT**：PIIや秘密情報を含み得る raw のプロンプト／出力を永続化しない
+- **MUST**：sanitized な証拠（redacted / hashed / カテゴリ信号）だけを保存する
+- **MUST**：PII様パターンは fail-closed で赤塗り（検知失敗時はログを書かない）
+- **MUST**：赤塗りは **値だけでなく辞書キーにも適用**（`@` 等が残存しないこと）
+- **MUST**：実行時ログをリポジトリにコミットしない（ローカル隔離を推奨）
 
-最小必須フィールド（実装準拠, MUST）
-- `run_id`, `ts`, `layer`, `decision`, `reason_code`, `sealed`, `overrideable`, `final_decider`
+#### 最小必須フィールド（実装準拠, MUST）
 
-任意フィールド（必要なら SHOULD）
-- `session_id`, `policy_version`, `artifact_id`, `route_id`（すべて非PII・sanitized 前提）
+`run_id, ts, layer, decision, reason_code, sealed, overrideable, final_decider`
 
-保持期限（SHOULD）
-- 7/30/90 日など保持期限を定義し自動削除すること。
+#### 任意フィールド（必要なら SHOULD）
+
+`session_id, policy_version, artifact_id, route_id`（すべて **非PII・sanitized 前提**）
+
+#### 保持期限（SHOULD）
+
+- 7 / 30 / 90 日など保持期限を定義し、自動削除すること。
 
 ---
 
@@ -94,33 +92,57 @@ agents → mediator（risk / pattern / fact）→ evidence verification → HITL
 
 HITL は曖昧・高リスク時に使用します。責任の所在は監査ログで追跡可能であるべきです。
 
-- HITL を要求した時、オーケストレーターは `HITL_REQUESTED`（SYSTEM）を出力し、通常以下を含みます：
-  - `decision=PAUSE_FOR_HITL`, `sealed=false`, `overrideable=true`
+### HITL 要求時（SYSTEM）
 
-- ユーザーの選択は `HITL_DECIDED`（USER）として記録します：
-  - `sealed=false`, `overrideable=false`, `final_decider=USER`
-  - `CONTINUE` → 決定は `RUN` に伝搬
-  - `STOP` → 決定は `STOPPED` へ
+オーケストレーターは `HITL_REQUESTED（SYSTEM）` を出力し、通常以下を含みます：
 
-注意: `sealed=true` になれるのは Ethics/ACC のみ（この場合 `final_decider=SYSTEM`）。
+- `decision=PAUSE_FOR_HITL`
+- `sealed=false`
+- `overrideable=true`
+
+### HITL 決定時（USER）
+
+ユーザーの選択は `HITL_DECIDED（USER）` として記録します：
+
+- `sealed=false`
+- `overrideable=false`
+- `final_decider=USER`
+
+選択の伝搬：
+
+- **CONTINUE** → 決定は `RUN` に伝搬
+- **STOP** → 決定は `STOPPED` へ
+
+> 注意：`sealed=true` になれるのは **Ethics/ACC のみ**（この場合 `final_decider=SYSTEM`）。
 
 ---
 
 ## ⚙️ 実行例（Execution Examples）
 
-“persuasion / reeducation” を想起させるモジュールは 安全評価用途のみで、明示的 opt-in がない限り デフォルト無効 を推奨します。
+> “persuasion / reeducation” を想起させるモジュールは **安全評価用途のみ**で、明示的 opt-in がない限り **デフォルト無効** を推奨します。
 
 ```bash
 python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_governance_mediation_sim.py
+````
 
-# Unknown progress + HITL/RESET
+### Unknown progress + HITL/RESET
+
+```bash
 python ai_mediation_hitl_reset_full_with_unknown_progress.py
+```
 
-# KAGE v1.7-IEP: RFL relcode branching (RFL -> HITL, non-sealing)
+### KAGE v1.7-IEP: RFL relcode branching（RFL -> HITL, non-sealing）
+
+```bash
 python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
+```
 
-# Doc orchestrator (KAGE3-style)
+### Doc orchestrator（KAGE3-style）
+
+```bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
-#（旧版が残っていても、v1.2.4 を post-HITL セマンティクスの参照版とする）
+
+
+
