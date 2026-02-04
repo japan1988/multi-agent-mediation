@@ -55,6 +55,47 @@
 
 ---
 
+## 🆕 変更点（2026-02-03）
+
+イベント駆動の “ガバナンス型ワークフロー” を追加しました（fail-closed + HITL + audit-ready）。
+
+- **New**: `mediation_emergency_contract_sim_v1.py`  
+  緊急系ワークフローの最小シミュレータ：  
+  **USER 認可 → AI がドラフト生成 → ADMIN 最終承認 → 契約有効化**。  
+  期限切れ／イベント不正は fail-closed で停止（必要に応じて sealed）し、最小 ARL(JSONL) を出力します。
+
+- **New**: `mediation_emergency_contract_sim_v4.py`  
+  v1 を拡張し、**evidence_gate + draft_lint_gate + trust/grant 連動**を統合。  
+  条件を満たすと **AUTH HITL を安全に自動スキップ**でき、負荷を減らしつつ ARL で根拠を残します。
+
+---
+
+## V1→V4 の違い（Emergency contract simulator）
+
+`mediation_emergency_contract_sim_v1.py` は、最小のイベント駆動パイプラインです：  
+**USER 認可 → AI ドラフト → ADMIN 承認 → 有効化**（fail-closed + 最小 ARL）。
+
+`mediation_emergency_contract_sim_v4.py` は、v1 を “安全ベンチ（繰り返し検証可能）” に拡張し、  
+**誤りの早期停止（gates）** と **運用負荷低減（trust/grant）** を同時に扱います。
+
+### v4 で追加されたもの（要点）
+- **evidence_gate**  
+  証拠（evidence bundle）を最低限検証し、**不正／不十分／無関係／捏造**が疑われる場合は fail-closed。
+
+- **draft_lint_gate**  
+  ドラフトの “draft-only（法的権限なし）” 制約やスコープ逸脱を検知して fail-closed。  
+  さらに Markdown 強調などの **表記ノイズでの誤検知を低減**（正規化）します。
+
+- **trust（信用）スコアと streak/cooldown**  
+  HITL の結果と連動して trust を上下させ、失敗時は cooldown（自動スキップ抑止）へ。  
+  すべて ARL に記録され、説明責任を維持します。
+
+- **AUTH HITL 自動スキップ（安全な friction reduction）**  
+  **trust 閾値 + approval streak + 有効 grant** が揃った場合、同条件（シナリオ/ロケーション等）に限り  
+  AUTH HITL を自動スキップして進めます（理由は ARL に必ず残す）。
+
+---
+
 ## 🧾 監査ログ & データ安全（IMPORTANT）
 
 このプロジェクトは、再現性と説明責任のために **監査ログ（audit log）**を出力します。  
@@ -125,3 +166,5 @@ HITL は曖昧・高リスク時に使用します。責任の所在は監査ロ
 python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_governance_mediation_sim.py
+python mediation_emergency_contract_sim_v1.py
+python mediation_emergency_contract_sim_v4.py
