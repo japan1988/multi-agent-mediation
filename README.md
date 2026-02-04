@@ -44,7 +44,7 @@ for negotiation, mediation, governance-style workflows, and gating behavior.
 
 Audit-ready and fail-closed control flow:
 
-```
+
 
 agents
 → mediator (risk / pattern / fact)
@@ -52,7 +52,6 @@ agents
 → HITL (pause / reset / ban)
 → audit logs (ARL)
 
-```
 
 ![Architecture](docs/architecture_unknown_progress.png)
 
@@ -63,19 +62,20 @@ agents
 
 ## Architecture (Code-aligned diagrams)
 
-The following diagrams are **fully aligned with the current code and terminology**.  
-They intentionally separate **state transitions** from **gate order** to preserve auditability and avoid ambiguity.
+The following diagram is **fully aligned with the current code and terminology**.  
+It intentionally separates **state transitions** from **gate order** to preserve auditability and avoid ambiguity.
 
-These diagrams are **documentation-only** and introduce **no logic changes**.
+This diagram is **documentation-only** and introduces **no logic changes**.
 
 ---
 
 ### 1) State Machine (code-aligned)
 
-Minimal lifecycle transitions showing where execution **pauses (HITL)** or **stops permanently (SEALED)**.
+Minimal lifecycle transitions showing where execution **pauses (HITL)**  
+or **stops permanently (SEALED)**.
 
 <p align="center">
-  <img src="docs/architecture_code_aligned_state_machine.png"
+  <img src="docs/architecture_code_aligned.png"
        alt="State Machine (code-aligned)" width="720">
 </p>
 
@@ -83,7 +83,7 @@ Minimal lifecycle transitions showing where execution **pauses (HITL)** or **sto
 
 **Primary execution path**
 
-```
+
 
 INIT
 → PAUSE_FOR_HITL_AUTH
@@ -92,7 +92,6 @@ INIT
 → PAUSE_FOR_HITL_FINALIZE
 → CONTRACT_EFFECTIVE
 
-```
 
 - `PAUSE_FOR_HITL_*` represents an explicit **Human-in-the-Loop** decision point  
   (user approval or admin approval).
@@ -109,7 +108,7 @@ INIT
 Ordered evaluation gates, **independent from lifecycle state transitions**.
 
 <p align="center">
-  <img src="docs/architecture_code_aligned_gate_pipeline.png"
+  <img src="docs/architecture_code_aligned.png"
        alt="Gate Pipeline (code-aligned)" width="720">
 </p>
 
@@ -130,7 +129,7 @@ Keeping them separate avoids ambiguity and preserves audit-ready traceability.
 
 **Maintenance note**
 
-If an image does not render:
+If the image does not render:
 - Confirm the file exists under `docs/`
 - Confirm the filename matches exactly (case-sensitive)
 - Prefer copy-paste from the file list when updating links
@@ -157,20 +156,19 @@ Introduced an **event-driven governance-style workflow**
 - **New**: `mediation_emergency_contract_sim_v1.py`  
   Minimal emergency workflow simulator:
 
-```
+
 
 USER auth → AI draft → ADMIN finalize → contract effective
 
-````
 
 Invalid or expired events fail-closed and stop execution,
 producing a minimal ARL (JSONL).
 
 - **New**: `mediation_emergency_contract_sim_v4.py`  
-Extended v1 with:
-- evidence gate
-- draft lint gate
-- trust / grant–based HITL friction reduction
+  Extended v1 with:
+  - evidence gate
+  - draft lint gate
+  - trust / grant–based HITL friction reduction
 
 ---
 
@@ -185,22 +183,22 @@ a linear, event-driven workflow with fail-closed stops and minimal audit logs.
 ### Added in v4
 
 - **Evidence gate**  
-Basic verification of evidence bundles.  
-Invalid, irrelevant, or fabricated evidence triggers fail-closed stops.
+  Basic verification of evidence bundles.  
+  Invalid, irrelevant, or fabricated evidence triggers fail-closed stops.
 
 - **Draft lint gate**  
-Enforces *draft-only* semantics and scope boundaries before admin finalization.  
-Hardened against markdown/emphasis noise to reduce false positives.
+  Enforces *draft-only* semantics and scope boundaries before admin finalization.  
+  Hardened against markdown/emphasis noise to reduce false positives.
 
 - **Trust system (score + streak + cooldown)**  
-Trust increases on successful HITL outcomes and decreases on failures.  
-Cooldown prevents unsafe automation after errors.  
-All trust transitions are logged in ARL.
+  Trust increases on successful HITL outcomes and decreases on failures.  
+  Cooldown prevents unsafe automation after errors.  
+  All trust transitions are logged in ARL.
 
 - **AUTH HITL auto-skip (safe friction reduction)**  
-When **trust threshold + approval streak + valid grant** are satisfied,
-AUTH HITL can be skipped *for the same scenario/location only*,
-while recording the reason in ARL.
+  When **trust threshold + approval streak + valid grant** are satisfied,
+  AUTH HITL can be skipped *for the same scenario/location only*,
+  while recording the reason in ARL.
 
 **In short**
 
@@ -218,83 +216,35 @@ Start with **one script**, confirm behavior and logs, then expand.
 
 ### Recommended
 
-#### 1) Doc orchestrator (reference implementation)
+#### Doc orchestrator (reference implementation)
 
 ```bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
-````
 
-#### 2) Emergency contract workflow (v4)
-
-```bash
+Emergency contract workflow (v4)
 python mediation_emergency_contract_sim_v4.py
-```
 
----
+Project intent / non-goals
 
-### Semantics / bench-focused
+Intent
 
-#### Unknown progress + HITL/RESET
+Reproducible safety and governance simulations
 
-```bash
-python ai_mediation_hitl_reset_full_with_unknown_progress.py
-```
+Explicit HITL semantics
 
-#### KAGE v1.7-IEP RFL relcode branching
+Audit-ready decision traces
 
-```bash
-python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
-```
+Non-goals
 
----
+Production-grade autonomous deployment
 
-### Compare baseline vs extended
+Unbounded self-directed agent control
 
-```bash
-python mediation_emergency_contract_sim_v1.py
-python mediation_emergency_contract_sim_v4.py
-```
+Safety claims beyond what is explicitly tested
 
----
+License
 
-### Copilot SDK minimal example
+Apache-2.0. See LICENSE.
 
-```bash
-python copilot_mediation_min.py
-```
 
----
-
-## Project intent / non-goals
-
-**Intent**
-
-* Reproducible safety and governance simulations
-* Explicit HITL semantics
-* Audit-ready decision traces
-
-**Non-goals**
-
-* Production-grade autonomous deployment
-* Unbounded self-directed agent control
-* Safety claims beyond what is explicitly tested
-
----
-
-## License
-
-Apache-2.0. See `LICENSE`.
-
-```
-
----
-
-必要なら次のステップとして：
-
-- **README.ja.md 側の完全同期版**
-- **V1 / V4 を1枚で比較する補助図（表）**
-- **「なぜ state / gate を分離したか」の短い設計思想セクション**
-
-もすぐ出せます。
-```
 
