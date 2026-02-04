@@ -9,7 +9,7 @@ These diagrams are documentation-only and introduce no logic changes.
 
 Minimal lifecycle transitions showing where execution pauses (HITL) or stops permanently (SEALED).
 
-<p align="center"> <img src="docs/構成図2026年2月4日_17_15_08.png" alt="State Machine (code-aligned)" width="720"> </p>
+<p align="center"> <img src="docs/architecture_code_aligned.png" alt="State Machine (code-aligned)" width="720"> </p>
 
 Notes
 
@@ -33,7 +33,7 @@ SEALED stops are fail-closed and non-overrideable by design.
 
 Ordered evaluation gates, independent from lifecycle state transitions.
 
-<p align="center"> <img src="docs/構成図2026年2月4日_17_15_08.png" alt="Gate Pipeline (code-aligned)" width="720"> </p>
+<p align="center"> <img src="docs/architecture_code_aligned.png" alt="Gate Pipeline (code-aligned)" width="720"> </p>
 
 Notes
 
@@ -45,9 +45,11 @@ STOPPED (SEALED) indicates a non-recoverable safety stop.
 
 Design intent
 
-State Machine answers: “Where does execution pause or terminate?”
+State Machine answers:
+“Where does execution pause or terminate?”
 
-Gate Pipeline answers: “In what order are decisions evaluated?”
+Gate Pipeline answers:
+“In what order are decisions evaluated?”
 
 Keeping them separate avoids ambiguity and preserves audit-ready traceability.
 
@@ -57,6 +59,6 @@ If an image does not render:
 
 Confirm the file exists under docs/
 
-Confirm the filename matches exactly (case-sensitive, Japanese characters included)
+Confirm the filename matches exactly (case-sensitive)
 
 Prefer copy-paste from the file list when updating links
