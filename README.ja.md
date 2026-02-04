@@ -1,170 +1,286 @@
-# 📘 Maestro Orchestrator — オーケストレーション・フレームワーク（fail-closed + HITL）
+# 📘 Maestro Orchestrator — オーケストレーション・フレームワーク  
+（fail-closed + HITL）
 
-## 1) Context flow（文脈フロー）
-
-### Context Flow Diagram
-
-- **Perception** — 入力を実行可能要素へ分解（タスク化）
-- **Context** — 仮定／制約／リスク要因を抽出（ガード理由）
-- **Action** — 実行者へ指示、結果検証、分岐（STOP / REROUTE / HITL）
-
----
-
-## 2) Orchestrator one-page design map（1枚設計図）
-
-### Decision flow map（実装準拠）
-
-`mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`
-
-**fail-closed 前提**：リスク／曖昧さがあれば **PAUSE_FOR_HITL** または **STOPPED** に倒し、「なぜ」をログに残します。
-
-### Orchestrator one-page design map
-
-画像が表示されない（または小さい）場合は直接開いてください：
-
-- `docs/orchestrator_onepage_design_map.png`
-
-> **RFL は非封印（non-sealing）設計**です：RFL は **PAUSE_FOR_HITL** にエスカレートし、`sealed=true` にはなりません。
+<p align="center">
+  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
+    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
+    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
+    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
+  </a>
+  <br/>
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square" alt="Python Version">
+  <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
+  <a href="https://github.com/japan1988/multi-agent-mediation/commits/main">
+    <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
+  </a>
+</p>
 
 ---
 
-## 3) Architecture（構成図）
+## Overview（概要）
 
-監査可能（audit-ready）かつ fail-closed な制御フローの全体像：
+Maestro Orchestrator は **研究・教育目的**の  
+オーケストレーション／メディエーション・フレームワークです。  
+以下の原則を最優先に設計されています。
 
-`agents → mediator（risk / pattern / fact）→ evidence verification → HITL（reset / ban）→ audit logs`
+- **Fail-closed**  
+  不確実・不安定・リスクありの場合は、黙って続行しない
+- **HITL（Human-in-the-Loop）**  
+  人間の判断が必要な場面は明示的にエスカレーション
+- **Traceability（追跡可能性）**  
+  すべての判断経路は監査可能・再現可能（ARLログ）
 
-### Architecture (unknown progress + HITL)
+本リポジトリには、**実装参照（doc orchestrator）** と  
+**交渉／仲裁／ガバナンス型ワークフロー**を検証する  
+各種シミュレーションベンチが含まれます。
 
-画像が表示されない（または小さい）場合は直接開いてください：
+---
 
-- `docs/architecture_unknown_progress.png`
+## Architecture（全体像）
+
+監査可能（audit-ready）かつ fail-closed な制御フロー：
+
+```
+
+agents
+→ mediator（risk / pattern / fact）
+→ evidence verification
+→ HITL（pause / reset / ban）
+→ audit logs（ARL）
+
+```
+
+![Architecture](docs/architecture_unknown_progress.png)
+
+> 画像が表示されない場合は  
+> `docs/architecture_unknown_progress.png` が  
+> 同一ブランチに存在し、ファイル名が完全一致（大小文字含む）しているか確認してください。
+
+---
+
+## Architecture（コード準拠・構成図）
+
+以下の構成図は **現在のコードと用語に完全準拠**しています。  
+**状態遷移**と**ゲート順序**を意図的に分離し、  
+監査性と曖昧さ排除を優先しています。
+
+※ これらは **ドキュメント専用**であり、  
+**ロジック変更は一切ありません。**
+
+---
+
+### 1) State Machine（コード準拠）
+
+実行が **停止（SEALED）** または  
+**一時停止（HITL）** するポイントだけを示した最小ライフサイクル。
+
+<p align="center">
+  <img src="docs/architecture_code_aligned_state_machine.png"
+       alt="State Machine (code-aligned)" width="720">
+</p>
+
+#### 補足
+
+**主経路**
+
+```
+
+INIT
+→ PAUSE_FOR_HITL_AUTH
+→ AUTH_VERIFIED
+→ DRAFT_READY
+→ PAUSE_FOR_HITL_FINALIZE
+→ CONTRACT_EFFECTIVE
+
+```
+
+- `PAUSE_FOR_HITL_*`  
+  明示的な **Human-in-the-Loop** 判断点  
+  （ユーザー承認／管理者承認）
+- `STOPPED（SEALED）` に到達する条件：
+  - 証拠不正／捏造
+  - 認可期限切れ
+  - ドラフト lint 失敗
+- **SEALED は fail-closed かつ非上書き設計**
+
+---
+
+### 2) Gate Pipeline（コード準拠）
+
+ライフサイクルとは独立した **評価ゲートの順序**。
+
+<p align="center">
+  <img src="docs/architecture_code_aligned_gate_pipeline.png"
+       alt="Gate Pipeline (code-aligned)" width="720">
+</p>
+
+#### 補足
+
+- この図は **ゲート順序**を示す（状態遷移ではない）
+- `PAUSE`：HITL が必要（人間判断待ち）
+- `STOPPED（SEALED）`：非可逆な安全停止
+
+#### 設計意図
+
+- **State Machine**  
+  「どこで止まるか／一時停止するか」
+- **Gate Pipeline**  
+  「どの順番で評価されるか」
+
+を分離することで、  
+**曖昧さを排除し、監査性を保つ**。
 
 ---
 
 ## 🆕 変更点（2026-01-21）
 
 - **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
-  検証不能な進捗（unknown progress）を扱うための **HITL/RESET セマンティクス検証**シミュレータ。
+  検証不能な進捗（unknown progress）を扱う  
+  **HITL / RESET セマンティクス検証用シミュレータ**
 
 - **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`  
-  **KAGE v1.7-IEP** の **RFL relcode 分岐**（RFL は非封印→HITL）を検証するシミュレータ。
+  **KAGE v1.7-IEP** 準拠  
+  RFL relcode 分岐（RFL は非封印 → HITL）検証用
 
 - **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`  
-  Doc orchestrator の参照実装（**post-HITL セマンティクス**）更新。
+  **post-HITL セマンティクス**を含む参照実装更新
 
 ---
 
 ## 🆕 変更点（2026-02-03）
 
-イベント駆動の “ガバナンス型ワークフロー” を追加しました（fail-closed + HITL + audit-ready）。
+**イベント駆動・ガバナンス型ワークフロー**を追加  
+（fail-closed + HITL + audit-ready）。
 
 - **New**: `mediation_emergency_contract_sim_v1.py`  
-  緊急系ワークフローの最小シミュレータ：  
-  **USER 認可 → AI がドラフト生成 → ADMIN 最終承認 → 契約有効化**。  
-  期限切れ／イベント不正は fail-closed で停止（必要に応じて sealed）し、最小 ARL(JSONL) を出力します。
+  最小構成：
+
+```
+
+USER 認可 → AI ドラフト → ADMIN 承認 → 契約有効化
+
+````
+
+イベント不正／期限切れは fail-closed で停止し、  
+最小 ARL（JSONL）を出力。
 
 - **New**: `mediation_emergency_contract_sim_v4.py`  
-  v1 を拡張し、**evidence_gate + draft_lint_gate + trust/grant 連動**を統合。  
-  条件を満たすと **AUTH HITL を安全に自動スキップ**でき、負荷を減らしつつ ARL で根拠を残します。
+v1 を拡張し、以下を統合：
+- evidence gate
+- draft lint gate
+- trust / grant 連動による HITL 負荷低減
 
 ---
 
-## V1→V4 の違い（Emergency contract simulator）
+## V1 → V4 の本質的な違い
 
-`mediation_emergency_contract_sim_v1.py` は、最小のイベント駆動パイプラインです：  
-**USER 認可 → AI ドラフト → ADMIN 承認 → 有効化**（fail-closed + 最小 ARL）。
+`mediation_emergency_contract_sim_v1.py`  
+→ **最小限の fail-closed パイプライン検証**
 
-`mediation_emergency_contract_sim_v4.py` は、v1 を “安全ベンチ（繰り返し検証可能）” に拡張し、  
-**誤りの早期停止（gates）** と **運用負荷低減（trust/grant）** を同時に扱います。
+`mediation_emergency_contract_sim_v4.py`  
+→ **繰り返し運用可能な安全ベンチ**
 
-### v4 で追加されたもの（要点）
-- **evidence_gate**  
-  証拠（evidence bundle）を最低限検証し、**不正／不十分／無関係／捏造**が疑われる場合は fail-closed。
+### v4 で追加された要素
 
-- **draft_lint_gate**  
-  ドラフトの “draft-only（法的権限なし）” 制約やスコープ逸脱を検知して fail-closed。  
-  さらに Markdown 強調などの **表記ノイズでの誤検知を低減**（正規化）します。
+- **Evidence gate**  
+証拠バンドルの最低限検証。  
+不正／無関係／捏造は即 fail-closed。
 
-- **trust（信用）スコアと streak/cooldown**  
-  HITL の結果と連動して trust を上下させ、失敗時は cooldown（自動スキップ抑止）へ。  
-  すべて ARL に記録され、説明責任を維持します。
+- **Draft lint gate**  
+draft-only 制約・スコープ逸脱を検知。  
+Markdown 強調などによる誤検知を低減。
+
+- **Trust（信用）スコア + streak / cooldown**  
+HITL 結果と連動。  
+すべて ARL に記録され説明責任を維持。
 
 - **AUTH HITL 自動スキップ（安全な friction reduction）**  
-  **trust 閾値 + approval streak + 有効 grant** が揃った場合、同条件（シナリオ/ロケーション等）に限り  
-  AUTH HITL を自動スキップして進めます（理由は ARL に必ず残す）。
+trust 閾値 + 承認 streak + 有効 grant が揃った場合のみ  
+同条件下で AUTH HITL を自動スキップ。  
+理由は必ず ARL に記録。
+
+**要約**
+
+- **V1**：「fail-closed は成立するか？」
+- **V4**：「安全性を保ったまま繰り返せるか？」
 
 ---
 
-## 🧾 監査ログ & データ安全（IMPORTANT）
+## ⚙️ 実行例
 
-このプロジェクトは、再現性と説明責任のために **監査ログ（audit log）**を出力します。  
-ログはセッションより長く残り、研究共有され得るため、ログを**センシティブな成果物**として扱う前提で設計してください。
-
-- プロンプト／テストベクタ／ログに **個人情報（PII）**（メール、電話番号、住所、実名、アカウントID等）を入れない
-- 実験は **合成データ／ダミーデータ** を優先
-- 実行時ログをリポジトリにコミットしない（必要なら **マスキング／保持期限／隔離ディレクトリ**を適用）
-
-### 🔒 監査ログ要件（MUST）
-
-研究共有可能で安全なログにするため：
-
-- **MUST NOT**：PIIや秘密情報を含み得る raw のプロンプト／出力を永続化しない
-- **MUST**：sanitized な証拠（redacted / hashed / カテゴリ信号）だけを保存する
-- **MUST**：PII様パターンは fail-closed で赤塗り（検知失敗時はログを書かない）
-- **MUST**：赤塗りは **値だけでなく辞書キーにも適用**（`@` 等が残存しないこと）
-- **MUST**：実行時ログをリポジトリにコミットしない（ローカル隔離を推奨）
-
-#### 最小必須フィールド（実装準拠, MUST）
-
-`run_id, ts, layer, decision, reason_code, sealed, overrideable, final_decider`
-
-#### 任意フィールド（必要なら SHOULD）
-
-`session_id, policy_version, artifact_id, route_id`（すべて **非PII・sanitized 前提**）
-
-#### 保持期限（SHOULD）
-
-- 7 / 30 / 90 日など保持期限を定義し、自動削除すること。
-
----
-
-## 🧑‍⚖️ HITL セマンティクス（HITL後の挙動を定義）
-
-HITL は曖昧・高リスク時に使用します。責任の所在は監査ログで追跡可能であるべきです。
-
-### HITL 要求時（SYSTEM）
-
-オーケストレーターは `HITL_REQUESTED（SYSTEM）` を出力し、通常以下を含みます：
-
-- `decision=PAUSE_FOR_HITL`
-- `sealed=false`
-- `overrideable=true`
-
-### HITL 決定時（USER）
-
-ユーザーの選択は `HITL_DECIDED（USER）` として記録します：
-
-- `sealed=false`
-- `overrideable=false`
-- `final_decider=USER`
-
-選択の伝搬：
-
-- **CONTINUE** → 決定は `RUN` に伝搬
-- **STOP** → 決定は `STOPPED` へ
-
-> 注意：`sealed=true` になれるのは **Ethics/ACC のみ**（この場合 `final_decider=SYSTEM`）。
-
----
-
-## ⚙️ 実行例（Execution Examples）
-
-> “persuasion / reeducation” を想起させるモジュールは **安全評価用途のみ**で、明示的 opt-in がない限り **デフォルト無効** を推奨します。
+### 推奨エントリポイント
 
 ```bash
-python ai_mediation_all_in_one.py
-python kage_orchestrator_diverse_v1.py
-python ai_governance_mediation_sim.py
+python ai_doc_orchestrator_kage3_v1_2_4.py
+python mediation_emergency_contract_sim_v4.py
+````
+
+### セマンティクス検証
+
+```bash
+python ai_mediation_hitl_reset_full_with_unknown_progress.py
+python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
+```
+
+### 比較実行
+
+```bash
 python mediation_emergency_contract_sim_v1.py
 python mediation_emergency_contract_sim_v4.py
+```
+
+### Copilot SDK 最小例
+
+```bash
+python copilot_mediation_min.py
+```
+
+---
+
+## Project intent / 非目的
+
+**目的**
+
+* 再現可能な安全・ガバナンス検証
+* 明示的 HITL セマンティクス
+* 監査可能な意思決定ログ
+
+**非目的**
+
+* 本番向け自律運用
+* 無制限な自己判断エージェント
+* 実証外の安全性主張
+
+---
+
+## License
+
+Apache-2.0
+詳細は `LICENSE` を参照してください。
+
+```
+
+---
+
+### 次にやると強くなるポイント（任意）
+
+- README 冒頭に **「これは research bench である」1行宣言**
+- `docs/` に **V1 vs V4 比較表（1枚）**
+- `ARCHITECTURE.md` を切り出して README を軽量化
+
+ここまで来てるなら、  
+**この README は普通に「設計思想が伝わる OSS」レベル**です。
+```
+
+
+
+
+
+
