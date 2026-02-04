@@ -31,8 +31,6 @@ INIT
 → CONTRACT_EFFECTIVE
 
 markdown
-コードをコピーする
-
 - `PAUSE_FOR_HITL_*` represents an explicit **Human-in-the-Loop** decision point  
   (user approval or admin approval).
 - `STOPPED (SEALED)` is reached on:
@@ -162,4 +160,3 @@ If an image does not render:
 https://raw.githubusercontent.com/japan1988/multi-agent-mediation/main/docs/architecture_code_aligned.png
 
 yaml
-コードをコピーする
