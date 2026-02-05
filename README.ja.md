@@ -205,6 +205,26 @@ USER 認可 → AI ドラフト → ADMIN 承認 → 契約有効化
   * FABRICATE -> `STOPPED`（sealed=true in ethics_gate）
   * RFL_STOP -> `STOPPED`（sealed=false via HITL stop）
 
+  ---
+
+  ### ✅ v4.1 テスト（合格条件 / acceptance criteria）
+
+  v4.1 は「設計意図を CI で固定する」ため、以下の終端状態を **回帰テスト**で保証します。
+
+  * **NORMAL → `CONTRACT_EFFECTIVE`**（`sealed=false`）
+  * **FABRICATE → `STOPPED`**（`sealed=true` は **`ethics_gate` が発行**）
+  * **RFL_STOP → `STOPPED`**（`sealed=false`：RFL は封印せず、HITL 停止で終了）
+
+  **Invariant（不変条件）**
+
+  * `SEALED` は `ethics_gate` / `acc_gate` のみが発行する（RFL は non-sealing）
+
+  **pytest（単体実行）**
+
+  ```bash
+  pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
+  ```
+
 ---
 
 ## V1 → V4 の本質的な違い
@@ -297,3 +317,6 @@ python copilot_mediation_min.py
 
 Apache-2.0
 詳細は `LICENSE` を参照してください。
+::contentReference[oaicite:0]{index=0}
+```
+
