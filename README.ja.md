@@ -297,6 +297,3 @@ python copilot_mediation_min.py
 
 Apache-2.0
 詳細は `LICENSE` を参照してください。
-次は README.md（英語版）と **日付・箇条書きを完全同期**させると、見た目の一貫性がさらに上がります。
-`````
-
