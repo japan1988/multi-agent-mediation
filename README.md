@@ -44,14 +44,11 @@ for negotiation, mediation, governance-style workflows, and gating behavior.
 
 Audit-ready and fail-closed control flow:
 
-
-
-agents
-→ mediator (risk / pattern / fact)
-→ evidence verification
-→ HITL (pause / reset / ban)
+agents  
+→ mediator (risk / pattern / fact)  
+→ evidence verification  
+→ HITL (pause / reset / ban)  
 → audit logs (ARL)
-
 
 ![Architecture](docs/architecture_unknown_progress.png)
 
@@ -83,15 +80,12 @@ or **stops permanently (SEALED)**.
 
 **Primary execution path**
 
-
-
-INIT
-→ PAUSE_FOR_HITL_AUTH
-→ AUTH_VERIFIED
-→ DRAFT_READY
-→ PAUSE_FOR_HITL_FINALIZE
+INIT  
+→ PAUSE_FOR_HITL_AUTH  
+→ AUTH_VERIFIED  
+→ DRAFT_READY  
+→ PAUSE_FOR_HITL_FINALIZE  
 → CONTRACT_EFFECTIVE
-
 
 - `PAUSE_FOR_HITL_*` represents an explicit **Human-in-the-Loop** decision point  
   (user approval or admin approval).
@@ -141,7 +135,7 @@ If the image does not render:
 - **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
   Simulator for **unknown progress** scenarios with HITL/RESET semantics.
 - **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`  
-  **KAGE v1.7-IEP** aligned simulator for **RFL relcode branching**  
+  v1.7-IEP aligned simulator for **RFL relcode branching**  
   (RFL is non-sealing → escalates to HITL).
 - **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`  
   Doc orchestrator reference updated with **post-HITL semantics**.
@@ -156,19 +150,44 @@ Introduced an **event-driven governance-style workflow**
 - **New**: `mediation_emergency_contract_sim_v1.py`  
   Minimal emergency workflow simulator:
 
+  USER auth → AI draft → ADMIN finalize → contract effective
 
-
-USER auth → AI draft → ADMIN finalize → contract effective
-
-
-Invalid or expired events fail-closed and stop execution,
-producing a minimal ARL (JSONL).
+  Invalid or expired events fail-closed and stop execution,
+  producing a minimal ARL (JSONL).
 
 - **New**: `mediation_emergency_contract_sim_v4.py`  
   Extended v1 with:
   - evidence gate
   - draft lint gate
   - trust / grant–based HITL friction reduction
+
+---
+
+## What’s new (2026-02-05)
+
+- **New**: `mediation_emergency_contract_sim_v4_1.py`  
+  v4.1 is a **behavior-tightening** update over v4.0 to make the bench expectations explicit and code-aligned:
+
+  - **RFL is non-sealing by design**  
+    Boundary-unstable proposals trigger `PAUSE_FOR_HITL` with `sealed=false` and `overrideable=true` (human decides).
+
+  - **Fabrication is detected early, but sealing occurs only in ethics**  
+    Evidence fabrication is flagged in the evidence gate, and the **only sealing stop** is issued by `ethics_gate`
+    (`STOPPED` with `sealed=true`).
+
+  - **Trust/grant friction reduction remains supported**  
+    Trust/grant-based AUTH auto-skip behavior is preserved (when thresholds are satisfied), while still logging reasons to ARL.
+
+  **Quick run**
+  ```bash
+  python mediation_emergency_contract_sim_v4_1.py
+````
+
+**Expected**
+
+* NORMAL -> `CONTRACT_EFFECTIVE`
+* FABRICATE -> `STOPPED` (sealed=true in ethics_gate)
+* RFL_STOP -> `STOPPED` (sealed=false via HITL stop)
 
 ---
 
@@ -182,28 +201,28 @@ a linear, event-driven workflow with fail-closed stops and minimal audit logs.
 
 ### Added in v4
 
-- **Evidence gate**  
-  Basic verification of evidence bundles.  
+* **Evidence gate**
+  Basic verification of evidence bundles.
   Invalid, irrelevant, or fabricated evidence triggers fail-closed stops.
 
-- **Draft lint gate**  
-  Enforces *draft-only* semantics and scope boundaries before admin finalization.  
+* **Draft lint gate**
+  Enforces *draft-only* semantics and scope boundaries before admin finalization.
   Hardened against markdown/emphasis noise to reduce false positives.
 
-- **Trust system (score + streak + cooldown)**  
-  Trust increases on successful HITL outcomes and decreases on failures.  
-  Cooldown prevents unsafe automation after errors.  
+* **Trust system (score + streak + cooldown)**
+  Trust increases on successful HITL outcomes and decreases on failures.
+  Cooldown prevents unsafe automation after errors.
   All trust transitions are logged in ARL.
 
-- **AUTH HITL auto-skip (safe friction reduction)**  
+* **AUTH HITL auto-skip (safe friction reduction)**
   When **trust threshold + approval streak + valid grant** are satisfied,
   AUTH HITL can be skipped *for the same scenario/location only*,
   while recording the reason in ARL.
 
 **In short**
 
-- **V1 answers**: *“Can this workflow fail-closed with minimal audit?”*  
-- **V4 answers**: *“Can we safely repeat this workflow at scale without losing traceability?”*
+* **V1 answers**: *“Can this workflow fail-closed with minimal audit?”*
+* **V4 answers**: *“Can we safely repeat this workflow at scale without losing traceability?”*
 
 ---
 
@@ -211,7 +230,7 @@ a linear, event-driven workflow with fail-closed stops and minimal audit logs.
 
 Start with **one script**, confirm behavior and logs, then expand.
 
-> NOTE: This repository is **research / educational**.  
+> NOTE: This repository is **research / educational**.
 > Use **synthetic or dummy data** and do not commit runtime logs.
 
 ### Recommended
@@ -220,31 +239,46 @@ Start with **one script**, confirm behavior and logs, then expand.
 
 ```bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
+```
 
-Emergency contract workflow (v4)
+#### Emergency contract workflow (v4)
+
+```bash
 python mediation_emergency_contract_sim_v4.py
+```
 
-Project intent / non-goals
+#### Emergency contract workflow (v4.1)
 
-Intent
+```bash
+python mediation_emergency_contract_sim_v4_1.py
+```
 
-Reproducible safety and governance simulations
+---
 
-Explicit HITL semantics
+## Project intent / non-goals
 
-Audit-ready decision traces
+### Intent
 
-Non-goals
+* Reproducible safety and governance simulations
+* Explicit HITL semantics
+* Audit-ready decision traces
 
-Production-grade autonomous deployment
+### Non-goals
 
-Unbounded self-directed agent control
+* Production-grade autonomous deployment
+* Unbounded self-directed agent control
+* Safety claims beyond what is explicitly tested
 
-Safety claims beyond what is explicitly tested
+---
 
-License
+## License
 
-Apache-2.0. See LICENSE.
+Apache-2.0. See [LICENSE](LICENSE).
 
+```
 
+---
+
+必要なら次に、README.ja.md 側にも **同じ “2026-02-05 / v4.1差分” ブロック**を日本語で揃えた完全版を同じ要領で出せます。
+```
 
