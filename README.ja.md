@@ -47,38 +47,36 @@ Maestro Orchestrator は **研究・教育目的**の
 
 監査可能（audit-ready）かつ fail-closed な制御フロー：
 
-```
-
+```text
 agents
 → mediator（risk / pattern / fact）
 → evidence verification
 → HITL（pause / reset / ban）
 → audit logs（ARL）
-
-```
+````
 
 ![Architecture](docs/architecture_unknown_progress.png)
 
-> 画像が表示されない場合は  
-> `docs/architecture_unknown_progress.png` が  
+> 画像が表示されない場合は
+> `docs/architecture_unknown_progress.png` が
 > 同一ブランチに存在し、ファイル名が完全一致（大小文字含む）しているか確認してください。
 
 ---
 
 ## Architecture（コード準拠・構成図）
 
-以下の構成図は **現在のコードと用語に完全準拠**しています。  
-**状態遷移**と**ゲート順序**を意図的に分離し、  
+以下の構成図は **現在のコードと用語に完全準拠**しています。
+**状態遷移**と**ゲート順序**を意図的に分離し、
 監査性と曖昧さ排除を優先しています。
 
-※ これらは **ドキュメント専用**であり、  
+※ これらは **ドキュメント専用**であり、
 **ロジック変更は一切ありません。**
 
 ---
 
 ### 1) State Machine（コード準拠）
 
-実行が **停止（SEALED）** または  
+実行が **停止（SEALED）** または
 **一時停止（HITL）** するポイントだけを示した最小ライフサイクル。
 
 <p align="center">
@@ -90,25 +88,24 @@ agents
 
 **主経路**
 
-```
-
+```text
 INIT
 → PAUSE_FOR_HITL_AUTH
 → AUTH_VERIFIED
 → DRAFT_READY
 → PAUSE_FOR_HITL_FINALIZE
 → CONTRACT_EFFECTIVE
-
 ```
 
-- `PAUSE_FOR_HITL_*`  
-  明示的な **Human-in-the-Loop** 判断点  
+* `PAUSE_FOR_HITL_*`
+  明示的な **Human-in-the-Loop** 判断点
   （ユーザー承認／管理者承認）
-- `STOPPED（SEALED）` に到達する条件：
-  - 証拠不正／捏造
-  - 認可期限切れ
-  - ドラフト lint 失敗
-- **SEALED は fail-closed かつ非上書き設計**
+* `STOPPED（SEALED）` に到達する条件：
+
+  * 証拠不正／捏造
+  * 認可期限切れ
+  * ドラフト lint 失敗
+* **SEALED は fail-closed かつ非上書き設計**
 
 ---
 
@@ -123,104 +120,139 @@ INIT
 
 #### 補足
 
-- この図は **ゲート順序**を示す（状態遷移ではない）
-- `PAUSE`：HITL が必要（人間判断待ち）
-- `STOPPED（SEALED）`：非可逆な安全停止
+* この図は **ゲート順序**を示す（状態遷移ではない）
+* `PAUSE`：HITL が必要（人間判断待ち）
+* `STOPPED（SEALED）`：非可逆な安全停止
 
 #### 設計意図
 
-- **State Machine**  
+* **State Machine**
   「どこで止まるか／一時停止するか」
-- **Gate Pipeline**  
+* **Gate Pipeline**
   「どの順番で評価されるか」
 
-を分離することで、  
+を分離することで、
 **曖昧さを排除し、監査性を保つ**。
 
 ---
 
 ## 🆕 変更点（2026-01-21）
 
-- **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
-  検証不能な進捗（unknown progress）を扱う  
+* **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`
+  検証不能な進捗（unknown progress）を扱う
   **HITL / RESET セマンティクス検証用シミュレータ**
 
-- **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`  
-  **KAGE v1.7-IEP** 準拠  
+* **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`
+  **KAGE v1.7-IEP** 準拠
   RFL relcode 分岐（RFL は非封印 → HITL）検証用
 
-- **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`  
+* **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`
   **post-HITL セマンティクス**を含む参照実装更新
 
 ---
 
 ## 🆕 変更点（2026-02-03）
 
-**イベント駆動・ガバナンス型ワークフロー**を追加  
+**イベント駆動・ガバナンス型ワークフロー**を追加
 （fail-closed + HITL + audit-ready）。
 
-- **New**: `mediation_emergency_contract_sim_v1.py`  
+* **New**: `mediation_emergency_contract_sim_v1.py`
   最小構成：
 
+```text
+USER 認可 → AI ドラフト → ADMIN 承認 → 契約有効化
 ```
 
-USER 認可 → AI ドラフト → ADMIN 承認 → 契約有効化
-
-````
-
-イベント不正／期限切れは fail-closed で停止し、  
+イベント不正／期限切れは fail-closed で停止し、
 最小 ARL（JSONL）を出力。
 
-- **New**: `mediation_emergency_contract_sim_v4.py`  
-v1 を拡張し、以下を統合：
-- evidence gate
-- draft lint gate
-- trust / grant 連動による HITL 負荷低減
+* **New**: `mediation_emergency_contract_sim_v4.py`
+  v1 を拡張し、以下を統合：
+
+  * evidence gate
+  * draft lint gate
+  * trust / grant 連動による HITL 負荷低減
+
+---
+
+## 🆕 変更点（2026-02-05）
+
+* **New**: `mediation_emergency_contract_sim_v4_1.py`
+  v4.1 は v4.0 に対する **挙動の締め直し（behavior-tightening）**です。
+  既存の設計意図（fail-closed + HITL + 監査性）を保ったまま、ベンチの期待値をより明確にします。
+
+  * **RFL は非封印（non-sealing）で必ず HITL へ**
+    境界が不安定な提案は `PAUSE_FOR_HITL`（`sealed=false`, `overrideable=true`）となり、
+    人間判断（HITL）でのみ継続／停止が決まります。
+
+  * **捏造は早期検知するが、SEALED を出すのは ethics_gate のみ**
+    捏造（fabrication）は evidence 側でフラグされますが、
+    **非可逆停止（sealed=true）を確定させるのは ethics_gate のみ**です。
+
+  * **trust / grant による摩擦低減は維持**
+    trust 閾値 + streak + grant が揃う場合の AUTH HITL 自動スキップは維持し、
+    その理由は ARL に必ず記録されます。
+
+  **Quick run**
+
+  ```bash
+  python mediation_emergency_contract_sim_v4_1.py
+  ```
+
+  **Expected**
+
+  * NORMAL -> `CONTRACT_EFFECTIVE`
+  * FABRICATE -> `STOPPED`（sealed=true in ethics_gate）
+  * RFL_STOP -> `STOPPED`（sealed=false via HITL stop）
 
 ---
 
 ## V1 → V4 の本質的な違い
 
-`mediation_emergency_contract_sim_v1.py`  
+`mediation_emergency_contract_sim_v1.py`
 → **最小限の fail-closed パイプライン検証**
 
-`mediation_emergency_contract_sim_v4.py`  
+`mediation_emergency_contract_sim_v4.py`
 → **繰り返し運用可能な安全ベンチ**
 
 ### v4 で追加された要素
 
-- **Evidence gate**  
-証拠バンドルの最低限検証。  
-不正／無関係／捏造は即 fail-closed。
+* **Evidence gate**
+  証拠バンドルの最低限検証。
+  不正／無関係／捏造は即 fail-closed。
 
-- **Draft lint gate**  
-draft-only 制約・スコープ逸脱を検知。  
-Markdown 強調などによる誤検知を低減。
+* **Draft lint gate**
+  draft-only 制約・スコープ逸脱を検知。
+  Markdown 強調などによる誤検知を低減。
 
-- **Trust（信用）スコア + streak / cooldown**  
-HITL 結果と連動。  
-すべて ARL に記録され説明責任を維持。
+* **Trust（信用）スコア + streak / cooldown**
+  HITL 結果と連動。
+  すべて ARL に記録され説明責任を維持。
 
-- **AUTH HITL 自動スキップ（安全な friction reduction）**  
-trust 閾値 + 承認 streak + 有効 grant が揃った場合のみ  
-同条件下で AUTH HITL を自動スキップ。  
-理由は必ず ARL に記録。
+* **AUTH HITL 自動スキップ（安全な friction reduction）**
+  trust 閾値 + 承認 streak + 有効 grant が揃った場合のみ
+  同条件下で AUTH HITL を自動スキップ。
+  理由は必ず ARL に記録。
 
 **要約**
 
-- **V1**：「fail-closed は成立するか？」
-- **V4**：「安全性を保ったまま繰り返せるか？」
+* **V1**：「fail-closed は成立するか？」
+* **V4**：「安全性を保ったまま繰り返せるか？」
 
 ---
 
 ## ⚙️ 実行例
+
+> NOTE: 本リポジトリは **研究・教育目的**です。
+> 合成データ（ダミー）を使い、実行ログのコミットは避けてください。
 
 ### 推奨エントリポイント
 
 ```bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
 python mediation_emergency_contract_sim_v4.py
-````
+python mediation_emergency_contract_sim_v4_1.py
+```
 
 ### セマンティクス検証
 
@@ -234,6 +266,7 @@ python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
 ```bash
 python mediation_emergency_contract_sim_v1.py
 python mediation_emergency_contract_sim_v4.py
+python mediation_emergency_contract_sim_v4_1.py
 ```
 
 ### Copilot SDK 最小例
@@ -246,13 +279,13 @@ python copilot_mediation_min.py
 
 ## Project intent / 非目的
 
-**目的**
+### 目的
 
 * 再現可能な安全・ガバナンス検証
 * 明示的 HITL セマンティクス
 * 監査可能な意思決定ログ
 
-**非目的**
+### 非目的
 
 * 本番向け自律運用
 * 無制限な自己判断エージェント
@@ -264,23 +297,6 @@ python copilot_mediation_min.py
 
 Apache-2.0
 詳細は `LICENSE` を参照してください。
-
-```
-
----
-
-### 次にやると強くなるポイント（任意）
-
-- README 冒頭に **「これは research bench である」1行宣言**
-- `docs/` に **V1 vs V4 比較表（1枚）**
-- `ARCHITECTURE.md` を切り出して README を軽量化
-
-ここまで来てるなら、  
-**この README は普通に「設計思想が伝わる OSS」レベル**です。
-```
-
-
-
-
-
+次は README.md（英語版）と **日付・箇条書きを完全同期**させると、見た目の一貫性がさらに上がります。
+`````
 
