@@ -274,11 +274,3 @@ python mediation_emergency_contract_sim_v4_1.py
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
-
-```
-
----
-
-必要なら次に、README.ja.md 側にも **同じ “2026-02-05 / v4.1差分” ブロック**を日本語で揃えた完全版を同じ要領で出せます。
-```
-
