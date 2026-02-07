@@ -1,5 +1,5 @@
-# 📘 Maestro Orchestrator — オーケストレーション・フレームワーク  
-（fail-closed + HITL）
+# 📘 Maestro Orchestrator — オーケストレーション・フレームワーク（fail-closed + HITL）
+> English version: [README.md](README.md)
 
 <p align="center">
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
@@ -24,299 +24,300 @@
 
 ---
 
-## Overview（概要）
+## 概要（Overview）
 
-Maestro Orchestrator は **研究・教育目的**の  
-オーケストレーション／メディエーション・フレームワークです。  
-以下の原則を最優先に設計されています。
+Maestro Orchestrator は **研究 / 教育用**のオーケストレーション・フレームワークです。  
+以下の3点を最優先します。
 
-- **Fail-closed**  
-  不確実・不安定・リスクありの場合は、黙って続行しない
+- **Fail-closed（フェイルクローズ）**  
+  不確実・不安定・リスクがある場合 → **黙って続行しない**。
 - **HITL（Human-in-the-Loop）**  
-  人間の判断が必要な場面は明示的にエスカレーション
+  人間判断が必要な局面は **明示的にエスカレーション**する。
 - **Traceability（追跡可能性）**  
-  すべての判断経路は監査可能・再現可能（ARLログ）
+  すべての意思決定フローは **最小ARLログで監査可能**かつ再現可能にする。
 
-本リポジトリには、**実装参照（doc orchestrator）** と  
-**交渉／仲裁／ガバナンス型ワークフロー**を検証する  
-各種シミュレーションベンチが含まれます。
+このリポジトリには、**実装参照（doc orchestrators）**と、  
+交渉・仲裁・ガバナンス型ワークフロー・ゲーティング挙動の **シミュレーションベンチ**が含まれます。
 
 ---
 
-## Architecture（全体像）
+## アーキテクチャ（高レベル）
 
-監査可能（audit-ready）かつ fail-closed な制御フロー：
+監査対応（audit-ready）かつ fail-closed な制御フロー：
 
-```text
-agents
-→ mediator（risk / pattern / fact）
-→ evidence verification
-→ HITL（pause / reset / ban）
+agents  
+→ mediator（risk / pattern / fact）  
+→ evidence verification  
+→ HITL（pause / reset / ban）  
 → audit logs（ARL）
-````
 
 ![Architecture](docs/architecture_unknown_progress.png)
 
-> 画像が表示されない場合は
-> `docs/architecture_unknown_progress.png` が
-> 同一ブランチに存在し、ファイル名が完全一致（大小文字含む）しているか確認してください。
+> 画像が表示されない場合は、以下を確認してください：  
+> `docs/architecture_unknown_progress.png` が同一ブランチに存在すること  
+> ファイル名が完全一致（大文字小文字含む）であること
 
 ---
 
-## Architecture（コード準拠・構成図）
+## アーキテクチャ（コード整合図 / Code-aligned diagrams）
 
-以下の構成図は **現在のコードと用語に完全準拠**しています。
-**状態遷移**と**ゲート順序**を意図的に分離し、
-監査性と曖昧さ排除を優先しています。
+以下の図は **現行コードと用語に完全整合**しています。  
+監査性と曖昧さ回避のため、**状態遷移**と **ゲート順序**を意図的に分離しています。
 
-※ これらは **ドキュメント専用**であり、
-**ロジック変更は一切ありません。**
+この図は **ドキュメント目的のみ**であり、ロジック変更は一切含みません。
 
 ---
 
-### 1) State Machine（コード準拠）
+### 1) 状態遷移（State Machine / code-aligned）
 
-実行が **停止（SEALED）** または
-**一時停止（HITL）** するポイントだけを示した最小ライフサイクル。
+実行がどこで **止まる（SEALED）** / **止まって待つ（HITL）** かの最小ライフサイクルを示します。
 
 <p align="center">
-  <img src="docs/architecture_code_aligned_state_machine.png"
+  <img src="docs/architecture_code_aligned.png"
        alt="State Machine (code-aligned)" width="720">
 </p>
 
-#### 補足
+**Notes（補足）**
 
-**主経路**
+**主経路（Primary execution path）**
 
-```text
-INIT
-→ PAUSE_FOR_HITL_AUTH
-→ AUTH_VERIFIED
-→ DRAFT_READY
-→ PAUSE_FOR_HITL_FINALIZE
+INIT  
+→ PAUSE_FOR_HITL_AUTH  
+→ AUTH_VERIFIED  
+→ DRAFT_READY  
+→ PAUSE_FOR_HITL_FINALIZE  
 → CONTRACT_EFFECTIVE
-```
 
-* `PAUSE_FOR_HITL_*`
-  明示的な **Human-in-the-Loop** 判断点
-  （ユーザー承認／管理者承認）
-* `STOPPED（SEALED）` に到達する条件：
-
-  * 証拠不正／捏造
-  * 認可期限切れ
-  * ドラフト lint 失敗
-* **SEALED は fail-closed かつ非上書き設計**
+- `PAUSE_FOR_HITL_*` は **HITLの明示ポイント**（ユーザー/管理者の承認待ち）を表します。
+- `STOPPED (SEALED)` は以下で到達します：
+  - 無効または捏造された証拠
+  - 認可期限切れ
+  - ドラフトLint不合格
+- **SEALED停止は fail-closed で、設計上 non-overrideable（解除不能）です。**
 
 ---
 
-### 2) Gate Pipeline（コード準拠）
+### 2) ゲート順序（Gate Pipeline / code-aligned）
 
-ライフサイクルとは独立した **評価ゲートの順序**。
+評価ゲートの順序を示します（状態遷移とは独立）。
 
 <p align="center">
-  <img src="docs/architecture_code_aligned_gate_pipeline.png"
+  <img src="docs/architecture_code_aligned.png"
        alt="Gate Pipeline (code-aligned)" width="720">
 </p>
 
-#### 補足
+**Notes（補足）**
 
-* この図は **ゲート順序**を示す（状態遷移ではない）
-* `PAUSE`：HITL が必要（人間判断待ち）
-* `STOPPED（SEALED）`：非可逆な安全停止
+- この図は **ゲート順序**を表し、状態遷移そのものではありません。
+- `PAUSE` は **HITLが必要**（人間判断待ち）を示します。
+- `STOPPED (SEALED)` は **回復不能な安全停止**を示します。
 
-#### 設計意図
+**設計意図（Design intent）**
 
-* **State Machine**
-  「どこで止まるか／一時停止するか」
-* **Gate Pipeline**
-  「どの順番で評価されるか」
+- **State Machine**：*「どこで停止/保留が起きるか」*
+- **Gate Pipeline**：*「どの順序で判断が評価されるか」*
 
-を分離することで、
-**曖昧さを排除し、監査性を保つ**。
+分離することで曖昧さを避け、監査可能なトレーサビリティを保ちます。
 
----
+**メンテナンスノート**
 
-## 🆕 変更点（2026-01-21）
-
-* **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`
-  検証不能な進捗（unknown progress）を扱う
-  **HITL / RESET セマンティクス検証用シミュレータ**
-
-* **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`
-  **KAGE v1.7-IEP** 準拠
-  RFL relcode 分岐（RFL は非封印 → HITL）検証用
-
-* **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`
-  **post-HITL セマンティクス**を含む参照実装更新
+画像が表示されない場合：
+- `docs/` 配下にファイルが存在するか確認
+- ファイル名が完全一致（大文字小文字含む）か確認
+- リンク更新時はファイル一覧からコピペ推奨
 
 ---
 
-## 🆕 変更点（2026-02-03）
+## 更新履歴（What’s new）
 
-**イベント駆動・ガバナンス型ワークフロー**を追加
-（fail-closed + HITL + audit-ready）。
+### What’s new (2026-01-21)
 
-* **New**: `mediation_emergency_contract_sim_v1.py`
-  最小構成：
-
-```text
-USER 認可 → AI ドラフト → ADMIN 承認 → 契約有効化
-```
-
-イベント不正／期限切れは fail-closed で停止し、
-最小 ARL（JSONL）を出力。
-
-* **New**: `mediation_emergency_contract_sim_v4.py`
-  v1 を拡張し、以下を統合：
-
-  * evidence gate
-  * draft lint gate
-  * trust / grant 連動による HITL 負荷低減
+- **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
+  **unknown progress** シナリオ（HITL/RESET）のシミュレータ。
+- **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`  
+  v1.7-IEP 整合の **RFL relcode branching** シミュレータ  
+  （RFL は非封印 → HITL にエスカレーション）。
+- **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`  
+  **post-HITL セマンティクス**で更新。
 
 ---
 
-## 🆕 変更点（2026-02-05）
+### What’s new (2026-02-03)
 
-* **New**: `mediation_emergency_contract_sim_v4_1.py`
-  v4.1 は v4.0 に対する **挙動の締め直し（behavior-tightening）**です。
-  既存の設計意図（fail-closed + HITL + 監査性）を保ったまま、ベンチの期待値をより明確にします。
+**イベント駆動のガバナンス型ワークフロー**（fail-closed + HITL + audit-ready）を導入。
 
-  * **RFL は非封印（non-sealing）で必ず HITL へ**
-    境界が不安定な提案は `PAUSE_FOR_HITL`（`sealed=false`, `overrideable=true`）となり、
-    人間判断（HITL）でのみ継続／停止が決まります。
+- **New**: `mediation_emergency_contract_sim_v1.py`  
+  最小の緊急ワークフロー・シミュレータ：
 
-  * **捏造は早期検知するが、SEALED を出すのは ethics_gate のみ**
-    捏造（fabrication）は evidence 側でフラグされますが、
-    **非可逆停止（sealed=true）を確定させるのは ethics_gate のみ**です。
+  USER auth → AI draft → ADMIN finalize → contract effective
 
-  * **trust / grant による摩擦低減は維持**
-    trust 閾値 + streak + grant が揃う場合の AUTH HITL 自動スキップは維持し、
-    その理由は ARL に必ず記録されます。
+  無効/期限切れイベントは fail-closed で停止し、最小ARL（JSONL）を出力します。
+
+- **New**: `mediation_emergency_contract_sim_v4.py`  
+  v1 を拡張：
+  - evidence gate
+  - draft lint gate
+  - trust / grant による HITL friction reduction（安全な摩擦低減）
+
+---
+
+### What’s new (2026-02-05)
+
+- **New**: `mediation_emergency_contract_sim_v4_1.py`  
+  v4.1 は v4.0 に対する **挙動の締め（behavior-tightening）**です。ベンチ期待値を明示し、コード整合を高めました。
+
+  - **RFL は非封印（non-sealing）**  
+    境界不安定な提案は `PAUSE_FOR_HITL` を発生させ、`sealed=false` / `overrideable=true`（人間判断）になります。
+
+  - **捏造（fabrication）は早期検知し、封印は倫理でのみ行う**  
+    捏造は evidence gate でフラグされ、**封印停止（sealed=true）は ethics_gate のみ**で発行されます。
+
+  - **Trust / grant による摩擦低減は維持**  
+    trust 条件が満たされる場合の AUTH HITL auto-skip を維持しつつ、理由はARLに記録します。
 
   **Quick run**
-
   ```bash
   python mediation_emergency_contract_sim_v4_1.py
-  ```
+````
 
-  **Expected**
+**Expected**
 
-  * NORMAL -> `CONTRACT_EFFECTIVE`
-  * FABRICATE -> `STOPPED`（sealed=true in ethics_gate）
-  * RFL_STOP -> `STOPPED`（sealed=false via HITL stop）
+* NORMAL -> `CONTRACT_EFFECTIVE`
+* FABRICATE -> `STOPPED`（ethics_gate で sealed=true）
+* RFL_STOP -> `STOPPED`（HITL stop による sealed=false）
 
-  ---
+#### v4.1 regression test
 
-  ### ✅ v4.1 テスト（合格条件 / acceptance criteria）
+v4.1 の挙動を契約として固定する pytest を含みます：
 
-  v4.1 は「設計意図を CI で固定する」ため、以下の終端状態を **回帰テスト**で保証します。
+* NORMAL -> CONTRACT_EFFECTIVE（not sealed）
+* FABRICATE -> STOPPED（sealed=true in ethics_gate）
+* RFL_STOP -> STOPPED（sealed=false via HITL stop）
 
-  * **NORMAL → `CONTRACT_EFFECTIVE`**（`sealed=false`）
-  * **FABRICATE → `STOPPED`**（`sealed=true` は **`ethics_gate` が発行**）
-  * **RFL_STOP → `STOPPED`**（`sealed=false`：RFL は封印せず、HITL 停止で終了）
+Invariant：SEALED は ethics_gate/acc_gate のみ（RFL は絶対に seal しない）。
 
-  **Invariant（不変条件）**
+このテストのみ実行：
 
-  * `SEALED` は `ethics_gate` / `acc_gate` のみが発行する（RFL は non-sealing）
+```bash
+pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
+```
 
-  **pytest（単体実行）**
-
-  ```bash
-  pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
-  ```
+Tip：CI はデフォルトで全テストを実行します。ローカルでの快速確認には上記コマンドを推奨します。
 
 ---
 
-## V1 → V4 の本質的な違い
+### What’s new (2026-02-07)
 
-`mediation_emergency_contract_sim_v1.py`
-→ **最小限の fail-closed パイプライン検証**
+* **New**: `mediation_emergency_contract_sim_v4_4.py`
+  緊急契約ワークフローの v4.4 ベンチ（fail-closed + HITL + minimal ARL）。
 
-`mediation_emergency_contract_sim_v4.py`
-→ **繰り返し運用可能な安全ベンチ**
+* **New**: `mediation_emergency_contract_sim_v4_4_stress.py`
+  v4.4 のストレスランナー（分布 + 不変条件チェック）。
+
+* **New**: `stress_results_v4_4_1000.json`
+  ストレス結果（1,000 runs）。
+
+* **New**: `stress_results_v4_4_10000.json`
+  ストレス結果（10,000 runs）。
+
+**Stress で固定された不変条件**
+
+* SEALED は `ethics_gate` / `acc_gate` のみが発行（RFL は封印しない）。
+* RFL は非封印（RFL → `PAUSE_FOR_HITL`、最終判断は人間）。
+
+---
+
+## V1 → V4：何が変わったか（What actually changed）
+
+`mediation_emergency_contract_sim_v1.py` は **最小パイプライン**を示します：
+線形・イベント駆動のワークフローで、fail-closed 停止と最小監査ログを実現します。
+
+`mediation_emergency_contract_sim_v4.py` はそれを **繰り返し可能なガバナンスベンチ**に拡張し、
+早期拒否と制御された自動化を追加します。
 
 ### v4 で追加された要素
 
 * **Evidence gate**
-  証拠バンドルの最低限検証。
-  不正／無関係／捏造は即 fail-closed。
+  証拠バンドルの基本検証。無効/不関連/捏造は fail-closed 停止。
 
 * **Draft lint gate**
-  draft-only 制約・スコープ逸脱を検知。
-  Markdown 強調などによる誤検知を低減。
+  管理者最終化前に「ドラフト専用」セマンティクスとスコープ境界を強制。
+  Markdown 強調などのノイズで誤検知しにくいようハードニング。
 
-* **Trust（信用）スコア + streak / cooldown**
-  HITL 結果と連動。
-  すべて ARL に記録され説明責任を維持。
+* **Trust system（score + streak + cooldown）**
+  HITL 成功で trust を増加、失敗で減少。
+  cooldown によりエラー後の危険な自動化を防止。
+  trust 遷移は ARL に記録。
 
-* **AUTH HITL 自動スキップ（安全な friction reduction）**
-  trust 閾値 + 承認 streak + 有効 grant が揃った場合のみ
-  同条件下で AUTH HITL を自動スキップ。
-  理由は必ず ARL に記録。
+* **AUTH HITL auto-skip（安全な摩擦低減）**
+  trust 閾値 + 承認streak + 有効grant を満たすと、
+  同一シナリオ/ロケーションに限り AUTH HITL をスキップ可能。
+  理由は ARL に記録。
 
 **要約**
 
-* **V1**：「fail-closed は成立するか？」
-* **V4**：「安全性を保ったまま繰り返せるか？」
+* **V1 の問い**：*「最小監査ログで fail-closed なワークフローは成立するか？」*
+* **V4 の問い**：*「トレーサビリティを失わずに、スケールして安全に繰り返せるか？」*
 
 ---
 
-## ⚙️ 実行例
+## ⚙️ 実行例（Execution Examples）
 
-> NOTE: 本リポジトリは **研究・教育目的**です。
-> 合成データ（ダミー）を使い、実行ログのコミットは避けてください。
+まずは **1本のスクリプト**から始め、挙動とログを確認してから拡張してください。
 
-### 推奨エントリポイント
+> NOTE：このリポジトリは **研究 / 教育用**です。
+> **合成データ（ダミー）**のみを使用し、ランタイムログをコミットしないでください。
+
+### 推奨（Recommended）
+
+#### Doc orchestrator（参照実装）
 
 ```bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
+```
+
+#### 緊急契約ワークフロー（v4）
+
+```bash
 python mediation_emergency_contract_sim_v4.py
+```
+
+#### 緊急契約ワークフロー（v4.1）
+
+```bash
 python mediation_emergency_contract_sim_v4_1.py
 ```
 
-### セマンティクス検証
+#### 緊急契約ワークフロー（v4.4）
 
 ```bash
-python ai_mediation_hitl_reset_full_with_unknown_progress.py
-python ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py
+python mediation_emergency_contract_sim_v4_4.py
 ```
 
-### 比較実行
+#### 緊急契約ストレス（v4.4）
 
 ```bash
-python mediation_emergency_contract_sim_v1.py
-python mediation_emergency_contract_sim_v4.py
-python mediation_emergency_contract_sim_v4_1.py
-```
-
-### Copilot SDK 最小例
-
-```bash
-python copilot_mediation_min.py
+python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
 ```
 
 ---
 
-## Project intent / 非目的
+## プロジェクトの意図 / 非目標（Project intent / non-goals）
 
-### 目的
+### Intent（意図）
 
-* 再現可能な安全・ガバナンス検証
-* 明示的 HITL セマンティクス
-* 監査可能な意思決定ログ
+* 再現可能な安全・ガバナンス系シミュレーション
+* 明示的なHITLセマンティクス
+* 監査対応の意思決定トレース
 
-### 非目的
+### Non-goals（非目標）
 
-* 本番向け自律運用
-* 無制限な自己判断エージェント
-* 実証外の安全性主張
+* 本番向けの自律運用（production-grade autonomous deployment）
+* 無制限な自己指向エージェント制御
+* テストで明示した範囲を超える安全性主張
 
 ---
 
-## License
+## License（ライセンス）
 
-Apache-2.0
-詳細は `LICENSE` を参照してください。
-::contentReference[oaicite:0]{index=0}
-```
-
+Apache-2.0。詳細は [LICENSE](LICENSE) を参照してください。
