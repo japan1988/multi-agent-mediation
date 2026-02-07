@@ -1,0 +1,36 @@
+{
+  "invariants": {
+    "sealed_only_ethics_or_acc": true,
+    "rfl_never_sealed": true
+  },
+  "counts": {
+    "runs": 10000,
+    "runtime_sec": 8.589,
+    "by_state": {
+      "CONTRACT_EFFECTIVE": 7338,
+      "STOPPED": 1777,
+      "INIT": 885
+    },
+    "by_reason_code_top20": {
+      "OK": 38157,
+      "TRUST_UPDATE": 16617,
+      "EVIDENCE_OK": 8157,
+      "AUTH_REQUIRED": 7819,
+      "TRUST_COOLDOWN_ACTIVE": 7817,
+      "AUTH_APPROVE": 7502,
+      "DRAFT_GENERATED": 7502,
+      "DRAFT_LINT_OK": 7338,
+      "ADMIN_FINALIZE_REQUIRED": 7338,
+      "FINALIZE_APPROVE": 7338,
+      "CONTRACT_EFFECTIVE": 7338,
+      "EVIDENCE_FABRICATION": 1618,
+      "EVIDENCE_SCHEMA_INVALID": 974,
+      "EVIDENCE_MISSING": 547,
+      "CRIT_MISSING_REQUIRED_KEYS": 338,
+      "DRAFT_OUT_OF_SCOPE": 328,
+      "AUTH_EXPIRED": 317,
+      "TRUST_SCORE_LOW": 2
+    }
+  },
+  "violations": []
+}
