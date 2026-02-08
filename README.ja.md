@@ -181,7 +181,6 @@ Introduced an **event-driven governance-style workflow**
 Expected
 
 rust
-コードをコピーする
 NORMAL -> CONTRACT_EFFECTIVE
 
 FABRICATE -> STOPPED (sealed=true in ethics_gate)
@@ -202,7 +201,6 @@ Invariant: SEALED is issued only by ethics_gate/acc_gate (RFL never seals).
 Run only this test file:
 
 bash
-コードをコピーする
 pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
 What’s new (2026-02-07)
 New: mediation_emergency_contract_sim_v4_4.py
@@ -321,37 +319,30 @@ Recommended
 Doc orchestrator（参照実装）
 
 bash
-コードをコピーする
 python ai_doc_orchestrator_kage3_v1_2_4.py
 Emergency contract workflow（v4）
 
 bash
-コードをコピーする
 python mediation_emergency_contract_sim_v4.py
 Emergency contract workflow（v4.1）
 
 bash
-コードをコピーする
 python mediation_emergency_contract_sim_v4_1.py
 Emergency contract workflow（v4.4）
 
 bash
-コードをコピーする
 python mediation_emergency_contract_sim_v4_4.py
 Emergency contract stress（v4.4）
 
 bash
-コードをコピーする
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
 Emergency contract workflow（v4.6）
 
 bash
-コードをコピーする
 python mediation_emergency_contract_sim_v4_6.py
 Emergency contract workflow（v4.7）
 
 bash
-コードをコピーする
 python mediation_emergency_contract_sim_v4_7_full.py
 Project intent / non-goals
 Intent
