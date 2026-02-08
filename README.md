@@ -22,7 +22,7 @@
   </a>
 </p>
 
----
+
 
 ## Overview
 
@@ -37,9 +37,6 @@ Maestro Orchestrator is a **research / educational** orchestration framework tha
 
 This repository contains **implementation references** (doc orchestrators) and **simulation benches**
 for negotiation, mediation, governance-style workflows, and gating behavior.
-
----
-
 ## Architecture (high level)
 
 Audit-ready and fail-closed control flow:
@@ -55,16 +52,12 @@ agents
 > If the image does not render, confirm that  
 > `docs/architecture_unknown_progress.png` exists on the same branch and that the filename matches exactly (case-sensitive).
 
----
-
 ## Architecture (Code-aligned diagrams)
 
 The following diagram is **fully aligned with the current code and terminology**.  
 It intentionally separates **state transitions** from **gate order** to preserve auditability and avoid ambiguity.
 
 This diagram is **documentation-only** and introduces **no logic changes**.
-
----
 
 ### 1) State Machine (code-aligned)
 
@@ -94,8 +87,6 @@ INIT
   - authorization expiry
   - draft lint failure
 - **SEALED stops are fail-closed and non-overrideable by design.**
-
----
 
 ### 2) Gate Pipeline (code-aligned)
 
@@ -127,9 +118,7 @@ If the image does not render:
 - Confirm the file exists under `docs/`
 - Confirm the filename matches exactly (case-sensitive)
 - Prefer copy-paste from the file list when updating links
-
----
-
+- 
 ## What’s new (2026-01-21)
 
 - **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
@@ -139,8 +128,6 @@ If the image does not render:
   (RFL is non-sealing → escalates to HITL).
 - **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`  
   Doc orchestrator reference updated with **post-HITL semantics**.
-
----
 
 ## What’s new (2026-02-03)
 
@@ -161,8 +148,6 @@ Introduced an **event-driven governance-style workflow**
   - draft lint gate
   - trust / grant–based HITL friction reduction
 
----
-
 ## What’s new (2026-02-05)
 
 - **New**: `mediation_emergency_contract_sim_v4_1.py`  
@@ -181,11 +166,9 @@ Introduced an **event-driven governance-style workflow**
   **Quick run**
   ```bash
   python mediation_emergency_contract_sim_v4_1.py
-````
 
 **Expected**
 
-```
 NORMAL -> CONTRACT_EFFECTIVE
 
 FABRICATE -> STOPPED (sealed=true in ethics_gate)
@@ -206,9 +189,6 @@ Run only this test file:
 
 ```bash
 pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
-```
-
----
 
 ## What’s new (2026-02-07)
 
@@ -229,8 +209,6 @@ pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
 * SEALED is issued only by ethics_gate / acc_gate (RFL never seals).
 * RFL is non-sealing by design (RFL → PAUSE_FOR_HITL, human decides).
 
----
-
 ## What’s new (2026-02-08)
 
 * **New**: `mediation_emergency_contract_sim_v4_6.py`
@@ -243,8 +221,6 @@ pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
   v4.7 introduces coaching by the top (highest-score) agent to reduce low-trust “shortest-path” retries
   and improve clean completion.
 
----
-
 ### Why v4.7 (what was found in v4.6)
 
 In v4.6 stress (100,000 runs), 2 runs STOPPED due to low trust where an agent attempted a low-trust
@@ -254,22 +230,16 @@ v4.7 adds a guidance step (coaching) to improve the agent state before retrying,
 
 * v4.6 STOPPED (2 cases): reason_code=`TRUST_SCORE_LOW` @ model_trust_gate (fail-closed)
 
----
-
 ### Guardrail note (design-time prevention)
 
 The guardrails were already present at design time, so these unsafe conditions were stopped early (fail-closed)
 instead of silently continuing and becoming incidents.
-
----
 
 ### v4.6 stress snapshot (100,000 runs)
 
 * CONTRACT_EFFECTIVE: 73,307
 * STOPPED: 18,385
 * INIT: 8,308
-
----
 
 ### v4.7 (regex fix + re-run)
 
@@ -334,16 +304,12 @@ ok=0.86, out_of_scope=0.04, legal_binding=0.05, discrimination=0.05.
   AUTH HITL can be skipped for the same scenario/location only,
   while recording the reason in ARL.
 
----
-
 ## Execution Examples
 
 Start with one script, confirm behavior and logs, then expand.
 
 **NOTE:** This repository is research / educational.
 Use synthetic or dummy data and do not commit runtime logs.
-
----
 
 ### Recommended
 
@@ -388,9 +354,6 @@ python mediation_emergency_contract_sim_v4_6.py
 ```bash
 python mediation_emergency_contract_sim_v4_7_full.py
 ```
-
----
-
 ## Project intent / non-goals
 
 ### Intent
@@ -404,9 +367,6 @@ python mediation_emergency_contract_sim_v4_7_full.py
 * Production-grade autonomous deployment
 * Unbounded self-directed agent control
 * Safety claims beyond what is explicitly tested
-
----
-
 ## License
 
 Apache License 2.0 (see [LICENSE](LICENSE))
