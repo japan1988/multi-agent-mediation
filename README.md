@@ -230,6 +230,47 @@ Tip: CI runs the full suite by default. Use the command above for quick local ve
 
 ---
 
+## What’s new (2026-02-08)
+
+* **New**: `mediation_emergency_contract_sim_v4_6_full.py`
+  Emergency contract workflow bench v4.6 (sim + 100k stress results).
+
+* **New**: `stress_results_v4_6_100000.json`
+  Stress summary (100,000 runs).
+
+* **New**: `mediation_emergency_contract_sim_v4_7_full.py`
+  v4.7 adds coaching to reduce low-trust “shortest-path” retries.
+
+**Stress-pinned invariants (v4.6)**
+
+* SEALED is issued only by `ethics_gate` / `acc_gate` (RFL never seals).
+* RFL is non-sealing by design (RFL → `PAUSE_FOR_HITL`, human decides).
+
+### v4.6 → v4.7 (why this change)
+
+Observed (v4.6):
+
+* When an agent’s trust score was low, it attempted a “shortest-path” route and produced **2 STOPPED outcomes**.
+* Details: those 2 STOPPED were tagged as `reason_code=TRUST_SCORE_LOW`.
+
+Change (v4.7):
+
+* The top-ranked agent (highest score) provides coaching to the low-trust agent.
+
+Guardrail value:
+
+* Because the guardrails were built in from the design stage, risky low-trust shortcut attempts were contained early (fail-closed) rather than silently reaching dispatch.
+
+Expected:
+
+* This is expected to improve the agent state and increase clean completion (v4.7 stress results will be published later, after additional verification).
+
+Invariants:
+
+* SEALED is issued only by `ethics_gate` / `acc_gate` (RFL never seals).
+
+---
+
 ## V1 → V4: What actually changed
 
 `mediation_emergency_contract_sim_v1.py` demonstrates the **minimum viable pipeline**:
