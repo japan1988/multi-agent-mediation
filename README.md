@@ -282,13 +282,29 @@ so `\b` did not work as a “word boundary”, and the Safety patterns were effe
 * Goal: restore intended detection behavior for Safety patterns that assume word boundaries,
   ensuring they correctly trigger fail-closed stops.
 
-#### 2) Stress after the fix (same 100,000 runs / seed=42)
+#### 2) Focused stress after the fix (100,000 runs / seed=42)
 
 * Added `stress_report_v4_7_draft_lint_100k_seed42.json`
-* Verified that Safety stop rate aligns with the intended behavior
-  (≈ “draft reach × weight”) after the word-boundary fix.
+* Verified that Safety stop rate aligns with the intended behavior (≈ “draft reach × weight”) after the word-boundary fix.
 
-> This is a behavior-critical, reproducibility-critical change and is intentionally documented.
+**Reproducibility**
+
+This is a focused micro-bench for `draft_lint_gate` (generate → mutate → lint), with fixed weights:
+ok=0.86, out_of_scope=0.04, legal_binding=0.05, discrimination=0.05.
+
+**Observed (100,000 runs / seed=42)**
+
+| Category                     | Expected weight | Observed rate | Observed count |
+| ---------------------------- | --------------: | ------------: | -------------: |
+| DRAFT_LINT_OK                |            0.86 |       0.86022 |         86,022 |
+| DRAFT_OUT_OF_SCOPE           |            0.04 |       0.03902 |          3,902 |
+| SAFETY_LEGAL_BINDING_CLAIM   |            0.05 |       0.05000 |          5,000 |
+| SAFETY_DISCRIMINATION_TERM   |            0.05 |       0.05076 |          5,076 |
+| **SAFETY_STOP_RATE (total)** |        **0.10** |   **0.10076** |     **10,076** |
+| **TOTAL_FAIL_RATE**          |        **0.14** |   **0.13978** |     **13,978** |
+
+> Note: This result validates the intended behavior of `draft_lint_gate` after the regex word-boundary fix.
+> It is intentionally documented because it is both behavior-critical and reproducibility-critical.
 
 ---
 
@@ -394,8 +410,3 @@ python mediation_emergency_contract_sim_v4_7_full.py
 ## License
 
 Apache License 2.0 (see [LICENSE](LICENSE))
-
-```
-::contentReference[oaicite:0]{index=0}
-```
-
