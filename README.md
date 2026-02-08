@@ -203,7 +203,7 @@ Invariant: SEALED is issued only by ethics_gate/acc_gate (RFL never seals).
 Run only this test file:
 
 bash
-コードをコピーする
+
 pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
 Tip: CI runs the full suite by default. Use the command above for quick local verification.
 
