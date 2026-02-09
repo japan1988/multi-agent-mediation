@@ -33,10 +33,35 @@ Maestro Orchestrator is a **research / educational** orchestration framework tha
 - **HITL (Human-in-the-Loop)**  
   Decisions that require human judgment are explicitly escalated.
 - **Traceability**  
-  All decision flows are audit-ready and reproducible via minimal ARL logs.
+  Decision flows are audit-ready and reproducible via minimal ARL logs.
 
 This repository contains **implementation references** (doc orchestrators) and **simulation benches**
 for negotiation, mediation, governance-style workflows, and gating behavior.
+
+---
+
+## Quickstart (recommended path)
+
+Start with one script, confirm behavior and logs, then expand.
+
+### 1) Run the latest emergency contract simulator (v4.8)
+
+```bash
+python mediation_emergency_contract_sim_v4_8.py
+````
+
+### 2) Run the pinned smoke test (v4.8)
+
+```bash
+pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
+```
+
+### 3) Optional: inspect evidence bundle (generated artifact)
+
+* `docs/artifacts/v4_8_artifacts_bundle.zip`
+
+> Note: evidence bundles (zip) are **generated artifacts** produced by tests/runs.
+> The canonical source of truth is the generator scripts + tests.
 
 ---
 
@@ -44,56 +69,56 @@ for negotiation, mediation, governance-style workflows, and gating behavior.
 
 Audit-ready and fail-closed control flow:
 
-agents  
-→ mediator (risk / pattern / fact)  
-→ evidence verification  
-→ HITL (pause / reset / ban)  
+agents
+→ mediator (risk / pattern / fact)
+→ evidence verification
+→ HITL (pause / reset / ban)
 → audit logs (ARL)
 
 ![Architecture](docs/architecture_unknown_progress.png)
 
-> If the image does not render, confirm that  
+> If the image does not render, confirm that
 > `docs/architecture_unknown_progress.png` exists on the same branch and that the filename matches exactly (case-sensitive).
 
 ---
 
-## Architecture (Code-aligned diagrams)
+## Architecture (code-aligned diagrams)
 
-The following diagram is **fully aligned with the current code and terminology**.  
-It intentionally separates **state transitions** from **gate order** to preserve auditability and avoid ambiguity.
+The following diagrams are **aligned with the current code vocabulary**.
+They separate **state transitions** from **gate order** to preserve auditability and avoid ambiguity.
 
-This diagram is **documentation-only** and introduces **no logic changes**.
+> Documentation-only. No logic changes.
 
 ---
 
 ### 1) State Machine (code-aligned)
 
-Minimal lifecycle transitions showing where execution **pauses (HITL)**  
+Minimal lifecycle transitions showing where execution **pauses (HITL)**
 or **stops permanently (SEALED)**.
 
 <p align="center">
-  <img src="docs/architecture_code_aligned.png"
+  <img src="docs/architecture_state_machine_code_aligned.png"
        alt="State Machine (code-aligned)" width="720">
 </p>
 
-**Notes**
-
 **Primary execution path**
 
-INIT  
-→ PAUSE_FOR_HITL_AUTH  
-→ AUTH_VERIFIED  
-→ DRAFT_READY  
-→ PAUSE_FOR_HITL_FINALIZE  
+INIT
+→ PAUSE_FOR_HITL_AUTH
+→ AUTH_VERIFIED
+→ DRAFT_READY
+→ PAUSE_FOR_HITL_FINALIZE
 → CONTRACT_EFFECTIVE
 
-- `PAUSE_FOR_HITL_*` represents an explicit **Human-in-the-Loop** decision point  
-  (user approval or admin approval).
-- `STOPPED (SEALED)` is reached on:
-  - invalid or fabricated evidence
-  - authorization expiry
-  - draft lint failure
-- **SEALED stops are fail-closed and non-overrideable by design.**
+**Notes**
+
+* `PAUSE_FOR_HITL_*` represents an explicit **Human-in-the-Loop** decision point (user approval or admin approval).
+* `STOPPED (SEALED)` is reached on:
+
+  * invalid or fabricated evidence
+  * authorization expiry
+  * draft lint failure
+* **SEALED stops are fail-closed and non-overrideable by design.**
 
 ---
 
@@ -102,285 +127,267 @@ INIT
 Ordered evaluation gates, **independent from lifecycle state transitions**.
 
 <p align="center">
-  <img src="docs/architecture_code_aligned.png"
+  <img src="docs/architecture_gate_pipeline_code_aligned.png"
        alt="Gate Pipeline (code-aligned)" width="720">
 </p>
 
 **Notes**
 
-- This diagram represents **gate order**, not state transitions.
-- `PAUSE` indicates **HITL required** (human decision pending).
-- `STOPPED (SEALED)` indicates a **non-recoverable safety stop**.
+* This diagram represents **gate order**, not state transitions.
+* `PAUSE` indicates **HITL required** (human decision pending).
+* `STOPPED (SEALED)` indicates a **non-recoverable safety stop**.
 
 **Design intent**
 
-- **State Machine** answers:  
-  *“Where does execution pause or terminate?”*
-- **Gate Pipeline** answers:  
-  *“In what order are decisions evaluated?”*
+* **State Machine** answers: *“Where does execution pause or terminate?”*
+* **Gate Pipeline** answers: *“In what order are decisions evaluated?”*
 
 Keeping them separate avoids ambiguity and preserves audit-ready traceability.
 
 **Maintenance note**
 
-If the image does not render:
-- Confirm the file exists under `docs/`
-- Confirm the filename matches exactly (case-sensitive)
-- Prefer copy-paste from the file list when updating links
+If an image does not render:
+
+* Confirm the file exists under `docs/`
+* Confirm the filename matches exactly (case-sensitive)
+* Prefer copy-paste from the file list when updating links
 
 ---
 
-## What’s new (2026-01-21)
+## What’s new (timeline)
 
-- **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
+### 2026-01-21
+
+**Added**
+
+* `ai_mediation_hitl_reset_full_with_unknown_progress.py`
   Simulator for **unknown progress** scenarios with HITL/RESET semantics.
-- **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`  
-  v1.7-IEP aligned simulator for **RFL relcode branching**  
-  (RFL is non-sealing → escalates to HITL).
-- **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`  
+* `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`
+  v1.7-IEP aligned simulator for **RFL relcode branching** (RFL is non-sealing → escalates to HITL).
+
+**Changed**
+
+* `ai_doc_orchestrator_kage3_v1_2_4.py`
   Doc orchestrator reference updated with **post-HITL semantics**.
 
 ---
 
-## What’s new (2026-02-03)
+### 2026-02-03
 
-Introduced an **event-driven governance-style workflow**
-(fail-closed + HITL + audit-ready).
+**Added**
 
-- **New**: `mediation_emergency_contract_sim_v1.py`  
+* `mediation_emergency_contract_sim_v1.py`
   Minimal emergency workflow simulator:
-
   USER auth → AI draft → ADMIN finalize → contract effective
-
-  Invalid or expired events fail-closed and stop execution,
-  producing a minimal ARL (JSONL).
-
-- **New**: `mediation_emergency_contract_sim_v4.py`  
+  Invalid or expired events fail-closed and stop execution, producing a minimal ARL (JSONL).
+* `mediation_emergency_contract_sim_v4.py`
   Extended v1 with:
-  - evidence gate
-  - draft lint gate
-  - trust / grant–based HITL friction reduction
+
+  * evidence gate
+  * draft lint gate
+  * trust / grant–based HITL friction reduction
 
 ---
 
-## What’s new (2026-02-05)
+### 2026-02-05 (v4.1 behavior tightening)
 
-- **New**: `mediation_emergency_contract_sim_v4_1.py`  
-  v4.1 is a **behavior-tightening** update over v4.0 to make the bench expectations explicit and code-aligned:
+**Changed**
 
-  - **RFL is non-sealing by design**  
-    Boundary-unstable proposals trigger `PAUSE_FOR_HITL` with `sealed=false` and `overrideable=true` (human decides).
+* **RFL is non-sealing by design**
+  Boundary-unstable proposals trigger `PAUSE_FOR_HITL` with `sealed=false` and `overrideable=true` (human decides).
+* **Fabrication flagged early, sealing only in ethics**
+  Evidence fabrication is flagged in evidence gate; the only sealing stop is issued by `ethics_gate` (`STOPPED` with `sealed=true`).
+* **Trust/grant friction reduction preserved**
+  Trust/grant-based AUTH auto-skip behavior stays supported when thresholds are satisfied, while still logging reasons to ARL.
 
-  - **Fabrication is detected early, but sealing occurs only in ethics**  
-    Evidence fabrication is flagged in the evidence gate, and the **only sealing stop** is issued by `ethics_gate`
-    (`STOPPED` with `sealed=true`).
+**Repro**
 
-  - **Trust/grant friction reduction remains supported**  
-    Trust/grant-based AUTH auto-skip behavior is preserved (when thresholds are satisfied), while still logging reasons to ARL.
+```bash
+python mediation_emergency_contract_sim_v4_1.py
+```
 
-  **Quick run**
-  ```bash
-  python mediation_emergency_contract_sim_v4_1.py
-Expected
+**Expected**
 
-NORMAL -> CONTRACT_EFFECTIVE
+* NORMAL -> CONTRACT_EFFECTIVE
+* FABRICATE -> STOPPED (sealed=true in ethics_gate)
+* RFL_STOP -> STOPPED (sealed=false via HITL stop)
 
-FABRICATE -> STOPPED (sealed=true in ethics_gate)
+**Regression test**
 
-RFL_STOP -> STOPPED (sealed=false via HITL stop)
-
-
-v4.1 regression test
-
-This repo includes a dedicated pytest file that pins v4.1 behavior as a contract:
-
-NORMAL -> CONTRACT_EFFECTIVE (not sealed)
-
-FABRICATE -> STOPPED (sealed=true in ethics_gate)
-
-RFL_STOP -> STOPPED (sealed=false via HITL stop)
-
-Invariant: SEALED is issued only by ethics_gate/acc_gate (RFL never seals).
-
-Run only this test file:
-
+```bash
 pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
+```
 
-What’s new (2026-02-07)
+**Pinned invariants**
 
-New: mediation_emergency_contract_sim_v4_4.py
-Emergency contract workflow bench v4.4 (fail-closed + HITL + minimal ARL).
+* SEALED is issued only by `ethics_gate` / `acc_gate` (RFL never seals).
+* RFL is non-sealing by design (RFL → PAUSE_FOR_HITL, human decides).
 
-New: mediation_emergency_contract_sim_v4_4_stress.py
-Stress runner for v4.4 (distribution + invariant checks).
+---
 
-New: stress_results_v4_4_1000.json
-Stress summary (1,000 runs).
+### 2026-02-07 (v4.4 + stress evidence)
 
-New: stress_results_v4_4_10000.json
-Stress summary (10,000 runs).
+**Added**
 
-Stress-pinned invariants
+* `mediation_emergency_contract_sim_v4_4.py`
+  Emergency contract workflow bench v4.4 (fail-closed + HITL + minimal ARL).
+* `mediation_emergency_contract_sim_v4_4_stress.py`
+  Stress runner for v4.4 (distribution + invariant checks).
+* `stress_results_v4_4_1000.json`
+  Stress summary (1,000 runs).
+* `stress_results_v4_4_10000.json`
+  Stress summary (10,000 runs).
 
-SEALED is issued only by ethics_gate / acc_gate (RFL never seals).
+**Pinned invariants**
 
-RFL is non-sealing by design (RFL → PAUSE_FOR_HITL, human decides).
+* SEALED is issued only by `ethics_gate` / `acc_gate` (RFL never seals).
+* RFL is non-sealing by design (RFL → PAUSE_FOR_HITL, human decides).
 
-What’s new (2026-02-08)
+---
 
-New: mediation_emergency_contract_sim_v4_6.py
-Emergency contract workflow bench v4.6 (fail-closed + HITL + minimal ARL).
+### 2026-02-08 (v4.6 + 100k stress baseline)
 
-New: stress_results_v4_6_100000.json
-Reproducible stress evidence for v4.6 (100,000 runs).
+**Added**
 
-New: mediation_emergency_contract_sim_v4_7_full.py
-v4.7 introduces coaching by the top (highest-score) agent to reduce low-trust “shortest-path” retries
-and improve clean completion.
+* `mediation_emergency_contract_sim_v4_6.py`
+  Emergency contract workflow bench v4.6 (fail-closed + HITL + minimal ARL).
+* `stress_results_v4_6_100000.json`
+  Reproducible stress evidence for v4.6 (100,000 runs).
 
-Why v4.7 (what was found in v4.6)
+**Why (what v4.6 established)**
 
-In v4.6 stress (100,000 runs), 2 runs STOPPED due to low trust where an agent attempted a low-trust
-“shortest-path” retry.
+* v4.6 serves as a reproducible baseline where unsafe paths are stopped early (fail-closed) and logged via ARL.
 
-v4.7 adds a guidance step (coaching) to improve the agent state before retrying, and is expected to reduce this failure mode.
+---
 
-v4.6 STOPPED (2 cases): reason_code=TRUST_SCORE_LOW @ model_trust_gate (fail-closed)
+### 2026-02-08 (v4.7 coaching + compliance signal)
 
-Guardrail note (design-time prevention)
+**Added**
 
-The guardrails were already present at design time, so these unsafe conditions were stopped early (fail-closed)
-instead of silently continuing and becoming incidents.
+* `mediation_emergency_contract_sim_v4_7_full.py`
+  v4.7 introduces **coaching** by the top (highest-score) agent to reduce low-trust “shortest-path” retries and improve clean completion.
+* (Optional feature) **evaluation multiplier loop**
+  Tracks “clean completion” and maintains a multiplier (+0.1 per clean completion, capped), finalized at HITL finalize stage.
 
-v4.6 stress snapshot (100,000 runs)
+**Changed**
 
-CONTRACT_EFFECTIVE: 73,307
+* **Critical fix:** word-boundary regex was not functioning in `draft_lint_gate`
+  Patterns used raw strings with `\\b` (double backslash), so `\b` did not work as a “word boundary”.
+  Fix: `\\b` → `\b` (7 occurrences) so word-boundary matching works as intended.
 
-STOPPED: 18,385
+**Evidence (focused micro-bench)**
 
-INIT: 8,308
+* `stress_report_v4_7_draft_lint_100k_seed42.json`
+  Validates that stop rates align with configured weights after the word-boundary fix.
 
-v4.7 (regex fix + re-run)
-1) Critical fix: word-boundary regex was not functioning in draft_lint_gate
+> Note: micro-bench is scoped to `draft_lint_gate` only; it is not a general safety claim.
 
-In the current upload, draft_lint_gate regex patterns used raw strings with \\b (double backslash),
-so \b did not work as a “word boundary”, and the Safety patterns were effectively dead.
+---
 
-Fix: \\b → \b (7 occurrences) so word-boundary matching works as intended.
+### 2026-02-09 (v4.8 ARL detail + evidence bundle)
 
-Goal: restore intended detection behavior for Safety patterns that assume word boundaries,
-ensuring they correctly trigger fail-closed stops.
+**Diff summary (v4.6 vs v4.7 vs v4.8)**
 
-2) Focused stress after the fix (100,000 runs / seed=42)
+* **v4.6**: baseline + 100k stress evidence (fail-closed + HITL + minimal ARL).
+* **v4.7**: behavior-side improvement — coaching/compliance signal (and optional eval loop) to reduce low-trust shortest-path retries; plus draft-lint regex hardening.
+* **v4.8**: observability-side improvement — ARL detail + evidence bundle so STOP/PAUSE causes are reviewable and actionable.
 
-Added stress_report_v4_7_draft_lint_100k_seed42.json
+**Changed**
 
-Verified that Safety stop rate aligns with the intended behavior (≈ “draft reach × weight”) after the word-boundary fix.
+* v4.8 focuses on **ARL detail** so STOP/PAUSE causes are more actionable
+  (reduces human re-triage burden and improves iterative correction).
 
-Reproducibility
+**Added**
 
-This is a focused micro-bench for draft_lint_gate (generate → mutate → lint), with fixed weights:
-ok=0.86, out_of_scope=0.04, legal_binding=0.05, discrimination=0.05.
+* `mediation_emergency_contract_sim_v4_8.py`
+* `tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py`
+* `docs/artifacts/v4_8_artifacts_bundle.zip` (ARL + results + report)
 
-Observed (100,000 runs / seed=42)
+**Repro**
 
-Category	Expected weight	Observed rate	Observed count
-DRAFT_LINT_OK	0.86	0.86022	86,022
-DRAFT_OUT_OF_SCOPE	0.04	0.03902	3,902
-SAFETY_LEGAL_BINDING_CLAIM	0.05	0.05000	5,000
-SAFETY_DISCRIMINATION_TERM	0.05	0.05076	5,076
-SAFETY_STOP_RATE (total)	0.10	0.10076	10,076
-TOTAL_FAIL_RATE	0.14	0.13978	13,978
+```bash
+python mediation_emergency_contract_sim_v4_8.py
+pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
+```
 
-Note: This result validates the intended behavior of draft_lint_gate after the regex word-boundary fix.
-This micro-bench is scoped to draft_lint_gate only and is not a general safety claim.
+**Note**
 
-V1 → V4: What actually changed
+* The zip is an **evidence bundle generated by tests/runs**; do not treat it as canonical source.
 
-mediation_emergency_contract_sim_v1.py demonstrates the minimum viable pipeline:
+---
+
+## V1 → V4: What actually changed
+
+`mediation_emergency_contract_sim_v1.py` demonstrates the minimum viable pipeline:
 a linear, event-driven workflow with fail-closed stops and minimal audit logs.
 
-mediation_emergency_contract_sim_v4.py turns that pipeline into a
-repeatable governance bench by adding early rejection and controlled automation.
+`mediation_emergency_contract_sim_v4.py` turns that pipeline into a repeatable governance bench by adding early rejection and controlled automation.
 
-Added in v4
+**Added in v4**
 
-Evidence gate
-Basic verification of evidence bundles. Invalid, irrelevant, or fabricated evidence triggers fail-closed stops.
+* **Evidence gate**
+  Basic verification of evidence bundles. Invalid/irrelevant/fabricated evidence triggers fail-closed stops.
+* **Draft lint gate**
+  Enforces draft-only semantics and scope boundaries before admin finalization.
+* **Trust system (score + streak + cooldown)**
+  Trust increases on successful HITL outcomes and decreases on failures. Cooldown prevents unsafe automation after errors. All transitions are logged in ARL.
+* **AUTH HITL auto-skip (safe friction reduction)**
+  When trust threshold + approval streak + valid grant are satisfied, AUTH HITL can be skipped for the same scenario/location only, while recording reasons in ARL.
 
-Draft lint gate
-Enforces draft-only semantics and scope boundaries before admin finalization. Hardened against markdown/emphasis noise
-to reduce false positives.
+---
 
-Trust system (score + streak + cooldown)
-Trust increases on successful HITL outcomes and decreases on failures. Cooldown prevents unsafe automation after errors.
-All trust transitions are logged in ARL.
+## Execution examples
 
-AUTH HITL auto-skip (safe friction reduction)
-When trust threshold + approval streak + valid grant are satisfied,
-AUTH HITL can be skipped for the same scenario/location only,
-while recording the reason in ARL.
+**Doc orchestrator (reference implementation)**
 
-Execution Examples
-
-Start with one script, confirm behavior and logs, then expand.
-
-NOTE: This repository is research / educational.
-Use synthetic or dummy data and do not commit runtime logs.
-
-Recommended
-
-Doc orchestrator (reference implementation)
-
+```bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
+```
 
+**Emergency contract (v4.8)**
 
-Emergency contract workflow (v4)
+```bash
+python mediation_emergency_contract_sim_v4_8.py
+```
 
-python mediation_emergency_contract_sim_v4.py
+**Emergency contract (v4.1)**
 
-
-Emergency contract workflow (v4.1)
-
+```bash
 python mediation_emergency_contract_sim_v4_1.py
+```
 
+**Emergency contract stress (v4.4)**
 
-Emergency contract workflow (v4.4)
-
-python mediation_emergency_contract_sim_v4_4.py
-
-
-Emergency contract stress (v4.4)
-
+```bash
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
+```
 
+---
 
-Emergency contract workflow (v4.6)
+## Project intent / non-goals
 
-python mediation_emergency_contract_sim_v4_6.py
+### Intent
 
+* Reproducible safety and governance simulations
+* Explicit HITL semantics (pause/reset/ban)
+* Audit-ready decision traces (minimal ARL)
 
-Emergency contract workflow (v4.7)
+### Non-goals
 
-python mediation_emergency_contract_sim_v4_7_full.py
+* Production-grade autonomous deployment
+* Unbounded self-directed agent control
+* Safety claims beyond what is explicitly tested
 
-Project intent / non-goals
-Intent
+---
 
-Reproducible safety and governance simulations
+## Data & safety notes
 
-Explicit HITL semantics
+* Use **synthetic/dummy data** only.
+* Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible.
+* Treat generated bundles (zip) as **reviewable evidence**, not canonical source.
 
-Audit-ready decision traces
+---
 
-Non-goals
+## License
 
-Production-grade autonomous deployment
-
-Unbounded self-directed agent control
-
-Safety claims beyond what is explicitly tested
-
-License
-
-Apache License 2.0 (see LICENSE)
+Apache License 2.0 (see `LICENSE`)
