@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """
 Pytest contract tests for v5.1.2 simulator + v5.1-demo.1 codebook + decoder helper.
@@ -12,21 +11,49 @@ Goals:
 Run:
   pytest -q
 """
+
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, Set
 
-import json
 import pytest
 
 
+# Repo root (…/repo/tests/<this file> -> parents[1] == repo root)
 ROOT = Path(__file__).resolve().parents[1]
+HERE = Path(__file__).resolve().parent
+
 SIM_PATH = ROOT / "mediation_emergency_contract_sim_v5_1_2.py"
-CODEBOOK_PATH = ROOT / "log_codebook_v5_1_demo_1.json"
-DECODER_PATH = ROOT / "codebook_decode_demo_1.py"
+
+
+def _find_fixture(filename: str) -> Path:
+    """
+    Resolve fixture path robustly across local/CI.
+
+    Preference order:
+      1) tests/<filename>               (co-located with tests)
+      2) repo-root/<filename>           (fallback for older layout)
+      3) repo-root/tests/<filename>     (belt-and-suspenders)
+    """
+    candidates = [
+        HERE / filename,
+        ROOT / filename,
+        ROOT / "tests" / filename,
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+
+    tried = "\n".join(str(p) for p in candidates)
+    raise FileNotFoundError(f"Missing fixture: {filename}\nTried:\n{tried}")
+
+
+CODEBOOK_PATH = _find_fixture("log_codebook_v5_1_demo_1.json")
+DECODER_PATH = _find_fixture("codebook_decode_demo_1.py")
 
 
 def _import_from_path(mod_name: str, path: Path):
@@ -119,7 +146,16 @@ def test_simulator_layer_decision_decider_vocab_matches_codebook(sim, codebook):
     assert not (used_deciders - decider_set), f"Deciders missing in codebook: {sorted(used_deciders - decider_set)}"
 
 
-def _pack_header(cb: Dict[str, Any], *, layer: str, decision: str, sealed: bool, overrideable: bool, final_decider: str, reason_code: str) -> int:
+def _pack_header(
+    cb: Dict[str, Any],
+    *,
+    layer: str,
+    decision: str,
+    sealed: bool,
+    overrideable: bool,
+    final_decider: str,
+    reason_code: str,
+) -> int:
     """Pack 20-bit header per codebook pack_spec_example (big-endian)."""
     m = cb["maps"]
     layer_id = int(m["layer_to_id"][layer])
@@ -139,7 +175,8 @@ def _pack_header(cb: Dict[str, Any], *, layer: str, decision: str, sealed: bool,
 
 def test_decoder_roundtrip_for_known_header(decoder, codebook):
     """Pack -> decode should reproduce the same symbolic fields."""
-    cb = decoder.Codebook.load(CODEBOOK_PATH)
+    # Decoder demo helper is expected to provide Codebook.load(Path|str) and decode_header(codebook, int) APIs.
+    cb = decoder.Codebook.load(str(CODEBOOK_PATH))
 
     packed = _pack_header(
         codebook,
@@ -178,7 +215,13 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim,
     rc_set = _rc_set_from_codebook(codebook)
 
     # Case 1: low trust => HITL auth pause + subsequent approval + finalize pause => produces persisted rows
-    trust = sim.TrustState(trust_score=0.50, approval_streak=0, cooldown_until=None, compliance_score=0.0, coaching_sessions=0)
+    trust = sim.TrustState(
+        trust_score=0.50,
+        approval_streak=0,
+        cooldown_until=None,
+        compliance_score=0.0,
+        coaching_sessions=0,
+    )
     st, audit, trust_out = sim.simulate_run(
         run_id="RUN#T1",
         dummy_auth_id="EMG-ABCDEF123456",
@@ -194,10 +237,16 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim,
 
     for r in rows:
         assert r["reason_code"] in rc_set, f"Unknown reason_code in ARL: {r['reason_code']}"
-        # Invariant checks are already enforced inside AuditLog.emit via AssertionError.
+        # Invariant checks are enforced inside AuditLog.emit via AssertionError.
 
     # Case 2: fabricated evidence => ethics sealed => produces persisted rows and must be RC_EVIDENCE_FABRICATION
-    trust2 = sim.TrustState(trust_score=0.90, approval_streak=0, cooldown_until=None, compliance_score=0.0, coaching_sessions=0)
+    trust2 = sim.TrustState(
+        trust_score=0.90,
+        approval_streak=0,
+        cooldown_until=None,
+        compliance_score=0.0,
+        coaching_sessions=0,
+    )
     st2, audit2, trust2_out = sim.simulate_run(
         run_id="RUN#T2",
         dummy_auth_id="EMG-ABCDEF123456",
