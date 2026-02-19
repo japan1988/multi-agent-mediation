@@ -72,7 +72,6 @@ Start with one script, confirm behavior and logs, then expand.
 python mediation_emergency_contract_sim_v5_1_2.py
 2) Run the contract tests (v5.1.x: simulator + codebook consistency)
 bash
-コードをコピーする
 pytest -q tests/test_v5_1_codebook_consistency.py
 3) Inspect / pin the demo codebook (v5.1-demo.1)
 log_codebook_v5_1_demo_1.json (demo codebook; pin the version when exchanging artifacts)
