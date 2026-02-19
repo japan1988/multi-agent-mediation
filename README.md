@@ -248,6 +248,3 @@ python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress
 ## License
 
 Apache License 2.0 (see `LICENSE`)
-必要なら次は、これと**完全に対応する README.ja.md（全文）**も同じ構造で整形して出せます。
-```
-
