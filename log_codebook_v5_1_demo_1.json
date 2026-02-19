@@ -1,0 +1,206 @@
+{
+  "schema_version": "1.0",
+  "codebook_name": "MaestroOrchestrator log codebook (demo)",
+  "codebook_version": "5.1-demo.1",
+  "generated_at": "2026-02-19T12:14:42+09:00",
+  "notes": [
+    "This codebook is for compact encoding/decoding of log fields (e.g., bit-packing).",
+    "It is NOT encryption and provides NO confidentiality guarantee.",
+    "For OSS demo: mappings are stable but may change across versions; pin by codebook_version when exchanging artifacts.",
+    "2026-02-19: align simulator v5.1.2 metadata; reason_code is emitted as a string but must be within this codebook (enforced by pytest)."
+  ],
+  "incident_id": {
+    "format": "INC#%06d",
+    "description": "Monotonic incident index used as an external handle for pinpoint retrieval."
+  },
+  "maps": {
+    "layer_to_id": {
+      "acc_gate": 1,
+      "blacklist_gate": 2,
+      "coaching_event": 3,
+      "consistency_gate": 4,
+      "contract_effect": 5,
+      "doc_draft": 6,
+      "draft_lint_gate": 7,
+      "ethics_gate": 8,
+      "eval_score": 9,
+      "evidence_gate": 10,
+      "hitl_auth": 11,
+      "hitl_coaching_auth": 12,
+      "hitl_finalize_admin": 13,
+      "hitl_reward": 14,
+      "meaning_gate": 15,
+      "model_trust_gate": 16,
+      "relativity_gate": 17,
+      "trust_update": 18
+    },
+    "decision_to_id": {
+      "PAUSE_FOR_HITL": 0,
+      "RUN": 1,
+      "STOPPED": 2
+    },
+    "final_decider_to_id": {
+      "ADMIN": 0,
+      "SYSTEM": 1,
+      "USER": 2
+    },
+    "reason_code_to_id": {
+      "AUTH_APPROVE": 0,
+      "AUTH_EXPIRED": 1,
+      "AUTH_REJECT": 2,
+      "AUTH_REVISE": 3,
+      "AUTO_AUTH_BY_TRUST_AND_GRANT": 4,
+      "COACHING_APPROVE": 5,
+      "COACHING_AUTH_REQUIRED": 6,
+      "COACHING_CHECK_PASSED": 7,
+      "COACHING_DENY": 8,
+      "COACHING_SKIPPED": 9,
+      "CONSISTENCY_BREAK": 10,
+      "CONTRACT_EFFECTIVE": 11,
+      "CRIT_MISSING_REQUIRED_KEYS": 12,
+      "DRAFT_GENERATED": 13,
+      "DRAFT_ILLEGAL_BINDING": 14,
+      "DRAFT_LINT_OK": 15,
+      "DRAFT_OUT_OF_SCOPE": 16,
+      "EVAL_SCORED": 17,
+      "EVIDENCE_FABRICATION": 18,
+      "EVIDENCE_MISSING": 19,
+      "EVIDENCE_OK": 20,
+      "EVIDENCE_SCHEMA_INVALID": 21,
+      "FINALIZE_APPROVE": 22,
+      "FINALIZE_REVISE": 23,
+      "FINALIZE_STOP": 24,
+      "INVALID_EVENT": 25,
+      "NON_OVERRIDABLE_SAFETY": 26,
+      "NO_VALID_GRANT": 27,
+      "OK": 28,
+      "REL_BOUNDARY_UNSTABLE": 29,
+      "REL_REF_MISSING": 30,
+      "REWARD_GRANTED": 31,
+      "REWARD_SKIPPED": 32,
+      "SAFETY_DISCRIMINATION_TERM": 33,
+      "SAFETY_LEGAL_BINDING_CLAIM": 34,
+      "TRUST_COOLDOWN_ACTIVE": 35,
+      "TRUST_SCORE_LOW": 36,
+      "TRUST_UPDATE": 37,
+      "ADMIN_FINALIZE_REQUIRED": 38
+    }
+  },
+  "reverse_maps": {
+    "id_to_layer": {
+      "1": "acc_gate",
+      "2": "blacklist_gate",
+      "3": "coaching_event",
+      "4": "consistency_gate",
+      "5": "contract_effect",
+      "6": "doc_draft",
+      "7": "draft_lint_gate",
+      "8": "ethics_gate",
+      "9": "eval_score",
+      "10": "evidence_gate",
+      "11": "hitl_auth",
+      "12": "hitl_coaching_auth",
+      "13": "hitl_finalize_admin",
+      "14": "hitl_reward",
+      "15": "meaning_gate",
+      "16": "model_trust_gate",
+      "17": "relativity_gate",
+      "18": "trust_update"
+    },
+    "id_to_decision": {
+      "0": "PAUSE_FOR_HITL",
+      "1": "RUN",
+      "2": "STOPPED"
+    },
+    "id_to_final_decider": {
+      "0": "ADMIN",
+      "1": "SYSTEM",
+      "2": "USER"
+    },
+    "id_to_reason_code": {
+      "0": "AUTH_APPROVE",
+      "1": "AUTH_EXPIRED",
+      "2": "AUTH_REJECT",
+      "3": "AUTH_REVISE",
+      "4": "AUTO_AUTH_BY_TRUST_AND_GRANT",
+      "5": "COACHING_APPROVE",
+      "6": "COACHING_AUTH_REQUIRED",
+      "7": "COACHING_CHECK_PASSED",
+      "8": "COACHING_DENY",
+      "9": "COACHING_SKIPPED",
+      "10": "CONSISTENCY_BREAK",
+      "11": "CONTRACT_EFFECTIVE",
+      "12": "CRIT_MISSING_REQUIRED_KEYS",
+      "13": "DRAFT_GENERATED",
+      "14": "DRAFT_ILLEGAL_BINDING",
+      "15": "DRAFT_LINT_OK",
+      "16": "DRAFT_OUT_OF_SCOPE",
+      "17": "EVAL_SCORED",
+      "18": "EVIDENCE_FABRICATION",
+      "19": "EVIDENCE_MISSING",
+      "20": "EVIDENCE_OK",
+      "21": "EVIDENCE_SCHEMA_INVALID",
+      "22": "FINALIZE_APPROVE",
+      "23": "FINALIZE_REVISE",
+      "24": "FINALIZE_STOP",
+      "25": "INVALID_EVENT",
+      "26": "NON_OVERRIDABLE_SAFETY",
+      "27": "NO_VALID_GRANT",
+      "28": "OK",
+      "29": "REL_BOUNDARY_UNSTABLE",
+      "30": "REL_REF_MISSING",
+      "31": "REWARD_GRANTED",
+      "32": "REWARD_SKIPPED",
+      "33": "SAFETY_DISCRIMINATION_TERM",
+      "34": "SAFETY_LEGAL_BINDING_CLAIM",
+      "35": "TRUST_COOLDOWN_ACTIVE",
+      "36": "TRUST_SCORE_LOW",
+      "37": "TRUST_UPDATE",
+      "38": "ADMIN_FINALIZE_REQUIRED"
+    }
+  },
+  "pack_spec_example": {
+    "goal": "Example layout for a single packed row header. Adjust bit widths to your needs.",
+    "fields": [
+      {
+        "name": "layer_id",
+        "bits": 6,
+        "note": "supports up to 63 layers (0 reserved)"
+      },
+      {
+        "name": "decision_id",
+        "bits": 2,
+        "note": "RUN/PAUSE/STOP (up to 4)"
+      },
+      {
+        "name": "sealed",
+        "bits": 1
+      },
+      {
+        "name": "overrideable",
+        "bits": 1
+      },
+      {
+        "name": "final_decider_id",
+        "bits": 2
+      },
+      {
+        "name": "reason_code_id",
+        "bits": 8,
+        "note": "supports up to 256 reason codes"
+      }
+    ],
+    "total_bits": 20,
+    "endianness": "big",
+    "note": "This is only a suggested layout; v5.1.0 simulator may not pack bits yet."
+  },
+  "source_alignment": {
+    "base_file": "mediation_emergency_contract_sim_v5_1_2.py",
+    "constants_detected": {
+      "layers": 18,
+      "decisions": 3,
+      "final_deciders": 3,
+      "reason_codes": 39
+    }
+  }
+}
