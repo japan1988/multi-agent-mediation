@@ -24,13 +24,18 @@
 
 ---
 
-> **Purpose / 目的（Research & Education）**  
-> **JP:** 本リポジトリは研究・教育目的の参考実装（プロトタイプ）です。**侵入・監視・なりすまし・破壊・窃取など他者に害を与える行為**、またはそれらを容易にする目的での利用、ならびに**各サービス／実行環境の利用規約・ポリシー・法令・社内規程に反する利用**を禁止します（悪用厳禁）。本プロジェクトは **教育・研究および防御的検証（例：ログ肥大の緩和、fail-closed + HITL の挙動検証）** を目的としており、**悪用手口の公開や犯罪助長を目的としません**。  
-> 利用者は自己責任で、所属組織・サービス提供者・実行環境の **規約／ポリシー** を確認し、**外部ネットワークや実システム／実データに接続しない隔離環境でローカルのスモークテストから開始**してください（実システム／実データ／外部ネットワークに対するテストは禁止）。本成果物は **無保証（現状有姿 / “AS IS”）** で提供され、作者は **いかなる損害についても責任を負いません**。  
-> なお、**Codebook（辞書）はデモ／参考例**です。**そのまま使用せず**、利用者が自身の要件・脅威モデル・規約／ポリシーに合わせて **必ず自作**してください。  
-> **EN:** This is a research/educational reference implementation (prototype). **Do not use it to execute or facilitate harmful actions** (e.g., exploitation, intrusion, surveillance, impersonation, destruction, data theft) or to violate any applicable **terms/policies, laws, or internal rules**. This project focuses on **education/research and defensive verification** (e.g., log growth mitigation and validating fail-closed + HITL behavior) and is **not intended to publish exploitation tactics** or facilitate wrongdoing.  
-> Use at your own risk: verify relevant **terms/policies** and start with **local smoke tests in an isolated environment** (no external networks, no real systems/data). Contents are provided **“AS IS”, without warranty**, and the author assumes **no liability for any damages**.  
-> The included **codebook is a demo/reference artifact—do not use it as-is; create your own** based on your requirements, threat model, and applicable policies/terms.
+> **Purpose (Research & Education)**  
+> This is a research/educational reference implementation (prototype). **Do not use it to execute or facilitate harmful actions**
+> (e.g., exploitation, intrusion, surveillance, impersonation, destruction, or data theft), or to violate any applicable
+> **terms/policies, laws, or internal rules** of your services or execution environment. This project focuses on
+> **education/research and defensive verification** (e.g., log growth mitigation and validating fail-closed + HITL behavior)
+> and is **not intended to publish exploitation tactics** or facilitate wrongdoing.  
+> Use at your own risk: verify relevant **terms/policies** and start with **local smoke tests in an isolated environment**
+> (no external networks, no real systems/data). The contents are provided **“AS IS”, without warranty**, and to the maximum
+> extent permitted by applicable law, the author assumes **no liability for any damages** arising from the use of the code,
+> documentation, or generated artifacts (e.g., zip bundles), including misuse by third parties.  
+> The included **codebook is a demo/reference artifact—do not use it as-is; create your own** based on your requirements,
+> threat model, and applicable policies/terms.
 
 ---
 
