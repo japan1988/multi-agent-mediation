@@ -24,47 +24,52 @@
 
 ---
 
-## 概要（Overview）
-
-Maestro Orchestrator は **研究／教育用途**のオーケストレーション・フレームワークです。優先する設計原則は以下です。
-
-- **Fail-closed（閉じて安全）**  
-  不確実・不安定・リスクあり → 何も言わずに継続しない
-- **HITL（Human-in-the-Loop）**  
-  人間の判断が必要な意思決定は明示的にエスカレーションする
-- **トレーサビリティ（追跡可能性）**  
-  最小ARLログにより、意思決定フローを監査可能・再現可能にする
-
-本リポジトリには **実装リファレンス（doc orchestrator）** と、交渉／仲裁／ガバナンス風ワークフロー／ゲーティング挙動を検証する **シミュレーションベンチ** が含まれます。
+> **Purpose / 目的（Research & Education）**  
+> **JP:** 本リポジトリは研究・教育目的の参考実装（プロトタイプ）です。**侵入・監視・なりすまし・破壊・窃取など他者に害を与える行為**、またはそれらを容易にする目的での利用、ならびに**各サービス／実行環境の利用規約・ポリシー・法令・社内規程に反する利用**を禁止します（悪用厳禁）。本プロジェクトは **教育・研究および防御的検証（例：ログ肥大の緩和、fail-closed + HITL の挙動検証）** を目的としており、**悪用手口の公開や犯罪助長を目的としません**。  
+> 利用者は自己責任で、所属組織・サービス提供者・実行環境の **規約／ポリシー** を確認し、**外部ネットワークや実システム／実データに接続しない隔離環境でローカルのスモークテストから開始**してください（実システム／実データ／外部ネットワークに対するテストは禁止）。本成果物は **無保証（現状有姿 / “AS IS”）** で提供され、作者は **いかなる損害についても責任を負いません**。  
+> なお、**Codebook（辞書）はデモ／参考例**です。**そのまま使用せず**、利用者が自身の要件・脅威モデル・規約／ポリシーに合わせて **必ず自作**してください。  
+> **EN:** This is a research/educational reference implementation (prototype). **Do not use it to execute or facilitate harmful actions** (e.g., exploitation, intrusion, surveillance, impersonation, destruction, data theft) or to violate any applicable **terms/policies, laws, or internal rules**. This project focuses on **education/research and defensive verification** (e.g., log growth mitigation and validating fail-closed + HITL behavior) and is **not intended to publish exploitation tactics** or facilitate wrongdoing.  
+> Use at your own risk: verify relevant **terms/policies** and start with **local smoke tests in an isolated environment** (no external networks, no real systems/data). Contents are provided **“AS IS”, without warranty**, and the author assumes **no liability for any damages**.  
+> The included **codebook is a demo/reference artifact—do not use it as-is; create your own** based on your requirements, threat model, and applicable policies/terms.
 
 ---
 
-## Quickstart（推奨の最短導線）
+## Overview
 
-まずは “1本動かしてログを確認” してから拡張してください。
+Maestro Orchestrator は、**研究／教育**目的のオーケストレーション・フレームワークで、次を優先します：
 
-### 1) 最新の緊急契約シミュレーター（v4.8）を実行
+- **Fail-closed**  
+  不確実・不安定・リスクがあるなら → 黙って続行しない。
+
+- **HITL（Human-in-the-Loop）**  
+  人間の判断が必要な決定は、明示的にエスカレーションする。
+
+- **Traceability（追跡可能性）**  
+  決定フローは最小限の ARL ログで監査可能・再現可能にする。
+
+このリポジトリには、**参考実装（doc orchestrators）**と、交渉／調停／ガバナンス系ワークフローやゲーティング挙動を検証するための **シミュレーション・ベンチ**が含まれます。
+
+---
+
+## Quickstart（推奨ルート）
+
+まずは1本だけ実行して、挙動とログを確認してから広げます。
+
+### 1) 最新の emergency contract simulator（v4.8）を実行
 
 ```bash
 python mediation_emergency_contract_sim_v4_8.py
-````
-
-### 2) ピン留めされた smoke テスト（v4.8）を実行
-
-```bash
+2) ピン留め済みスモークテスト（v4.8）を実行
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-```
 
-### 3) 任意：evidence bundle（生成物）を確認
+3) 任意：evidence bundle（生成アーティファクト）を確認
 
-* `docs/artifacts/v4_8_artifacts_bundle.zip`
+docs/artifacts/v4_8_artifacts_bundle.zip
 
-> 注：zip（evidence bundle）は **テスト／実行によって生成される成果物**です。
-> 正（canonical）は “生成スクリプト＋テスト” 側であり、zipはレビュー用証拠束として扱ってください。
+注：evidence bundle（zip）はテスト／実行により生成されるアーティファクトです。
+真のソース・オブ・トゥルースは、生成スクリプトとテストです。
 
----
-
-## アーキテクチャ（高レベル）
+Architecture（高レベル）
 
 監査可能で fail-closed な制御フロー：
 
@@ -74,32 +79,30 @@ agents
 → HITL（pause / reset / ban）
 → audit logs（ARL）
 
-![Architecture](docs/architecture_unknown_progress.png)
+画像が表示されない場合
 
-> 画像が表示されない場合：
-> `docs/architecture_unknown_progress.png` が同一ブランチに存在すること、ファイル名の大文字小文字が一致していること（case-sensitive）を確認してください。
+以下を確認してください：
 
----
+docs/ 配下にファイルが存在する
 
-## アーキテクチャ（コード整合の図）
+ファイル名が完全一致（大文字小文字を含めて一致）
 
-以下の図は **現在のコード用語に整合**しています。
-監査性と曖昧さ排除のため、**状態遷移（State transitions）** と **ゲート順序（Gate order）** を分離しています。
+いま見ているブランチとリンク先が同一ブランチ
 
-> ドキュメントのみ。ロジック変更はありません。
+Architecture（code-aligned diagrams）
 
----
+以下の図は、現行コードの語彙に揃えた（code-aligned）ドキュメントです。
+状態遷移とゲート順を分離して、監査性と曖昧さ回避を優先します。
 
-### 1) 状態機械（State Machine / code-aligned）
+ドキュメントのみ。ロジック変更なし。
 
-どこで **PAUSE（HITL）** するか、どこで **STOP（SEALED）** するかを最小の遷移で表します。
+1) State Machine（code-aligned）
 
-<p align="center">
-  <img src="docs/architecture_state_machine_code_aligned.png"
-       alt="State Machine (code-aligned)" width="720">
-</p>
+実行が pause（HITL） する箇所と、**恒久停止（SEALED）**に至る箇所を示す最小ライフサイクル。
 
-**主経路（Primary execution path）**
+<p align="center"> <img src="docs/architecture_state_machine_code_aligned.png" alt="State Machine (code-aligned)" width="720"> </p>
+
+Primary execution path（主経路）
 
 INIT
 → PAUSE_FOR_HITL_AUTH
@@ -108,137 +111,119 @@ INIT
 → PAUSE_FOR_HITL_FINALIZE
 → CONTRACT_EFFECTIVE
 
-**補足**
+Notes（注記）
 
-* `PAUSE_FOR_HITL_*` は明示的な **Human-in-the-Loop** 判断点（ユーザー承認／管理者確定）です。
-* `STOPPED（SEALED）` は以下で到達します：
+PAUSE_FOR_HITL_* は、ユーザー承認／管理者承認など HITL 前提の明示的停止点を表します。
 
-  * evidence が無効／捏造
-  * 認可（authorization）期限切れ
-  * draft lint 失敗
-* **SEALED は fail-closed であり、設計上 non-overrideable（上書き不可）です。**
+STOPPED（SEALED） に到達する例：
 
----
+無効／捏造の evidence
 
-### 2) ゲートパイプライン（Gate Pipeline / code-aligned）
+認可の期限切れ
 
-評価ゲートの **順序** を示します（状態遷移とは独立）。
+draft lint failure
 
-<p align="center">
-  <img src="docs/architecture_gate_pipeline_code_aligned.png"
-       alt="Gate Pipeline (code-aligned)" width="720">
-</p>
+SEALED 停止は fail-closed で、設計上 override 不可です。
 
-**補足**
+2) Gate Pipeline（code-aligned）
 
-* この図は **ゲート順序** を表します（状態遷移ではありません）。
-* `PAUSE` は **HITL必須**（人間判断待ち）を意味します。
-* `STOPPED（SEALED）` は **回復不能の安全停止** を意味します。
+評価ゲートの順序（状態遷移とは独立）。
 
-**設計意図**
+<p align="center"> <img src="docs/architecture_gate_pipeline_code_aligned.png" alt="Gate Pipeline (code-aligned)" width="720"> </p>
 
-* **State Machine** が答えること：
-  *「どこで止まる／止める（PAUSE/STOP）か」*
-* **Gate Pipeline** が答えること：
-  *「意思決定をどの順で評価するか」*
+Notes（注記）
 
-分離することで曖昧さを避け、監査可能性を維持します。
+この図は ゲート順を表し、状態遷移そのものは表しません。
 
-**メンテナンス注記**
+PAUSE は HITL 必須（人間判断待ち）を意味します。
 
-画像が表示されない場合：
+STOPPED（SEALED） は 非回復の安全停止を意味します。
 
-* `docs/` 配下に存在するか
-* ファイル名が完全一致しているか（case-sensitive）
-* リンク更新時はファイル一覧からコピペ推奨
+Design intent（設計意図）
 
----
+State Machine：どこで pause / terminate するか？
 
-## What’s new（更新情報）
+Gate Pipeline：どの順で評価するか？
 
-このREADMEは **Quickstart と設計の要点を最短で伝えるために最小構成**に保っています。
-詳細な更新履歴（何が追加・変更・修正されたか）は、以下を一次情報として参照してください。
+この分離により、曖昧さを避け、監査可能なトレーサビリティを保ちます。
 
-* **Commit history**（最も正確な差分の履歴）
-  [https://github.com/japan1988/multi-agent-mediation/commits/main](https://github.com/japan1988/multi-agent-mediation/commits/main)
-* **Releases**（節目ごとの要約・配布）
-  [https://github.com/japan1988/multi-agent-mediation/releases](https://github.com/japan1988/multi-agent-mediation/releases)
+What’s new
 
-> 方針：トップレベルREADMEのタイムラインは肥大化させず、履歴は commits / releases に集約します。
+本プロジェクトは継続的に更新されています。
 
----
+最新更新：GitHub の Commits と（タグがあれば）リリースノートを参照してください。
 
-## V1 → V4：何が本質的に変わったか
+重要な追加・変更は docs/（または存在するなら CHANGELOG.md）に必要に応じて記録します。
 
-`mediation_emergency_contract_sim_v1.py` は最小構成：線形イベント駆動のワークフロー＋fail-closed＋最小ARL。
+設計メモ：README は「推奨ルート（recommended path）」が迷子にならないよう、意図的にミニマルに保ちます。
 
-`mediation_emergency_contract_sim_v4.py` はそれを “ガバナンス検証ベンチ” にするため、早期拒否と制御された自動化を追加。
+V1 → V4：何が変わったか
 
-**v4で追加された要素**
+mediation_emergency_contract_sim_v1.py は最小構成のパイプラインです：
+線形のイベント駆動フロー、fail-closed 停止、最小の監査ログ。
 
-* **Evidence gate**
-  evidence bundle の基本検証。無効／無関連／捏造は fail-closed で停止。
-* **Draft lint gate**
-  “ドラフトの範囲” と “スコープ境界” を管理者確定前に強制。
-* **Trust system（score + streak + cooldown）**
-  HITL結果に応じて trust を更新し、失敗後の危険な自動化を cooldown で抑制。遷移はARLへ。
-* **AUTH HITL auto-skip（安全な摩擦低減）**
-  trust閾値＋承認streak＋有効grant が揃う場合、同一条件でのAUTH HITLをスキップ可能（理由はARLへ記録）。
+mediation_emergency_contract_sim_v4.py はそれを、早期リジェクトと制御された自動化を加えた「繰り返し可能なガバナンス・ベンチ」に拡張します。
 
----
+v4 で追加されたもの
 
-## 実行例（Execution examples）
+Evidence gate
+evidence bundle を基本検証。無効／無関係／捏造は fail-closed 停止。
 
-**Doc orchestrator（実装リファレンス）**
+Draft lint gate
+管理者最終化の前に、draft-only セマンティクスとスコープ境界を強制。
 
-```bash
+Trust system（score + streak + cooldown）
+HITL 成功で trust を上げ、失敗で下げる。cooldown で誤った自動化を抑止。遷移は ARL に記録。
+
+AUTH HITL auto-skip（安全な摩擦低減）
+trust 閾値 + 承認 streak + 有効 grant を満たす場合、同一シナリオ／同一ロケーションに限って AUTH HITL をスキップ可能（理由は ARL に記録）。
+
+Execution examples（実行例）
+
+Doc orchestrator（参考実装）
+
 python ai_doc_orchestrator_kage3_v1_2_4.py
-```
 
-**Emergency contract（v4.8）**
 
-```bash
+Emergency contract（v4.8）
+
 python mediation_emergency_contract_sim_v4_8.py
-```
 
-**Emergency contract（v4.1）**
 
-```bash
+Emergency contract（v4.1）
+
 python mediation_emergency_contract_sim_v4_1.py
-```
 
-**Emergency contract stress（v4.4）**
 
-```bash
+Emergency contract stress（v4.4）
+
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-```
 
----
+Project intent / non-goals（目的／非目的）
+Intent（目的）
 
-## プロジェクトの意図／非目標（Intent / Non-goals）
+再現可能な安全性・ガバナンス・シミュレーション
 
-### Intent
+明示的な HITL セマンティクス（pause/reset/ban）
 
-* 再現可能な安全／ガバナンスシミュレーション
-* 明示的な HITL セマンティクス（pause/reset/ban）
-* 監査可能な意思決定トレース（最小ARL）
+監査可能な決定トレース（最小 ARL）
 
-### Non-goals
+Non-goals（非目的）
 
-* そのまま本番運用できる自律デプロイ
-* 無制限な自己目的化エージェント制御
-* 明示テスト範囲を超えた安全性主張
+本番向けの自律運用（production-grade autonomous deployment）
 
----
+無制限な自己指向エージェント制御
 
-## データ／安全メモ（Data & safety notes）
+テストで明示されていない範囲まで含む安全性主張
 
-* **合成／ダミーデータのみ**を使用してください。
-* 実行ログはコミットしないことを推奨（必要なら再現可能な最小証拠に限定）。
-* 生成されたzip（bundle）は **レビュー用証拠束**であり、canonical source ではありません。
+Data & safety notes（データ／安全メモ）
 
----
+合成（ダミー）データのみ使用してください。
 
-## License
+実行ログのコミットは避け、evidence artifact は最小・再現可能に保つのが推奨です。
 
-Apache License 2.0（`LICENSE` を参照）
+生成 bundle（zip）は レビュー可能な証跡として扱い、正本（canonical source）とは見なさないでください。
+
+License
+
+Apache License 2.0（LICENSE を参照）
