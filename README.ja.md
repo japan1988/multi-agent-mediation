@@ -69,7 +69,7 @@ Maestro Orchestrator は、研究・教育目的のオーケストレーショ�
 python mediation_emergency_contract_sim_v4_8.py
 2) 固定のスモークテスト（v4.8）を実行
 bash
-コードをコピーする
+
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 3) 任意：エビデンス・バンドル（生成物）を確認
 docs/artifacts/v4_8_artifacts_bundle.zip
