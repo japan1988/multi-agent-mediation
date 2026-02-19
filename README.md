@@ -24,14 +24,26 @@
 
 ---
 
+> **Purpose / 目的（Research & Education）**  
+> **JP:** 本リポジトリは研究・教育目的の参考実装（プロトタイプ）です。**侵入・監視・なりすまし・破壊・窃取など他者に害を与える行為**、またはそれらを容易にする目的での利用、ならびに**各サービス／実行環境の利用規約・ポリシー・法令・社内規程に反する利用**を禁止します（悪用厳禁）。本プロジェクトは **教育・研究および防御的検証（例：ログ肥大の緩和、fail-closed + HITL の挙動検証）** を目的としており、**悪用手口の公開や犯罪助長を目的としません**。  
+> 利用者は自己責任で、所属組織・サービス提供者・実行環境の **規約／ポリシー** を確認し、**外部ネットワークや実システム／実データに接続しない隔離環境でローカルのスモークテストから開始**してください（実システム／実データ／外部ネットワークに対するテストは禁止）。本成果物は **無保証（現状有姿 / “AS IS”）** で提供され、作者は **いかなる損害についても責任を負いません**。  
+> なお、**Codebook（辞書）はデモ／参考例**です。**そのまま使用せず**、利用者が自身の要件・脅威モデル・規約／ポリシーに合わせて **必ず自作**してください。  
+> **EN:** This is a research/educational reference implementation (prototype). **Do not use it to execute or facilitate harmful actions** (e.g., exploitation, intrusion, surveillance, impersonation, destruction, data theft) or to violate any applicable **terms/policies, laws, or internal rules**. This project focuses on **education/research and defensive verification** (e.g., log growth mitigation and validating fail-closed + HITL behavior) and is **not intended to publish exploitation tactics** or facilitate wrongdoing.  
+> Use at your own risk: verify relevant **terms/policies** and start with **local smoke tests in an isolated environment** (no external networks, no real systems/data). Contents are provided **“AS IS”, without warranty**, and the author assumes **no liability for any damages**.  
+> The included **codebook is a demo/reference artifact—do not use it as-is; create your own** based on your requirements, threat model, and applicable policies/terms.
+
+---
+
 ## Overview
 
 Maestro Orchestrator is a **research / educational** orchestration framework that prioritizes:
 
 - **Fail-closed**  
   If uncertain, unstable, or risky → do not continue silently.
+
 - **HITL (Human-in-the-Loop)**  
   Decisions that require human judgment are explicitly escalated.
+
 - **Traceability**  
   Decision flows are audit-ready and reproducible via minimal ARL logs.
 
@@ -77,8 +89,13 @@ agents
 
 ![Architecture](docs/architecture_unknown_progress.png)
 
-> If the image does not render, confirm that
-> `docs/architecture_unknown_progress.png` exists on the same branch and that the filename matches exactly (case-sensitive).
+### If an image does not render
+
+Confirm that:
+
+* the file exists under `docs/`
+* the filename matches exactly (case-sensitive)
+* the link points to the same branch you are viewing
 
 ---
 
@@ -88,8 +105,6 @@ The following diagrams are **aligned with the current code vocabulary**.
 They separate **state transitions** from **gate order** to preserve auditability and avoid ambiguity.
 
 > Documentation-only. No logic changes.
-
----
 
 ### 1) State Machine (code-aligned)
 
@@ -120,8 +135,6 @@ INIT
   * draft lint failure
 * **SEALED stops are fail-closed and non-overrideable by design.**
 
----
-
 ### 2) Gate Pipeline (code-aligned)
 
 Ordered evaluation gates, **independent from lifecycle state transitions**.
@@ -139,18 +152,10 @@ Ordered evaluation gates, **independent from lifecycle state transitions**.
 
 **Design intent**
 
-* **State Machine** answers: *“Where does execution pause or terminate?”*
-* **Gate Pipeline** answers: *“In what order are decisions evaluated?”*
+* **State Machine** answers: “Where does execution pause or terminate?”
+* **Gate Pipeline** answers: “In what order are decisions evaluated?”
 
 Keeping them separate avoids ambiguity and preserves audit-ready traceability.
-
-**Maintenance note**
-
-If an image does not render:
-
-* Confirm the file exists under `docs/`
-* Confirm the filename matches exactly (case-sensitive)
-* Prefer copy-paste from the file list when updating links
 
 ---
 
@@ -176,10 +181,13 @@ a linear, event-driven workflow with fail-closed stops and minimal audit logs.
 
 * **Evidence gate**
   Basic verification of evidence bundles. Invalid/irrelevant/fabricated evidence triggers fail-closed stops.
+
 * **Draft lint gate**
   Enforces draft-only semantics and scope boundaries before admin finalization.
+
 * **Trust system (score + streak + cooldown)**
   Trust increases on successful HITL outcomes and decreases on failures. Cooldown prevents unsafe automation after errors. All transitions are logged in ARL.
+
 * **AUTH HITL auto-skip (safe friction reduction)**
   When trust threshold + approval streak + valid grant are satisfied, AUTH HITL can be skipped for the same scenario/location only, while recording reasons in ARL.
 
@@ -240,4 +248,6 @@ python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress
 ## License
 
 Apache License 2.0 (see `LICENSE`)
-::contentReference[oaicite:0]{index=0}
+必要なら次は、これと**完全に対応する README.ja.md（全文）**も同じ構造で整形して出せます。
+```
+
