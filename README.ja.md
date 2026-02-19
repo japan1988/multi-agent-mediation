@@ -24,53 +24,60 @@
 
 ---
 
-> **Purpose / 目的（Research & Education）**  
-> **JP:** 本リポジトリは研究・教育目的の参考実装（プロトタイプ）です。**侵入・監視・なりすまし・破壊・窃取など他者に害を与える行為**、またはそれらを容易にする目的での利用、ならびに**各サービス／実行環境の利用規約・ポリシー・法令・社内規程に反する利用**を禁止します（悪用厳禁）。本プロジェクトは **教育・研究および防御的検証（例：ログ肥大の緩和、fail-closed + HITL の挙動検証）** を目的としており、**悪用手口の公開や犯罪助長を目的としません**。  
-> 利用者は自己責任で、所属組織・サービス提供者・実行環境の **規約／ポリシー** を確認し、**外部ネットワークや実システム／実データに接続しない隔離環境でローカルのスモークテストから開始**してください（実システム／実データ／外部ネットワークに対するテストは禁止）。本成果物は **無保証（現状有姿 / “AS IS”）** で提供され、作者は **いかなる損害についても責任を負いません**。  
-> なお、**Codebook（辞書）はデモ／参考例**です。**そのまま使用せず**、利用者が自身の要件・脅威モデル・規約／ポリシーに合わせて **必ず自作**してください。  
-> **EN:** This is a research/educational reference implementation (prototype). **Do not use it to execute or facilitate harmful actions** (e.g., exploitation, intrusion, surveillance, impersonation, destruction, data theft) or to violate any applicable **terms/policies, laws, or internal rules**. This project focuses on **education/research and defensive verification** (e.g., log growth mitigation and validating fail-closed + HITL behavior) and is **not intended to publish exploitation tactics** or facilitate wrongdoing.  
-> Use at your own risk: verify relevant **terms/policies** and start with **local smoke tests in an isolated environment** (no external networks, no real systems/data). Contents are provided **“AS IS”, without warranty**, and the author assumes **no liability for any damages**.  
-> The included **codebook is a demo/reference artifact—do not use it as-is; create your own** based on your requirements, threat model, and applicable policies/terms.
+> **目的（研究・教育）**  
+> 本リポジトリは研究・教育目的の参考実装（プロトタイプ）です。**侵入・監視・なりすまし・破壊・窃取など他者に害を与える行為**、
+> またはそれらを容易にする目的での利用、ならびに**各サービス／実行環境の利用規約・ポリシー・法令・社内規程に反する利用**を禁止します（悪用厳禁）。
+> 本プロジェクトは **教育・研究および防御的検証**（例：ログ肥大の緩和、fail-closed + HITL の挙動検証）を目的としており、
+> **悪用手口の公開や犯罪助長を目的としません**。  
+> 利用者は自己責任で、所属組織・サービス提供者・実行環境の **規約／ポリシー** を確認し、
+> **外部ネットワークや実システム／実データに接続しない隔離環境でローカルのスモークテストから開始**してください（実システム／実データ／外部ネットワークに対するテストは禁止）。
+> 本成果物は **無保証（現状有姿 / “AS IS”）** で提供され、適用法令上許される最大限の範囲で、作者は **いかなる損害についても責任を負いません**。
+> （コード・ドキュメント・生成物〔例：zip バンドル〕の利用や第三者による誤用を含みます。）  
+> **Codebook（辞書）に関する注意：** 同梱の codebook は **デモ／参考例**です。実運用で何らかの符号化・辞書化を行う場合は、
+> 各社の **利用規約／ポリシー／社内規程** を必ず確認し、**隔離環境＋合成データ**で十分にテストした上で判断してください。
+> codebook を **セキュリティ／暗号化／コンプライアンス保証** と誤解しないでください。  
+> **テスト結果に関する注意：** スモークテスト／ストレステストの結果は、特定の環境・条件下での挙動確認に過ぎず、
+> **安全性・正確性・適合性を保証するものではありません**。利用方法や運用・統合先の条件により結果は変わり得ます。
 
 ---
 
-## Overview
+## 概要（Overview）
 
-Maestro Orchestrator は、**研究／教育**目的のオーケストレーション・フレームワークで、次を優先します：
+Maestro Orchestrator は、研究・教育目的のオーケストレーション・フレームワークで、次を優先します：
 
 - **Fail-closed**  
-  不確実・不安定・リスクがあるなら → 黙って続行しない。
+  不確実／不安定／リスクがある場合 → 何も言わずに続行しない（止める／保留する）
 
 - **HITL（Human-in-the-Loop）**  
-  人間の判断が必要な決定は、明示的にエスカレーションする。
+  人間の判断が必要な局面は、明示的にエスカレーションする
 
-- **Traceability（追跡可能性）**  
-  決定フローは最小限の ARL ログで監査可能・再現可能にする。
+- **トレーサビリティ（Traceability）**  
+  意思決定フローを最小 ARL ログで監査可能・再現可能にする
 
-このリポジトリには、**参考実装（doc orchestrators）**と、交渉／調停／ガバナンス系ワークフローやゲーティング挙動を検証するための **シミュレーション・ベンチ**が含まれます。
+本リポジトリには、（ドキュメント系の）参照実装と、交渉・調停・ガバナンス風ワークフローの
+シミュレーション・ベンチ、ゲート動作の検証コードが含まれます。
 
 ---
 
-## Quickstart（推奨ルート）
+## クイックスタート（推奨ルート）
 
-まずは1本だけ実行して、挙動とログを確認してから広げます。
+まずは 1 本のスクリプトから動かし、挙動とログを確認してから拡張してください。
 
-### 1) 最新の emergency contract simulator（v4.8）を実行
+### 1) 最新の緊急契約シミュレータ（v4.8）を実行
 
 ```bash
 python mediation_emergency_contract_sim_v4_8.py
-2) ピン留め済みスモークテスト（v4.8）を実行
+2) 固定のスモークテスト（v4.8）を実行
+bash
+コードをコピーする
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-
-3) 任意：evidence bundle（生成アーティファクト）を確認
-
+3) 任意：エビデンス・バンドル（生成物）を確認
 docs/artifacts/v4_8_artifacts_bundle.zip
 
-注：evidence bundle（zip）はテスト／実行により生成されるアーティファクトです。
-真のソース・オブ・トゥルースは、生成スクリプトとテストです。
+注：エビデンス・バンドル（zip）は、テスト／実行により生成される成果物です。
+正（カノニカル）な情報源は「生成スクリプト＋テスト」です。
 
-Architecture（高レベル）
-
+アーキテクチャ（高レベル）
 監査可能で fail-closed な制御フロー：
 
 agents
@@ -79,30 +86,28 @@ agents
 → HITL（pause / reset / ban）
 → audit logs（ARL）
 
+
+
 画像が表示されない場合
+次を確認してください：
 
-以下を確認してください：
+ファイルが docs/ 配下に存在するか
 
-docs/ 配下にファイルが存在する
+ファイル名が完全一致しているか（大小文字を区別）
 
-ファイル名が完全一致（大文字小文字を含めて一致）
+表示しているブランチとリンク先が一致しているか
 
-いま見ているブランチとリンク先が同一ブランチ
+アーキテクチャ（コード整合の図）
+以下の図は 現在のコード語彙に整合させています。
+監査性と曖昧さの排除のため、状態遷移とゲート順序を分離しています。
 
-Architecture（code-aligned diagrams）
+ドキュメントのみ。ロジック変更はありません。
 
-以下の図は、現行コードの語彙に揃えた（code-aligned）ドキュメントです。
-状態遷移とゲート順を分離して、監査性と曖昧さ回避を優先します。
-
-ドキュメントのみ。ロジック変更なし。
-
-1) State Machine（code-aligned）
-
-実行が pause（HITL） する箇所と、**恒久停止（SEALED）**に至る箇所を示す最小ライフサイクル。
+1) 状態機械（コード整合）
+どこで PAUSE（HITL） するか、どこで 停止（SEALED） するか、最小限のライフサイクル遷移を示します。
 
 <p align="center"> <img src="docs/architecture_state_machine_code_aligned.png" alt="State Machine (code-aligned)" width="720"> </p>
-
-Primary execution path（主経路）
+主要パス
 
 INIT
 → PAUSE_FOR_HITL_AUTH
@@ -111,119 +116,107 @@ INIT
 → PAUSE_FOR_HITL_FINALIZE
 → CONTRACT_EFFECTIVE
 
-Notes（注記）
+注記
 
-PAUSE_FOR_HITL_* は、ユーザー承認／管理者承認など HITL 前提の明示的停止点を表します。
+PAUSE_FOR_HITL_* は明示的な Human-in-the-Loop の判断点（ユーザー承認／管理者承認）を表します。
 
-STOPPED（SEALED） に到達する例：
+STOPPED (SEALED) に到達する例：
 
-無効／捏造の evidence
+無効／捏造のエビデンス
 
-認可の期限切れ
+認可期限切れ
 
-draft lint failure
+ドラフト lint 失敗
 
-SEALED 停止は fail-closed で、設計上 override 不可です。
+SEALED による停止は fail-closed で、設計上オーバーライド不可です。
 
-2) Gate Pipeline（code-aligned）
-
-評価ゲートの順序（状態遷移とは独立）。
+2) ゲート・パイプライン（コード整合）
+ライフサイクル状態遷移とは独立した、評価ゲートの 順序 を示します。
 
 <p align="center"> <img src="docs/architecture_gate_pipeline_code_aligned.png" alt="Gate Pipeline (code-aligned)" width="720"> </p>
+注記
 
-Notes（注記）
+この図は ゲート順序 を表し、状態遷移そのものではありません。
 
-この図は ゲート順を表し、状態遷移そのものは表しません。
+PAUSE は HITL 必須（人間の判断待ち）を表します。
 
-PAUSE は HITL 必須（人間判断待ち）を意味します。
+STOPPED (SEALED) は 回復不能な安全停止を表します。
 
-STOPPED（SEALED） は 非回復の安全停止を意味します。
+設計意図
 
-Design intent（設計意図）
+状態機械：どこで停止／保留するか？
 
-State Machine：どこで pause / terminate するか？
+ゲート順序：どの順番で判断を評価するか？
 
-Gate Pipeline：どの順で評価するか？
+両者を分離して、曖昧さを避け、監査可能なトレーサビリティを保ちます。
 
-この分離により、曖昧さを避け、監査可能なトレーサビリティを保ちます。
+更新情報（What’s new）
+このプロジェクトは継続的に開発中です。
 
-What’s new
+最新更新：GitHub の コミット履歴（Commits） と（タグがあれば）リリースノートを参照してください。
 
-本プロジェクトは継続的に更新されています。
+重要な追加・変更点は docs/（または CHANGELOG.md があればそこ）に記録します。
 
-最新更新：GitHub の Commits と（タグがあれば）リリースノートを参照してください。
+設計メモ：README は「推奨ルート」を明確にするため、意図的に最小構成にしています。
 
-重要な追加・変更は docs/（または存在するなら CHANGELOG.md）に必要に応じて記録します。
+V1 → V4：実際に何が変わったか
+mediation_emergency_contract_sim_v1.py は、最小構成のパイプライン（イベント駆動の直線的フロー、fail-closed 停止、最小監査ログ）を示します。
 
-設計メモ：README は「推奨ルート（recommended path）」が迷子にならないよう、意図的にミニマルに保ちます。
-
-V1 → V4：何が変わったか
-
-mediation_emergency_contract_sim_v1.py は最小構成のパイプラインです：
-線形のイベント駆動フロー、fail-closed 停止、最小の監査ログ。
-
-mediation_emergency_contract_sim_v4.py はそれを、早期リジェクトと制御された自動化を加えた「繰り返し可能なガバナンス・ベンチ」に拡張します。
+mediation_emergency_contract_sim_v4.py は、それを反復可能なガバナンス・ベンチに拡張し、
+早期拒否や制御された自動化を導入します。
 
 v4 で追加されたもの
 
-Evidence gate
-evidence bundle を基本検証。無効／無関係／捏造は fail-closed 停止。
+Evidence gate（エビデンス・ゲート）
+エビデンス・バンドルの基本検証。不正／無関係／捏造は fail-closed 停止を引き起こします。
 
-Draft lint gate
-管理者最終化の前に、draft-only セマンティクスとスコープ境界を強制。
+Draft lint gate（ドラフト lint ゲート）
+管理者確定の前に、ドラフトの意味（ドラフト専用の記述、スコープ境界）を強制します。
 
-Trust system（score + streak + cooldown）
-HITL 成功で trust を上げ、失敗で下げる。cooldown で誤った自動化を抑止。遷移は ARL に記録。
+Trust system（スコア + 連続成功 + クールダウン）
+HITL 成功で信頼を上げ、失敗で下げます。クールダウンはエラー後の危険な自動化を抑制します。遷移は ARL に記録されます。
 
-AUTH HITL auto-skip（安全な摩擦低減）
-trust 閾値 + 承認 streak + 有効 grant を満たす場合、同一シナリオ／同一ロケーションに限って AUTH HITL をスキップ可能（理由は ARL に記録）。
+AUTH HITL の自動スキップ（安全な摩擦低減）
+信頼閾値 + 承認ストリーク + 有効な grant が揃うと、同一シナリオ／ロケーションに限り AUTH HITL をスキップできます（理由を ARL に記録）。
 
-Execution examples（実行例）
+実行例（Execution examples）
+Doc orchestrator（参照実装）
 
-Doc orchestrator（参考実装）
-
+bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
-
-
 Emergency contract（v4.8）
 
+bash
 python mediation_emergency_contract_sim_v4_8.py
-
-
 Emergency contract（v4.1）
 
+bash
 python mediation_emergency_contract_sim_v4_1.py
-
-
 Emergency contract stress（v4.4）
 
+bash
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-
-Project intent / non-goals（目的／非目的）
-Intent（目的）
-
-再現可能な安全性・ガバナンス・シミュレーション
+目的 / 非目的（Project intent / non-goals）
+目的（Intent）
+再現可能な安全・ガバナンス・シミュレーション
 
 明示的な HITL セマンティクス（pause/reset/ban）
 
-監査可能な決定トレース（最小 ARL）
+監査可能な意思決定トレース（最小 ARL）
 
-Non-goals（非目的）
+非目的（Non-goals）
+本番向けの自律運用（Production-grade autonomous deployment）
 
-本番向けの自律運用（production-grade autonomous deployment）
+無制限・自己目的のエージェント制御
 
-無制限な自己指向エージェント制御
+テストで明示された範囲を超える安全性主張
 
-テストで明示されていない範囲まで含む安全性主張
+データ & 安全上の注意（Data & safety notes）
+合成／ダミーデータのみを使用してください。
 
-Data & safety notes（データ／安全メモ）
+実行ログはコミットしないことを推奨します。エビデンス成果物は最小化し、生成可能性（再現性）を優先してください。
 
-合成（ダミー）データのみ使用してください。
+生成バンドル（zip）は レビュー可能なエビデンスであり、正（カノニカル）な情報源ではありません（生成スクリプト＋テストが正）。
 
-実行ログのコミットは避け、evidence artifact は最小・再現可能に保つのが推奨です。
-
-生成 bundle（zip）は レビュー可能な証跡として扱い、正本（canonical source）とは見なさないでください。
-
-License
-
+ライセンス（License）
 Apache License 2.0（LICENSE を参照）
