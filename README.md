@@ -62,27 +62,36 @@ for negotiation, mediation, governance-style workflows, and gating behavior.
 
 ## Quickstart (recommended path)
 
+**v5.1.x is recommended for reproducibility + contract checks; v4.x is kept as a legacy stable bench.**
+
 Start with one script, confirm behavior and logs, then expand.
 
-### 1) Run the latest emergency contract simulator (v4.8)
+### 1) Run the recommended emergency contract simulator (v5.1.2)
 
 ```bash
-python mediation_emergency_contract_sim_v4_8.py
-2) Run the pinned smoke test (v4.8)
+python mediation_emergency_contract_sim_v5_1_2.py
+2) Run the contract tests (v5.1.x: simulator + codebook consistency)
 bash
+コードをコピーする
+pytest -q tests/test_v5_1_codebook_consistency.py
+3) Inspect / pin the demo codebook (v5.1-demo.1)
+log_codebook_v5_1_demo_1.json (demo codebook; pin the version when exchanging artifacts)
+
+Note: the codebook is for compact encoding/decoding of log fields and is NOT encryption.
+It provides no confidentiality guarantees.
+
+4) Optional: run the legacy stable bench (v4.8)
+bash
+コードをコピーする
+python mediation_emergency_contract_sim_v4_8.py
+bash
+コードをコピーする
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-3) Optional: inspect evidence bundle (generated artifact)
+5) Optional: inspect evidence bundle (v4.8 generated artifact)
 docs/artifacts/v4_8_artifacts_bundle.zip
 
 Note: evidence bundles (zip) are generated artifacts produced by tests/runs.
 The canonical source of truth is the generator scripts + tests.
-
-4) Optional: reproducibility path (v5.1.x: simulator + tests + codebook)
-bash
-python mediation_emergency_contract_sim_v5_1_2.py
-bash
-pytest -q tests/test_v5_1_codebook_consistency.py
-log_codebook_v5_1_demo_1.json (demo codebook; pin the version when exchanging artifacts)
 
 Architecture (high level)
 Audit-ready and fail-closed control flow:
@@ -192,6 +201,7 @@ V4 focuses on a stable “emergency contract” governance bench with smoke test
 V5 extends that bench toward artifact-level reproducibility and contract-style compatibility checks.
 
 Added / strengthened in V5
+
 Log codebook (demo) + contract tests
 V5 introduces a versioned codebook for compact log encoding/decoding and pytest checks that enforce that emitted
 vocabularies (layer / decision / final_decider / reason_code) remain consistent.
@@ -204,6 +214,7 @@ V5 adds explicit tests/contracts around core invariants (e.g., sealed only by et
 reducing “silent drift” during refactors.
 
 What did NOT change (still true in V5)
+
 Research / educational intent
 
 Fail-closed + HITL semantics
@@ -217,10 +228,19 @@ Doc orchestrator (reference implementation)
 
 bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
-Emergency contract (v4.8)
+Emergency contract (recommended: v5.1.2) + contract tests
+
+bash
+python mediation_emergency_contract_sim_v5_1_2.py
+
+bash
+pytest -q tests/test_v5_1_codebook_consistency.py
+Emergency contract (legacy stable bench: v4.8)
 
 bash
 python mediation_emergency_contract_sim_v4_8.py
+bash
+pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 Emergency contract (v4.1)
 
 bash
@@ -229,11 +249,6 @@ Emergency contract stress (v4.4)
 
 bash
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-Emergency contract (v5.1.2) + codebook contract tests
-
-bash
-python mediation_emergency_contract_sim_v5_1_2.py
-pytest -q tests/test_v5_1_codebook_consistency.py
 Project intent / non-goals
 Intent
 Reproducible safety and governance simulations
