@@ -35,7 +35,10 @@
 > extent permitted by applicable law, the author assumes **no liability for any damages** arising from the use of the code,
 > documentation, or generated artifacts (e.g., zip bundles), including misuse by third parties.  
 > The included **codebook is a demo/reference artifact—do not use it as-is; create your own** based on your requirements,
-> threat model, and applicable policies/terms.
+> threat model, and applicable policies/terms.  
+> **Testing & results disclaimer:** Smoke tests and stress runs validate only the scenarios executed under specific
+> runtime conditions. They **do not guarantee correctness, security, safety, or fitness for any purpose** in real-world
+> deployments. Results may vary depending on OS/Python versions, hardware, configuration, and operational use.
 
 ---
 
@@ -65,25 +68,23 @@ Start with one script, confirm behavior and logs, then expand.
 
 ```bash
 python mediation_emergency_contract_sim_v4_8.py
-````
-
-### 2) Run the pinned smoke test (v4.8)
-
-```bash
+2) Run the pinned smoke test (v4.8)
+bash
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-```
+3) Optional: inspect evidence bundle (generated artifact)
+docs/artifacts/v4_8_artifacts_bundle.zip
 
-### 3) Optional: inspect evidence bundle (generated artifact)
+Note: evidence bundles (zip) are generated artifacts produced by tests/runs.
+The canonical source of truth is the generator scripts + tests.
 
-* `docs/artifacts/v4_8_artifacts_bundle.zip`
+4) Optional: reproducibility path (v5.1.x: simulator + tests + codebook)
+bash
+python mediation_emergency_contract_sim_v5_1_2.py
+bash
+pytest -q tests/test_v5_1_codebook_consistency.py
+log_codebook_v5_1_demo_1.json (demo codebook; pin the version when exchanging artifacts)
 
-> Note: evidence bundles (zip) are **generated artifacts** produced by tests/runs.
-> The canonical source of truth is the generator scripts + tests.
-
----
-
-## Architecture (high level)
-
+Architecture (high level)
 Audit-ready and fail-closed control flow:
 
 agents
@@ -92,36 +93,29 @@ agents
 → HITL (pause / reset / ban)
 → audit logs (ARL)
 
-![Architecture](docs/architecture_unknown_progress.png)
 
-### If an image does not render
 
+If an image does not render
 Confirm that:
 
-* the file exists under `docs/`
-* the filename matches exactly (case-sensitive)
-* the link points to the same branch you are viewing
+the file exists under docs/
 
----
+the filename matches exactly (case-sensitive)
 
-## Architecture (code-aligned diagrams)
+the link points to the same branch you are viewing
 
-The following diagrams are **aligned with the current code vocabulary**.
-They separate **state transitions** from **gate order** to preserve auditability and avoid ambiguity.
+Architecture (code-aligned diagrams)
+The following diagrams are aligned with the current code vocabulary.
+They separate state transitions from gate order to preserve auditability and avoid ambiguity.
 
-> Documentation-only. No logic changes.
+Documentation-only. No logic changes.
 
-### 1) State Machine (code-aligned)
+1) State Machine (code-aligned)
+Minimal lifecycle transitions showing where execution pauses (HITL)
+or stops permanently (SEALED).
 
-Minimal lifecycle transitions showing where execution **pauses (HITL)**
-or **stops permanently (SEALED)**.
-
-<p align="center">
-  <img src="docs/architecture_state_machine_code_aligned.png"
-       alt="State Machine (code-aligned)" width="720">
-</p>
-
-**Primary execution path**
+<p align="center"> <img src="docs/architecture_state_machine_code_aligned.png" alt="State Machine (code-aligned)" width="720"> </p>
+Primary execution path
 
 INIT
 → PAUSE_FOR_HITL_AUTH
@@ -130,126 +124,137 @@ INIT
 → PAUSE_FOR_HITL_FINALIZE
 → CONTRACT_EFFECTIVE
 
-**Notes**
+Notes
 
-* `PAUSE_FOR_HITL_*` represents an explicit **Human-in-the-Loop** decision point (user approval or admin approval).
-* `STOPPED (SEALED)` is reached on:
+PAUSE_FOR_HITL_* represents an explicit Human-in-the-Loop decision point (user approval or admin approval).
 
-  * invalid or fabricated evidence
-  * authorization expiry
-  * draft lint failure
-* **SEALED stops are fail-closed and non-overrideable by design.**
+STOPPED (SEALED) is reached on:
 
-### 2) Gate Pipeline (code-aligned)
+invalid or fabricated evidence
 
-Ordered evaluation gates, **independent from lifecycle state transitions**.
+authorization expiry
 
-<p align="center">
-  <img src="docs/architecture_gate_pipeline_code_aligned.png"
-       alt="Gate Pipeline (code-aligned)" width="720">
-</p>
+draft lint failure
 
-**Notes**
+SEALED stops are fail-closed and non-overrideable by design.
 
-* This diagram represents **gate order**, not state transitions.
-* `PAUSE` indicates **HITL required** (human decision pending).
-* `STOPPED (SEALED)` indicates a **non-recoverable safety stop**.
+2) Gate Pipeline (code-aligned)
+Ordered evaluation gates, independent from lifecycle state transitions.
 
-**Design intent**
+<p align="center"> <img src="docs/architecture_gate_pipeline_code_aligned.png" alt="Gate Pipeline (code-aligned)" width="720"> </p>
+Notes
 
-* **State Machine** answers: “Where does execution pause or terminate?”
-* **Gate Pipeline** answers: “In what order are decisions evaluated?”
+This diagram represents gate order, not state transitions.
+
+PAUSE indicates HITL required (human decision pending).
+
+STOPPED (SEALED) indicates a non-recoverable safety stop.
+
+Design intent
+
+State Machine answers: “Where does execution pause or terminate?”
+
+Gate Pipeline answers: “In what order are decisions evaluated?”
 
 Keeping them separate avoids ambiguity and preserves audit-ready traceability.
 
----
-
-## What’s new
-
+What’s new
 This project is under active development.
 
-* Latest updates: check the **commit history** (GitHub “Commits”) and release notes (if tagged).
-* Key additions/changes are documented as needed in `docs/` (and/or `CHANGELOG.md` if present).
+Latest updates: check the commit history (GitHub “Commits”) and release notes (if tagged).
 
-> Design note: the README stays minimal on purpose to keep the “recommended path” clear.
+Key additions/changes are documented as needed in docs/ (and/or CHANGELOG.md if present).
 
----
+Design note: the README stays minimal on purpose to keep the “recommended path” clear.
 
-## V1 → V4: What actually changed
-
-`mediation_emergency_contract_sim_v1.py` demonstrates the minimum viable pipeline:
+V1 → V4: What actually changed
+mediation_emergency_contract_sim_v1.py demonstrates the minimum viable pipeline:
 a linear, event-driven workflow with fail-closed stops and minimal audit logs.
 
-`mediation_emergency_contract_sim_v4.py` turns that pipeline into a repeatable governance bench by adding early rejection and controlled automation.
+mediation_emergency_contract_sim_v4.py turns that pipeline into a repeatable governance bench by adding early rejection and controlled automation.
 
-**Added in v4**
+Added in v4
 
-* **Evidence gate**
-  Basic verification of evidence bundles. Invalid/irrelevant/fabricated evidence triggers fail-closed stops.
+Evidence gate
+Basic verification of evidence bundles. Invalid/irrelevant/fabricated evidence triggers fail-closed stops.
 
-* **Draft lint gate**
-  Enforces draft-only semantics and scope boundaries before admin finalization.
+Draft lint gate
+Enforces draft-only semantics and scope boundaries before admin finalization.
 
-* **Trust system (score + streak + cooldown)**
-  Trust increases on successful HITL outcomes and decreases on failures. Cooldown prevents unsafe automation after errors. All transitions are logged in ARL.
+Trust system (score + streak + cooldown)
+Trust increases on successful HITL outcomes and decreases on failures. Cooldown prevents unsafe automation after errors. All transitions are logged in ARL.
 
-* **AUTH HITL auto-skip (safe friction reduction)**
-  When trust threshold + approval streak + valid grant are satisfied, AUTH HITL can be skipped for the same scenario/location only, while recording reasons in ARL.
+AUTH HITL auto-skip (safe friction reduction)
+When trust threshold + approval streak + valid grant are satisfied, AUTH HITL can be skipped for the same scenario/location only, while recording reasons in ARL.
 
----
+V4 → V5: What changed
+V4 focuses on a stable “emergency contract” governance bench with smoke tests and stress runners.
+V5 extends that bench toward artifact-level reproducibility and contract-style compatibility checks.
 
-## Execution examples
+Added / strengthened in V5
+Log codebook (demo) + contract tests
+V5 introduces a versioned codebook for compact log encoding/decoding and pytest checks that enforce that emitted
+vocabularies (layer / decision / final_decider / reason_code) remain consistent.
 
-**Doc orchestrator (reference implementation)**
+Reproducibility surface (pin what matters)
+V5 encourages pinning simulator version, test version, and codebook version to reproduce results across environments.
 
-```bash
+Tighter invariant enforcement
+V5 adds explicit tests/contracts around core invariants (e.g., sealed only by ethics/acc; relativity gate never sealed),
+reducing “silent drift” during refactors.
+
+What did NOT change (still true in V5)
+Research / educational intent
+
+Fail-closed + HITL semantics
+
+Use synthetic data only and run in isolated environments
+
+No security guarantees (this is not encryption; tests do not guarantee safety in real-world deployments)
+
+Execution examples
+Doc orchestrator (reference implementation)
+
+bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
-```
+Emergency contract (v4.8)
 
-**Emergency contract (v4.8)**
-
-```bash
+bash
 python mediation_emergency_contract_sim_v4_8.py
-```
+Emergency contract (v4.1)
 
-**Emergency contract (v4.1)**
-
-```bash
+bash
 python mediation_emergency_contract_sim_v4_1.py
-```
+Emergency contract stress (v4.4)
 
-**Emergency contract stress (v4.4)**
-
-```bash
+bash
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-```
+Emergency contract (v5.1.2) + codebook contract tests
 
----
+bash
+python mediation_emergency_contract_sim_v5_1_2.py
+pytest -q tests/test_v5_1_codebook_consistency.py
+Project intent / non-goals
+Intent
+Reproducible safety and governance simulations
 
-## Project intent / non-goals
+Explicit HITL semantics (pause/reset/ban)
 
-### Intent
+Audit-ready decision traces (minimal ARL)
 
-* Reproducible safety and governance simulations
-* Explicit HITL semantics (pause/reset/ban)
-* Audit-ready decision traces (minimal ARL)
+Non-goals
+Production-grade autonomous deployment
 
-### Non-goals
+Unbounded self-directed agent control
 
-* Production-grade autonomous deployment
-* Unbounded self-directed agent control
-* Safety claims beyond what is explicitly tested
+Safety claims beyond what is explicitly tested
 
----
+Data & safety notes
+Use synthetic/dummy data only.
 
-## Data & safety notes
+Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible.
 
-* Use **synthetic/dummy data** only.
-* Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible.
-* Treat generated bundles (zip) as **reviewable evidence**, not canonical source.
+Treat generated bundles (zip) as reviewable evidence, not canonical source.
 
----
-
-## License
-
-Apache License 2.0 (see `LICENSE`)
+License
+Apache License 2.0 (see LICENSE)
