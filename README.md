@@ -81,10 +81,10 @@ It provides no confidentiality guarantees.
 
 4) Optional: run the legacy stable bench (v4.8)
 bash
-コードをコピーする
+
 python mediation_emergency_contract_sim_v4_8.py
 bash
-コードをコピーする
+
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 5) Optional: inspect evidence bundle (v4.8 generated artifact)
 docs/artifacts/v4_8_artifacts_bundle.zip
