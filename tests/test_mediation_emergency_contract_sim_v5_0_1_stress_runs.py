@@ -1,18 +1,18 @@
-# tests/test_mediation_emergency_contract_sim_v5_0_1_stress_runs.py
+# tests/test_mediation_emergency_contract_sim_v5_1_2_stress_runs.py
 # -*- coding: utf-8 -*-
 """
-Stress smoke test for v5.0.1 (subprocess run)
+Stress smoke test for v5.1.2 (subprocess run)
 
 Goal:
-- Verify the simulator completes a large number of runs in --stress mode (no per-run retention).
+- Verify the simulator completes a large number of runs in aggregation-only mode (default keep_runs=False).
 - Emit compact results JSON for counters inspection.
-- Optionally persist ARL only on abnormal runs (capped).
+- Optionally persist ARL only on abnormal runs (capped) with incident indexing.
 
 Defaults (override via env vars):
 - MAESTRO_STRESS_RUNS=10000
 - MAESTRO_STRESS_SEED=42
 - MAESTRO_STRESS_TIMEOUT_SEC=1800
-- MAESTRO_SIM_SCRIPT=/path/to/mediation_emergency_contract_sim_v5_0_1.py
+- MAESTRO_SIM_SCRIPT=/path/to/mediation_emergency_contract_sim_v5_1_2.py
 
 Run:
   pytest -q -m slow
@@ -42,7 +42,7 @@ def test_stress_runs_completes(tmp_path: Path) -> None:
         script = Path(env_script).expanduser().resolve()
     else:
         repo_root = Path(__file__).resolve().parents[1]
-        script = (repo_root / "mediation_emergency_contract_sim_v5_0_1.py").resolve()
+        script = (repo_root / "mediation_emergency_contract_sim_v5_1_2.py").resolve()
 
     assert script.exists(), f"simulator script not found: {script}"
 
@@ -50,6 +50,7 @@ def test_stress_runs_completes(tmp_path: Path) -> None:
     arl_dir = tmp_path / "arl_out"
     arl_dir.mkdir(parents=True, exist_ok=True)
 
+    # v5.1.2: aggregation-only is default (keep_runs=False); --stress flag does not exist.
     cmd = [
         sys.executable,
         str(script),
@@ -57,7 +58,6 @@ def test_stress_runs_completes(tmp_path: Path) -> None:
         str(runs),
         "--seed",
         str(seed),
-        "--stress",
         "--queue-max-items",
         "0",
         "--sample-runs",
@@ -95,8 +95,9 @@ def test_stress_runs_completes(tmp_path: Path) -> None:
     data = json.loads(results_json.read_text(encoding="utf-8"))
 
     meta = data.get("meta", {}) or {}
-    assert meta.get("version") == "5.0.1"
-    assert bool(meta.get("stress")) is True
+    assert meta.get("version") == "5.1.2"
+    # v5.1.2 default is aggregation-only (keep_runs=False)
+    assert bool(meta.get("keep_runs")) is False
 
     # Count sanity
     hitl_counts = (data.get("hitl_queue", {}) or {}).get("counts", {}) or {}
@@ -113,6 +114,20 @@ def test_stress_runs_completes(tmp_path: Path) -> None:
     if abnormal_total == 0:
         assert saved == 0 and skipped == 0
 
-    arl_files = sorted(arl_dir.glob("SIM#B*.arl.jsonl"))
+    # v5.1.2 file name: INC#000001__SIM#B00001.arl.jsonl (incident prefix)
+    arl_files = sorted(arl_dir.glob("*.arl.jsonl"))
     assert len(arl_files) == saved
     assert len(arl_files) <= 50
+
+    # v5.1.2 incident index artifacts exist iff at least one file was saved
+    index_path = arl_dir / "incident_index.jsonl"
+    counter_path = arl_dir / "incident_counter.txt"
+
+    if saved > 0:
+        assert index_path.exists(), "incident_index.jsonl should exist when incidents were saved"
+        assert counter_path.exists(), "incident_counter.txt should exist when incidents were saved"
+
+        # Best-effort: index lines count equals saved files count
+        lines = index_path.read_text(encoding="utf-8").strip().splitlines()
+        nonempty = [x for x in lines if x.strip()]
+        assert len(nonempty) == saved
