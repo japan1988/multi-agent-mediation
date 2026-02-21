@@ -44,9 +44,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+
 JST = timezone(timedelta(hours=9))
 SIM_VERSION = "5.1.2"
-
 
 
 # =========================
@@ -340,25 +340,22 @@ class AuditLog:
         if extra:
             base.update(extra)
 
-        # Decide incident-trigger first (inputs only)
         trigger = self._should_trigger_incident(
             layer=layer, decision=decision, sealed=sealed, reason_code=reason_code
         )
 
-        # If this is the first trigger for this run_id, replay pre-context BEFORE
-        # the triggering row is remembered/persisted, to avoid "1-row duplication".
         incident_start = bool(trigger) and (run_id not in self._incident_post_remaining)
         if incident_start:
             self._replay_pre_context(run_id)
-            # Post-context window counts rows AFTER the incident row (do not consume incident row)
             self._incident_post_remaining[run_id] = max(0, int(self.post_context_n))
 
-        # Post-context applies only to rows after the incident row
-        in_post = (not trigger) and (run_id in self._incident_post_remaining) and (self._incident_post_remaining[run_id] > 0)
+        in_post = (
+            (not trigger)
+            and (run_id in self._incident_post_remaining)
+            and (self._incident_post_remaining[run_id] > 0)
+        )
         must_persist = bool(force_full) or bool(trigger) or bool(in_post)
 
-        # Remember candidate for possible future replay:
-        # - Skip remembering the triggering row to prevent replays including it later.
         if not trigger:
             self._remember_candidate(dict(base))
 
@@ -370,7 +367,6 @@ class AuditLog:
 
             persisted = self._append_signed(body)
 
-            # Decrement post window ONLY for post-context rows (not for the incident row).
             if in_post and run_id in self._incident_post_remaining:
                 self._incident_post_remaining[run_id] -= 1
                 if self._incident_post_remaining[run_id] <= 0:
@@ -905,7 +901,10 @@ def load_grants() -> List[Grant]:
 
 
 def save_grants(grants: List[Grant]) -> None:
-    GRANT_STORE_PATH.write_text(json.dumps({"grants": [g.to_dict() for g in grants]}, ensure_ascii=False, indent=2), encoding="utf-8")
+    GRANT_STORE_PATH.write_text(
+        json.dumps({"grants": [g.to_dict() for g in grants]}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def ensure_default_grant_exists() -> None:
@@ -1192,7 +1191,6 @@ def simulate_run(
     location_id = st.auth_request["context"]["location_id"]
     auto_ok, trust_reason, grant_id = model_trust_gate(audit, st, trust, scenario, location_id)
 
-    # ACC pause for HITL auth uses the *resolved* trust_reason (avoids literal/undefined reason codes).
     if not auto_ok:
         audit.emit(
             run_id=st.run_id,
@@ -1289,57 +1287,6 @@ def _first_non_run_row(arl: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return None
 
 
-def build_hitl_queue(results: Dict[str, Any]) -> Dict[str, Any]:
-    items: List[Dict[str, Any]] = []
-    by_reason: Dict[str, int] = {}
-    by_state: Dict[str, int] = {}
-
-    runs = results.get("runs", [])
-    for rr in runs:
-        run_id = rr.get("run_id", "")
-        final_state = rr.get("final_state", "")
-        sealed = bool(rr.get("sealed", False))
-        arl = rr.get("arl", []) or []
-
-        by_state[final_state] = by_state.get(final_state, 0) + 1
-
-        if final_state not in ("STOPPED", "PAUSE_FOR_HITL_AUTH", "PAUSE_FOR_HITL_FINALIZE"):
-            continue
-
-        first_bad = _first_non_run_row(arl) or {}
-        rc = str(first_bad.get("reason_code", "UNKNOWN"))
-        by_reason[rc] = by_reason.get(rc, 0) + 1
-
-        snapshot_keys = ("layer", "decision", "reason_code", "missing_keys", "kind", "error", "pattern")
-        snapshot = {k: first_bad.get(k) for k in snapshot_keys if k in first_bad}
-
-        items.append(
-            {
-                "run_id": run_id,
-                "final_state": final_state,
-                "sealed": sealed,
-                "primary_reason_code": rc,
-                "primary_layer": first_bad.get("layer"),
-                "overrideable": first_bad.get("overrideable"),
-                "final_decider": first_bad.get("final_decider"),
-                "snapshot": snapshot,
-            }
-        )
-
-    by_reason_top20 = dict(sorted(by_reason.items(), key=lambda kv: kv[1], reverse=True)[:20])
-
-    return {
-        "meta": {"version": SIM_VERSION, "generated_at": now_iso(), "policy_pack_hash": POLICY_PACK_HASH},
-        "counts": {
-            "total_runs": len(runs),
-            "by_state": dict(sorted(by_state.items(), key=lambda kv: kv[0])),
-            "by_reason_code_top20": by_reason_top20,
-            "queue_size": len(items),
-        },
-        "items": items,
-    }
-
-
 @dataclass
 class HitlQueueBuilder:
     """Incremental HITL queue builder for aggregation-only mode.
@@ -1396,7 +1343,10 @@ class HitlQueueBuilder:
             "counts": {
                 "total_runs": sum(self.by_state.values()),
                 "by_state": dict(sorted(self.by_state.items(), key=lambda kv: kv[0])),
+
                 "by_reason_code_top20": by_reason_top20,
+
+                # queue_size = number of abnormal runs (i.e., how many times we incremented by_reason)
                 "queue_size": int(sum(self.by_reason.values())),
                 "items_kept": len(self.items),
             },
@@ -1405,6 +1355,7 @@ class HitlQueueBuilder:
 
 
 def write_queue_csv(queue: Dict[str, Any], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     items = queue.get("items", []) or []
     fieldnames = ["run_id", "final_state", "sealed", "primary_reason_code", "primary_layer", "overrideable", "final_decider", "snapshot_json"]
     with path.open("w", encoding="utf-8", newline="") as f:
@@ -1466,10 +1417,7 @@ def append_incident_index(out_dir: Path, record: Dict[str, Any]) -> Path:
 
 
 def primary_reason_code_from_rows(rows: List[Any]) -> str:
-    """Best-effort: choose the first non-RUN reason_code, else 'OK'.
-
-    Rows may be ARLRow objects or already-serialized dicts (audit.rows).
-    """
+    """Best-effort: choose the first non-RUN reason_code, else 'OK'."""
     for r in rows:
         if isinstance(r, dict):
             decision = r.get("decision")
@@ -1501,7 +1449,7 @@ def run_simulation(
     seed: Optional[int] = None,
     reset: bool = True,
     reset_eval: bool = True,
-    # v5.0.x abnormal-only persistence
+    # abnormal-only persistence
     save_arl_on_abnormal: bool = False,
     arl_out_dir: str = "",
     max_arl_files: int = 1000,
@@ -1511,7 +1459,7 @@ def run_simulation(
     key_mode: str = "demo",
     key_file: str = "",
     key_env: str = "",
-    # v5.1 aggregation-only default
+    # memory mode
     keep_runs: bool = False,
     queue_max_items: int = 0,
     sample_runs: int = 0,
@@ -1519,11 +1467,12 @@ def run_simulation(
     """Run the simulation.
 
     keep_runs=False (default):
-      - returns results['runs'] for inspection (may be large for high --runs)
+      - aggregation-only / index-first mode
+      - does NOT keep per-run results in memory
+      - keeps only counters + HITL queue (+ optional samples)
 
     keep_runs=True:
-      - does NOT keep per-run results in memory
-      - returns only counters + HITL queue (+ optional samples) and writes abnormal ARLs if enabled
+      - keeps full per-run results in results['runs'] (can be large)
     """
     if runs <= 0:
         runs = 1
@@ -1658,7 +1607,6 @@ def run_simulation(
                     out_path = out_dir / f"{incident_id}__{rid}.arl.jsonl"
                     write_arl_jsonl(audit.rows, out_path)
 
-                    # append index record (JSONL)
                     idx_rec = {
                         "incident_id": incident_id,
                         "run_id": rid,
@@ -1720,113 +1668,96 @@ def run_simulation(
                     }
                 )
 
-    results["trust_after"] = trust.to_dict()
-    results["eval_after"] = eval_state.to_dict()
-    results["grants"] = {"grants": [g.to_dict() for g in load_grants()]}
-
-    if keep_runs:
-        results["hitl_queue"] = build_hitl_queue(results)
-    else:
-        results["hitl_queue"] = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
-
-    results["counts"] = results["hitl_queue"].get("counts", {})
-
+    # Persist states once (avoid per-run IO)
     save_trust_state(trust)
     save_eval_state(eval_state)
+
+    results["trust_after"] = trust.to_dict()
+    results["eval_after"] = eval_state.to_dict()
+
+    results["hitl_queue"] = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
     return results
 
 
-def main() -> None:
+def _print_summary(results: Dict[str, Any]) -> None:
+    q = results.get("hitl_queue", {}) or {}
+    counts = q.get("counts", {}) or {}
+    by_state = counts.get("by_state", {}) or {}
+    by_rc = counts.get("by_reason_code_top20", {}) or {}
+    ab = results.get("abnormal_arl_persistence", {}) or {}
+
+    print(f"[v{SIM_VERSION}] runs={counts.get('total_runs')} keep_runs={results.get('meta', {}).get('keep_runs')}")
+    print("by_state:", json.dumps(by_state, ensure_ascii=False))
+    print("top_reason_code:", json.dumps(by_rc, ensure_ascii=False))
+    if ab.get("enabled"):
+        print(
+            f"abnormal_total={ab.get('abnormal_total')} saved={ab.get('saved')} skipped_by_cap={ab.get('skipped_by_cap')} out_dir={ab.get('arl_out_dir')}"
+        )
+
+
+def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description="Emergency contract mediation simulator (v5.1.2)")
-    p.add_argument("--runs", type=int, default=200, help="number of simulation runs")
-    p.add_argument("--fabricate", action="store_true", help="always fabricate evidence (all runs)")
-    p.add_argument(
-        "--fabricate-rate",
-        type=float,
-        default=None,
-        help="probability of evidence fabrication per run (0.0..1.0). overrides --fabricate when set",
-    )
-    p.add_argument("--keep-runs", action="store_true", help="Keep per-run results in memory (debug; large memory). Default: aggregation-only.")
-    p.add_argument("--seed", type=int, default=None, help="PRNG seed for reproducible runs")
-    p.add_argument(
-        "--queue-max-items",
-        type=int,
-        default=0,
-        help="max queue items to keep in aggregation mode (counts are always complete). 0 disables items",
-    )
-    p.add_argument(
-        "--sample-runs",
-        type=int,
-        default=0,
-        help="in aggregation mode: keep up to N sampled runs including ARL for inspection",
-    )
 
-    p.add_argument("--no-reset", action="store_true", help="do not reset local stores before running")
-    p.add_argument("--keep-eval", action="store_true", help="do not reset evaluation state when resetting stores")
+    p.add_argument("--runs", type=int, default=100, help="number of runs")
+    p.add_argument("--fabricate", action="store_true", help="fabricate evidence for all runs (unless --fabricate-rate is set)")
+    p.add_argument("--fabricate-rate", type=float, default=None, help="fabrication rate in [0,1] (overrides --fabricate)")
+    p.add_argument("--seed", type=int, default=None, help="random seed (deterministic)")
 
-    # Key handling (tamper-evident ARL hash chaining)
-    p.add_argument("--key-mode", type=str, default="demo", choices=["demo", "file", "env"])
-    p.add_argument("--key-file", type=str, default="", help="path to secret key file (key-mode=file)")
-    p.add_argument("--key-env", type=str, default="", help="env var name holding key material (key-mode=env)")
+    p.add_argument("--no-reset", action="store_true", help="do not reset stores (trust/grants/eval)")
+    p.add_argument("--no-reset-eval", action="store_true", help="if resetting, keep eval_state.json")
 
-    # Abnormal-only ARL persistence
-    p.add_argument("--save-arl-on-abnormal", action="store_true", help="persist ARL only when run is abnormal")
-    p.add_argument("--arl-out-dir", type=str, default="", help="directory to write abnormal ARLs (*.arl.jsonl)")
-    p.add_argument("--max-arl-files", type=int, default=1000, help="cap abnormal ARL files to avoid blowups")
-    p.add_argument(
-        "--full-context-n",
-        type=int,
-        default=0,
-        help="when abnormal, also replay and persist FULL copies of previous N rows (ring buffer)",
-    )
+    p.add_argument("--save-arl-on-abnormal", action="store_true", help="save ARL JSONL only on abnormal runs")
+    p.add_argument("--arl-out-dir", type=str, default="", help="output dir for abnormal ARLs + incident index")
+    p.add_argument("--max-arl-files", type=int, default=1000, help="cap for saved abnormal ARL files")
 
-    # Output
-    p.add_argument("--queue-json", type=str, default="", help="write HITL queue summary to JSON")
-    p.add_argument("--queue-csv", type=str, default="", help="write HITL queue items to CSV")
-    p.add_argument("--results-json", type=str, default="", help="write full results JSON (can be large)")
+    p.add_argument("--full-context-n", type=int, default=0, help="pre-context replay size kept in memory (per run_id)")
 
-    args = p.parse_args()
+    p.add_argument("--key-mode", type=str, default="demo", choices=["demo", "file", "env"], help="demo|file|env")
+    p.add_argument("--key-file", type=str, default="", help="key file path (for --key-mode=file)")
+    p.add_argument("--key-env", type=str, default="", help="env var name (for --key-mode=env)")
+
+    # Memory / outputs
+    p.add_argument("--keep-runs", action="store_true", help="keep full per-run results in memory (results['runs'])")
+    p.add_argument("--queue-max-items", type=int, default=0, help="keep up to N HITL queue items (0 keeps counts only)")
+    p.add_argument("--sample-runs", type=int, default=5, help="when --keep-runs is OFF, keep up to N sampled runs")
+
+    # Output files (this is the missing part that caused your '--results-json' failure)
+    p.add_argument("--results-json", type=str, default="", help="write full results JSON to this path")
+    p.add_argument("--queue-json", type=str, default="", help="write HITL queue JSON to this path")
+    p.add_argument("--queue-csv", type=str, default="", help="write HITL queue CSV to this path")
+
+    args = p.parse_args(argv)
 
     results = run_simulation(
-        runs=args.runs,
-        fabricate=args.fabricate,
+        runs=int(args.runs),
+        fabricate=bool(args.fabricate),
         fabricate_rate=args.fabricate_rate,
         seed=args.seed,
         reset=(not args.no_reset),
-        reset_eval=(not args.keep_eval),
-        save_arl_on_abnormal=args.save_arl_on_abnormal,
-        arl_out_dir=args.arl_out_dir,
-        max_arl_files=args.max_arl_files,
-        full_context_n=args.full_context_n,
-        key_mode=args.key_mode,
-        key_file=args.key_file,
-        key_env=args.key_env,
-        keep_runs=args.keep_runs,
-        queue_max_items=args.queue_max_items,
-        sample_runs=args.sample_runs,
+        reset_eval=(not args.no_reset_eval),
+        save_arl_on_abnormal=bool(args.save_arl_on_abnormal),
+        arl_out_dir=str(args.arl_out_dir or ""),
+        max_arl_files=int(args.max_arl_files),
+        full_context_n=int(args.full_context_n),
+        key_mode=str(args.key_mode),
+        key_file=str(args.key_file or ""),
+        key_env=str(args.key_env or ""),
+        keep_runs=bool(args.keep_runs),
+        queue_max_items=int(args.queue_max_items),
+        sample_runs=int(args.sample_runs),
     )
 
+    # Write outputs (optional)
     if args.results_json:
         write_json(Path(args.results_json), results)
-
     if args.queue_json:
-        write_json(Path(args.queue_json), results["hitl_queue"])
-
+        write_json(Path(args.queue_json), results.get("hitl_queue", {}))
     if args.queue_csv:
-        write_queue_csv(results["hitl_queue"], Path(args.queue_csv))
+        write_queue_csv(results.get("hitl_queue", {}), Path(args.queue_csv))
 
-    # Default: print a compact summary to stdout for quick iteration
-    if (not args.results_json) and (not args.queue_json) and (not args.queue_csv):
-        compact = {
-            "meta": results.get("meta", {}),
-            "counts": results.get("counts", {}),
-            "abnormal_arl_persistence": results.get("abnormal_arl_persistence", {}),
-            "hitl_queue": results.get("hitl_queue", {}),
-        }
-        print(json.dumps(compact, ensure_ascii=False, indent=2))
+    _print_summary(results)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
-
-
+    raise SystemExit(main())
