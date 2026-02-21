@@ -4,9 +4,11 @@
 Stress smoke test for v5.1.2 (subprocess run)
 
 Goal:
-- Verify the simulator completes a large number of runs in aggregation-only mode (default keep_runs=False).
+- Verify the simulator completes a large number of runs in aggregation-only mode
+  (no per-run retention by default).
 - Emit compact results JSON for counters inspection.
-- Optionally persist ARL only on abnormal runs (capped) with incident indexing.
+- Optionally persist ARL only on abnormal runs (capped).
+- v5.1.2: ARL filenames include incident prefix + incident index/counter artifacts.
 
 Defaults (override via env vars):
 - MAESTRO_STRESS_RUNS=10000
@@ -50,7 +52,7 @@ def test_stress_runs_completes(tmp_path: Path) -> None:
     arl_dir = tmp_path / "arl_out"
     arl_dir.mkdir(parents=True, exist_ok=True)
 
-    # v5.1.2: aggregation-only is default (keep_runs=False); --stress flag does not exist.
+    # v5.1.2: aggregation-only by default (keep_runs=False). No --stress flag required/assumed.
     cmd = [
         sys.executable,
         str(script),
@@ -91,7 +93,6 @@ def test_stress_runs_completes(tmp_path: Path) -> None:
         )
 
     assert results_json.exists(), "results JSON was not created"
-
     data = json.loads(results_json.read_text(encoding="utf-8"))
 
     meta = data.get("meta", {}) or {}
@@ -114,15 +115,14 @@ def test_stress_runs_completes(tmp_path: Path) -> None:
     if abnormal_total == 0:
         assert saved == 0 and skipped == 0
 
-    # v5.1.2 file name: INC#000001__SIM#B00001.arl.jsonl (incident prefix)
-    arl_files = sorted(arl_dir.glob("*.arl.jsonl"))
+    # v5.1.2 filename pattern: INC#000001__SIM#B000001.arl.jsonl
+    arl_files = sorted(arl_dir.glob("INC#*__SIM#B*.arl.jsonl"))
     assert len(arl_files) == saved
     assert len(arl_files) <= 50
 
-    # v5.1.2 incident index artifacts exist iff at least one file was saved
+    # v5.1.2: incident index artifacts exist iff at least one file was saved
     index_path = arl_dir / "incident_index.jsonl"
     counter_path = arl_dir / "incident_counter.txt"
-
     if saved > 0:
         assert index_path.exists(), "incident_index.jsonl should exist when incidents were saved"
         assert counter_path.exists(), "incident_counter.txt should exist when incidents were saved"
