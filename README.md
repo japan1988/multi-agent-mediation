@@ -60,6 +60,20 @@ for negotiation, mediation, governance-style workflows, and gating behavior.
 
 ---
 
+## Latest update (what changed in this repo)
+
+This update adds a **packaged zip bundle** for the emergency contract simulator.
+
+- **Added:** `docs/mediation_emergency_contract_sim_pkg.zip` (v5.1.2 convenience bundle)
+- **Why:** quick download/run for reproducible smoke/stress runs (seeded), without changing entrypoints
+- **Canonical source of truth:** the root simulator script + tests  
+  - `mediation_emergency_contract_sim_v5_1_2.py`  
+  - `pytest -q tests/test_v5_1_codebook_consistency.py`
+- **CI impact:** none (docs artifact; not an entrypoint)
+- **Note:** zip bundles are generated/convenience artifacts; reviewable evidence, not authoritative logic
+
+---
+
 ## Quickstart (recommended path)
 
 **v5.1.x is recommended for reproducibility + contract checks; v4.x is kept as a legacy stable bench.**
@@ -67,6 +81,8 @@ for negotiation, mediation, governance-style workflows, and gating behavior.
 Start with one script, confirm behavior and logs, then expand.
 
 ### 1) Run the recommended emergency contract simulator (v5.1.2)
+
+> Optional bundle: `docs/mediation_emergency_contract_sim_pkg.zip` (convenience; source of truth is the root script + tests)
 
 ```bash
 python mediation_emergency_contract_sim_v5_1_2.py --runs 100
@@ -147,10 +163,15 @@ Documentation-only. No logic changes.
 Primary execution path:
 
 INIT
+
 → PAUSE_FOR_HITL_AUTH
+
 → AUTH_VERIFIED
+
 → DRAFT_READY
+
 → PAUSE_FOR_HITL_FINALIZE
+
 → CONTRACT_EFFECTIVE
 
 Notes:
@@ -187,6 +208,7 @@ Gate Pipeline answers: “In what order are decisions evaluated?”
 Keeping them separate avoids ambiguity and preserves audit-ready traceability.
 
 v5.0.1 → v5.1.2: What changed (delta)
+
 Summary (README-friendly)
 
 v5.1.2 strengthens the simulator toward large-run stability and incident-only persistence.
@@ -303,5 +325,4 @@ Treat generated bundles (zip) as reviewable evidence, not canonical source.
 
 License
 
-Apache License 2.0 (see LICENSE
-)
+Apache License 2.0 (see LICENSE）
