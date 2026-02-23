@@ -340,11 +340,3 @@ python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress
 ## ライセンス
 
 Apache License 2.0（[LICENSE](LICENSE) を参照）
-
-```
-
-### 最後に1点（表記の揺れ防止）
-PR本文やREADME内で **`mediation_emergency_contract_sim_v5_1_2.py`（contract付き）**に統一してください。  
-以前の `mediation_emergency_contract_sim_v5_1_2.py`（contract抜け）と混ざると検索性が落ちます。
-::contentReference[oaicite:0]{index=0}
-```
