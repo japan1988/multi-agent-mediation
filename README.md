@@ -1,3 +1,4 @@
+
 # 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
 [![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
@@ -153,6 +154,16 @@ agents
   → HITL (pause / reset / ban)
   → audit logs (ARL)
 ```
+
+### Architecture (overview, v5.1.2)
+
+Documentation-only. No logic changes.
+
+<p align="center">
+  <img src="docs/architecture_v5_1_2_emergency_contract_overview.png"
+       alt="Emergency contract simulator overview (v5.1.2)"
+       width="860">
+</p>
 
 ### Architecture (code-aligned diagrams)
 
