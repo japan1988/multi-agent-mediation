@@ -146,7 +146,7 @@ Tip: keep `--max-arl-files` to cap disk growth.
 
 Audit-ready and fail-closed control flow:
 
-```
+```text
 agents
   → mediator (risk / pattern / fact)
   → evidence verification
@@ -156,54 +156,12 @@ agents
 
 ### Architecture (code-aligned diagrams)
 
-The following diagrams are aligned with the current code vocabulary.
-They separate state transitions from gate order to preserve auditability and avoid ambiguity.
-
+The following diagram is aligned with the current code vocabulary.
 Documentation-only. No logic changes.
 
-#### 1) State Machine (code-aligned)
-
 <p align="center">
-  <img src="docs/architecture_state_machine_code_aligned.png" alt="State Machine (code-aligned)" width="720">
+  <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
 </p>
-
-Primary execution path:
-
-* `INIT`
-* → `PAUSE_FOR_HITL_AUTH`
-* → `AUTH_VERIFIED`
-* → `DRAFT_READY`
-* → `PAUSE_FOR_HITL_FINALIZE`
-* → `CONTRACT_EFFECTIVE`
-
-Notes:
-
-* `PAUSE_FOR_HITL_*` represents an explicit Human-in-the-Loop decision point (user approval or admin approval).
-* `STOPPED (SEALED)` is reached on:
-
-  * invalid or fabricated evidence
-  * authorization expiry
-  * draft lint failure
-* SEALED stops are fail-closed and non-overrideable by design.
-
-#### 2) Gate Pipeline (code-aligned)
-
-<p align="center">
-  <img src="docs/architecture_gate_pipeline_code_aligned.png" alt="Gate Pipeline (code-aligned)" width="720">
-</p>
-
-Notes:
-
-* This diagram represents gate order, not state transitions.
-* `PAUSE` indicates HITL required (human decision pending).
-* `STOPPED (SEALED)` indicates a non-recoverable safety stop.
-
-Design intent:
-
-* State Machine answers: “Where does execution pause or terminate?”
-* Gate Pipeline answers: “In what order are decisions evaluated?”
-
-Keeping them separate avoids ambiguity and preserves audit-ready traceability.
 
 ---
 
@@ -333,4 +291,3 @@ Non-goals:
 Apache License 2.0 (see `LICENSE`)
 
 ```
-
