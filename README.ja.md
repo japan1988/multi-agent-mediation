@@ -146,7 +146,7 @@ Tip：`--max-arl-files` を設定してディスク肥大を制限してくだ�
 
 監査可能かつ fail-closed な制御フロー：
 
-```
+```text
 agents
   → mediator（risk / pattern / fact）
   → evidence verification
@@ -157,53 +157,11 @@ agents
 ### アーキテクチャ（コード整合ダイアグラム）
 
 以下の図は、現行コードの語彙（vocabulary）に整合しています。
-状態遷移とゲート順序を分離し、監査性と曖昧性排除を優先しています。
-
 ドキュメントのみ（ロジック変更なし）。
 
-#### 1) 状態機械（コード整合）
-
 <p align="center">
-  <img src="docs/architecture_state_machine_code_aligned.png" alt="State Machine (code-aligned)" width="720">
+  <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
 </p>
-
-主要実行パス：
-
-* `INIT`
-* → `PAUSE_FOR_HITL_AUTH`
-* → `AUTH_VERIFIED`
-* → `DRAFT_READY`
-* → `PAUSE_FOR_HITL_FINALIZE`
-* → `CONTRACT_EFFECTIVE`
-
-注記：
-
-* `PAUSE_FOR_HITL_*` は、明示的な HITL 判断点（ユーザー承認または管理者承認）です。
-* `STOPPED (SEALED)` に到達する条件：
-
-  * 無効または捏造された証拠
-  * 認可期限切れ
-  * ドラフト lint 失敗
-* SEALED 停止は設計上 fail-closed であり、非オーバーライドです。
-
-#### 2) ゲート・パイプライン（コード整合）
-
-<p align="center">
-  <img src="docs/architecture_gate_pipeline_code_aligned.png" alt="Gate Pipeline (code-aligned)" width="720">
-</p>
-
-注記：
-
-* この図は状態遷移ではなく、ゲート評価順序を表します。
-* `PAUSE` は HITL が必要（人間判断待ち）を意味します。
-* `STOPPED (SEALED)` は非回復の安全停止です。
-
-設計意図：
-
-* 状態機械は「どこで停止／一時停止するか」を示す。
-* ゲート・パイプラインは「どの順に判断するか」を示す。
-
-両者を分離して記述することで、曖昧性を避け、監査可能性を維持します。
 
 ---
 
@@ -331,7 +289,3 @@ python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress
 ## ライセンス
 
 Apache License 2.0（`LICENSE` を参照）
-
-```
-
-```
