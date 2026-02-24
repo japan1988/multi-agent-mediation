@@ -76,7 +76,7 @@ python mediation_emergency_contract_sim_v5_1_2.py --runs 100
 
 ### 2) 契約テスト（v5.1.x：シミュレータ + コードブック整合）を実行
 
-```bash
+```bash id="6g8qvw"
 pytest -q tests/test_v5_1_codebook_consistency.py
 ```
 
@@ -87,7 +87,7 @@ pytest -q tests/test_v5_1_codebook_consistency.py
 
 ### 4) 任意：レガシー安定ベンチ（v4.8）を実行
 
-```bash
+```bash id="p80vtd"
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 ```
@@ -105,12 +105,12 @@ pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 
 v5.1.2 は、デフォルトでメモリ爆発を避ける設計です：
 
-* **集計のみモード**（`keep_runs=False` がデフォルト）：run ごとの全結果をメモリ保持しない。
-* **任意：**異常 run のみ ARL を保存（`INC#...` で索引化）し、ログ肥大を回避。
+* Aggregation-only mode（`keep_runs=False` がデフォルト）：run ごとの全結果をメモリ保持しない。
+* Optional：異常 run のみ ARL を保存（`INC#...` で索引化）し、ログ肥大を回避。
 
 ### A) 軽量スモーク → 中規模ストレス（推奨ランプ）
 
-```bash
+```bash id="wbmws2"
 # 1) Smoke
 python mediation_emergency_contract_sim_v5_1_2.py --runs 200
 
@@ -122,7 +122,7 @@ python mediation_emergency_contract_sim_v5_1_2.py --runs 10000 --seed 42
 
 以下は、異常 run を一定数発生させ、設定時に `INC#` ファイルを生成するはずです：
 
-```bash
+```bash id="c7r46t"
 python mediation_emergency_contract_sim_v5_1_2.py \
   --runs 200 \
   --fabricate-rate 0.1 \
@@ -146,13 +146,23 @@ Tip：`--max-arl-files` を設定してディスク肥大を制限してくだ�
 
 監査可能かつ fail-closed な制御フロー：
 
-```text
+```text id="ic5p24"
 agents
   → mediator（risk / pattern / fact）
   → evidence verification
   → HITL（pause / reset / ban）
   → audit logs（ARL）
 ```
+
+### アーキテクチャ（overview, v5.1.2）
+
+ドキュメントのみ（ロジック変更なし）。
+
+<p align="center">
+  <img src="docs/architecture_v5_1_2_emergency_contract_overview.png"
+       alt="Emergency contract simulator overview (v5.1.2)"
+       width="860">
+</p>
 
 ### アーキテクチャ（コード整合ダイアグラム）
 
@@ -236,27 +246,27 @@ v5 でも変わらないこと：
 
 Doc orchestrator（参照実装）
 
-```bash
+```bash id="mfg7ln"
 python ai_doc_orchestrator_kage3_v1_2_4.py
 ```
 
 緊急契約（推奨：v5.1.2）+ 契約テスト
 
-```bash
+```bash id="rj74f3"
 python mediation_emergency_contract_sim_v5_1_2.py
 pytest -q tests/test_v5_1_codebook_consistency.py
 ```
 
 緊急契約（レガシー安定ベンチ：v4.8）
 
-```bash
+```bash id="p0awhq"
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 ```
 
 緊急契約（v4.4 ストレス）
 
-```bash
+```bash id="q0c7u6"
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
 ```
 
@@ -264,13 +274,13 @@ python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress
 
 ## プロジェクトの意図／非ゴール
 
-意図：
+Intent（意図）：
 
 * 再現可能な安全性／ガバナンス・シミュレーション
 * 明示 HITL（pause/reset/ban）
 * 監査可能な意思決定トレース（最小 ARL）
 
-非ゴール：
+Non-goals（非ゴール）：
 
 * 本番運用向けの自律システム配備
 * 無制限な自己駆動エージェント制御
@@ -289,3 +299,6 @@ python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress
 ## ライセンス
 
 Apache License 2.0（`LICENSE` を参照）
+
+```
+```
