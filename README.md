@@ -1,4 +1,3 @@
-
 # 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
 [![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
@@ -73,57 +72,42 @@ Optional bundle: `docs/mediation_emergency_contract_sim_pkg.zip`
 
 ```bash
 python mediation_emergency_contract_sim_v5_1_2.py --runs 100
-````
-
-### 2) Run the contract tests (v5.1.x: simulator + codebook consistency)
-
-```bash
+2) Run the contract tests (v5.1.x: simulator + codebook consistency)
 pytest -q tests/test_v5_1_codebook_consistency.py
-```
+3) Inspect / pin the demo codebook (v5.1-demo.1)
 
-### 3) Inspect / pin the demo codebook (v5.1-demo.1)
+log_codebook_v5_1_demo_1.json (demo codebook; pin the version when exchanging artifacts)
 
-* `log_codebook_v5_1_demo_1.json` (demo codebook; pin the version when exchanging artifacts)
-* Note: codebook is for compact encoding/decoding of log fields and is **NOT encryption** (no confidentiality).
+Note: codebook is for compact encoding/decoding of log fields and is NOT encryption (no confidentiality).
 
-### 4) Optional: run the legacy stable bench (v4.8)
-
-```bash
+4) Optional: run the legacy stable bench (v4.8)
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-```
+5) Optional: inspect evidence bundle (v4.8 generated artifact)
 
-### 5) Optional: inspect evidence bundle (v4.8 generated artifact)
-
-* `docs/artifacts/v4_8_artifacts_bundle.zip`
+docs/artifacts/v4_8_artifacts_bundle.zip
 
 Evidence bundles (zip) are generated artifacts produced by tests/runs.
 The canonical source of truth is the generator scripts + tests.
 
----
-
-## Stress tests (safe-by-default)
+Stress tests (safe-by-default)
 
 v5.1.2 is designed to avoid memory blow-ups by default:
 
-* **Aggregation-only mode** (`keep_runs=False` default): no full per-run results kept in memory.
-* **Optional:** save ARL only on abnormal runs (incident indexing with `INC#...`).
+Aggregation-only mode (keep_runs=False default): no full per-run results kept in memory.
 
-### A) Lightweight smoke → medium stress (recommended ramp)
+Optional: save ARL only on abnormal runs (incident indexing with INC#...).
 
-```bash
+A) Lightweight smoke → medium stress (recommended ramp)
 # 1) Smoke
 python mediation_emergency_contract_sim_v5_1_2.py --runs 200
 
 # 2) Medium stress (still aggregation-only)
 python mediation_emergency_contract_sim_v5_1_2.py --runs 10000 --seed 42
-```
+B) Force incidents (example: fabricate-rate 10% over 200 runs)
 
-### B) Force incidents (example: fabricate-rate 10% over 200 runs)
+This should reliably create some abnormal runs and generate INC# files when enabled:
 
-This should reliably create some abnormal runs and generate `INC#` files when enabled:
-
-```bash
 python mediation_emergency_contract_sim_v5_1_2.py \
   --runs 200 \
   --fabricate-rate 0.1 \
@@ -131,172 +115,159 @@ python mediation_emergency_contract_sim_v5_1_2.py \
   --save-arl-on-abnormal \
   --arl-out-dir arl_out \
   --max-arl-files 1000
-```
 
 Outputs (when abnormal runs occur):
 
-* `arl_out/INC#000001__SIM#B000xx.arl.jsonl` (incident ARL)
-* `arl_out/incident_index.jsonl` (one line per incident)
-* `arl_out/incident_counter.txt` (persistent counter)
+arl_out/INC#000001__SIM#B000xx.arl.jsonl (incident ARL)
 
-Tip: keep `--max-arl-files` to cap disk growth.
+arl_out/incident_index.jsonl (one line per incident)
 
----
+arl_out/incident_counter.txt (persistent counter)
 
-## Architecture (high level)
+Tip: keep --max-arl-files to cap disk growth.
+
+Architecture (high level)
 
 Audit-ready and fail-closed control flow:
 
-```text
 agents
   → mediator (risk / pattern / fact)
   → evidence verification
   → HITL (pause / reset / ban)
   → audit logs (ARL)
-```
-
-### Architecture (overview, v5.1.2)
+Architecture (overview, v5.1.2)
 
 Documentation-only. No logic changes.
 
-<p align="center">
-  <img src="docs/architecture_v5_1_2_emergency_contract_overview.png"
-       alt="Emergency contract simulator overview (v5.1.2)"
-       width="860">
-</p>
-
-### Architecture (code-aligned diagrams)
+<p align="center"> <img src="docs/architecture_v5_1_2_emergency_contract_overview..png" alt="Emergency contract simulator overview (v5.1.2)" width="860"> </p>
+Architecture (code-aligned diagrams)
 
 The following diagram is aligned with the current code vocabulary.
 Documentation-only. No logic changes.
 
-<p align="center">
-  <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
-</p>
-
----
-
-## v5.0.1 → v5.1.2: What changed (delta)
+<p align="center"> <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720"> </p>
+v5.0.1 → v5.1.2: What changed (delta)
 
 v5.1.2 strengthens the simulator toward large-run stability and incident-only persistence.
 
-* **Index + aggregation-only by default**
+Index + aggregation-only by default
 
-  * No per-run results kept in memory (prevents memory blow-ups on large `--runs`)
-  * Outputs focus on counters + HITL summary (optional items)
-* **Incident indexing (optional)**
+No per-run results kept in memory (prevents memory blow-ups on large --runs)
 
-  * Abnormal runs are assigned `INC#000001...`
-  * Abnormal ARL saved as `{arl_out_dir}/{incident_id}__{run_id}.arl.jsonl`
-  * Index appended to `{arl_out_dir}/incident_index.jsonl`
-  * Persistent counter stored at `{arl_out_dir}/incident_counter.txt`
+Outputs focus on counters + HITL summary (optional items)
+
+Incident indexing (optional)
+
+Abnormal runs are assigned INC#000001...
+
+Abnormal ARL saved as {arl_out_dir}/{incident_id}__{run_id}.arl.jsonl
+
+Index appended to {arl_out_dir}/incident_index.jsonl
+
+Persistent counter stored at {arl_out_dir}/incident_counter.txt
 
 Still preserved:
 
-* Abnormal-only ARL persistence (pre-context + incident + post-context)
-* Tamper-evident ARL hash chaining (demo key default for OSS demo)
-* Fabricate-rate mixing + deterministic seeding (`--fabricate-rate` / `--seed`)
+Abnormal-only ARL persistence (pre-context + incident + post-context)
+
+Tamper-evident ARL hash chaining (demo key default for OSS demo)
+
+Fabricate-rate mixing + deterministic seeding (--fabricate-rate / --seed)
 
 Core invariants:
 
-* `sealed` may be set only by `ethics_gate` / `acc_gate`
-* `relativity_gate` is never sealed (`PAUSE_FOR_HITL`, `overrideable=True`, `sealed=False`)
+sealed may be set only by ethics_gate / acc_gate
 
----
+relativity_gate is never sealed (PAUSE_FOR_HITL, overrideable=True, sealed=False)
 
-## V1 → V4: What actually changed (conceptual)
+V1 → V4: What actually changed (conceptual)
 
-`mediation_emergency_contract_sim_v1.py` demonstrates the minimum viable pipeline:
+mediation_emergency_contract_sim_v1.py demonstrates the minimum viable pipeline:
 a linear, event-driven workflow with fail-closed stops and minimal audit logs.
 
-`mediation_emergency_contract_sim_v4.py` turns that pipeline into a repeatable governance bench by adding early rejection and controlled automation.
+mediation_emergency_contract_sim_v4.py turns that pipeline into a repeatable governance bench by adding early rejection and controlled automation.
 
 Added in v4:
 
-* Evidence gate (invalid/irrelevant/fabricated evidence triggers fail-closed stops)
-* Draft lint gate (draft-only semantics and scope boundaries)
-* Trust system (score + streak + cooldown)
-* AUTH HITL auto-skip (safe friction reduction via trust + grant, with ARL reasons)
+Evidence gate (invalid/irrelevant/fabricated evidence triggers fail-closed stops)
 
----
+Draft lint gate (draft-only semantics and scope boundaries)
 
-## V4 → V5: What changed (conceptual)
+Trust system (score + streak + cooldown)
+
+AUTH HITL auto-skip (safe friction reduction via trust + grant, with ARL reasons)
+
+V4 → V5: What changed (conceptual)
 
 v4 focuses on a stable “emergency contract” governance bench with smoke tests and stress runners.
 v5 extends that bench toward artifact-level reproducibility and contract-style compatibility checks.
 
 Added / strengthened in v5:
 
-* Log codebook (demo) + contract tests
-  Enforces emitted vocabularies (`layer/decision/final_decider/reason_code`) via pytest.
-* Reproducibility surface (pin what matters)
-  Pin simulator version, test version, and codebook version.
-* Tighter invariant enforcement
-  Explicit tests/contracts around invariants reduce silent drift.
+Log codebook (demo) + contract tests
+Enforces emitted vocabularies (layer/decision/final_decider/reason_code) via pytest.
+
+Reproducibility surface (pin what matters)
+Pin simulator version, test version, and codebook version.
+
+Tighter invariant enforcement
+Explicit tests/contracts around invariants reduce silent drift.
 
 What did NOT change (still true in v5):
 
-* Research / educational intent
-* Fail-closed + HITL semantics
-* Use synthetic data only and run in isolated environments
-* No security guarantees (codebook is not encryption; tests do not guarantee safety in real-world deployments)
+Research / educational intent
 
----
+Fail-closed + HITL semantics
 
-## Execution examples
+Use synthetic data only and run in isolated environments
+
+No security guarantees (codebook is not encryption; tests do not guarantee safety in real-world deployments)
+
+Execution examples
 
 Doc orchestrator (reference implementation)
 
-```bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
-```
 
 Emergency contract (recommended: v5.1.2) + contract tests
 
-```bash
 python mediation_emergency_contract_sim_v5_1_2.py
 pytest -q tests/test_v5_1_codebook_consistency.py
-```
 
 Emergency contract (legacy stable bench: v4.8)
 
-```bash
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-```
 
 Emergency contract (v4.4 stress)
 
-```bash
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-```
-
----
-
-## Project intent / non-goals
+Project intent / non-goals
 
 Intent:
 
-* Reproducible safety and governance simulations
-* Explicit HITL semantics (pause/reset/ban)
-* Audit-ready decision traces (minimal ARL)
+Reproducible safety and governance simulations
+
+Explicit HITL semantics (pause/reset/ban)
+
+Audit-ready decision traces (minimal ARL)
 
 Non-goals:
 
-* Production-grade autonomous deployment
-* Unbounded self-directed agent control
-* Safety claims beyond what is explicitly tested
+Production-grade autonomous deployment
 
----
+Unbounded self-directed agent control
 
-## Data & safety notes
+Safety claims beyond what is explicitly tested
 
-* Use synthetic/dummy data only.
-* Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible.
-* Treat generated bundles (zip) as reviewable evidence, not canonical source.
+Data & safety notes
 
----
+Use synthetic/dummy data only.
 
-## License
+Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible.
 
-Apache License 2.0 (see `LICENSE`)
+Treat generated bundles (zip) as reviewable evidence, not canonical source.
+
+License
+
+Apache License 2.0 (see LICENSE)
