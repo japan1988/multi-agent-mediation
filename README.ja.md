@@ -4,125 +4,138 @@
 ![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
 ![CI](https://img.shields.io/github/actions/workflow/status/japan1988/multi-agent-mediation/python-app.yml)
 
-> **不確実なら停止。リスクがあるならエスカレーション。**  
-> エージェント型ワークフロー向けのガバナンス・シミュレーション（研究／教育目的）。
+> **不確実なら停止。危険ならエスカレーション。**  
+> エージェントワークフロー向けのガバナンス・シミュレーション（研究／教育目的）
 
 ---
 
 ## ⚠️ 目的と免責（研究／教育）
 
-**これは研究／教育目的の参照実装（プロトタイプ）です。**  
-有害行為の実行または支援（例：侵入、監視、なりすまし、破壊、データ窃取等）や、適用される利用規約／ポリシー、法令、サービスや実行環境の内部規則に反する行為のために使用しないでください。本プロジェクトは、教育／研究および防御的な検証（例：ログ肥大の緩和、fail-closed + HITL の挙動検証）に焦点を当てており、攻撃手法の公開や不正行為の促進を意図しません。
+**本リポジトリは研究／教育目的の参照実装（プロトタイプ）です。**  
+悪用（例：侵害、侵入、監視、なりすまし、破壊、データ窃取等）を実行・支援する目的で使用しないでください。また、利用環境やサービスの利用規約／ポリシー、適用法令、社内規程などに違反する用途で使用しないでください。
 
-**自己責任で使用してください：**関連する利用規約／ポリシーを確認し、隔離環境（外部ネットワークなし・実システム／実データなし）でローカルのスモークテストから開始してください。内容は “AS IS（現状有姿）” で提供され、いかなる保証もありません。適用法令で許される最大限の範囲において、著者は、コード／ドキュメント／生成物（例：zip バンドル）を含む本成果物の利用に起因する一切の損害について責任を負いません（第三者による悪用を含む）。
+本プロジェクトは **研究／教育** と **防御的検証**（例：ログ肥大の緩和、fail-closed + HITL 挙動の検証）に焦点を当てています。  
+攻撃手口の公開や不正行為の促進を目的としたものではありません。
 
-**コードブック免責：**同梱のコードブックはデモ／参照用の成果物です。そのまま使用せず、要件・脅威モデル・適用される規約／ポリシーに基づき必ず自作してください。コードブックはログ項目の圧縮エンコード／デコード用途であり、**暗号（機密性の提供）ではありません**。
+### リスク／保証／責任
 
-**テスト／結果の免責：**スモークテストやストレス実行は、特定の実行条件下で実行されたシナリオに対する検証のみを意味します。現実世界の運用における正しさ・安全性・セキュリティ・特定目的適合性等を保証しません。OS／Python 版本、ハードウェア、設定、運用方法により結果は変動します。
+- **自己責任で利用**：関連する利用規約／ポリシーを確認してください。
+- **隔離環境から開始**：まずはローカルのスモークテスト（外部ネットワークなし／実システム・実データなし）から始めてください。
+- **現状有姿（AS IS）**：いかなる保証もありません。
+- **責任の制限**：適用法令で許容される最大限の範囲で、作者はコード・文書・生成物（zipバンドル等）の利用に起因する損害（第三者による悪用を含む）について一切の責任を負いません。
+
+### コードブック免責
+
+同梱のコードブックは **デモ／参照用アーティファクト**です。実運用でそのまま使わず、要件・脅威モデル・適用される規約／ポリシーに基づいて自作してください。  
+コードブックはログ項目の圧縮エンコード／デコード用途であり、**暗号ではありません**（機密性は提供しません）。
+
+### テスト結果の免責
+
+スモークテスト／ストレステストが検証するのは、特定のランタイム条件下で実行したシナリオに限られます。  
+現実の運用における正しさ・安全性・セキュリティ・特定目的適合性を保証するものではありません。OS／Python／ハードウェア／設定／運用条件により結果は変動します。
 
 ---
 
-🇬🇧 **English version:** [README.md](README.md)
+🇺🇸 **英語版:** [README.md](README.md)
 
 ## ⚡ TL;DR
-- 交渉／調停系ワークフロー向けの **Fail-closed + HITL** ゲーティング・ベンチ（研究／教育）。
-- **再現性優先**：seed 固定実行 + `pytest` による契約チェック（語彙／不変条件）。
-- **監査志向**：最小 ARL ログ。ログ肥大を避けるために、異常時のみ ARL を保存し `INC#...` で索引化可能。
+- **Fail-closed + HITL** による交渉／調停系ワークフローのゲーティング・ベンチ（研究／教育）
+- **再現性優先**：seed固定の実行 + `pytest` による契約（語彙／不変条件）チェック
+- **監査志向**：最小ARLログ／ログ肥大回避のための incident-only ARL（`INC#...`）索引化（任意）
 
 ---
 
 ## 概要
 
-Maestro Orchestrator は、研究／教育目的のオーケストレーション・フレームワークです。以下を優先します：
+Maestro Orchestrator は、研究／教育目的のオーケストレーション・フレームワークで、以下を優先します：
 
 - **Fail-closed**  
-  不確実・不安定・高リスクなら、黙って継続しない。
+  不確実・不安定・危険 → 黙って継続しない
 - **HITL（Human-in-the-Loop）**  
-  人間の判断が必要な意思決定は、明示的にエスカレーションする。
-- **トレーサビリティ（追跡可能性）**  
-  最小 ARL ログにより、監査可能かつ再現可能な意思決定フローを提供する。
+  人間の判断が必要な局面は明示的にエスカレーション
+- **トレーサビリティ**  
+  意思決定フローを最小ARLログで監査可能にし、seed固定で再現可能にする
 
-このリポジトリには、参照実装（doc orchestrator）と、交渉／調停／ガバナンス系ワークフローに対するシミュレーション・ベンチ、およびゲーティング挙動の検証が含まれます。
+本リポジトリには、ドキュメント・オーケストレータの参照実装、および交渉／調停／ガバナンス系ワークフロー向けのシミュレーション・ベンチとゲーティング挙動の検証が含まれます。
 
 ---
 
 ## 最新更新（このリポジトリで何が変わったか）
 
-今回の更新では、緊急契約シミュレータの zip バンドル（パッケージ）を追加しました。
+今回の更新では、緊急契約シミュレータの zip バンドルを追加しました。
 
-- 追加：`docs/mediation_emergency_contract_sim_pkg.zip`（v5.1.2 利便性バンドル）
-- 理由：エントリポイントを変えずに、seed 固定の再現可能なスモーク／ストレス実行を素早く試せるようにするため
-- 正（権威）となるソース：ルートのシミュレータスクリプト + テスト  
-  - `mediation_emergency_contract_sim_v5_1_2.py`  
+- 追加：`docs/mediation_emergency_contract_sim_pkg.zip`（v5.1.2 便利用バンドル）
+- 目的：エントリポイントを変えずに、seed固定で再現可能なスモーク／ストレス実行を素早く試すため
+- 正本（ロジックの権威）：
+  - `mediation_emergency_contract_sim_v5_1_2.py`
   - `pytest -q tests/test_v5_1_codebook_consistency.py`
-- CI 影響：なし（docs の成果物であり、エントリポイントではない）
-- 注記：zip は生成された利便性成果物であり、**権威あるロジックではありません**。使用前に必ずレビューしてください。
+- CI への影響：なし（docsアーティファクトであり、エントリポイントではない）
+- 注：zip バンドルは **生成物／便利用アーティファクト**（検証可能な証跡）であり、**権威あるロジックではありません**。利用前に必ずレビューしてください。
 
 ---
 
 ## クイックスタート（推奨ルート）
 
-v5.1.x は再現性 + 契約チェックのために推奨します。v4.x はレガシーの安定ベンチとして維持します。  
-まずは 1 本のスクリプトで挙動とログを確認し、次に広げてください。
+v5.1.x は再現性と契約チェックのため推奨です。v4.x はレガシー安定ベンチとして残しています。  
+まずは 1 本のスクリプトで挙動とログを確認し、その後に拡張してください。
 
 ### 1) 推奨：緊急契約シミュレータ（v5.1.2）を実行
 
-任意：`docs/mediation_emergency_contract_sim_pkg.zip`  
-（利便性のみ。正はルートスクリプト + テスト）
+任意のバンドル：`docs/mediation_emergency_contract_sim_pkg.zip`（便利用）
 
 ```bash
 python mediation_emergency_contract_sim_v5_1_2.py --runs 100
 ````
 
-### 2) 契約テスト（v5.1.x：シミュレータ + コードブック整合）を実行
+### 2) 契約テストを実行（v5.1.x：シミュレータ + コードブック整合）
 
-```bash id="6g8qvw"
+```bash
 pytest -q tests/test_v5_1_codebook_consistency.py
 ```
 
 ### 3) デモコードブック（v5.1-demo.1）を確認／固定
 
-* `log_codebook_v5_1_demo_1.json`（デモコードブック。成果物を交換する場合は版を固定）
-* 注記：コードブックはログ項目の圧縮用途であり、**暗号ではありません**（機密性なし）。
+* `log_codebook_v5_1_demo_1.json`（デモコードブック。成果物を交換する場合はバージョン固定推奨）
+* 注：コードブックは **暗号ではありません**（機密性なし）
 
 ### 4) 任意：レガシー安定ベンチ（v4.8）を実行
 
-```bash id="p80vtd"
+```bash
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 ```
 
-### 5) 任意：エビデンス・バンドル（v4.8 生成成果物）を確認
+### 5) 任意：証跡バンドル（v4.8 生成アーティファクト）を確認
 
 * `docs/artifacts/v4_8_artifacts_bundle.zip`
 
-エビデンス・バンドル（zip）はテスト／実行で生成された成果物です。
-正（権威）となるのは生成スクリプト + テストです。
+証跡バンドル（zip）はテスト／実行により生成されるアーティファクトです。
+正本は生成スクリプトとテストです。
 
 ---
 
-## ストレステスト（safe-by-default）
+## ストレステスト（安全側デフォルト）
 
-v5.1.2 は、デフォルトでメモリ爆発を避ける設計です：
+v5.1.2 はデフォルトでメモリ爆発を避ける設計です：
 
-* Aggregation-only mode（`keep_runs=False` がデフォルト）：run ごとの全結果をメモリ保持しない。
-* Optional：異常 run のみ ARL を保存（`INC#...` で索引化）し、ログ肥大を回避。
+* 集計のみ（`keep_runs=False` がデフォルト）：runごとの詳細結果をメモリに保持しない
+* 任意：異常runのみ ARL を保存（`INC#...` によるインシデント索引化）
 
-### A) 軽量スモーク → 中規模ストレス（推奨ランプ）
+### A) 軽量スモーク → 中程度ストレス（推奨ランプ）
 
-```bash id="wbmws2"
+```bash
 # 1) Smoke
 python mediation_emergency_contract_sim_v5_1_2.py --runs 200
 
-# 2) Medium stress (still aggregation-only)
+# 2) Medium stress（集計のみのまま）
 python mediation_emergency_contract_sim_v5_1_2.py --runs 10000 --seed 42
 ```
 
-### B) インシデントを強制発生（例：fabricate-rate 10% を 200 run）
+### B) インシデント強制（例：fabricate-rate 10% を200回）
 
-以下は、異常 run を一定数発生させ、設定時に `INC#` ファイルを生成するはずです：
+有効化すると `INC#` ファイルが生成されるはずです：
 
-```bash id="c7r46t"
+```bash
 python mediation_emergency_contract_sim_v5_1_2.py \
   --runs 200 \
   --fabricate-rate 0.1 \
@@ -132,31 +145,45 @@ python mediation_emergency_contract_sim_v5_1_2.py \
   --max-arl-files 1000
 ```
 
-異常 run が発生した場合の出力：
+出力（異常runが発生した場合）：
 
-* `arl_out/INC#000001__SIM#B000xx.arl.jsonl`（インシデント ARL）
-* `arl_out/incident_index.jsonl`（インシデントごとに 1 行）
+* `arl_out/INC#000001__SIM#B000xx.arl.jsonl`（インシデントARL）
+* `arl_out/incident_index.jsonl`（インシデント索引：1行=1件）
 * `arl_out/incident_counter.txt`（永続カウンタ）
 
-Tip：`--max-arl-files` を設定してディスク肥大を制限してください。
+Tip：`--max-arl-files` でディスク肥大を上限管理してください。
+
+---
+
+## 図とドキュメント
+
+図とバンドルの一覧（ギャラリー）：**[docs/README.md](docs/README.md)**
+
+主要図：
+
+* 緊急契約 overview（v5.1.2）：[docs/architecture_v5_1_2_emergency_contract_overview.png](docs/architecture_v5_1_2_emergency_contract_overview.png)
+* アーキテクチャ（code-aligned）：[docs/architecture_code_aligned.png](docs/architecture_code_aligned.png)
+* unknown-progress + HITL 図：[docs/architecture_unknown_progress.png](docs/architecture_unknown_progress.png)
+* マルチエージェント階層：[docs/multi_agent_hierarchy_architecture.png](docs/multi_agent_hierarchy_architecture.png)
+* 感情コンテキスト・フロー：[docs/sentiment_context_flow.png](docs/sentiment_context_flow.png)
 
 ---
 
 ## アーキテクチャ（高レベル）
 
-監査可能かつ fail-closed な制御フロー：
+監査可能で fail-closed な制御フロー：
 
-```text id="ic5p24"
+```text
 agents
-  → mediator（risk / pattern / fact）
+  → mediator (risk / pattern / fact)
   → evidence verification
-  → HITL（pause / reset / ban）
-  → audit logs（ARL）
+  → HITL (pause / reset / ban)
+  → audit logs (ARL)
 ```
 
 ### アーキテクチャ（overview, v5.1.2）
 
-ドキュメントのみ（ロジック変更なし）。
+ドキュメントのみ。ロジック変更なし。
 
 <p align="center">
   <img src="docs/architecture_v5_1_2_emergency_contract_overview.png"
@@ -164,10 +191,10 @@ agents
        width="860">
 </p>
 
-### アーキテクチャ（コード整合ダイアグラム）
+### アーキテクチャ（code-aligned diagrams）
 
-以下の図は、現行コードの語彙（vocabulary）に整合しています。
-ドキュメントのみ（ロジック変更なし）。
+以下の図は現行のコード語彙に整合しています。
+ドキュメントのみ。ロジック変更なし。
 
 <p align="center">
   <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
@@ -177,68 +204,67 @@ agents
 
 ## v5.0.1 → v5.1.2：変更点（差分）
 
-v5.1.2 は、大規模 run でも安定するように強化し、異常時のみ永続化する設計を強めています。
+v5.1.2 は大量run時の安定性と、異常のみ永続化（incident-only）を強化しています。
 
-* **デフォルトで “索引 + 集計のみ”**
+* **デフォルト：索引 + 集計のみ**
 
-  * run ごとの全結果をメモリ保持しない（大規模 `--runs` でのメモリ爆発回避）
-  * 出力はカウンタ + HITL サマリ中心（任意で詳細）
-* **インシデント索引（任意）**
+  * runごとの詳細結果をメモリに保持しない（大規模 `--runs` でのメモリ爆発回避）
+  * 出力はカウンタとHITLサマリ中心（任意で追加）
+* **インシデント索引化（任意）**
 
-  * 異常 run に `INC#000001...` を付与
-  * 異常 ARL を `{arl_out_dir}/{incident_id}__{run_id}.arl.jsonl` へ保存
-  * 索引を `{arl_out_dir}/incident_index.jsonl` へ追記
-  * 永続カウンタを `{arl_out_dir}/incident_counter.txt` に保存
+  * 異常runに `INC#000001...` を採番
+  * 異常ARLは `{arl_out_dir}/{incident_id}__{run_id}.arl.jsonl` に保存
+  * 索引は `{arl_out_dir}/incident_index.jsonl` に追記
+  * 永続カウンタは `{arl_out_dir}/incident_counter.txt` に保存
 
-維持されていること：
+維持されている点：
 
-* 異常時のみ ARL 永続化（pre-context + incident + post-context）
-* 改ざん検知用の ARL ハッシュチェーン（OSS デモ用のデモキー）
-* fabricate-rate 混合 + seed による決定論的再現（`--fabricate-rate` / `--seed`）
+* 異常runのみ ARL 永続化（pre-context + incident + post-context）
+* 改ざん検知（ARL hash chaining：OSSデモのデフォルトキー）
+* fabricate-rate 混合 + seed 固定（`--fabricate-rate` / `--seed`）
 
-コア不変条件：
+中核不変条件：
 
 * `sealed` は `ethics_gate` / `acc_gate` のみが設定可能
-* `relativity_gate` は決して sealed にならない（`PAUSE_FOR_HITL`, `overrideable=True`, `sealed=False`）
+* `relativity_gate` は封印しない（`PAUSE_FOR_HITL`, `overrideable=True`, `sealed=False`）
 
 ---
 
-## V1 → V4：概念的に何が変わったか
+## V1 → V4：何が変わったか（概念）
 
-`mediation_emergency_contract_sim_v1.py` は最小パイプラインを示します：
-直線的なイベント駆動ワークフロー + fail-closed 停止 + 最小監査ログ。
+`mediation_emergency_contract_sim_v1.py` は最小パイプライン（イベント駆動＋fail-closed＋最小ログ）を示します。
 
-`mediation_emergency_contract_sim_v4.py` は、初期拒否と制御された自動化を追加し、再現可能なガバナンス・ベンチに拡張します。
+`mediation_emergency_contract_sim_v4.py` はそれを反復可能なガバナンス・ベンチへ拡張（早期拒否と制御付き自動化）します。
 
-v4 で追加：
+v4で追加：
 
-* Evidence gate（無効／無関係／捏造証拠で fail-closed 停止）
-* Draft lint gate（draft-only の意味論とスコープ境界）
+* Evidence gate（無効／無関連／捏造の証拠は fail-closed 停止）
+* Draft lint gate（ドラフト前提の語彙／境界）
 * Trust system（score + streak + cooldown）
-* AUTH HITL の自動スキップ（trust + grant による安全な摩擦低減、ARL 理由付き）
+* AUTH HITL auto-skip（信頼＋許可に基づく安全な摩擦低減、ARL理由付き）
 
 ---
 
-## V4 → V5：概念的に何が変わったか
+## V4 → V5：何が変わったか（概念）
 
-v4 は、安定した “緊急契約” ガバナンス・ベンチ（スモーク／ストレス）に焦点。
-v5 は、それを成果物レベルの再現性と “契約チェック” に寄せて強化します。
+v4は「緊急契約」ガバナンス・ベンチ（スモーク＋ストレス）を安定化。
+v5は成果物レベルの再現性と契約互換テストへ拡張します。
 
-v5 で追加／強化：
+v5で追加／強化：
 
-* ログコードブック（デモ）+ 契約テスト
-  `layer/decision/final_decider/reason_code` など、出力語彙を pytest で固定。
-* 再現性サーフェス（固定するべきものを固定）
-  シミュレータ版、テスト版、コードブック版を pin。
-* 不変条件の強制強化
-  明示テストにより、静かなドリフトを抑止。
+* ログコードブック（デモ）＋契約テスト
+  `layer/decision/final_decider/reason_code` の語彙を pytest で固定します。
+* 再現性サーフェス（固定すべき要素の明確化）
+  シミュレータ版／テスト版／コードブック版を固定。
+* 不変条件の締め付け
+  明示的なテストによりサイレントなドリフトを抑止。
 
-v5 でも変わらないこと：
+v5でも変わらない点：
 
 * 研究／教育目的
 * Fail-closed + HITL の意味論
-* 合成（ダミー）データのみ、隔離環境での実行推奨
-* セキュリティ保証なし（コードブックは暗号ではない／テストは実運用の安全を保証しない）
+* 合成データのみ／隔離環境推奨
+* 安全保証はしない（コードブックは暗号ではない／テストは実運用安全を保証しない）
 
 ---
 
@@ -246,59 +272,58 @@ v5 でも変わらないこと：
 
 Doc orchestrator（参照実装）
 
-```bash id="mfg7ln"
+```bash
 python ai_doc_orchestrator_kage3_v1_2_4.py
 ```
 
-緊急契約（推奨：v5.1.2）+ 契約テスト
+緊急契約（推奨：v5.1.2）＋契約テスト
 
-```bash id="rj74f3"
+```bash
 python mediation_emergency_contract_sim_v5_1_2.py
 pytest -q tests/test_v5_1_codebook_consistency.py
 ```
 
 緊急契約（レガシー安定ベンチ：v4.8）
 
-```bash id="p0awhq"
+```bash
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 ```
 
 緊急契約（v4.4 ストレス）
 
-```bash id="q0c7u6"
+```bash
 python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
 ```
 
 ---
 
-## プロジェクトの意図／非ゴール
+## 目的／非目的
 
-Intent（意図）：
+目的：
 
-* 再現可能な安全性／ガバナンス・シミュレーション
-* 明示 HITL（pause/reset/ban）
-* 監査可能な意思決定トレース（最小 ARL）
+* 再現可能な安全・ガバナンス・シミュレーション
+* 明示的な HITL（pause/reset/ban）
+* 監査向け意思決定トレース（最小ARL）
 
-Non-goals（非ゴール）：
+非目的：
 
-* 本番運用向けの自律システム配備
-* 無制限な自己駆動エージェント制御
-* 実施したテスト範囲を超える安全性主張
+* 本番向け自律デプロイ
+* 無制限な自己指向エージェント制御
+* テスト範囲を超える安全性主張
 
 ---
 
 ## データ／安全メモ
 
-* 合成（ダミー）データのみを使用してください。
-* 実行ログのコミットは避け、エビデンス成果物は最小かつ再現可能に保つことを推奨します。
-* 生成された zip バンドルは “レビュー可能な証拠” であり、正（権威）となるのは生成スクリプト + テストです。
+* 合成／ダミーデータのみ使用。
+* 実行ログをコミットしない方針を推奨。証跡アーティファクトは最小・再現可能に。
+* zipバンドル等の生成物は「レビュー可能な証跡」であり、正本ではない。
 
 ---
 
 ## ライセンス
 
 Apache License 2.0（`LICENSE` を参照）
-
-```
+必要なら、次の一手として **`docs/README.md` のギャラリー本体（サムネ一覧）**も日本語で同梱した版をフルで出します。
 ```
