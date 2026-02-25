@@ -139,6 +139,22 @@ arl_out/incident_counter.txt (persistent counter)
 
 Tip: keep --max-arl-files to cap disk growth.
 
+Diagrams & docs
+
+Browse all diagrams and bundles here: docs/README.md
+
+Key diagrams:
+
+Emergency contract overview (v5.1.2): docs/architecture_v5_1_2_emergency_contract_overview.png
+
+Architecture (code-aligned): docs/architecture_code_aligned.png
+
+Unknown-progress + HITL diagram: docs/architecture_unknown_progress.png
+
+Multi-agent hierarchy: docs/multi_agent_hierarchy_architecture.png
+
+Sentiment context flow: docs/sentiment_context_flow.png
+
 Architecture (high level)
 
 Audit-ready and fail-closed control flow:
