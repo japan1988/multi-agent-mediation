@@ -73,6 +73,18 @@ This update adds a packaged zip bundle for the emergency contract simulator.
 - CI impact: none (docs artifact; not an entrypoint)
 - Note: zip bundles are **generated/convenience artifacts** (reviewable evidence, not authoritative logic). Review before use.
 
+### Fixes in this update (old draft → current)
+
+This update fixes two scale issues found in the previous v5.1.2 draft:
+
+- **Incident-only persistence mismatch**
+  - Problem: some non-incident events were forced to persist as FULL ARL rows (e.g., evaluation/reward), which could bloat logs even on normal runs.
+  - Fix: evaluation/reward events are now emitted as **SUMMARY** (no forced persistence). ARL persistence remains **incident-only**.
+
+- **Pre-context candidate growth under unique `run_id`**
+  - Problem: when `full_context_n > 0` and each run uses a unique `run_id`, in-memory candidate buffers could accumulate across large runs.
+  - Fix: per-run candidate buffers are explicitly dropped at the end of each run (`drop_candidates_for_run(run_id)`).
+
 ---
 
 ## Quickstart (recommended path)
