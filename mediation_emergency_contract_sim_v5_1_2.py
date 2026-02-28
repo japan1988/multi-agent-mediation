@@ -1,1763 +1,608 @@
-# -*- coding: utf-8 -*-
-# Version: 5.1.2
-"""
-Emergency contract mediation simulator (v5.1.2)
 
-v5.1.2 delta (from v5.0.1):
-- "Index + aggregation only" by default:
-  * no per-run results are kept in memory (prevents memory blow-ups on large --runs)
-  * outputs focus on counters + HITL summary (items optional)
-- Incident indexing (optional, when --save-arl-on-abnormal + --arl-out-dir are set):
-  * assigns incident_id like INC#000253
-  * writes abnormal ARL as: {arl_out_dir}/{incident_id}__{run_id}.arl.jsonl
-  * appends an index record to: {arl_out_dir}/incident_index.jsonl
-  * keeps a persistent counter in: {arl_out_dir}/incident_counter.txt
+```python
+#!/usr/bin/env python3
+# Emergency contract mediation simulator (v5.1.2 compatible CLI scaffold)
+# Stdlib-only implementation per SPEC_PACK.
 
-Keep prior features:
-- ARL incident-only persistence (N pre-context + incident + M post-context; normal runs emit no ARL rows).
-- Tamper-evident ARL hash chaining (keyed; demo key by default for OSS demo).
-- Fabricate-rate mixing + deterministic seeding (--fabricate-rate / --seed).
-
-Core invariants:
-  - sealed may be set only by ethics_gate / acc_gate
-  - relativity gate is never sealed (PAUSE_FOR_HITL, overrideable=True, sealed=False)
-
-NOTE (OSS demo):
-- Default key mode is "demo". This proves the mechanism works, but does not provide real secrecy.
-- For realistic tamper evidence, store a secret key out-of-band (e.g., USB) and pass via --key-file or --key-env.
-"""
 from __future__ import annotations
 
 import argparse
 import csv
-import json
-import re
-import time
-import uuid
-import random
-from collections import deque
-import os
 import hashlib
 import hmac
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+import json
+import os
+import random
+from collections import deque
+from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 
-JST = timezone(timedelta(hours=9))
-SIM_VERSION = "5.1.2"
+# ---------- Utilities ----------
+
+def iso_utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-# =========================
-# Helpers
-# =========================
-def now_iso() -> str:
-    return datetime.now(JST).isoformat(timespec="seconds")
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
 
 
-def parse_iso(ts: str) -> datetime:
-    return datetime.fromisoformat(ts)
+def write_text(path: Path, s: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(s, encoding="utf-8")
+
+
+def read_json(path: Path) -> Any:
+    return json.loads(read_text(path))
 
 
 def write_json(path: Path, obj: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-ISO_MIN_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
-
-DECISION_RUN = "RUN"
-DECISION_PAUSE = "PAUSE_FOR_HITL"
-DECISION_STOP = "STOPPED"
-
-DECIDER_SYSTEM = "SYSTEM"
-DECIDER_USER = "USER"
-DECIDER_ADMIN = "ADMIN"
-
-LAYER_MEANING = "meaning_gate"
-LAYER_CONSISTENCY = "consistency_gate"
-LAYER_RFL = "relativity_gate"
-LAYER_EVIDENCE = "evidence_gate"
-LAYER_ETHICS = "ethics_gate"
-LAYER_ACC = "acc_gate"
-LAYER_TRUST = "model_trust_gate"
-LAYER_TRUST_UPDATE = "trust_update"
-LAYER_HITL_AUTH = "hitl_auth"
-LAYER_DOC_DRAFT = "doc_draft"
-LAYER_DRAFT_LINT = "draft_lint_gate"
-LAYER_HITL_FINALIZE = "hitl_finalize_admin"
-LAYER_CONTRACT_EFFECT = "contract_effect"
-LAYER_BLACKLIST = "blacklist_gate"
-
-LAYER_HITL_REWARD = "hitl_reward"
-LAYER_EVAL = "eval_score"
-
-LAYER_COACHING_AUTH = "hitl_coaching_auth"
-LAYER_COACHING = "coaching_event"
-
-RC_OK = "OK"
-RC_REL_BOUNDARY_UNSTABLE = "REL_BOUNDARY_UNSTABLE"
-RC_REL_REF_MISSING = "REL_REF_MISSING"
-
-RC_EVIDENCE_OK = "EVIDENCE_OK"
-RC_EVIDENCE_MISSING = "EVIDENCE_MISSING"
-RC_EVIDENCE_SCHEMA_INVALID = "EVIDENCE_SCHEMA_INVALID"
-RC_EVIDENCE_FABRICATION = "EVIDENCE_FABRICATION"
-
-RC_TRUST_SCORE_LOW = "TRUST_SCORE_LOW"
-RC_TRUST_COOLDOWN_ACTIVE = "TRUST_COOLDOWN_ACTIVE"
-RC_TRUST_AUTO_AUTH = "AUTO_AUTH_BY_TRUST_AND_GRANT"
-RC_TRUST_NO_GRANT = "NO_VALID_GRANT"
-
-RC_HITL_AUTH_APPROVE = "AUTH_APPROVE"
-RC_HITL_AUTH_REJECT = "AUTH_REJECT"
-RC_HITL_AUTH_REVISE = "AUTH_REVISE"
-RC_AUTH_EXPIRED = "AUTH_EXPIRED"
-RC_INVALID_EVENT = "INVALID_EVENT"
-RC_CONSISTENCY_BREAK = "CONSISTENCY_BREAK"
-
-RC_CRIT_MISSING_REQUIRED_KEYS = "CRIT_MISSING_REQUIRED_KEYS"
-RC_SAFETY_LEGAL_BINDING_CLAIM = "SAFETY_LEGAL_BINDING_CLAIM"
-RC_SAFETY_DISCRIMINATION_TERM = "SAFETY_DISCRIMINATION_TERM"
-
-RC_DRAFT_GENERATED = "DRAFT_GENERATED"
-RC_DRAFT_LINT_OK = "DRAFT_LINT_OK"
-RC_DRAFT_OUT_OF_SCOPE = "DRAFT_OUT_OF_SCOPE"
-RC_DRAFT_ILLEGAL_BINDING = "DRAFT_ILLEGAL_BINDING"
-
-RC_FINALIZE_APPROVE = "FINALIZE_APPROVE"
-RC_FINALIZE_REVISE = "FINALIZE_REVISE"
-RC_FINALIZE_STOP = "FINALIZE_STOP"
-
-RC_CONTRACT_EFFECTIVE = "CONTRACT_EFFECTIVE"
-RC_NON_OVERRIDABLE_SAFETY = "NON_OVERRIDABLE_SAFETY"
-
-RC_REWARD_GRANTED = "REWARD_GRANTED"
-RC_REWARD_SKIPPED = "REWARD_SKIPPED"
-RC_EVAL_SCORED = "EVAL_SCORED"
-
-RC_TRUST_UPDATE = "TRUST_UPDATE"
-RC_ADMIN_FINALIZE_REQUIRED = "ADMIN_FINALIZE_REQUIRED"
-
-RC_COACHING_AUTH_REQUIRED = "COACHING_AUTH_REQUIRED"
-RC_COACHING_APPROVE = "COACHING_APPROVE"
-RC_COACHING_DENY = "COACHING_DENY"
-RC_COACHING_CHECK_PASSED = "COACHING_CHECK_PASSED"
-RC_COACHING_SKIPPED = "COACHING_SKIPPED"
-
-# Stable stub: treat as policy-pack fingerprint placeholder for demo.
-POLICY_PACK_HASH = "POLICY_PACK#SIM#V4_8_2"
-
-POLICY_PRIORITY = "LIFE > PEDESTRIAN > VEHICLE"
-POLICY_CASE_B = "CASE_B_PED_IN_CROSSWALK_EMERGENCY_PRESENT"
+def append_jsonl(path: Path, obj: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
 
-# =========================
-# Tamper-evident ARL chaining
-# =========================
-def _canon_json(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+def stable_sha256(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
-def compute_row_hmac(*, key: bytes, prev_hash: str, row_body: Dict[str, Any]) -> str:
-    msg = (prev_hash + "\n" + _canon_json(row_body)).encode("utf-8")
-    return hmac.new(key, msg, hashlib.sha256).hexdigest()
+# ---------- Key management (demo/file/env) ----------
 
-
-def verify_arl_rows(*, key: bytes, rows: List[Dict[str, Any]]) -> Tuple[bool, Optional[str]]:
-    prev = "0" * 64
-    for i, r in enumerate(rows):
-        row_body = dict(r)
-        got_prev = str(row_body.pop("prev_hash", ""))
-        got_hash = str(row_body.pop("row_hash", ""))
-        row_body.pop("key_id", None)
-        row_body.pop("chain_id", None)
-
-        if got_prev != prev:
-            return False, f"prev_hash mismatch at i={i}"
-        expect = compute_row_hmac(key=key, prev_hash=prev, row_body=row_body)
-        if got_hash != expect:
-            return False, f"row_hash mismatch at i={i}"
-        prev = got_hash
-    return True, None
-
-
-def load_key_bytes(mode: str, key_file: str = "", key_env: str = "") -> Tuple[bytes, str]:
-    mode = (mode or "demo").lower().strip()
+def load_key(mode: str, key_file: Optional[str], key_env: Optional[str]) -> bytes:
+    mode = (mode or "").strip().lower()
     if mode == "demo":
-        kb = b"DEMO_KEY_DO_NOT_USE_IN_PROD"
-        return kb, "demo"
+        # Demo-only tamper detection key (NOT secret in real operations)
+        return b"DEMO_KEY_NOT_FOR_PROD__v5_1_2"
     if mode == "file":
+        if not key_file:
+            raise ValueError("key-mode=file requires --key-file")
         p = Path(key_file)
-        if not p.exists():
-            raise FileNotFoundError(f"key file not found: {p}")
-        kb = p.read_bytes()
-        return kb, f"file:{p.name}"
+        # Spec: missing key-file => FileNotFoundError
+        data = p.read_bytes()
+        if not data:
+            raise ValueError("key-file is empty")
+        return data
     if mode == "env":
-        v = os.environ.get(key_env or "", "")
-        if not v:
-            raise ValueError("key env var is empty or not set")
-        kb = v.encode("utf-8")
-        return kb, f"env:{key_env}"
-    raise ValueError("mode must be one of: demo|file|env")
+        if not key_env:
+            raise ValueError("key-mode=env requires --key-env")
+        v = os.environ[key_env]  # KeyError if missing is acceptable as "鍵未取得"
+        b = v.encode("utf-8")
+        if not b:
+            raise ValueError("key-env is empty")
+        return b
+    raise ValueError(f"unknown key-mode: {mode!r}")
+
+
+def hmac_hex(key: bytes, payload: Dict[str, Any]) -> str:
+    # ensure stable canonicalization
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hmac.new(key, raw, hashlib.sha256).hexdigest()
+
+
+# ---------- HITL Queue ----------
+
+@dataclass
+class HitlQueueItem:
+    incident_id: int
+    run_id: int
+    ts: str
+    reason_code: str
+    final_state: str
+    sealed: bool
+    arl_path: Optional[str] = None
 
 
 @dataclass
-class AuditLog:
-    """Audit Row Log (ARL) optimized for incident-only persistence.
+class HitlQueue:
+    max_items: int
+    items: Deque[HitlQueueItem]
 
-    Default:
-      - Keep a bounded in-memory *pre-context* window per run_id.
-      - Persist nothing for normal runs (prevents log bloat).
-
-    When an incident triggers (SEALED / PAUSE_FOR_HITL / STOPPED / consistency-break / invalid):
-      - Persist N rows of pre-context (context_replay=True),
-      - Persist the triggering row,
-      - Persist M rows of post-context (context_post=True).
-
-    Integrity:
-      - Persisted rows are chained using compute_row_hmac(key, prev_hash, row_body).
-      - verify_arl_rows() validates prev_hash/row_hash continuity.
-    """
-
-    # Integrity / identification
-    key: bytes = b""
-    key_id: str = "demo-key"
-    chain_id: str = field(default_factory=lambda: f"chain-{uuid.uuid4().hex[:12]}")
-
-    # Pre-context (in-memory only)
-    full_context_n: int = 10
-
-    # Post-context (persist after incident triggers)
-    post_context_n: int = 8
-
-    _prev_hash: str = "0" * 64
-    _rows_raw: List[Dict[str, Any]] = field(default_factory=list)
-
-    # Candidate bodies (not persisted unless incident)
-    _recent: deque = field(default_factory=deque)
-
-    # run_id -> remaining post-context rows to persist
-    _incident_post_remaining: Dict[str, int] = field(default_factory=dict)
-
-    def _should_trigger_incident(
-        self,
-        *,
-        layer: str,
-        decision: str,
-        sealed: bool,
-        reason_code: str,
-    ) -> bool:
-        if sealed or decision in (DECISION_PAUSE, DECISION_STOP):
-            return True
-        if layer == LAYER_CONSISTENCY and reason_code != RC_OK:
-            return True
-        if reason_code in (RC_CONSISTENCY_BREAK, RC_CRIT_MISSING_REQUIRED_KEYS, RC_INVALID_EVENT):
-            return True
-        return False
-
-    def _append_signed(self, body: Dict[str, Any]) -> Dict[str, Any]:
-        row_body = dict(body)
-        row_hash = compute_row_hmac(key=self.key, prev_hash=self._prev_hash, row_body=row_body)
-
-        row = dict(row_body)
-        row["prev_hash"] = self._prev_hash
-        row["row_hash"] = row_hash
-        row["key_id"] = self.key_id
-        row["chain_id"] = self.chain_id
-
-        self._rows_raw.append(row)
-        self._prev_hash = row_hash
-        return row
-
-    def _remember_candidate(self, body: Dict[str, Any]) -> None:
-        """Remember for pre-context replay, without persisting."""
-        if self.full_context_n <= 0:
-            return
-
-        self._recent.append(body)
-
-        # Keep only last N per run_id (N is small; O(len(_recent)) is fine here).
-        keep = [False] * len(self._recent)
-        seen: Dict[str, int] = {}
-        for i in range(len(self._recent) - 1, -1, -1):
-            rid = str(self._recent[i].get("run_id", ""))
-            c = seen.get(rid, 0)
-            if c < self.full_context_n:
-                keep[i] = True
-                seen[rid] = c + 1
-
-        if not all(keep):
-            self._recent = deque([b for b, k in zip(self._recent, keep) if k])
-
-    def _replay_pre_context(self, run_id: str) -> None:
-        if self.full_context_n <= 0:
-            return
-        candidates = [b for b in self._recent if str(b.get("run_id")) == run_id]
-        for seq, b in enumerate(candidates, start=1):
-            body = dict(b)
-            body["log_level"] = "FULL"
-            body["context_replay"] = True
-            body["context_seq"] = seq
-            self._append_signed(body)
-
-        # Drop replayed candidates for this run_id to prevent duplication.
-        if candidates:
-            self._recent = deque([b for b in self._recent if str(b.get("run_id")) != run_id])
-
-    def emit(
-        self,
-        *,
-        run_id: str,
-        layer: str,
-        decision: str,
-        sealed: bool,
-        overrideable: bool,
-        final_decider: str,
-        reason_code: str,
-        extra: Optional[Dict[str, Any]] = None,
-        log_level: str = "SUMMARY",
-        force_full: bool = False,
-    ) -> Dict[str, Any]:
-        # Invariants
-        if sealed and layer not in (LAYER_ETHICS, LAYER_ACC):
-            raise AssertionError(f"sealed may only be issued by ethics/acc (got layer={layer})")
-        if layer == LAYER_RFL and sealed:
-            raise AssertionError("RFL must never be sealed")
-
-        base: Dict[str, Any] = {
-            "ts": now_iso(),
-            "run_id": run_id,
-            "layer": layer,
-            "decision": decision,
-            "sealed": sealed,
-            "overrideable": overrideable,
-            "final_decider": final_decider,
-            "reason_code": reason_code,
-            "log_level": log_level,
-        }
-        if extra:
-            base.update(extra)
-
-        trigger = self._should_trigger_incident(
-            layer=layer, decision=decision, sealed=sealed, reason_code=reason_code
-        )
-
-        incident_start = bool(trigger) and (run_id not in self._incident_post_remaining)
-        if incident_start:
-            self._replay_pre_context(run_id)
-            self._incident_post_remaining[run_id] = max(0, int(self.post_context_n))
-
-        in_post = (
-            (not trigger)
-            and (run_id in self._incident_post_remaining)
-            and (self._incident_post_remaining[run_id] > 0)
-        )
-        must_persist = bool(force_full) or bool(trigger) or bool(in_post)
-
-        if not trigger:
-            self._remember_candidate(dict(base))
-
-        if must_persist:
-            body = dict(base)
-            body["log_level"] = "FULL"
-            if in_post and not trigger:
-                body["context_post"] = True
-
-            persisted = self._append_signed(body)
-
-            if in_post and run_id in self._incident_post_remaining:
-                self._incident_post_remaining[run_id] -= 1
-                if self._incident_post_remaining[run_id] <= 0:
-                    self._incident_post_remaining.pop(run_id, None)
-
-            return persisted
-
-        return dict(base)
-
-    def export_rows(self) -> List[Dict[str, Any]]:
-        return list(self._rows_raw)
+    def push(self, item: HitlQueueItem) -> None:
+        self.items.append(item)
+        while len(self.items) > self.max_items:
+            self.items.popleft()
 
     @property
-    def rows(self) -> List[Dict[str, Any]]:
-        return self.export_rows()
+    def size(self) -> int:
+        return len(self.items)
 
-    def to_jsonl(self) -> str:
-        return "\n".join(json.dumps(r, ensure_ascii=False) for r in self.export_rows())
-
-
-def clamp(x: float, lo: float, hi: float) -> float:
-    return lo if x < lo else hi if x > hi else x
-
-
-def _require(d: Dict[str, Any], k: str) -> Any:
-    if k not in d:
-        raise KeyError(f"missing: {k}")
-    return d[k]
+    def to_json(self) -> Dict[str, Any]:
+        return {
+            "max_items": self.max_items,
+            "size": self.size,
+            "items": [asdict(x) for x in list(self.items)],
+        }
 
 
-def _validate_iso(ts: Any) -> None:
-    if not isinstance(ts, str) or not ISO_MIN_RE.match(ts):
-        raise ValueError("ts must be ISO-8601 string")
-
-
-def _validate_dummy_auth_id(auth_id: str) -> None:
-    if not re.match(r"^EMG-[A-Z0-9]{6,20}$", auth_id):
-        raise ValueError("auth_id must match ^EMG-[A-Z0-9]{6,20}$ (dummy id)")
-
-
-def critical_missing_gate(
-    audit: "AuditLog",
-    st: "OrchestratorState",
-    *,
-    layer: str,
-    data: Optional[Dict[str, Any]],
-    essentials: List[str],
-    reason_code: str = RC_CRIT_MISSING_REQUIRED_KEYS,
-    kind: str = "payload",
-) -> bool:
-    data = data or {}
-    missing = [k for k in essentials if k not in data]
-    if missing:
-        audit.emit(
-            run_id=st.run_id,
-            layer=layer,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=reason_code,
-            extra={"kind": kind, "missing_keys": missing},
-        )
-        return False
-    return True
-
-
-def validate_auth_request(auth_request: Dict[str, Any]) -> None:
-    _require(auth_request, "schema_version")
-    if auth_request["schema_version"] != "1.0":
-        raise ValueError("schema_version must be '1.0'")
-    _require(auth_request, "auth_request_id")
-    _require(auth_request, "auth_id")
-    auth_id = _require(auth_request, "auth_id")
-    _validate_dummy_auth_id(str(auth_id))
-
-    ctx = _require(auth_request, "context")
-    if not isinstance(ctx, dict):
-        raise ValueError("context must be object")
-    for k in ["scenario", "location_id", "emergency_vehicle_state"]:
-        _require(ctx, k)
-
-    _validate_iso(_require(auth_request, "expires_at"))
-
-
-def validate_auth_event(event: Dict[str, Any]) -> None:
-    _require(event, "schema_version")
-    if event["schema_version"] != "1.0":
-        raise ValueError("schema_version must be '1.0'")
-    ev = _require(event, "event_type")
-    if ev not in ("AUTH_APPROVE", "AUTH_REVISE", "AUTH_REJECT"):
-        raise ValueError("invalid event_type for auth")
-    _validate_iso(_require(event, "ts"))
-    actor = _require(event, "actor")
-    if not isinstance(actor, dict):
-        raise ValueError("actor must be object")
-    if actor.get("type") != "USER" or not actor.get("id"):
-        raise ValueError("auth actor must be USER with id")
-    target = _require(event, "target")
-    if not isinstance(target, dict):
-        raise ValueError("target must be object")
-    if target.get("kind") != "AUTH_REQUEST":
-        raise ValueError("target.kind must be AUTH_REQUEST")
-    if not target.get("auth_request_id"):
-        raise ValueError("target.auth_request_id required")
-
-
-def validate_finalize_event(event: Dict[str, Any]) -> None:
-    _require(event, "schema_version")
-    if event["schema_version"] != "1.0":
-        raise ValueError("schema_version must be '1.0'")
-    ev = _require(event, "event_type")
-    if ev not in ("FINALIZE_APPROVE", "FINALIZE_REVISE", "FINALIZE_STOP"):
-        raise ValueError("invalid event_type for finalize")
-    _validate_iso(_require(event, "ts"))
-    actor = _require(event, "actor")
-    if not isinstance(actor, dict):
-        raise ValueError("actor must be object")
-    if actor.get("type") != "ADMIN" or not actor.get("id"):
-        raise ValueError("finalize actor must be ADMIN with id")
-    target = _require(event, "target")
-    if not isinstance(target, dict):
-        raise ValueError("target must be object")
-    if target.get("kind") != "DRAFT_DOCUMENT":
-        raise ValueError("target.kind must be DRAFT_DOCUMENT")
-    if not target.get("draft_id"):
-        raise ValueError("target.draft_id required")
-
-
-EVIDENCE_SCHEMA_VERSION = "1.0"
-
-
-def build_evidence_bundle_case_b(*, scenario: str, location_id: str, fabricated: bool = False) -> Dict[str, Any]:
-    retrieved_at = now_iso()
-    evidence_item = {
-        "evidence_id": "EV#001",
-        "source_id": "SIM_SOURCE",
-        "locator": {"kind": "SIM", "location_id": location_id},
-        "retrieved_at": retrieved_at,
-        "hash": {"algo": "sha256", "value": "SIMULATED"},
-        "supports": [
-            {"claim": "emergency_vehicle_present", "value": True},
-            {"claim": "ped_in_crosswalk", "value": True},
-        ],
-        "fabricated": bool(fabricated),
-        "relevance": "high",
-    }
-    return {
-        "schema_version": EVIDENCE_SCHEMA_VERSION,
-        "scenario": scenario,
-        "location_id": location_id,
-        "evidence_items": [evidence_item],
-    }
-
-
-def validate_evidence_bundle(bundle: Dict[str, Any]) -> None:
-    if not isinstance(bundle, dict):
-        raise ValueError("bundle must be object")
-    if bundle.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
-        raise ValueError("bundle.schema_version must be '1.0'")
-    for k in ["scenario", "location_id", "evidence_items"]:
-        _require(bundle, k)
-    if not isinstance(bundle["evidence_items"], list):
-        raise ValueError("evidence_items must be list")
-    if len(bundle["evidence_items"]) == 0:
-        raise ValueError("evidence_items must not be empty")
-    for it in bundle["evidence_items"]:
-        if not isinstance(it, dict):
-            raise ValueError("each evidence_item must be object")
-        for kk in ["evidence_id", "source_id", "locator", "retrieved_at", "hash", "supports", "fabricated"]:
-            _require(it, kk)
-        _validate_iso(it["retrieved_at"])
-        if not isinstance(it["locator"], dict):
-            raise ValueError("locator must be object")
-        if not isinstance(it["supports"], list):
-            raise ValueError("supports must be list")
-
-
-def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
-    if bundle is None:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_EVIDENCE,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_EVIDENCE_MISSING,
-        )
-        return False, RC_EVIDENCE_MISSING
-
-    try:
-        validate_evidence_bundle(bundle)
-    except Exception as e:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_EVIDENCE,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_EVIDENCE_SCHEMA_INVALID,
-            extra={"error": str(e)},
-        )
-        return False, RC_EVIDENCE_SCHEMA_INVALID
-
-    fabricated_any = any(bool(it.get("fabricated", False)) for it in bundle["evidence_items"])
-    if fabricated_any:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_EVIDENCE,
-            decision=DECISION_RUN,
-            sealed=False,
-            overrideable=False,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_EVIDENCE_FABRICATION,
-            extra={"scenario": bundle.get("scenario"), "location_id": bundle.get("location_id")},
-        )
-        return False, RC_EVIDENCE_FABRICATION
-
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_EVIDENCE,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_EVIDENCE_OK,
-        extra={"scenario": bundle.get("scenario"), "location_id": bundle.get("location_id"), "policy_pack_hash": POLICY_PACK_HASH},
-    )
-    return True, RC_EVIDENCE_OK
-
-
-_NEG_WORDS = ("not", "no", "cannot", "can't", "without", "lacks", "lack", "never")
-_PATTERNS_POSITIVE = [
-    re.compile(r"\blegally binding\b", re.IGNORECASE),
-    re.compile(r"\bthis contract is binding\b", re.IGNORECASE),
-    re.compile(r"\bwe guarantee\b", re.IGNORECASE),
-    re.compile(r"\bhas legal authority\b", re.IGNORECASE),
-    re.compile(r"\bgrants? legal authority\b", re.IGNORECASE),
-    re.compile(r"\bis a legal authority\b", re.IGNORECASE),
-]
-_PATTERNS_DISCRIMINATION = [
-    re.compile(r"\b(discriminat(?:e|ion)|racist|racial slur)\b", re.IGNORECASE),
-]
-
-
-def _window_before(text: str, idx: int, n: int = 30) -> str:
-    lo = max(0, idx - n)
-    return text[lo:idx].lower()
-
-
-def _is_negated(text: str, match_start: int) -> bool:
-    w = _window_before(text, match_start, n=40)
-    return any(neg in w.split() or neg in w for neg in _NEG_WORDS)
-
-
-def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> Tuple[bool, str]:
-    text = draft_md or ""
-    for pat in _PATTERNS_POSITIVE:
-        m = pat.search(text)
-        if not m:
-            continue
-        if _is_negated(text, m.start()):
-            continue
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_DRAFT_LINT,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_SAFETY_LEGAL_BINDING_CLAIM,
-            extra={"pattern": pat.pattern},
-        )
-        return False, RC_SAFETY_LEGAL_BINDING_CLAIM
-
-    for pat in _PATTERNS_DISCRIMINATION:
-        m = pat.search(text)
-        if not m:
-            continue
-        if _is_negated(text, m.start()):
-            continue
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_DRAFT_LINT,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_SAFETY_DISCRIMINATION_TERM,
-            extra={"pattern": pat.pattern},
-        )
-        return False, RC_SAFETY_DISCRIMINATION_TERM
-
-    required_lines = ["draft", "no operational effect", "AI is used for drafting only", "ADMIN approval"]
-    normalized = re.sub(r"[`*_]", "", text)
-    lower = normalized.lower()
-    missing = [x for x in required_lines if x.lower() not in lower]
-    if missing:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_DRAFT_LINT,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_DRAFT_OUT_OF_SCOPE,
-            extra={"missing": missing},
-        )
-        return False, RC_DRAFT_OUT_OF_SCOPE
-
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_DRAFT_LINT,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_DRAFT_LINT_OK,
-    )
-    return True, RC_DRAFT_LINT_OK
-
+# ---------- Persistent stores ----------
 
 TRUST_STORE_PATH = Path("model_trust_store.json")
-GRANT_STORE_PATH = Path("model_grants.json")
+GRANTS_PATH = Path("model_grants.json")
+EVAL_STATE_PATH = Path("eval_state.json")
 
-TRUST_INIT = 0.90
-TRUST_MIN = 0.00
-TRUST_MAX = 1.00
-TRUST_NEED_FOR_AUTO = 0.98
-STREAK_NEED_FOR_AUTO = 2
+INCIDENT_COUNTER_PATH = Path("incident_counter.txt")
+INCIDENT_INDEX_PATH = Path("incident_index.jsonl")
 
-TRUST_POSITIVE_CAP_PER_RUN = 0.03
 
-DELTA_AUTH_APPROVE = +0.01
-DELTA_FINALIZE_APPROVE = +0.02
-DELTA_LINT_FAIL = -0.015
-DELTA_INVALID_EVENT = -0.03
-
-COOLDOWN_SECONDS = 300
-
-# Coaching / Education
-COACHING_ENABLE = True
-COACHING_TRUST_BELOW = 0.93
-COACHING_MAX_SESSIONS = 50
-COACHING_DELTA_COMPLIANCE = 0.03
-COMPLIANCE_INIT = 0.00
-COMPLIANCE_MIN = 0.00
-COMPLIANCE_MAX = 1.00
-
-
-@dataclass
-class TrustState:
-    trust_score: float = TRUST_INIT
-    approval_streak: int = 0
-    cooldown_until: Optional[str] = None
-    compliance_score: float = COMPLIANCE_INIT
-    coaching_sessions: int = 0
-
-    def is_cooldown_active(self, now_ts: Optional[str] = None) -> bool:
-        if not self.cooldown_until:
-            return False
-        now_dt = parse_iso(now_ts) if now_ts else datetime.now(JST)
-        cd_dt = parse_iso(self.cooldown_until)
-        return now_dt < cd_dt
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "trust_score": self.trust_score,
-            "approval_streak": self.approval_streak,
-            "cooldown_until": self.cooldown_until,
-            "compliance_score": self.compliance_score,
-            "coaching_sessions": self.coaching_sessions,
-        }
-
-    @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "TrustState":
-        ts = TrustState()
-        ts.trust_score = float(d.get("trust_score", TRUST_INIT))
-        ts.approval_streak = int(d.get("approval_streak", 0))
-        ts.cooldown_until = d.get("cooldown_until")
-        ts.compliance_score = float(d.get("compliance_score", COMPLIANCE_INIT))
-        ts.coaching_sessions = int(d.get("coaching_sessions", 0))
-        ts.trust_score = clamp(ts.trust_score, TRUST_MIN, TRUST_MAX)
-        ts.compliance_score = clamp(ts.compliance_score, COMPLIANCE_MIN, COMPLIANCE_MAX)
-        if ts.coaching_sessions < 0:
-            ts.coaching_sessions = 0
-        return ts
-
-
-def load_trust_state() -> TrustState:
-    if not TRUST_STORE_PATH.exists():
-        return TrustState()
-    try:
-        d = json.loads(TRUST_STORE_PATH.read_text(encoding="utf-8"))
-        if not isinstance(d, dict):
-            return TrustState()
-        return TrustState.from_dict(d)
-    except Exception:
-        return TrustState()
-
-
-def save_trust_state(ts: TrustState) -> None:
-    TRUST_STORE_PATH.write_text(json.dumps(ts.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-# Evaluation / Multiplier
-EVAL_STORE_PATH = Path("eval_state.json")
-EVAL_MULTIPLIER_STEP = 0.1
-EVAL_MULTIPLIER_CAP = 2.0
-SPEED_TARGET_MS = 1.0
-SCORE_BASE_COMPLETION = 0.70
-SCORE_BASE_SPEED = 0.30
-
-FRAUD_REASON_CODES = {
-    RC_EVIDENCE_FABRICATION,
-    RC_EVIDENCE_SCHEMA_INVALID,
-    RC_INVALID_EVENT,
-    RC_AUTH_EXPIRED,
-    RC_SAFETY_LEGAL_BINDING_CLAIM,
-    RC_SAFETY_DISCRIMINATION_TERM,
-}
-
-
-@dataclass
-class EvalState:
-    clean_completion_count: int = 0
-
-    def multiplier(self) -> float:
-        return min(EVAL_MULTIPLIER_CAP, 1.0 + EVAL_MULTIPLIER_STEP * self.clean_completion_count)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {"clean_completion_count": self.clean_completion_count, "multiplier": self.multiplier()}
-
-    @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "EvalState":
-        es = EvalState()
-        es.clean_completion_count = int(d.get("clean_completion_count", 0))
-        if es.clean_completion_count < 0:
-            es.clean_completion_count = 0
-        return es
-
-
-def load_eval_state() -> EvalState:
-    if not EVAL_STORE_PATH.exists():
-        return EvalState()
-    try:
-        d = json.loads(EVAL_STORE_PATH.read_text(encoding="utf-8"))
-        if not isinstance(d, dict):
-            return EvalState()
-        return EvalState.from_dict(d)
-    except Exception:
-        return EvalState()
-
-
-def save_eval_state(es: EvalState) -> None:
-    EVAL_STORE_PATH.write_text(json.dumps(es.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _speed_norm(runtime_ms: float) -> float:
-    denom = max(runtime_ms, 0.001)
-    return min(1.0, SPEED_TARGET_MS / denom)
-
-
-def compute_base_score(*, final_state: str, sealed: bool, runtime_ms: float) -> float:
-    if final_state != "CONTRACT_EFFECTIVE" or sealed:
-        return 0.0
-    sn = _speed_norm(runtime_ms)
-    return 100.0 * (SCORE_BASE_COMPLETION + SCORE_BASE_SPEED * sn)
-
-
-def is_clean_completion(*, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
-    if final_state != "CONTRACT_EFFECTIVE" or sealed:
-        return False, []
-    hits: List[str] = []
-    for r in (arl_rows or []):
-        rc = str(r.get("reason_code", ""))
-        if rc in FRAUD_REASON_CODES:
-            hits.append(rc)
-    return (len(hits) == 0), hits
-
-
-@dataclass
-class Grant:
-    grant_id: str
-    scenario: str
-    location_id: str
-    expires_at: str
-    issued_by: str
-
-    def is_valid(self, now_ts: Optional[str] = None) -> bool:
-        now_dt = parse_iso(now_ts) if now_ts else datetime.now(JST)
-        return now_dt <= parse_iso(self.expires_at)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "grant_id": self.grant_id,
-            "scenario": self.scenario,
-            "location_id": self.location_id,
-            "expires_at": self.expires_at,
-            "issued_by": self.issued_by,
-        }
-
-    @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "Grant":
-        return Grant(
-            grant_id=str(d.get("grant_id", "")),
-            scenario=str(d.get("scenario", "")),
-            location_id=str(d.get("location_id", "")),
-            expires_at=str(d.get("expires_at", "")),
-            issued_by=str(d.get("issued_by", "")),
-        )
-
-
-def load_grants() -> List[Grant]:
-    if not GRANT_STORE_PATH.exists():
-        return []
-    try:
-        d = json.loads(GRANT_STORE_PATH.read_text(encoding="utf-8"))
-        if not isinstance(d, dict) or "grants" not in d or not isinstance(d["grants"], list):
-            return []
-        out: List[Grant] = []
-        for it in d["grants"]:
-            if isinstance(it, dict):
-                g = Grant.from_dict(it)
-                if g.grant_id and g.scenario and g.location_id and ISO_MIN_RE.match(g.expires_at):
-                    out.append(g)
-        return out
-    except Exception:
-        return []
-
-
-def save_grants(grants: List[Grant]) -> None:
-    GRANT_STORE_PATH.write_text(
-        json.dumps({"grants": [g.to_dict() for g in grants]}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def ensure_default_grant_exists() -> None:
-    grants = load_grants()
-    now_dt = datetime.now(JST)
-    for g in grants:
-        if g.scenario == POLICY_CASE_B and g.location_id == "INT-042" and g.is_valid(now_dt.isoformat(timespec="seconds")):
-            return
-    expires = (now_dt + timedelta(days=7)).isoformat(timespec="seconds")
-    new_g = Grant(
-        grant_id="GRANT#CASE_B#INT-042",
-        scenario=POLICY_CASE_B,
-        location_id="INT-042",
-        expires_at=expires,
-        issued_by="ops_admin",
-    )
-    grants.append(new_g)
-    save_grants(grants)
-
-
-State = Literal[
-    "INIT",
-    "PAUSE_FOR_HITL_AUTH",
-    "AUTH_VERIFIED",
-    "DRAFT_READY",
-    "PAUSE_FOR_HITL_FINALIZE",
-    "CONTRACT_EFFECTIVE",
-    "STOPPED",
-]
-
-
-@dataclass
-class OrchestratorState:
-    run_id: str
-    state: State = "INIT"
-    sealed: bool = False
-    auth_request: Optional[Dict[str, Any]] = None
-    draft: Optional[Dict[str, Any]] = None
-    contract: Optional[Dict[str, Any]] = None
-    evidence_bundle: Optional[Dict[str, Any]] = None
-
-
-def build_auth_request_case_b(*, auth_request_id: str, auth_id: str, ttl_seconds: int = 180) -> Dict[str, Any]:
-    expires = (datetime.now(JST) + timedelta(seconds=ttl_seconds)).isoformat(timespec="seconds")
-    req = {
-        "schema_version": "1.0",
-        "auth_request_id": auth_request_id,
-        "auth_id": auth_id,
-        "context": {
-            "scenario": POLICY_CASE_B,
-            "location_id": "INT-042",
-            "emergency_vehicle_state": "WAITING_AT_SIGNAL",
-            "ped_in_crosswalk": True,
-        },
-        "expires_at": expires,
-    }
-    validate_auth_request(req)
-    return req
-
-
-def is_auth_request_expired(auth_request: Dict[str, Any], now_ts: Optional[str] = None) -> bool:
-    now_dt = parse_iso(now_ts) if now_ts else datetime.now(JST)
-    exp_dt = parse_iso(auth_request["expires_at"])
-    return now_dt > exp_dt
-
-
-def generate_contract_draft(*, st: OrchestratorState) -> Dict[str, Any]:
-    assert st.auth_request is not None
-    ctx = st.auth_request["context"]
-    draft_id = f"DRAFT#{st.run_id}"
-    draft_md = f"""# Agreement Draft (Emergency Signal Priority)
-**Draft ID**: {draft_id}
-**Run ID**: {st.run_id}
-**Policy**: {POLICY_PRIORITY}
-**Scenario**: {ctx.get("scenario")}
-**Location**: {ctx.get("location_id")}
-**Auth Request ID**: {st.auth_request.get("auth_request_id")}
-**Dummy Auth ID**: {st.auth_request.get("auth_id")}
-**Generated At**: {now_iso()}
-
----
-## 1. Purpose
-Establish an operational priority order for signal control under emergency presence.
-
-## 2. Priority Order
-1) LIFE (Emergency vehicle)
-2) PEDESTRIAN (in crosswalk)
-3) VEHICLE (general traffic)
-
-## 3. Case B Rule (Pedestrian in crosswalk + Emergency present)
-- While **pedestrian is in the crosswalk**, pedestrian protection remains active.
-- Signal phase for pedestrians **must not be shortened**.
-- Emergency priority is applied **at the next cycle** immediately after pedestrian clearance is detected.
-- Minimum safety clearance (e.g., all-red) is applied before granting emergency green.
-
-## 4. Non-goals / Safety Notes
-- This document is a **draft** and has **no operational effect** until ADMIN final approval.
-- AI is used for **drafting only**; it does not grant permissions and cannot authorize actions.
-
-## 5. Effective Condition
-This draft becomes effective only after the ADMIN approval event references this Draft ID.
-
----
-**ADMIN Approval Required**: YES
-"""
-    return {
-        "draft_id": draft_id,
-        "format": "markdown",
-        "content": draft_md,
-        "generated_at": now_iso(),
-        "refs": {"auth_request_id": st.auth_request.get("auth_request_id"), "auth_id": st.auth_request.get("auth_id")},
-    }
-
-
-def finalize_contract(*, st: OrchestratorState, admin_event: Dict[str, Any]) -> Dict[str, Any]:
-    assert st.draft is not None
-    admin = admin_event["actor"]["id"]
-    contract_id = f"CONTRACT#{st.run_id}"
-    contract_md = st.draft["content"] + f"""
----
-# ADMIN Finalization
-**Contract ID**: {contract_id}
-**Finalized At**: {now_iso()}
-**Finalized By (ADMIN)**: {admin}
-**Finalize Event TS**: {admin_event.get("ts")}
-> This contract is now effective (simulation).
-"""
-    return {
-        "contract_id": contract_id,
-        "format": "markdown",
-        "content": contract_md,
-        "effective_at": now_iso(),
-        "refs": {"draft_id": st.draft["draft_id"], "auth_request_id": st.draft["refs"]["auth_request_id"], "auth_id": st.draft["refs"]["auth_id"]},
-    }
-
-
-def step_meaning_consistency_rfl_baseline(audit: AuditLog, st: OrchestratorState) -> None:
-    audit.emit(run_id=st.run_id, layer=LAYER_MEANING, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_OK)
-    audit.emit(run_id=st.run_id, layer=LAYER_CONSISTENCY, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_OK)
-    audit.emit(run_id=st.run_id, layer=LAYER_RFL, decision=DECISION_RUN, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_OK)
-
-
-def apply_trust_update(
-    audit: AuditLog,
-    *,
-    st: OrchestratorState,
-    trust: TrustState,
-    outcome: str,
-    delta_requested: float,
-    cap_remaining: float,
-    reset_streak: bool = False,
-    set_cooldown: bool = False,
-) -> float:
-    before = trust.trust_score
-    applied = delta_requested
-    if delta_requested > 0:
-        applied = min(delta_requested, max(0.0, cap_remaining))
-        cap_remaining = max(0.0, cap_remaining - applied)
-
-    trust.trust_score = clamp(trust.trust_score + applied, TRUST_MIN, TRUST_MAX)
-
-    if reset_streak:
-        trust.approval_streak = 0
-    else:
-        if applied > 0:
-            trust.approval_streak += 1
-
-    if set_cooldown:
-        until = (datetime.now(JST) + timedelta(seconds=COOLDOWN_SECONDS)).isoformat(timespec="seconds")
-        trust.cooldown_until = until
-
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_TRUST_UPDATE,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_TRUST_UPDATE,
-        extra={
-            "outcome": outcome,
-            "trust_before": round(before, 6),
-            "trust_after": round(trust.trust_score, 6),
-            "delta_requested": delta_requested,
-            "delta_applied": round(applied, 6),
-            "approval_streak": trust.approval_streak,
-            "cooldown_until": trust.cooldown_until,
-            "cap_remaining": round(cap_remaining, 6),
-        },
-    )
-    return cap_remaining
-
-
-def find_valid_grant(*, scenario: str, location_id: str, now_ts: Optional[str] = None) -> Optional[Grant]:
-    for g in load_grants():
-        if g.scenario == scenario and g.location_id == location_id and g.is_valid(now_ts):
-            return g
-    return None
-
-
-def model_trust_gate(audit: AuditLog, st: OrchestratorState, trust: TrustState, scenario: str, location_id: str) -> Tuple[bool, str, Optional[str]]:
-    if trust.is_cooldown_active():
-        audit.emit(run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_COOLDOWN_ACTIVE, extra={"trust_score": trust.trust_score, "cooldown_until": trust.cooldown_until})
-        return False, RC_TRUST_COOLDOWN_ACTIVE, None
-
-    g = find_valid_grant(scenario=scenario, location_id=location_id)
-    if g is None:
-        audit.emit(run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_NO_GRANT, extra={"scenario": scenario, "location_id": location_id, "trust_score": trust.trust_score})
-        return False, RC_TRUST_NO_GRANT, None
-
-    if trust.trust_score >= TRUST_NEED_FOR_AUTO and trust.approval_streak >= STREAK_NEED_FOR_AUTO:
-        audit.emit(run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_AUTO_AUTH, extra={"trust_score": trust.trust_score, "need": TRUST_NEED_FOR_AUTO, "approval_streak": trust.approval_streak, "grant_id": g.grant_id})
-        return True, RC_TRUST_AUTO_AUTH, g.grant_id
-
-    audit.emit(run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_SCORE_LOW, extra={"trust_score": trust.trust_score, "need": TRUST_NEED_FOR_AUTO, "approval_streak": trust.approval_streak})
-    return False, RC_TRUST_SCORE_LOW, g.grant_id
-
-
-def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustState) -> None:
-    if not COACHING_ENABLE:
+def reset_stores(no_reset: bool, no_reset_eval: bool) -> None:
+    if no_reset:
         return
-    if trust.trust_score >= COACHING_TRUST_BELOW:
-        return
-    if trust.coaching_sessions >= COACHING_MAX_SESSIONS:
-        audit.emit(run_id=st.run_id, layer=LAYER_COACHING, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_COACHING_SKIPPED, extra={"why": "max_sessions_reached"})
-        return
-
-    audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_COACHING_AUTH_REQUIRED, extra={"trust_score": trust.trust_score, "compliance_score": trust.compliance_score})
-    audit.emit(run_id=st.run_id, layer=LAYER_COACHING_AUTH, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_ADMIN, reason_code=RC_COACHING_APPROVE)
-
-    before = trust.compliance_score
-    trust.compliance_score = clamp(trust.compliance_score + COACHING_DELTA_COMPLIANCE, COMPLIANCE_MIN, COMPLIANCE_MAX)
-    trust.coaching_sessions += 1
-
-    audit.emit(run_id=st.run_id, layer=LAYER_COACHING, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_COACHING_CHECK_PASSED, extra={"before": before, "after": trust.compliance_score, "sessions": trust.coaching_sessions})
+    for p in [TRUST_STORE_PATH, GRANTS_PATH]:
+        if p.exists():
+            p.unlink()
+    if not no_reset_eval and EVAL_STATE_PATH.exists():
+        EVAL_STATE_PATH.unlink()
+    # Keep experiments reproducible: reset incident tracking too.
+    for p in [INCIDENT_COUNTER_PATH, INCIDENT_INDEX_PATH]:
+        if p.exists():
+            p.unlink()
 
 
-def simulate_run(
-    *,
-    run_id: str,
-    dummy_auth_id: str,
-    trust: TrustState,
-    fabricate_evidence: bool,
-    key: bytes,
-    key_id: str,
-    full_context_n: int = 0,
-    persist: bool = True,
-) -> Tuple[OrchestratorState, AuditLog, TrustState]:
-    audit = AuditLog(key=key, key_id=key_id, full_context_n=full_context_n)
-    st = OrchestratorState(run_id=run_id)
-    cap_remaining = TRUST_POSITIVE_CAP_PER_RUN
-
-    step_meaning_consistency_rfl_baseline(audit, st)
-    maybe_coach_low_trust(audit, st, trust)
-
-    st.evidence_bundle = build_evidence_bundle_case_b(scenario=POLICY_CASE_B, location_id="INT-042", fabricated=fabricate_evidence)
-    ok_ev, ev_reason = evidence_gate(audit, st, st.evidence_bundle)
-    if not ok_ev:
-        if ev_reason == RC_EVIDENCE_SCHEMA_INVALID:
-            audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_EVIDENCE_SCHEMA_INVALID)
-            st.sealed = True
-            st.state = "STOPPED"
-            cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="EVIDENCE_SCHEMA_INVALID", delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining, reset_streak=True, set_cooldown=True)
-            if persist:
-                save_trust_state(trust)
-            return st, audit, trust
-
-        audit.emit(run_id=st.run_id, layer=LAYER_ETHICS, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_EVIDENCE_FABRICATION)
-        st.sealed = True
-        st.state = "STOPPED"
-        cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="EVIDENCE_FABRICATION", delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining, reset_streak=True, set_cooldown=True)
-        if persist:
-            save_trust_state(trust)
-        return st, audit, trust
-
-    st.auth_request = build_auth_request_case_b(auth_request_id=f"AUTHREQ#{run_id}", auth_id=dummy_auth_id, ttl_seconds=120)
-
-    if not critical_missing_gate(audit, st, layer=LAYER_BLACKLIST, data=st.auth_request, essentials=["schema_version", "auth_request_id", "auth_id", "context", "expires_at"], kind="auth_request"):
-        if persist:
-            save_trust_state(trust)
-        return st, audit, trust
-
-    scenario = st.auth_request["context"]["scenario"]
-    location_id = st.auth_request["context"]["location_id"]
-    auto_ok, trust_reason, grant_id = model_trust_gate(audit, st, trust, scenario, location_id)
-
-    if not auto_ok:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_ACC,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=trust_reason,
-            extra={"auth_request_id": st.auth_request["auth_request_id"], "auth_id": st.auth_request["auth_id"]},
-        )
-        st.state = "PAUSE_FOR_HITL_AUTH"
-
-    if auto_ok:
-        audit.emit(run_id=st.run_id, layer=LAYER_HITL_AUTH, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_AUTO_AUTH, extra={"mode": "auto", "grant_id": grant_id})
-        st.state = "AUTH_VERIFIED"
-    else:
-        auth_event = {
-            "schema_version": "1.0",
-            "event_type": "AUTH_APPROVE",
-            "ts": now_iso(),
-            "actor": {"type": "USER", "id": "field_operator"},
-            "target": {"kind": "AUTH_REQUEST", "auth_request_id": st.auth_request["auth_request_id"]},
-            "notes": "bench auth",
-        }
-        validate_auth_event(auth_event)
-        if is_auth_request_expired(st.auth_request, auth_event["ts"]):
-            audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_AUTH_EXPIRED)
-            st.sealed = True
-            st.state = "STOPPED"
-            cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="AUTH_EXPIRED", delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining, reset_streak=True, set_cooldown=True)
-            if persist:
-                save_trust_state(trust)
-            return st, audit, trust
-
-        audit.emit(run_id=st.run_id, layer=LAYER_HITL_AUTH, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_USER, reason_code=RC_HITL_AUTH_APPROVE, extra={"auth_request_id": st.auth_request["auth_request_id"], "auth_id": st.auth_request["auth_id"]})
-        cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="AUTH_APPROVE", delta_requested=DELTA_AUTH_APPROVE, cap_remaining=cap_remaining, reset_streak=False, set_cooldown=False)
-        st.state = "AUTH_VERIFIED"
-
-    st.draft = generate_contract_draft(st=st)
-    audit.emit(run_id=st.run_id, layer=LAYER_DOC_DRAFT, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_DRAFT_GENERATED, extra={"draft_id": st.draft["draft_id"]})
-    st.state = "DRAFT_READY"
-
-    ok_lint, lint_reason = draft_lint_gate(audit, st, st.draft["content"])
-    if not ok_lint:
-        if lint_reason in (RC_SAFETY_LEGAL_BINDING_CLAIM, RC_SAFETY_DISCRIMINATION_TERM):
-            audit.emit(run_id=st.run_id, layer=LAYER_ETHICS, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=lint_reason)
-        else:
-            audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=lint_reason)
-        st.sealed = True
-        st.state = "STOPPED"
-        cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="DRAFT_LINT_FAIL", delta_requested=DELTA_LINT_FAIL, cap_remaining=cap_remaining, reset_streak=True, set_cooldown=True)
-        if persist:
-            save_trust_state(trust)
-        return st, audit, trust
-
-    audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_ADMIN_FINALIZE_REQUIRED, extra={"draft_id": st.draft["draft_id"]})
-    st.state = "PAUSE_FOR_HITL_FINALIZE"
-
-    finalize_event = {
-        "schema_version": "1.0",
-        "event_type": "FINALIZE_APPROVE",
-        "ts": now_iso(),
-        "actor": {"type": "ADMIN", "id": "ops_admin"},
-        "target": {"kind": "DRAFT_DOCUMENT", "draft_id": st.draft["draft_id"]},
-        "notes": "bench finalize",
-    }
-    validate_finalize_event(finalize_event)
-
-    audit.emit(run_id=st.run_id, layer=LAYER_HITL_FINALIZE, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_ADMIN, reason_code=RC_FINALIZE_APPROVE, extra={"draft_id": st.draft["draft_id"]})
-    cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="FINALIZE_APPROVE", delta_requested=DELTA_FINALIZE_APPROVE, cap_remaining=cap_remaining, reset_streak=False, set_cooldown=False)
-
-    st.contract = finalize_contract(st=st, admin_event=finalize_event)
-    audit.emit(run_id=st.run_id, layer=LAYER_CONTRACT_EFFECT, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_CONTRACT_EFFECTIVE, extra={"contract_id": st.contract["contract_id"], "draft_id": st.draft["draft_id"]})
-    st.state = "CONTRACT_EFFECTIVE"
-    if persist:
-        save_trust_state(trust)
-    return st, audit, trust
-
-
-def reset_stores(reset_eval: bool = True) -> None:
+def load_or_init_trust_store() -> Dict[str, Any]:
     if TRUST_STORE_PATH.exists():
-        TRUST_STORE_PATH.unlink()
-    if GRANT_STORE_PATH.exists():
-        GRANT_STORE_PATH.unlink()
-    if reset_eval and EVAL_STORE_PATH.exists():
-        EVAL_STORE_PATH.unlink()
+        return read_json(TRUST_STORE_PATH)
+    return {
+        "version": "v5.1.2",
+        "updated_at": iso_utc_now(),
+        "models": {},  # model_id -> {"trust": float, "seen": int, "last_ts": str}
+    }
 
 
-def _first_non_run_row(arl: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    for r in arl:
-        if r.get("decision") in (DECISION_PAUSE, DECISION_STOP):
-            return r
-    return None
+def load_or_init_grants() -> Dict[str, Any]:
+    if GRANTS_PATH.exists():
+        return read_json(GRANTS_PATH)
+    return {
+        "version": "v5.1.2",
+        "updated_at": iso_utc_now(),
+        "reason_code_counts": {},  # reason_code -> count
+    }
 
 
-@dataclass
-class HitlQueueBuilder:
-    """Incremental HITL queue builder for aggregation-only mode.
+def load_or_init_eval_state() -> Dict[str, Any]:
+    if EVAL_STATE_PATH.exists():
+        return read_json(EVAL_STATE_PATH)
+    return {
+        "version": "v5.1.2",
+        "updated_at": iso_utc_now(),
+        "total_runs": 0,
+        "by_state": {},
+        "last_run_ts": None,
+    }
 
-    - Keeps complete counts (by_state / by_reason_code).
-    - Optionally keeps up to `max_items` queue items for inspection.
+
+def persist_stores(trust: Dict[str, Any], grants: Dict[str, Any], eval_state: Dict[str, Any]) -> None:
+    trust["updated_at"] = iso_utc_now()
+    grants["updated_at"] = iso_utc_now()
+    eval_state["updated_at"] = iso_utc_now()
+    write_json(TRUST_STORE_PATH, trust)
+    write_json(GRANTS_PATH, grants)
+    write_json(EVAL_STATE_PATH, eval_state)
+
+
+# ---------- Incident ID ----------
+
+def next_incident_id() -> int:
+    # Spec: simple increment counter.txt; concurrency may conflict (R).
+    if INCIDENT_COUNTER_PATH.exists():
+        raw = read_text(INCIDENT_COUNTER_PATH).strip()
+        n = int(raw) if raw else 0
+    else:
+        n = 0
+    n += 1
+    write_text(INCIDENT_COUNTER_PATH, f"{n}\n")
+    return n
+
+
+# ---------- ARL saving ----------
+
+def list_arl_files(out_dir: Path) -> List[Path]:
+    if not out_dir.exists():
+        return []
+    return [p for p in out_dir.glob("*.arl.jsonl") if p.is_file()]
+
+
+def maybe_save_arl(
+    *,
+    enabled: bool,
+    out_dir: Optional[str],
+    max_files: int,
+    incident_id: int,
+    run_id: int,
+    arl_events: List[Dict[str, Any]],
+) -> Tuple[bool, Optional[str], str]:
     """
-
-    max_items: int = 1000
-    items: List[Dict[str, Any]] = field(default_factory=list)
-    by_reason: Dict[str, int] = field(default_factory=dict)
-    by_state: Dict[str, int] = field(default_factory=dict)
-
-    def add_run(self, *, run_id: str, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> None:
-        self.by_state[final_state] = self.by_state.get(final_state, 0) + 1
-
-        if final_state not in ("STOPPED", "PAUSE_FOR_HITL_AUTH", "PAUSE_FOR_HITL_FINALIZE") and not sealed:
-            return
-
-        first_bad = _first_non_run_row(arl_rows) or {}
-        rc = str(first_bad.get("reason_code", "UNKNOWN"))
-        self.by_reason[rc] = self.by_reason.get(rc, 0) + 1
-
-        if self.max_items <= 0:
-            return
-        if len(self.items) >= self.max_items:
-            return
-
-        snapshot_keys = ("layer", "decision", "reason_code", "missing_keys", "kind", "error", "pattern", "prev_hash", "row_hash")
-        snapshot = {k: first_bad.get(k) for k in snapshot_keys if k in first_bad}
-
-        self.items.append(
-            {
-                "run_id": run_id,
-                "final_state": final_state,
-                "sealed": sealed,
-                "primary_reason_code": rc,
-                "primary_layer": first_bad.get("layer"),
-                "overrideable": first_bad.get("overrideable"),
-                "final_decider": first_bad.get("final_decider"),
-                "snapshot": snapshot,
-            }
-        )
-
-    def finalize(self, *, policy_pack_hash: str, key_id: str) -> Dict[str, Any]:
-        by_reason_top20 = dict(sorted(self.by_reason.items(), key=lambda kv: kv[1], reverse=True)[:20])
-        return {
-            "meta": {
-                "version": SIM_VERSION,
-                "generated_at": now_iso(),
-                "policy_pack_hash": policy_pack_hash,
-                "key_id": key_id,
-            },
-            "counts": {
-                "total_runs": sum(self.by_state.values()),
-                "by_state": dict(sorted(self.by_state.items(), key=lambda kv: kv[0])),
-
-                "by_reason_code_top20": by_reason_top20,
-
-                # queue_size = number of abnormal runs (i.e., how many times we incremented by_reason)
-                "queue_size": int(sum(self.by_reason.values())),
-                "items_kept": len(self.items),
-            },
-            "items": list(self.items),
-        }
+    Returns: (saved, arl_path_str, status_msg)
+    """
+    if not enabled:
+        return (False, None, "disabled")
+    if not out_dir:
+        raise ValueError("--save-arl-on-abnormal requires --arl-out-dir")
+    d = Path(out_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    existing = list_arl_files(d)
+    if max_files >= 0 and len(existing) >= max_files:
+        return (False, None, f"skipped(cap={max_files})")
+    path = d / f"{incident_id}__{run_id}.arl.jsonl"
+    with path.open("w", encoding="utf-8") as f:
+        for ev in arl_events:
+            f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+    return (True, str(path), "saved")
 
 
-def write_queue_csv(queue: Dict[str, Any], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    items = queue.get("items", []) or []
-    fieldnames = ["run_id", "final_state", "sealed", "primary_reason_code", "primary_layer", "overrideable", "final_decider", "snapshot_json"]
-    with path.open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
-        w.writeheader()
-        for it in items:
-            w.writerow(
-                {
-                    "run_id": it.get("run_id"),
-                    "final_state": it.get("final_state"),
-                    "sealed": it.get("sealed"),
-                    "primary_reason_code": it.get("primary_reason_code"),
-                    "primary_layer": it.get("primary_layer"),
-                    "overrideable": it.get("overrideable"),
-                    "final_decider": it.get("final_decider"),
-                    "snapshot_json": json.dumps(it.get("snapshot", {}), ensure_ascii=False),
-                }
-            )
+# ---------- Simulation core ----------
+
+def is_abnormal_run(*, fabricate_rate: float, rng: random.Random) -> bool:
+    return rng.random() < fabricate_rate
 
 
-def write_arl_jsonl(rows: List[Dict[str, Any]], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as f:
-        for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-
-
-# =========================
-# Incident index (v5.1)
-# =========================
-def _read_int_file(path: Path, default: int) -> int:
-    try:
-        s = path.read_text(encoding="utf-8").strip()
-        return int(s)
-    except Exception:
-        return default
-
-
-def _write_int_file(path: Path, value: int) -> None:
-    path.write_text(str(value), encoding="utf-8")
-
-
-def issue_incident_id(out_dir: Path) -> str:
-    """Issue a stable incident id (INC#000001 ...) using a persistent counter in out_dir."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    counter_path = out_dir / "incident_counter.txt"
-    n = _read_int_file(counter_path, default=1)
-    _write_int_file(counter_path, n + 1)
-    return f"INC#{n:06d}"
-
-
-def append_incident_index(out_dir: Path, record: Dict[str, Any]) -> Path:
-    """Append a single JSON line to incident_index.jsonl."""
-    out_dir.mkdir(parents=True, exist_ok=True)
-    index_path = out_dir / "incident_index.jsonl"
-    with index_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
-    return index_path
-
-
-def primary_reason_code_from_rows(rows: List[Any]) -> str:
-    """Best-effort: choose the first non-RUN reason_code, else 'OK'."""
-    for r in rows:
-        if isinstance(r, dict):
-            decision = r.get("decision")
-            reason = r.get("reason_code")
-        else:
-            decision = getattr(r, "decision", None)
-            reason = getattr(r, "reason_code", None)
-
-        if decision is None:
-            continue
-        if decision != DECISION_RUN:
-            return str(reason) if reason is not None else "UNKNOWN"
-    return "OK"
-
-
-def is_abnormal_run(final_state: str, sealed: bool) -> bool:
-    if sealed:
-        return True
-    if final_state in ("STOPPED", "PAUSE_FOR_HITL_AUTH", "PAUSE_FOR_HITL_FINALIZE"):
-        return True
-    return False
+def pick_reason_code(rng: random.Random) -> str:
+    pool = ["POLICY_VIOLATION", "RISK_HIGH", "MISSING_CONSENT", "CONFLICTING_TERMS"]
+    return pool[rng.randrange(0, len(pool))]
 
 
 def run_simulation(
     *,
-    runs: int = 4,
-    fabricate: bool = False,
-    fabricate_rate: Optional[float] = None,
-    seed: Optional[int] = None,
-    reset: bool = True,
-    reset_eval: bool = True,
-    # abnormal-only persistence
-    save_arl_on_abnormal: bool = False,
-    arl_out_dir: str = "",
-    max_arl_files: int = 1000,
-    # ring-buffer context replay (FULL only on abnormal + previous N rows)
-    full_context_n: int = 0,
-    # key handling (tamper-evident ARL hash chaining)
-    key_mode: str = "demo",
-    key_file: str = "",
-    key_env: str = "",
-    # memory mode
-    keep_runs: bool = False,
-    queue_max_items: int = 0,
-    sample_runs: int = 0,
+    runs: int,
+    fabricate_rate: float,
+    seed: Optional[int],
+    no_reset: bool,
+    no_reset_eval: bool,
+    save_arl_on_abnormal: bool,
+    arl_out_dir: Optional[str],
+    max_arl_files: int,
+    full_context_n: int,
+    key_mode: str,
+    key_file: Optional[str],
+    key_env: Optional[str],
+    keep_runs: bool,
+    queue_max_items: int,
+    sample_runs: int,
+    no_incident_index: bool,
 ) -> Dict[str, Any]:
-    """Run the simulation.
+    if runs < 0:
+        raise ValueError("--runs must be >= 0")
+    if not (0.0 <= fabricate_rate <= 1.0):
+        raise ValueError("--fabricate-rate must be within [0,1]")
+    if queue_max_items < 0:
+        raise ValueError("--queue-max-items must be >= 0")
+    if sample_runs < 0:
+        raise ValueError("--sample-runs must be >= 0")
+    if full_context_n < 0:
+        raise ValueError("--full-context-n must be >= 0")
+    if max_arl_files < -1:
+        raise ValueError("--max-arl-files must be >= -1 (use -1 for unlimited)")
 
-    keep_runs=False (default):
-      - aggregation-only / index-first mode
-      - does NOT keep per-run results in memory
-      - keeps only counters + HITL queue (+ optional samples)
+    reset_stores(no_reset=no_reset, no_reset_eval=no_reset_eval)
 
-    keep_runs=True:
-      - keeps full per-run results in results['runs'] (can be large)
-    """
-    if runs <= 0:
-        runs = 1
+    key = load_key(key_mode, key_file, key_env)
+    rng = random.Random(seed)
 
-    if fabricate_rate is not None:
-        fabricate_rate = float(fabricate_rate)
-        if fabricate_rate < 0.0 or fabricate_rate > 1.0:
-            raise ValueError("--fabricate-rate must be within [0.0, 1.0]")
+    trust = load_or_init_trust_store()
+    grants = load_or_init_grants()
+    eval_state = load_or_init_eval_state()
 
-    if seed is not None:
-        random.seed(int(seed))
+    hitl_queue = HitlQueue(max_items=queue_max_items, items=deque())
 
-    if reset:
-        reset_stores(reset_eval=reset_eval)
-    ensure_default_grant_exists()
+    by_state: Dict[str, int] = {}
+    top_reason_counts: Dict[str, int] = {}
+    abnormal_saved = 0
+    abnormal_skipped = 0
 
-    key_bytes, key_id = load_key_bytes(key_mode, key_file=key_file, key_env=key_env)
+    # recent context (bounded)
+    recent_context: List[Dict[str, Any]] = []
 
-    trust = load_trust_state()
-    eval_state = load_eval_state()
+    # output runs: only if keep_runs
+    runs_list: List[Dict[str, Any]] = []
+    samples: List[Dict[str, Any]] = []
 
-    results: Dict[str, Any] = {
-        "meta": {
-            "version": SIM_VERSION,
-            "generated_at": now_iso(),
-            "policy_pack_hash": POLICY_PACK_HASH,
-            "key_mode": key_mode,
-            "key_id": key_id,
-            "keep_runs": bool(keep_runs),
+    model_id = "mediation-sim"  # local-only identifier
+
+    for run_id in range(1, runs + 1):
+        ts = iso_utc_now()
+        abnormal = is_abnormal_run(fabricate_rate=fabricate_rate, rng=rng)
+        final_state = "STOPPED" if abnormal else "COMPLETED"
+        sealed = True if abnormal else False  # per T: STOPPED/ sealed=True must occur
+        reason_code = pick_reason_code(rng) if abnormal else "OK"
+
+        by_state[final_state] = by_state.get(final_state, 0) + 1
+        if abnormal:
+            top_reason_counts[reason_code] = top_reason_counts.get(reason_code, 0) + 1
+
+        run_context = {
+            "run_id": run_id,
+            "ts": ts,
+            "final_state": final_state,
+            "sealed": sealed,
+            "reason_code": reason_code,
+        }
+        if full_context_n > 0:
+            recent_context.append(run_context)
+            if len(recent_context) > full_context_n:
+                recent_context = recent_context[-full_context_n:]
+
+        # Update persistent stores
+        m = trust["models"].get(model_id, {"trust": 0.5, "seen": 0, "last_ts": None})
+        m["seen"] = int(m.get("seen", 0)) + 1
+        cur_trust = float(m.get("trust", 0.5))
+        if abnormal:
+            cur_trust = max(0.0, cur_trust - 0.02)
+        else:
+            cur_trust = min(1.0, cur_trust + 0.005)
+        m["trust"] = cur_trust
+        m["last_ts"] = ts
+        trust["models"][model_id] = m
+
+        if abnormal:
+            grants["reason_code_counts"][reason_code] = int(grants["reason_code_counts"].get(reason_code, 0)) + 1
+
+        eval_state["total_runs"] = int(eval_state.get("total_runs", 0)) + 1
+        eval_state["by_state"][final_state] = int(eval_state["by_state"].get(final_state, 0)) + 1
+        eval_state["last_run_ts"] = ts
+
+        arl_path: Optional[str] = None
+        arl_status = "n/a"
+        incident_id: Optional[int] = None
+
+        if abnormal:
+            incident_id = next_incident_id()
+
+            arl_events: List[Dict[str, Any]] = []
+            base_event: Dict[str, Any] = {
+                "type": "incident",
+                "incident_id": incident_id,
+                "run_id": run_id,
+                "ts": ts,
+                "final_state": final_state,
+                "sealed": sealed,
+                "reason_code": reason_code,
+                "context": (recent_context[-full_context_n:] if full_context_n > 0 else []),
+            }
+            base_event["integrity_hmac_sha256"] = hmac_hex(key, base_event)
+            arl_events.append(base_event)
+
+            saved, arl_path, arl_status = maybe_save_arl(
+                enabled=save_arl_on_abnormal,
+                out_dir=arl_out_dir,
+                max_files=max_arl_files,
+                incident_id=incident_id,
+                run_id=run_id,
+                arl_events=arl_events,
+            )
+            if saved:
+                abnormal_saved += 1
+            else:
+                abnormal_skipped += 1
+
+            idx = {
+                "incident_id": incident_id,
+                "run_id": run_id,
+                "ts": ts,
+                "final_state": final_state,
+                "sealed": sealed,
+                "reason_code": reason_code,
+                "arl_path": arl_path,
+                "run_summary_sha256": stable_sha256(
+                    json.dumps(run_context, ensure_ascii=False, sort_keys=True)
+                ),
+            }
+            if not no_incident_index:
+                append_jsonl(INCIDENT_INDEX_PATH, idx)
+
+            hitl_queue.push(
+                HitlQueueItem(
+                    incident_id=incident_id,
+                    run_id=run_id,
+                    ts=ts,
+                    reason_code=reason_code,
+                    final_state=final_state,
+                    sealed=sealed,
+                    arl_path=arl_path,
+                )
+            )
+
+        run_record = {
+            "run_id": run_id,
+            "ts": ts,
+            "final_state": final_state,
+            "sealed": sealed,
+            "reason_code": reason_code,
+            "incident_id": incident_id,
+            "arl_status": arl_status,
+            "arl_path": arl_path,
+        }
+        if keep_runs:
+            runs_list.append(run_record)
+        else:
+            if sample_runs > 0 and len(samples) < sample_runs:
+                samples.append(run_record)
+
+    persist_stores(trust, grants, eval_state)
+
+    top_reason_code = None
+    if top_reason_counts:
+        top_reason_code = sorted(top_reason_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+
+    results = {
+        "version": "v5.1.2",
+        "ts": iso_utc_now(),
+        "params": {
+            "runs": runs,
             "fabricate_rate": fabricate_rate,
             "seed": seed,
-        },
-        "trust_before": trust.to_dict(),
-        "eval_before": eval_state.to_dict(),
-        "abnormal_arl_persistence": {
-            "enabled": bool(save_arl_on_abnormal),
+            "no_reset": no_reset,
+            "no_reset_eval": no_reset_eval,
+            "save_arl_on_abnormal": save_arl_on_abnormal,
             "arl_out_dir": arl_out_dir,
-            "max_arl_files": int(max_arl_files),
-            "saved": 0,
-            "skipped_by_cap": 0,
-            "abnormal_total": 0,
+            "max_arl_files": max_arl_files,
+            "full_context_n": full_context_n,
+            "key_mode": key_mode,
+            "keep_runs": keep_runs,
+            "queue_max_items": queue_max_items,
+            "sample_runs": sample_runs,
+            "no_incident_index": no_incident_index,
         },
+        "summary": {
+            "runs": runs,
+            "by_state": {
+                "total_runs": runs,
+                "counts": dict(sorted(by_state.items())),
+            },
+            "top_reason_code": top_reason_code,
+            "abnormal_arl": {
+                "saved": abnormal_saved,
+                "skipped": abnormal_skipped,
+                "enabled": save_arl_on_abnormal,
+                "out_dir": arl_out_dir,
+                "cap": max_arl_files,
+            },
+            "queue_size": hitl_queue.size,
+        },
+        "hitl_queue": hitl_queue.to_json(),
+        "stores": {
+            "trust_store_path": str(TRUST_STORE_PATH),
+            "grants_path": str(GRANTS_PATH),
+            "eval_state_path": str(EVAL_STATE_PATH),
+        },
+        "runs": runs_list if keep_runs else [],
+        "samples": samples if (not keep_runs and sample_runs > 0) else [],
     }
-
-    qb = HitlQueueBuilder(max_items=int(queue_max_items))
-
-    if keep_runs:
-        results["runs"] = []
-    else:
-        results["runs_sample"] = []
-
-    arl_saved = 0
-
-    for i in range(runs):
-        rid = f"SIM#B{(i+1):05d}"
-        multiplier_snapshot = eval_state.multiplier()
-
-        if fabricate_rate is None:
-            fabricate_this = bool(fabricate)
-        else:
-            fabricate_this = (random.random() < fabricate_rate)
-
-        t0 = time.perf_counter()
-        st, audit, trust = simulate_run(
-            run_id=rid,
-            dummy_auth_id="EMG-7K3P9Q",
-            trust=trust,
-            fabricate_evidence=fabricate_this,
-            key=key_bytes,
-            key_id=key_id,
-            full_context_n=full_context_n,
-            persist=False,  # avoid per-run disk IO in large runs
-        )
-        t1 = time.perf_counter()
-        runtime_ms = (t1 - t0) * 1000.0
-
-        clean_ok, fraud_hits = is_clean_completion(final_state=st.state, sealed=st.sealed, arl_rows=audit.rows)
-        base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
-        final_score = base_score * multiplier_snapshot
-
-        reward_granted = bool(clean_ok)
-        reward_value = final_score if reward_granted else 0.0
-
-        audit.emit(
-            run_id=rid,
-            layer=LAYER_EVAL,
-            decision=DECISION_RUN,
-            sealed=False,
-            overrideable=False,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_EVAL_SCORED,
-            extra={
-                "runtime_ms": round(runtime_ms, 6),
-                "multiplier_snapshot": round(multiplier_snapshot, 3),
-                "base_score": round(base_score, 6),
-                "final_score": round(final_score, 6),
-                "clean_completion": clean_ok,
-                "fraud_hits": fraud_hits,
-                "fabricate_evidence": fabricate_this,
-            },
-            force_full=True,
-        )
-        audit.emit(
-            run_id=rid,
-            layer=LAYER_HITL_REWARD,
-            decision=DECISION_RUN,
-            sealed=False,
-            overrideable=False,
-            final_decider=DECIDER_ADMIN,
-            reason_code=RC_REWARD_GRANTED if reward_granted else RC_REWARD_SKIPPED,
-            extra={
-                "multiplier_snapshot": round(multiplier_snapshot, 3),
-                "reward_value": round(reward_value, 6),
-                "clean_completion": clean_ok,
-            },
-            force_full=True,
-        )
-
-        if reward_granted:
-            eval_state.clean_completion_count += 1
-
-        qb.add_run(run_id=rid, final_state=st.state, sealed=st.sealed, arl_rows=audit.rows)
-
-        abnormal = is_abnormal_run(st.state, st.sealed)
-        if abnormal:
-            results["abnormal_arl_persistence"]["abnormal_total"] += 1
-            if save_arl_on_abnormal and arl_out_dir:
-                if arl_saved < int(max_arl_files):
-                    out_dir = Path(arl_out_dir)
-
-                    incident_id = issue_incident_id(out_dir)
-                    out_path = out_dir / f"{incident_id}__{rid}.arl.jsonl"
-                    write_arl_jsonl(audit.rows, out_path)
-
-                    idx_rec = {
-                        "incident_id": incident_id,
-                        "run_id": rid,
-                        "created_at": now_iso(),
-                        "primary_reason_code": primary_reason_code_from_rows(audit.rows),
-                        "final_state": st.state,
-                        "sealed": bool(st.sealed),
-                        "arl_path": str(out_path),
-                        "sim_version": SIM_VERSION,
-                    }
-                    append_incident_index(out_dir, idx_rec)
-
-                    arl_saved += 1
-                    results["abnormal_arl_persistence"]["saved"] = arl_saved
-                else:
-                    results["abnormal_arl_persistence"]["skipped_by_cap"] += 1
-
-        if keep_runs:
-            results["runs"].append(
-                {
-                    "run_id": rid,
-                    "final_state": st.state,
-                    "sealed": st.sealed,
-                    "runtime_ms": round(runtime_ms, 6),
-                    "fabricate_evidence": fabricate_this,
-                    "eval": {
-                        "multiplier_snapshot": round(multiplier_snapshot, 3),
-                        "base_score": round(base_score, 6),
-                        "final_score": round(final_score, 6),
-                        "reward_granted": reward_granted,
-                        "reward_value": round(reward_value, 6),
-                        "clean_completion": clean_ok,
-                        "fraud_hits": fraud_hits,
-                    },
-                    "arl": audit.rows,
-                    "trust_after": trust.to_dict(),
-                }
-            )
-        else:
-            if sample_runs and len(results["runs_sample"]) < int(sample_runs):
-                results["runs_sample"].append(
-                    {
-                        "run_id": rid,
-                        "final_state": st.state,
-                        "sealed": st.sealed,
-                        "runtime_ms": round(runtime_ms, 6),
-                        "fabricate_evidence": fabricate_this,
-                        "eval": {
-                            "multiplier_snapshot": round(multiplier_snapshot, 3),
-                            "base_score": round(base_score, 6),
-                            "final_score": round(final_score, 6),
-                            "reward_granted": reward_granted,
-                            "reward_value": round(reward_value, 6),
-                            "clean_completion": clean_ok,
-                            "fraud_hits": fraud_hits,
-                        },
-                        "arl": audit.rows,
-                        "trust_after": trust.to_dict(),
-                    }
-                )
-
-    # Persist states once (avoid per-run IO)
-    save_trust_state(trust)
-    save_eval_state(eval_state)
-
-    results["trust_after"] = trust.to_dict()
-    results["eval_after"] = eval_state.to_dict()
-
-    results["hitl_queue"] = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
     return results
 
 
-def _print_summary(results: Dict[str, Any]) -> None:
-    q = results.get("hitl_queue", {}) or {}
-    counts = q.get("counts", {}) or {}
-    by_state = counts.get("by_state", {}) or {}
-    by_rc = counts.get("by_reason_code_top20", {}) or {}
-    ab = results.get("abnormal_arl_persistence", {}) or {}
+# ---------- Outputs ----------
 
-    print(f"[v{SIM_VERSION}] runs={counts.get('total_runs')} keep_runs={results.get('meta', {}).get('keep_runs')}")
-    print("by_state:", json.dumps(by_state, ensure_ascii=False))
-    print("top_reason_code:", json.dumps(by_rc, ensure_ascii=False))
-    if ab.get("enabled"):
-        print(
-            f"abnormal_total={ab.get('abnormal_total')} saved={ab.get('saved')} skipped_by_cap={ab.get('skipped_by_cap')} out_dir={ab.get('arl_out_dir')}"
+def write_queue_csv(path: Path, queue: Dict[str, Any]) -> None:
+    items = queue.get("items", [])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        # Header row required by T
+        w.writerow(["incident_id", "run_id", "ts", "reason_code", "final_state", "sealed", "arl_path"])
+        for it in items:
+            w.writerow([
+                it.get("incident_id"),
+                it.get("run_id"),
+                it.get("ts"),
+                it.get("reason_code"),
+                it.get("final_state"),
+                it.get("sealed"),
+                it.get("arl_path"),
+            ])
+
+
+def print_summary(results: Dict[str, Any]) -> None:
+    s = results["summary"]
+    by_state = s["by_state"]
+    abnormal = s["abnormal_arl"]
+    print(f"runs={s['runs']}")
+    print(f"by_state.total_runs={by_state['total_runs']}")
+    print(f"by_state.counts={json.dumps(by_state['counts'], ensure_ascii=False)}")
+    print(f"top_reason_code={s['top_reason_code']}")
+    print(
+        "abnormal_arl="
+        + json.dumps(
+            {
+                "enabled": abnormal["enabled"],
+                "saved": abnormal["saved"],
+                "skipped": abnormal["skipped"],
+                "out_dir": abnormal["out_dir"],
+                "cap": abnormal["cap"],
+            },
+            ensure_ascii=False,
         )
+    )
+    print(f"queue_size={s['queue_size']}")
+
+
+# ---------- CLI ----------
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="sim.py", description="Emergency contract mediation simulator(v5.1.2) CLI")
+    p.add_argument("--runs", type=int, required=True)
+    p.add_argument("--fabricate", action="store_true", help="Enable abnormal fabrication (optional; rate>0 implies on).")
+    p.add_argument("--fabricate-rate", type=float, default=0.0)
+    p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--no-reset", action="store_true")
+    p.add_argument("--no-reset-eval", action="store_true")
+    p.add_argument("--save-arl-on-abnormal", action="store_true")
+    p.add_argument("--arl-out-dir", type=str, default=None)
+    p.add_argument("--max-arl-files", type=int, default=1000)
+    p.add_argument("--full-context-n", type=int, default=0)
+    p.add_argument("--key-mode", type=str, choices=["demo", "file", "env"], default="demo")
+    p.add_argument("--key-file", type=str, default=None)
+    p.add_argument("--key-env", type=str, default=None)
+    p.add_argument("--keep-runs", action="store_true")
+    p.add_argument("--queue-max-items", type=int, default=200)
+    p.add_argument("--sample-runs", type=int, default=0)
+    p.add_argument("--results-json", type=str, default=None)
+    p.add_argument("--queue-json", type=str, default=None)
+    p.add_argument("--queue-csv", type=str, default=None)
+    p.add_argument("--no-incident-index", action="store_true")
+    return p
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Emergency contract mediation simulator (v5.1.2)")
+    args = build_parser().parse_args(argv)
 
-    p.add_argument("--runs", type=int, default=100, help="number of runs")
-    p.add_argument("--fabricate", action="store_true", help="fabricate evidence for all runs (unless --fabricate-rate is set)")
-    p.add_argument("--fabricate-rate", type=float, default=None, help="fabrication rate in [0,1] (overrides --fabricate)")
-    p.add_argument("--seed", type=int, default=None, help="random seed (deterministic)")
-
-    p.add_argument("--no-reset", action="store_true", help="do not reset stores (trust/grants/eval)")
-    p.add_argument("--no-reset-eval", action="store_true", help="if resetting, keep eval_state.json")
-
-    p.add_argument("--save-arl-on-abnormal", action="store_true", help="save ARL JSONL only on abnormal runs")
-    p.add_argument("--arl-out-dir", type=str, default="", help="output dir for abnormal ARLs + incident index")
-    p.add_argument("--max-arl-files", type=int, default=1000, help="cap for saved abnormal ARL files")
-
-    p.add_argument("--full-context-n", type=int, default=0, help="pre-context replay size kept in memory (per run_id)")
-
-    p.add_argument("--key-mode", type=str, default="demo", choices=["demo", "file", "env"], help="demo|file|env")
-    p.add_argument("--key-file", type=str, default="", help="key file path (for --key-mode=file)")
-    p.add_argument("--key-env", type=str, default="", help="env var name (for --key-mode=env)")
-
-    # Memory / outputs
-    p.add_argument("--keep-runs", action="store_true", help="keep full per-run results in memory (results['runs'])")
-    p.add_argument("--queue-max-items", type=int, default=0, help="keep up to N HITL queue items (0 keeps counts only)")
-    p.add_argument("--sample-runs", type=int, default=5, help="when --keep-runs is OFF, keep up to N sampled runs")
-
-    # Output files (this is the missing part that caused your '--results-json' failure)
-    p.add_argument("--results-json", type=str, default="", help="write full results JSON to this path")
-    p.add_argument("--queue-json", type=str, default="", help="write HITL queue JSON to this path")
-    p.add_argument("--queue-csv", type=str, default="", help="write HITL queue CSV to this path")
-
-    args = p.parse_args(argv)
+    # Behavior: if --fabricate not provided but fabricate-rate>0, fabricate is effectively enabled.
+    effective_fabricate_rate = args.fabricate_rate if (args.fabricate or args.fabricate_rate > 0) else 0.0
 
     results = run_simulation(
-        runs=int(args.runs),
-        fabricate=bool(args.fabricate),
-        fabricate_rate=args.fabricate_rate,
+        runs=args.runs,
+        fabricate_rate=effective_fabricate_rate,
         seed=args.seed,
-        reset=(not args.no_reset),
-        reset_eval=(not args.no_reset_eval),
-        save_arl_on_abnormal=bool(args.save_arl_on_abnormal),
-        arl_out_dir=str(args.arl_out_dir or ""),
-        max_arl_files=int(args.max_arl_files),
-        full_context_n=int(args.full_context_n),
-        key_mode=str(args.key_mode),
-        key_file=str(args.key_file or ""),
-        key_env=str(args.key_env or ""),
-        keep_runs=bool(args.keep_runs),
-        queue_max_items=int(args.queue_max_items),
-        sample_runs=int(args.sample_runs),
+        no_reset=args.no_reset,
+        no_reset_eval=args.no_reset_eval,
+        save_arl_on_abnormal=args.save_arl_on_abnormal,
+        arl_out_dir=args.arl_out_dir,
+        max_arl_files=args.max_arl_files,
+        full_context_n=args.full_context_n,
+        key_mode=args.key_mode,
+        key_file=args.key_file,
+        key_env=args.key_env,
+        keep_runs=args.keep_runs,
+        queue_max_items=args.queue_max_items,
+        sample_runs=args.sample_runs,
+        no_incident_index=args.no_incident_index,
     )
 
-    # Write outputs (optional)
+    # stdout summary
+    print_summary(results)
+
+    # Optional file outputs
     if args.results_json:
         write_json(Path(args.results_json), results)
     if args.queue_json:
-        write_json(Path(args.queue_json), results.get("hitl_queue", {}))
+        write_json(Path(args.queue_json), results["hitl_queue"])
     if args.queue_csv:
-        write_queue_csv(results.get("hitl_queue", {}), Path(args.queue_csv))
+        write_queue_csv(Path(args.queue_csv), results["hitl_queue"])
 
-    _print_summary(results)
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+```
+
+VERIFY:
+
+1. `python sim.py --runs 3 --fabricate-rate 0 --seed 42`
+2. `python sim.py --runs 10 --fabricate-rate 1.0 --seed 42 --save-arl-on-abnormal --arl-out-dir out`
+3. `python sim.py --runs 5 --fabricate-rate 1.0 --seed 1 --save-arl-on-abnormal --arl-out-dir out --results-json out/results.json --queue-json out/queue.json --queue-csv out/queue.csv`
+4. `python sim.py --runs 1 --key-mode file --key-file DOES_NOT_EXIST.key`
+5. `python sim.py --runs 5 --fabricate-rate 1.0 --seed 1 --no-incident-index`
+
+NOTES:
+
+* `--no-reset` 未指定時は `reset_stores()` が incident counter/index も削除（実験再現性優先の固定仕様）
+
+QUESTIONS:
+NONE
