@@ -325,5 +325,3 @@ python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress
 ## ライセンス
 
 Apache License 2.0（`LICENSE` を参照）
-必要なら、次の一手として **`docs/README.md` のギャラリー本体（サムネ一覧）**も日本語で同梱した版をフルで出します。
-```
