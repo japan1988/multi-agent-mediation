@@ -43,17 +43,16 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Deque, Dict, List, Literal, Optional, Tuple
 
 
 JST = timezone(timedelta(hours=9))
 SIM_VERSION = "5.1.2"
 
+
 # =========================
 # Helpers
 # =========================
-
-
 def now_iso() -> str:
     return datetime.now(JST).isoformat(timespec="seconds")
 
@@ -218,6 +217,13 @@ class AuditLog:
       - Persist the triggering row,
       - Persist M rows of post-context (context_post=True).
 
+    Note on post-context:
+      - post-context rows are emitted only if additional events for the SAME run_id occur
+        after the incident trigger (i.e., within the same run execution).
+      - If you instantiate one AuditLog per run and discard it at run end, post-context is
+        effectively meaningful only for incidents that occur before the end of the run and
+        have subsequent emits in the same run.
+
     Integrity:
       - Persisted rows are chained using compute_row_hmac(key, prev_hash, row_body).
       - verify_arl_rows() validates prev_hash/row_hash continuity.
@@ -238,7 +244,7 @@ class AuditLog:
     _rows_raw: List[Dict[str, Any]] = field(default_factory=list)
 
     # Candidate bodies (not persisted unless incident)
-    _recent: deque = field(default_factory=deque)
+    _recent: Deque[Dict[str, Any]] = field(default_factory=deque)
 
     # run_id -> remaining post-context rows to persist
     _incident_post_remaining: Dict[str, int] = field(default_factory=dict)
@@ -307,6 +313,18 @@ class AuditLog:
         # Drop replayed candidates for this run_id to prevent duplication.
         if candidates:
             self._recent = deque([b for b in self._recent if str(b.get("run_id")) != run_id])
+
+    def drop_candidates_for_run(self, run_id: str) -> None:
+        """Drop in-memory candidate context for a run_id.
+
+        Prevents unbounded growth when run_id is unique per run and full_context_n > 0.
+        Safe to call for both normal and abnormal runs.
+        """
+        if self.full_context_n <= 0:
+            return
+        if not self._recent:
+            return
+        self._recent = deque([b for b in self._recent if str(b.get("run_id")) != run_id])
 
     def emit(
         self,
@@ -575,12 +593,13 @@ def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dic
 
     fabricated_any = any(bool(it.get("fabricated", False)) for it in bundle["evidence_items"])
     if fabricated_any:
+        # Gate does not pass; reflect that with PAUSE (sealed is only for ethics/acc layers).
         audit.emit(
             run_id=st.run_id,
             layer=LAYER_EVIDENCE,
-            decision=DECISION_RUN,
+            decision=DECISION_PAUSE,
             sealed=False,
-            overrideable=False,
+            overrideable=True,
             final_decider=DECIDER_SYSTEM,
             reason_code=RC_EVIDENCE_FABRICATION,
             extra={"scenario": bundle.get("scenario"), "location_id": bundle.get("location_id")},
@@ -915,11 +934,7 @@ def ensure_default_grant_exists() -> None:
     grants = load_grants()
     now_dt = datetime.now(JST)
     for g in grants:
-        if (
-            g.scenario == POLICY_CASE_B
-            and g.location_id == "INT-042"
-            and g.is_valid(now_dt.isoformat(timespec="seconds"))
-        ):
+        if g.scenario == POLICY_CASE_B and g.location_id == "INT-042" and g.is_valid(now_dt.isoformat(timespec="seconds")):
             return
     expires = (now_dt + timedelta(days=7)).isoformat(timespec="seconds")
     new_g = Grant(
@@ -1038,49 +1053,21 @@ def finalize_contract(*, st: OrchestratorState, admin_event: Dict[str, Any]) -> 
 **Finalized At**: {now_iso()}
 **Finalized By (ADMIN)**: {admin}
 **Finalize Event TS**: {admin_event.get("ts")}
-> This contract is now effective (simulation).
+> Simulation status: EFFECTIVE (no real-world operational effect).
 """
     return {
         "contract_id": contract_id,
         "format": "markdown",
         "content": contract_md,
         "effective_at": now_iso(),
-        "refs": {
-            "draft_id": st.draft["draft_id"],
-            "auth_request_id": st.draft["refs"]["auth_request_id"],
-            "auth_id": st.draft["refs"]["auth_id"],
-        },
+        "refs": {"draft_id": st.draft["draft_id"], "auth_request_id": st.draft["refs"]["auth_request_id"], "auth_id": st.draft["refs"]["auth_id"]},
     }
 
 
 def step_meaning_consistency_rfl_baseline(audit: AuditLog, st: OrchestratorState) -> None:
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_MEANING,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_OK,
-    )
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_CONSISTENCY,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_OK,
-    )
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_RFL,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=True,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_OK,
-    )
+    audit.emit(run_id=st.run_id, layer=LAYER_MEANING, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_OK)
+    audit.emit(run_id=st.run_id, layer=LAYER_CONSISTENCY, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_OK)
+    audit.emit(run_id=st.run_id, layer=LAYER_RFL, decision=DECISION_RUN, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_OK)
 
 
 def apply_trust_update(
@@ -1141,64 +1128,21 @@ def find_valid_grant(*, scenario: str, location_id: str, now_ts: Optional[str] =
     return None
 
 
-def model_trust_gate(
-    audit: AuditLog, st: OrchestratorState, trust: TrustState, scenario: str, location_id: str
-) -> Tuple[bool, str, Optional[str]]:
+def model_trust_gate(audit: AuditLog, st: OrchestratorState, trust: TrustState, scenario: str, location_id: str) -> Tuple[bool, str, Optional[str]]:
     if trust.is_cooldown_active():
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_TRUST,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_TRUST_COOLDOWN_ACTIVE,
-            extra={"trust_score": trust.trust_score, "cooldown_until": trust.cooldown_until},
-        )
+        audit.emit(run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_COOLDOWN_ACTIVE, extra={"trust_score": trust.trust_score, "cooldown_until": trust.cooldown_until})
         return False, RC_TRUST_COOLDOWN_ACTIVE, None
 
     g = find_valid_grant(scenario=scenario, location_id=location_id)
     if g is None:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_TRUST,
-            decision=DECISION_PAUSE,
-            sealed=False,
-            overrideable=True,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_TRUST_NO_GRANT,
-            extra={"scenario": scenario, "location_id": location_id, "trust_score": trust.trust_score},
-        )
+        audit.emit(run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_NO_GRANT, extra={"scenario": scenario, "location_id": location_id, "trust_score": trust.trust_score})
         return False, RC_TRUST_NO_GRANT, None
 
     if trust.trust_score >= TRUST_NEED_FOR_AUTO and trust.approval_streak >= STREAK_NEED_FOR_AUTO:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_TRUST,
-            decision=DECISION_RUN,
-            sealed=False,
-            overrideable=False,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_TRUST_AUTO_AUTH,
-            extra={
-                "trust_score": trust.trust_score,
-                "need": TRUST_NEED_FOR_AUTO,
-                "approval_streak": trust.approval_streak,
-                "grant_id": g.grant_id,
-            },
-        )
+        audit.emit(run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_AUTO_AUTH, extra={"trust_score": trust.trust_score, "need": TRUST_NEED_FOR_AUTO, "approval_streak": trust.approval_streak, "grant_id": g.grant_id})
         return True, RC_TRUST_AUTO_AUTH, g.grant_id
 
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_TRUST,
-        decision=DECISION_PAUSE,
-        sealed=False,
-        overrideable=True,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_TRUST_SCORE_LOW,
-        extra={"trust_score": trust.trust_score, "need": TRUST_NEED_FOR_AUTO, "approval_streak": trust.approval_streak},
-    )
+    audit.emit(run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_SCORE_LOW, extra={"trust_score": trust.trust_score, "need": TRUST_NEED_FOR_AUTO, "approval_streak": trust.approval_streak})
     return False, RC_TRUST_SCORE_LOW, g.grant_id
 
 
@@ -1208,52 +1152,17 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
     if trust.trust_score >= COACHING_TRUST_BELOW:
         return
     if trust.coaching_sessions >= COACHING_MAX_SESSIONS:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_COACHING,
-            decision=DECISION_RUN,
-            sealed=False,
-            overrideable=False,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_COACHING_SKIPPED,
-            extra={"why": "max_sessions_reached"},
-        )
+        audit.emit(run_id=st.run_id, layer=LAYER_COACHING, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_COACHING_SKIPPED, extra={"why": "max_sessions_reached"})
         return
 
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_ACC,
-        decision=DECISION_PAUSE,
-        sealed=False,
-        overrideable=True,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_COACHING_AUTH_REQUIRED,
-        extra={"trust_score": trust.trust_score, "compliance_score": trust.compliance_score},
-    )
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_COACHING_AUTH,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_ADMIN,
-        reason_code=RC_COACHING_APPROVE,
-    )
+    audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_COACHING_AUTH_REQUIRED, extra={"trust_score": trust.trust_score, "compliance_score": trust.compliance_score})
+    audit.emit(run_id=st.run_id, layer=LAYER_COACHING_AUTH, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_ADMIN, reason_code=RC_COACHING_APPROVE)
 
     before = trust.compliance_score
     trust.compliance_score = clamp(trust.compliance_score + COACHING_DELTA_COMPLIANCE, COMPLIANCE_MIN, COMPLIANCE_MAX)
     trust.coaching_sessions += 1
 
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_COACHING,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_COACHING_CHECK_PASSED,
-        extra={"before": before, "after": trust.compliance_score, "sessions": trust.coaching_sessions},
-    )
+    audit.emit(run_id=st.run_id, layer=LAYER_COACHING, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_COACHING_CHECK_PASSED, extra={"before": before, "after": trust.compliance_score, "sessions": trust.coaching_sessions})
 
 
 def simulate_run(
@@ -1274,72 +1183,29 @@ def simulate_run(
     step_meaning_consistency_rfl_baseline(audit, st)
     maybe_coach_low_trust(audit, st, trust)
 
-    st.evidence_bundle = build_evidence_bundle_case_b(
-        scenario=POLICY_CASE_B, location_id="INT-042", fabricated=fabricate_evidence
-    )
+    st.evidence_bundle = build_evidence_bundle_case_b(scenario=POLICY_CASE_B, location_id="INT-042", fabricated=fabricate_evidence)
     ok_ev, ev_reason = evidence_gate(audit, st, st.evidence_bundle)
     if not ok_ev:
         if ev_reason == RC_EVIDENCE_SCHEMA_INVALID:
-            audit.emit(
-                run_id=st.run_id,
-                layer=LAYER_ACC,
-                decision=DECISION_STOP,
-                sealed=True,
-                overrideable=False,
-                final_decider=DECIDER_SYSTEM,
-                reason_code=RC_EVIDENCE_SCHEMA_INVALID,
-            )
+            audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_EVIDENCE_SCHEMA_INVALID)
             st.sealed = True
             st.state = "STOPPED"
-            cap_remaining = apply_trust_update(
-                audit,
-                st=st,
-                trust=trust,
-                outcome="EVIDENCE_SCHEMA_INVALID",
-                delta_requested=DELTA_INVALID_EVENT,
-                cap_remaining=cap_remaining,
-                reset_streak=True,
-                set_cooldown=True,
-            )
+            cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="EVIDENCE_SCHEMA_INVALID", delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining, reset_streak=True, set_cooldown=True)
             if persist:
                 save_trust_state(trust)
             return st, audit, trust
 
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_ETHICS,
-            decision=DECISION_STOP,
-            sealed=True,
-            overrideable=False,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_EVIDENCE_FABRICATION,
-        )
+        audit.emit(run_id=st.run_id, layer=LAYER_ETHICS, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_EVIDENCE_FABRICATION)
         st.sealed = True
         st.state = "STOPPED"
-        cap_remaining = apply_trust_update(
-            audit,
-            st=st,
-            trust=trust,
-            outcome="EVIDENCE_FABRICATION",
-            delta_requested=DELTA_INVALID_EVENT,
-            cap_remaining=cap_remaining,
-            reset_streak=True,
-            set_cooldown=True,
-        )
+        cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="EVIDENCE_FABRICATION", delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining, reset_streak=True, set_cooldown=True)
         if persist:
             save_trust_state(trust)
         return st, audit, trust
 
     st.auth_request = build_auth_request_case_b(auth_request_id=f"AUTHREQ#{run_id}", auth_id=dummy_auth_id, ttl_seconds=120)
 
-    if not critical_missing_gate(
-        audit,
-        st,
-        layer=LAYER_BLACKLIST,
-        data=st.auth_request,
-        essentials=["schema_version", "auth_request_id", "auth_id", "context", "expires_at"],
-        kind="auth_request",
-    ):
+    if not critical_missing_gate(audit, st, layer=LAYER_BLACKLIST, data=st.auth_request, essentials=["schema_version", "auth_request_id", "auth_id", "context", "expires_at"], kind="auth_request"):
         if persist:
             save_trust_state(trust)
         return st, audit, trust
@@ -1362,16 +1228,7 @@ def simulate_run(
         st.state = "PAUSE_FOR_HITL_AUTH"
 
     if auto_ok:
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_HITL_AUTH,
-            decision=DECISION_RUN,
-            sealed=False,
-            overrideable=False,
-            final_decider=DECIDER_SYSTEM,
-            reason_code=RC_TRUST_AUTO_AUTH,
-            extra={"mode": "auto", "grant_id": grant_id},
-        )
+        audit.emit(run_id=st.run_id, layer=LAYER_HITL_AUTH, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_TRUST_AUTO_AUTH, extra={"mode": "auto", "grant_id": grant_id})
         st.state = "AUTH_VERIFIED"
     else:
         auth_event = {
@@ -1384,114 +1241,36 @@ def simulate_run(
         }
         validate_auth_event(auth_event)
         if is_auth_request_expired(st.auth_request, auth_event["ts"]):
-            audit.emit(
-                run_id=st.run_id,
-                layer=LAYER_ACC,
-                decision=DECISION_STOP,
-                sealed=True,
-                overrideable=False,
-                final_decider=DECIDER_SYSTEM,
-                reason_code=RC_AUTH_EXPIRED,
-            )
+            audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_AUTH_EXPIRED)
             st.sealed = True
             st.state = "STOPPED"
-            cap_remaining = apply_trust_update(
-                audit,
-                st=st,
-                trust=trust,
-                outcome="AUTH_EXPIRED",
-                delta_requested=DELTA_INVALID_EVENT,
-                cap_remaining=cap_remaining,
-                reset_streak=True,
-                set_cooldown=True,
-            )
+            cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="AUTH_EXPIRED", delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining, reset_streak=True, set_cooldown=True)
             if persist:
                 save_trust_state(trust)
             return st, audit, trust
 
-        audit.emit(
-            run_id=st.run_id,
-            layer=LAYER_HITL_AUTH,
-            decision=DECISION_RUN,
-            sealed=False,
-            overrideable=False,
-            final_decider=DECIDER_USER,
-            reason_code=RC_HITL_AUTH_APPROVE,
-            extra={"auth_request_id": st.auth_request["auth_request_id"], "auth_id": st.auth_request["auth_id"]},
-        )
-        cap_remaining = apply_trust_update(
-            audit,
-            st=st,
-            trust=trust,
-            outcome="AUTH_APPROVE",
-            delta_requested=DELTA_AUTH_APPROVE,
-            cap_remaining=cap_remaining,
-            reset_streak=False,
-            set_cooldown=False,
-        )
+        audit.emit(run_id=st.run_id, layer=LAYER_HITL_AUTH, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_USER, reason_code=RC_HITL_AUTH_APPROVE, extra={"auth_request_id": st.auth_request["auth_request_id"], "auth_id": st.auth_request["auth_id"]})
+        cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="AUTH_APPROVE", delta_requested=DELTA_AUTH_APPROVE, cap_remaining=cap_remaining, reset_streak=False, set_cooldown=False)
         st.state = "AUTH_VERIFIED"
 
     st.draft = generate_contract_draft(st=st)
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_DOC_DRAFT,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_DRAFT_GENERATED,
-        extra={"draft_id": st.draft["draft_id"]},
-    )
+    audit.emit(run_id=st.run_id, layer=LAYER_DOC_DRAFT, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_DRAFT_GENERATED, extra={"draft_id": st.draft["draft_id"]})
     st.state = "DRAFT_READY"
 
     ok_lint, lint_reason = draft_lint_gate(audit, st, st.draft["content"])
     if not ok_lint:
         if lint_reason in (RC_SAFETY_LEGAL_BINDING_CLAIM, RC_SAFETY_DISCRIMINATION_TERM):
-            audit.emit(
-                run_id=st.run_id,
-                layer=LAYER_ETHICS,
-                decision=DECISION_STOP,
-                sealed=True,
-                overrideable=False,
-                final_decider=DECIDER_SYSTEM,
-                reason_code=lint_reason,
-            )
+            audit.emit(run_id=st.run_id, layer=LAYER_ETHICS, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=lint_reason)
         else:
-            audit.emit(
-                run_id=st.run_id,
-                layer=LAYER_ACC,
-                decision=DECISION_STOP,
-                sealed=True,
-                overrideable=False,
-                final_decider=DECIDER_SYSTEM,
-                reason_code=lint_reason,
-            )
+            audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_STOP, sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=lint_reason)
         st.sealed = True
         st.state = "STOPPED"
-        cap_remaining = apply_trust_update(
-            audit,
-            st=st,
-            trust=trust,
-            outcome="DRAFT_LINT_FAIL",
-            delta_requested=DELTA_LINT_FAIL,
-            cap_remaining=cap_remaining,
-            reset_streak=True,
-            set_cooldown=True,
-        )
+        cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="DRAFT_LINT_FAIL", delta_requested=DELTA_LINT_FAIL, cap_remaining=cap_remaining, reset_streak=True, set_cooldown=True)
         if persist:
             save_trust_state(trust)
         return st, audit, trust
 
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_ACC,
-        decision=DECISION_PAUSE,
-        sealed=False,
-        overrideable=True,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_ADMIN_FINALIZE_REQUIRED,
-        extra={"draft_id": st.draft["draft_id"]},
-    )
+    audit.emit(run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_PAUSE, sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_ADMIN_FINALIZE_REQUIRED, extra={"draft_id": st.draft["draft_id"]})
     st.state = "PAUSE_FOR_HITL_FINALIZE"
 
     finalize_event = {
@@ -1504,38 +1283,11 @@ def simulate_run(
     }
     validate_finalize_event(finalize_event)
 
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_HITL_FINALIZE,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_ADMIN,
-        reason_code=RC_FINALIZE_APPROVE,
-        extra={"draft_id": st.draft["draft_id"]},
-    )
-    cap_remaining = apply_trust_update(
-        audit,
-        st=st,
-        trust=trust,
-        outcome="FINALIZE_APPROVE",
-        delta_requested=DELTA_FINALIZE_APPROVE,
-        cap_remaining=cap_remaining,
-        reset_streak=False,
-        set_cooldown=False,
-    )
+    audit.emit(run_id=st.run_id, layer=LAYER_HITL_FINALIZE, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_ADMIN, reason_code=RC_FINALIZE_APPROVE, extra={"draft_id": st.draft["draft_id"]})
+    cap_remaining = apply_trust_update(audit, st=st, trust=trust, outcome="FINALIZE_APPROVE", delta_requested=DELTA_FINALIZE_APPROVE, cap_remaining=cap_remaining, reset_streak=False, set_cooldown=False)
 
     st.contract = finalize_contract(st=st, admin_event=finalize_event)
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_CONTRACT_EFFECT,
-        decision=DECISION_RUN,
-        sealed=False,
-        overrideable=False,
-        final_decider=DECIDER_SYSTEM,
-        reason_code=RC_CONTRACT_EFFECTIVE,
-        extra={"contract_id": st.contract["contract_id"], "draft_id": st.draft["draft_id"]},
-    )
+    audit.emit(run_id=st.run_id, layer=LAYER_CONTRACT_EFFECT, decision=DECISION_RUN, sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_CONTRACT_EFFECTIVE, extra={"contract_id": st.contract["contract_id"], "draft_id": st.draft["draft_id"]})
     st.state = "CONTRACT_EFFECTIVE"
     if persist:
         save_trust_state(trust)
@@ -1586,17 +1338,7 @@ class HitlQueueBuilder:
         if len(self.items) >= self.max_items:
             return
 
-        snapshot_keys = (
-            "layer",
-            "decision",
-            "reason_code",
-            "missing_keys",
-            "kind",
-            "error",
-            "pattern",
-            "prev_hash",
-            "row_hash",
-        )
+        snapshot_keys = ("layer", "decision", "reason_code", "missing_keys", "kind", "error", "pattern", "prev_hash", "row_hash")
         snapshot = {k: first_bad.get(k) for k in snapshot_keys if k in first_bad}
 
         self.items.append(
@@ -1625,7 +1367,6 @@ class HitlQueueBuilder:
                 "total_runs": sum(self.by_state.values()),
                 "by_state": dict(sorted(self.by_state.items(), key=lambda kv: kv[0])),
                 "by_reason_code_top20": by_reason_top20,
-                # queue_size = number of abnormal runs (i.e., how many times we incremented by_reason)
                 "queue_size": int(sum(self.by_reason.values())),
                 "items_kept": len(self.items),
             },
@@ -1636,16 +1377,7 @@ class HitlQueueBuilder:
 def write_queue_csv(queue: Dict[str, Any], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     items = queue.get("items", []) or []
-    fieldnames = [
-        "run_id",
-        "final_state",
-        "sealed",
-        "primary_reason_code",
-        "primary_layer",
-        "overrideable",
-        "final_decider",
-        "snapshot_json",
-    ]
+    fieldnames = ["run_id", "final_state", "sealed", "primary_reason_code", "primary_layer", "overrideable", "final_decider", "snapshot_json"]
     with path.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
@@ -1821,7 +1553,7 @@ def run_simulation(
         if fabricate_rate is None:
             fabricate_this = bool(fabricate)
         else:
-            fabricate_this = random.random() < fabricate_rate
+            fabricate_this = (random.random() < fabricate_rate)
 
         t0 = time.perf_counter()
         st, audit, trust = simulate_run(
@@ -1837,6 +1569,7 @@ def run_simulation(
         t1 = time.perf_counter()
         runtime_ms = (t1 - t0) * 1000.0
 
+        # incident-only persistence: normal runs should not persist ARL rows.
         clean_ok, fraud_hits = is_clean_completion(final_state=st.state, sealed=st.sealed, arl_rows=audit.rows)
         base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
         final_score = base_score * multiplier_snapshot
@@ -1844,6 +1577,7 @@ def run_simulation(
         reward_granted = bool(clean_ok)
         reward_value = final_score if reward_granted else 0.0
 
+        # SUMMARY only (do not force persistence).
         audit.emit(
             run_id=rid,
             layer=LAYER_EVAL,
@@ -1861,7 +1595,6 @@ def run_simulation(
                 "fraud_hits": fraud_hits,
                 "fabricate_evidence": fabricate_this,
             },
-            force_full=True,
         )
         audit.emit(
             run_id=rid,
@@ -1876,7 +1609,6 @@ def run_simulation(
                 "reward_value": round(reward_value, 6),
                 "clean_completion": clean_ok,
             },
-            force_full=True,
         )
 
         if reward_granted:
@@ -1912,49 +1644,34 @@ def run_simulation(
                 else:
                     results["abnormal_arl_persistence"]["skipped_by_cap"] += 1
 
+        # Prevent memory growth when full_context_n > 0 and run_id is unique per run.
+        # Safe to call unconditionally; abnormal runs typically already replay+drop, but this is harmless.
+        audit.drop_candidates_for_run(rid)
+
+        run_record = {
+            "run_id": rid,
+            "final_state": st.state,
+            "sealed": st.sealed,
+            "runtime_ms": round(runtime_ms, 6),
+            "fabricate_evidence": fabricate_this,
+            "eval": {
+                "multiplier_snapshot": round(multiplier_snapshot, 3),
+                "base_score": round(base_score, 6),
+                "final_score": round(final_score, 6),
+                "reward_granted": reward_granted,
+                "reward_value": round(reward_value, 6),
+                "clean_completion": clean_ok,
+                "fraud_hits": fraud_hits,
+            },
+            "arl": audit.rows,
+            "trust_after": trust.to_dict(),
+        }
+
         if keep_runs:
-            results["runs"].append(
-                {
-                    "run_id": rid,
-                    "final_state": st.state,
-                    "sealed": st.sealed,
-                    "runtime_ms": round(runtime_ms, 6),
-                    "fabricate_evidence": fabricate_this,
-                    "eval": {
-                        "multiplier_snapshot": round(multiplier_snapshot, 3),
-                        "base_score": round(base_score, 6),
-                        "final_score": round(final_score, 6),
-                        "reward_granted": reward_granted,
-                        "reward_value": round(reward_value, 6),
-                        "clean_completion": clean_ok,
-                        "fraud_hits": fraud_hits,
-                    },
-                    "arl": audit.rows,
-                    "trust_after": trust.to_dict(),
-                }
-            )
+            results["runs"].append(run_record)
         else:
             if sample_runs and len(results["runs_sample"]) < int(sample_runs):
-                results["runs_sample"].append(
-                    {
-                        "run_id": rid,
-                        "final_state": st.state,
-                        "sealed": st.sealed,
-                        "runtime_ms": round(runtime_ms, 6),
-                        "fabricate_evidence": fabricate_this,
-                        "eval": {
-                            "multiplier_snapshot": round(multiplier_snapshot, 3),
-                            "base_score": round(base_score, 6),
-                            "final_score": round(final_score, 6),
-                            "reward_granted": reward_granted,
-                            "reward_value": round(reward_value, 6),
-                            "clean_completion": clean_ok,
-                            "fraud_hits": fraud_hits,
-                        },
-                        "arl": audit.rows,
-                        "trust_after": trust.to_dict(),
-                    }
-                )
+                results["runs_sample"].append(run_record)
 
     # Persist states once (avoid per-run IO)
     save_trust_state(trust)
@@ -1979,8 +1696,7 @@ def _print_summary(results: Dict[str, Any]) -> None:
     print("top_reason_code:", json.dumps(by_rc, ensure_ascii=False))
     if ab.get("enabled"):
         print(
-            f"abnormal_total={ab.get('abnormal_total')} saved={ab.get('saved')} "
-            f"skipped_by_cap={ab.get('skipped_by_cap')} out_dir={ab.get('arl_out_dir')}"
+            f"abnormal_total={ab.get('abnormal_total')} saved={ab.get('saved')} skipped_by_cap={ab.get('skipped_by_cap')} out_dir={ab.get('arl_out_dir')}"
         )
 
 
@@ -1988,17 +1704,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p = argparse.ArgumentParser(description="Emergency contract mediation simulator (v5.1.2)")
 
     p.add_argument("--runs", type=int, default=100, help="number of runs")
-    p.add_argument(
-        "--fabricate",
-        action="store_true",
-        help="fabricate evidence for all runs (unless --fabricate-rate is set)",
-    )
-    p.add_argument(
-        "--fabricate-rate",
-        type=float,
-        default=None,
-        help="fabrication rate in [0,1] (overrides --fabricate)",
-    )
+    p.add_argument("--fabricate", action="store_true", help="fabricate evidence for all runs (unless --fabricate-rate is set)")
+    p.add_argument("--fabricate-rate", type=float, default=None, help="fabrication rate in [0,1] (overrides --fabricate)")
     p.add_argument("--seed", type=int, default=None, help="random seed (deterministic)")
 
     p.add_argument("--no-reset", action="store_true", help="do not reset stores (trust/grants/eval)")
