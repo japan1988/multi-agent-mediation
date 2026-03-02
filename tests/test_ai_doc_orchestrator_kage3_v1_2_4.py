@@ -212,7 +212,9 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
     ]
     assert rfl_gate, "RFL gate did not trigger PAUSE_FOR_HITL"
 
-    assert any(r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl" for r in rows)
+    assert any(
+        r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl" for r in rows
+    )
 
     assert res.artifacts_written_task_ids, "No artifacts were written after HITL_CONTINUE"
 
@@ -239,9 +241,7 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
     rows = _read_jsonl(audit_path)
 
     ethics_rows = [
-        r
-        for r in rows
-        if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
+        r for r in rows if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
     ]
     assert ethics_rows, "No STOPPED GATE_ETHICS found"
 
