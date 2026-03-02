@@ -1,4 +1,4 @@
-# ai_doc_orchestrator_kage3_v1_2_3.py  
+# ai_doc_orchestrator_kage3_v1_2_3.py
 # -*- coding: utf-8 -*-
 """
 (ai_doc_orchestrator_kage3_v1_2_2.py に対する設計寄り改修)
@@ -9,6 +9,15 @@ Changes (design-oriented):
 - Defensive JSON serialization: default=str so audit never crashes on non-JSON types.
 - Deep redaction also redacts dict keys (prevents email-like keys from persisting).
 - emit() auto-fills "ts" if missing.
+
+Hardening:
+- emit() accepts Any and never raises (including file I/O failure; silently drops).
+- start_run() also never raises on I/O failure (aligns with emit()).
+- Always deep-redact final payload (keys/values/nested) so email-like never persists.
+- Line length is capped to avoid log-DoS.
+- PRESERVE_ALL: dict key collisions after redaction never overwrite silently.
+  Spec: 1st occurrence keeps base key, 2nd becomes base__DUP2, 3rd base__DUP3, ...
+- KEEP_MIN_FIELDS: AUDIT_LINE_TRUNCATED retains run_id/task_id/layer for correlation.
 """
 
 from __future__ import annotations
@@ -16,7 +25,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
@@ -30,6 +39,9 @@ Decision = Literal["RUN", "HITL", "STOP"]
 OverallDecision = Literal["RUN", "HITL"]
 Layer = Literal["meaning", "consistency", "ethics", "orchestrator", "agent"]
 KIND = Literal["excel", "word", "ppt"]
+
+# 1行の最大バイト数（UTF-8）。ログDoS対策。
+_AUDIT_MAX_LINE_BYTES = 8192
 
 
 # -----------------------------
@@ -49,7 +61,26 @@ def _deep_redact(obj: Any) -> Any:
         return [_deep_redact(x) for x in obj]
     if isinstance(obj, dict):
         # IMPORTANT: redact keys too (keys can contain email-like strings)
-        return {redact_sensitive(str(k)): _deep_redact(v) for k, v in obj.items()}
+        # PRESERVE_ALL: avoid silent overwrite on key collisions after redaction.
+        # Spec: 1st keeps base, 2nd base__DUP2, 3rd base__DUP3, ...
+        out: Dict[str, Any] = {}
+        seen_counts: Dict[str, int] = {}
+        for k, v in obj.items():
+            base = redact_sensitive(str(k))
+            if base not in out:
+                out[base] = _deep_redact(v)
+                continue
+
+            # First collision -> __DUP2
+            n = seen_counts.get(base, 1) + 1
+            seen_counts[base] = n
+            new_key = f"{base}__DUP{n}"
+            while new_key in out:
+                n += 1
+                seen_counts[base] = n
+                new_key = f"{base}__DUP{n}"
+            out[new_key] = _deep_redact(v)
+        return out
     return obj
 
 
@@ -66,12 +97,19 @@ class AuditLog:
         Start a run:
         - Optionally truncate the audit file (truncate=True).
         - Reset ts_state so monotonic timestamps are per-run (test-friendly).
+
+        Hardening:
+          - never raises (I/O failure is swallowed).
         """
-        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
-        if truncate:
-            with self.audit_path.open("w", encoding="utf-8"):
-                pass
-        self._last_ts = None
+        try:
+            self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+            if truncate:
+                with self.audit_path.open("w", encoding="utf-8"):
+                    pass
+        except Exception:
+            pass
+        finally:
+            self._last_ts = None
 
     def ts(self) -> str:
         """
@@ -83,29 +121,94 @@ class AuditLog:
         self._last_ts = now
         return now.isoformat(timespec="microseconds")
 
-    def emit(self, row: Dict[str, Any]) -> None:
+    def emit(self, row: Any) -> None:
         """
         Append a JSONL row.
-        Hard guarantee: no email-like strings are persisted.
-        Also: never crash on non-JSON-serializable types (default=str).
+
+        Guarantees:
+          - never raises (even if file I/O fails; in that case it silently drops).
+          - always attempts to append exactly one JSON object per call.
+          - deep redaction is applied to final payload (keys/values/nested).
+          - line length is capped to avoid log-DoS.
         """
-        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return
 
-        # auto-fill ts if missing (callers may still pass explicit ts)
-        if "ts" not in row:
-            row = dict(row)
-            row["ts"] = self.ts()
+        def _truncate_utf8(s: str, max_bytes: int) -> str:
+            b = s.encode("utf-8", errors="replace")
+            if len(b) <= max_bytes:
+                return s
+            suffix = b"...<TRUNCATED>"
+            cut = b[: max(0, max_bytes - len(suffix))]
+            return cut.decode("utf-8", errors="ignore") + "...<TRUNCATED>"
 
-        # Safe copy (no mutation), tolerate non-JSON types
-        safe_row = json.loads(json.dumps(row, ensure_ascii=False, default=str))
-        safe_blob = json.dumps(safe_row, ensure_ascii=False)
+        def _safe_write_line(line: str) -> None:
+            try:
+                with self.audit_path.open("a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+            except Exception:
+                return
 
-        # If anything looks like an email, deep redact before writing.
-        if EMAIL_RE.search(safe_blob):
+        try:
+            in_row: Any = row
+
+            # Non-dict -> envelope (object-per-line invariant)
+            if not isinstance(in_row, dict):
+                in_row = {"event": "AUDIT_NON_DICT_ROW", "value": in_row}
+
+            # ts auto-fill
+            if "ts" not in in_row:
+                in_row = dict(in_row)
+                in_row["ts"] = self.ts()
+
+            # Safe copy (non-JSON types -> str)
+            safe_row: Dict[str, Any] = json.loads(
+                json.dumps(in_row, ensure_ascii=False, default=str)
+            )
+
+            # Final redaction (keys/values/nested)
             safe_row = _deep_redact(safe_row)
 
-        with self.audit_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(safe_row, ensure_ascii=False) + "\n")
+            line = json.dumps(safe_row, ensure_ascii=False)
+            if len(line.encode("utf-8", errors="replace")) > _AUDIT_MAX_LINE_BYTES:
+                # KEEP_MIN_FIELDS: keep correlation keys if available.
+                minimal: Dict[str, Any] = {
+                    "ts": safe_row.get("ts", self.ts()),
+                    "run_id": safe_row.get("run_id", ""),
+                    "task_id": safe_row.get("task_id", ""),
+                    "layer": safe_row.get("layer", ""),
+                    "event": "AUDIT_LINE_TRUNCATED",
+                    "orig_event": safe_row.get("event", ""),
+                    "max_bytes": _AUDIT_MAX_LINE_BYTES,
+                    "truncated": True,
+                }
+                minimal = _deep_redact(minimal)
+                line = json.dumps(minimal, ensure_ascii=False)
+                line = _truncate_utf8(line, _AUDIT_MAX_LINE_BYTES)
+
+            _safe_write_line(line)
+
+        except Exception as e:
+            # Last resort: still attempt one JSON line (if writable).
+            fallback: Dict[str, Any] = {
+                "ts": self.ts(),
+                "event": "AUDIT_EMIT_ERROR",
+                "error_type": type(e).__name__,
+                "error": redact_sensitive(str(e)),
+            }
+            try:
+                rr = redact_sensitive(repr(row))
+                fallback["row_repr"] = _truncate_utf8(rr, 1024)
+            except Exception:
+                fallback["row_repr"] = "<UNREPRESENTABLE>"
+
+            fallback = _deep_redact(fallback)
+            line = json.dumps(fallback, ensure_ascii=False)
+            if len(line.encode("utf-8", errors="replace")) > _AUDIT_MAX_LINE_BYTES:
+                line = _truncate_utf8(line, _AUDIT_MAX_LINE_BYTES)
+            _safe_write_line(line)
 
 
 # -----------------------------
@@ -309,7 +412,7 @@ def run_simulation(
             }
         )
 
-        m_dec, m_layer, m_code = _meaning_gate(prompt, kind)
+        m_dec, _m_layer, m_code = _meaning_gate(prompt, kind)
         audit.emit(
             {
                 "run_id": run_id,
