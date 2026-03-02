@@ -1,3 +1,4 @@
+# tests/test_ai_doc_orchestrator_kage3_v1_2_4.py
 # -*- coding: utf-8 -*-
 """
 Regression tests for ai_doc_orchestrator_kage3_v1_2_4
@@ -14,9 +15,15 @@ Key goals:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
+
+# Ensure repository root is importable under pytest/CI cwd differences.
+_REPO_ROOT = Path(__file__).resolve().parents[1]  # tests/.. (repo root)
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import ai_doc_orchestrator_kage3_v1_2_4 as sim
 
@@ -51,7 +58,16 @@ def _find(rows: list[dict], **conds) -> list[dict]:
 
 def _assert_arl_min_keys(row: dict) -> None:
     # ARL minimal keys (as per your IEP alignment)
-    for k in ("run_id", "ts", "layer", "decision", "reason_code", "sealed", "overrideable", "final_decider"):
+    for k in (
+        "run_id",
+        "ts",
+        "layer",
+        "decision",
+        "reason_code",
+        "sealed",
+        "overrideable",
+        "final_decider",
+    ):
         assert k in row, f"missing key: {k}"
 
 
@@ -189,7 +205,11 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
 
     rows = _read_jsonl(audit_path)
 
-    rfl_gate = [r for r in rows if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"]
+    rfl_gate = [
+        r
+        for r in rows
+        if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"
+    ]
     assert rfl_gate, "RFL gate did not trigger PAUSE_FOR_HITL"
 
     assert any(r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl" for r in rows)
@@ -218,7 +238,11 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
 
     rows = _read_jsonl(audit_path)
 
-    ethics_rows = [r for r in rows if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"]
+    ethics_rows = [
+        r
+        for r in rows
+        if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
+    ]
     assert ethics_rows, "No STOPPED GATE_ETHICS found"
 
     hit = ethics_rows[0]
@@ -258,8 +282,14 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
 
     rows = _read_jsonl(audit_path)
 
-    assert any((r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED") for r in rows)
-    assert any((r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS") for r in rows)
+    assert any(
+        (r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED")
+        for r in rows
+    )
+    assert any(
+        (r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS")
+        for r in rows
+    )
 
     excel_skips = [
         r
@@ -273,4 +303,3 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
     excel_tr = next(t for t in res.tasks if t.task_id == "task_excel")
     assert excel_tr.decision == "PAUSE_FOR_HITL"
     assert excel_tr.blocked_layer == "consistency"
- 
