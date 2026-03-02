@@ -1,13 +1,19 @@
-# test_ai_doc_orchestrator_kage3_v1_2_3.py
+# tests/test_ai_doc_orchestrator_kage3_v1_2_3.py
 # -*- coding: utf-8 -*-
 
 import json
 import os
 import stat
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+# Ensure repository root is importable under pytest/CI cwd differences.
+_REPO_ROOT = Path(__file__).resolve().parents[1]  # tests/.. (repo root)
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import ai_doc_orchestrator_kage3_v1_2_3 as mod
 
