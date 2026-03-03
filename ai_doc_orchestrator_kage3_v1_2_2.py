@@ -18,4 +18,3 @@ import ai_doc_orchestrator_kage3_v1_2_3 as _impl
 
 __version__ = getattr(_impl, "__version__", "1.2.2")
 __all__ = getattr(_impl, "__all__", [])
-VERIFY:
