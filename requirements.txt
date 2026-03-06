@@ -1,10 +1,7 @@
+# Development dependencies for Multi-Agent Mediation Framework
 pytest==8.3.3
 pytest-cov==5.0.0
 pytest-xdist==3.6.1
 yamllint==1.35.1
 black==24.8.0
 ruff==0.6.9
-
-
-
-
