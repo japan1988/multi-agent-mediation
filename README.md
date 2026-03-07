@@ -8,6 +8,49 @@
 > **If uncertain, stop. If risky, escalate.**  
 > Research / educational governance simulations for agentic workflows.
 
+Maestro Orchestrator is a **research-oriented orchestration framework** for
+**fail-closed**, **HITL (Human-in-the-Loop)**, and **audit-ready** agent workflows.
+
+This repository focuses on **governance / mediation / negotiation-style simulations**
+and implementation references for **traceable, reproducible, safety-first orchestration**.
+
+---
+
+## What this repository is
+
+This repository provides:
+
+- **Fail-closed + HITL orchestration benches** for governance-style workflows
+- **Reproducible simulators** with seeded runs and pytest-based contract checks
+- **Audit-ready traces** via minimal ARL logs
+- **Reference implementations** for orchestration / gating behavior
+
+This is best read as a:
+
+- **research prototype**
+- **educational reference**
+- **governance / safety simulation bench**
+
+It is **not** a production autonomy framework.
+
+---
+
+## Quick links
+
+- **Japanese README:** [README.ja.md](README.ja.md)
+- **Docs index:** [docs/README.md](docs/README.md)
+- **Recommended simulator:** `mediation_emergency_contract_sim_v5_1_2.py`
+- **Contract test:** `tests/test_v5_1_codebook_consistency.py`
+- **Legacy stable bench:** `mediation_emergency_contract_sim_v4_8.py`
+
+---
+
+## ⚡ TL;DR
+
+- **Fail-closed + HITL** gating benches for negotiation/mediation-style workflows (research/education)
+- **Reproducibility-first**: seeded runs + `pytest` contract checks (vocabulary/invariants)
+- **Audit-ready**: minimal ARL logs; optional incident-only ARL indexing (`INC#...`) to avoid log bloat
+
 ---
 
 ## ⚠️ Purpose & Disclaimer (Research & Education)
@@ -37,60 +80,39 @@ They do **not** guarantee correctness, security, safety, or fitness for any purp
 
 ---
 
-🇯🇵 **Japanese version:** [README.ja.md](README.ja.md)
+## Why this repository exists
 
-## ⚡ TL;DR
-- **Fail-closed + HITL** gating benches for negotiation/mediation-style workflows (research/education).
-- **Reproducibility-first**: seeded runs + `pytest` contract checks (vocabulary/invariants).
-- **Audit-ready**: minimal ARL logs; optional incident-only ARL indexing (`INC#...`) to avoid log bloat.
+Maestro Orchestrator is built around three priorities:
 
----
+- **Fail-closed**
+  - If uncertain, unstable, or risky, do not continue silently.
+- **HITL escalation**
+  - Decisions requiring human judgment are explicitly escalated.
+- **Traceability**
+  - Decision flows are reproducible and audit-ready through minimal ARL logs.
 
-## Overview
+This repository contains simulation benches and implementation references for:
 
-Maestro Orchestrator is a research / educational orchestration framework that prioritizes:
-
-- **Fail-closed**  
-  If uncertain, unstable, or risky → do not continue silently.
-- **HITL (Human-in-the-Loop)**  
-  Decisions that require human judgment are explicitly escalated.
-- **Traceability**  
-  Decision flows are audit-ready and reproducible via minimal ARL logs.
-
-This repository contains implementation references (doc orchestrators) and simulation benches for negotiation, mediation, governance-style workflows, and gating behavior.
+- negotiation
+- mediation
+- governance-style workflows
+- gating behavior
+- audit-oriented orchestration
 
 ---
 
-## Latest update (what changed in this repo)
+## Recommended path
 
-This update adds a packaged zip bundle for the emergency contract simulator.
+If you are new to this repo, start here:
 
-- Added: `docs/mediation_emergency_contract_sim_pkg.zip` (v5.1.2 convenience bundle)
-- Why: quick download/run for reproducible smoke/stress runs (seeded), without changing entrypoints
-- Canonical source of truth (authoritative logic):
-  - `mediation_emergency_contract_sim_v5_1_2.py`
-  - `pytest -q tests/test_v5_1_codebook_consistency.py`
-- CI impact: none (docs artifact; not an entrypoint)
-- Note: zip bundles are **generated/convenience artifacts** (reviewable evidence, not authoritative logic). Review before use.
-
-### Fixes in this update (old draft → current)
-
-This update fixes two scale issues found in the previous v5.1.2 draft:
-
-- **Incident-only persistence mismatch**
-  - Problem: some non-incident events were forced to persist as FULL ARL rows (e.g., evaluation/reward), which could bloat logs even on normal runs.
-  - Fix: evaluation/reward events are now emitted as **SUMMARY** (no forced persistence). ARL persistence remains **incident-only**.
-
-- **Pre-context candidate growth under unique `run_id`**
-  - Problem: when `full_context_n > 0` and each run uses a unique `run_id`, in-memory candidate buffers could accumulate across large runs.
-  - Fix: per-run candidate buffers are explicitly dropped at the end of each run (`drop_candidates_for_run(run_id)`).
+1. Run the recommended simulator (`v5.1.2`)
+2. Run the contract test
+3. Inspect the codebook and logs
+4. Optionally compare with the legacy stable bench (`v4.8`)
 
 ---
 
-## Quickstart (recommended path)
-
-v5.1.x is recommended for reproducibility + contract checks; v4.x is kept as a legacy stable bench.  
-Start with one script, confirm behavior and logs, then expand.
+## Quickstart
 
 ### 1) Run the recommended emergency contract simulator (v5.1.2)
 
@@ -109,7 +131,7 @@ pytest -q tests/test_v5_1_codebook_consistency.py
 ### 3) Inspect / pin the demo codebook (v5.1-demo.1)
 
 * `log_codebook_v5_1_demo_1.json` (demo codebook; pin the version when exchanging artifacts)
-* Note: codebook is **NOT encryption** (no confidentiality).
+* Note: codebook is **NOT encryption** (no confidentiality)
 
 ### 4) Optional: run the legacy stable bench (v4.8)
 
@@ -127,12 +149,41 @@ The canonical source of truth is the generator scripts + tests.
 
 ---
 
+## Latest update
+
+This update adds a packaged zip bundle for the emergency contract simulator.
+
+* Added: `docs/mediation_emergency_contract_sim_pkg.zip` (v5.1.2 convenience bundle)
+* Why: quick download/run for reproducible smoke/stress runs (seeded), without changing entrypoints
+* Canonical source of truth (authoritative logic):
+
+  * `mediation_emergency_contract_sim_v5_1_2.py`
+  * `pytest -q tests/test_v5_1_codebook_consistency.py`
+* CI impact: none (docs artifact; not an entrypoint)
+* Note: zip bundles are **generated/convenience artifacts** (reviewable evidence, not authoritative logic). Review before use.
+
+### Fixes in this update (old draft → current)
+
+This update fixes two scale issues found in the previous v5.1.2 draft:
+
+* **Incident-only persistence mismatch**
+
+  * Problem: some non-incident events were forced to persist as FULL ARL rows (e.g., evaluation/reward), which could bloat logs even on normal runs
+  * Fix: evaluation/reward events are now emitted as **SUMMARY** (no forced persistence). ARL persistence remains **incident-only**
+
+* **Pre-context candidate growth under unique `run_id`**
+
+  * Problem: when `full_context_n > 0` and each run uses a unique `run_id`, in-memory candidate buffers could accumulate across large runs
+  * Fix: per-run candidate buffers are explicitly dropped at the end of each run (`drop_candidates_for_run(run_id)`)
+
+---
+
 ## Stress tests (safe-by-default)
 
 v5.1.2 is designed to avoid memory blow-ups by default:
 
-* Aggregation-only mode (`keep_runs=False` default): no full per-run results kept in memory.
-* Optional: save ARL only on abnormal runs (incident indexing with `INC#...`).
+* Aggregation-only mode (`keep_runs=False` default): no full per-run results kept in memory
+* Optional: save ARL only on abnormal runs (incident indexing with `INC#...`)
 
 ### A) Lightweight smoke → medium stress (recommended ramp)
 
@@ -180,6 +231,13 @@ Key diagrams:
 * Multi-agent hierarchy: [docs/multi_agent_hierarchy_architecture.png](docs/multi_agent_hierarchy_architecture.png)
 * Sentiment context flow: [docs/sentiment_context_flow.png](docs/sentiment_context_flow.png)
 
+Recommended reading order:
+
+1. This README
+2. `docs/README.md`
+3. `mediation_emergency_contract_sim_v5_1_2.py`
+4. `tests/test_v5_1_codebook_consistency.py`
+
 ---
 
 ## Architecture (high level)
@@ -215,7 +273,39 @@ Documentation-only. No logic changes.
 
 ---
 
-## v5.0.1 → v5.1.2: What changed (delta)
+## Execution examples
+
+### Doc orchestrator (reference implementation)
+
+```bash
+python ai_doc_orchestrator_kage3_v1_2_4.py
+```
+
+### Emergency contract (recommended: v5.1.2) + contract tests
+
+```bash
+python mediation_emergency_contract_sim_v5_1_2.py
+pytest -q tests/test_v5_1_codebook_consistency.py
+```
+
+### Emergency contract (legacy stable bench: v4.8)
+
+```bash
+python mediation_emergency_contract_sim_v4_8.py
+pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
+```
+
+### Emergency contract (v4.4 stress)
+
+```bash
+python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
+```
+
+---
+
+## Version deltas
+
+### v5.0.1 → v5.1.2
 
 v5.1.2 strengthens the simulator toward large-run stability and incident-only persistence.
 
@@ -248,22 +338,20 @@ In addition to the behavioral changes above, v5.1.2 also improves repository-lev
 
 * **Persistence handling**
 
-  * Trust / grants / eval stores now use more consistent path handling and serialization.
-  * This reduces mismatch between runtime behavior and saved artifacts.
+  * Trust / grants / eval stores now use more consistent path handling and serialization
+  * This reduces mismatch between runtime behavior and saved artifacts
 
 * **Test compatibility**
 
-  * Persistent store paths are exposed more consistently and are easier to patch in tests.
-  * This improves isolation in CI and makes contract/stress checks more reproducible.
+  * Persistent store paths are exposed more consistently and are easier to patch in tests
+  * This improves isolation in CI and makes contract/stress checks more reproducible
 
 * **Output stability**
 
-  * JSON output writing is more consistent (UTF-8 / newline-stable / serializer-stable).
-  * This reduces avoidable differences across environments and makes result artifacts easier to inspect.
+  * JSON output writing is more consistent (UTF-8 / newline-stable / serializer-stable)
+  * This reduces avoidable differences across environments and makes result artifacts easier to inspect
 
----
-
-## V1 → V4: What actually changed (conceptual)
+### V1 → V4 (conceptual)
 
 `mediation_emergency_contract_sim_v1.py` demonstrates the minimum viable pipeline:
 a linear, event-driven workflow with fail-closed stops and minimal audit logs.
@@ -277,21 +365,21 @@ Added in v4:
 * Trust system (score + streak + cooldown)
 * AUTH HITL auto-skip (safe friction reduction via trust + grant, with ARL reasons)
 
----
-
-## V4 → V5: What changed (conceptual)
+### V4 → V5 (conceptual)
 
 v4 focuses on a stable “emergency contract” governance bench with smoke tests and stress runners.
 v5 extends that bench toward artifact-level reproducibility and contract-style compatibility checks.
 
 Added / strengthened in v5:
 
-* Log codebook (demo) + contract tests
-  Enforces emitted vocabularies (`layer/decision/final_decider/reason_code`) via pytest.
-* Reproducibility surface (pin what matters)
-  Pin simulator version, test version, and codebook version.
-* Tighter invariant enforcement
-  Explicit tests/contracts around invariants reduce silent drift.
+* **Log codebook (demo) + contract tests**
+  Enforces emitted vocabularies (`layer/decision/final_decider/reason_code`) via pytest
+
+* **Reproducibility surface (pin what matters)**
+  Pin simulator version, test version, and codebook version
+
+* **Tighter invariant enforcement**
+  Explicit tests/contracts around invariants reduce silent drift
 
 What did NOT change (still true in v5):
 
@@ -302,45 +390,15 @@ What did NOT change (still true in v5):
 
 ---
 
-## Execution examples
-
-Doc orchestrator (reference implementation)
-
-```bash
-python ai_doc_orchestrator_kage3_v1_2_4.py
-```
-
-Emergency contract (recommended: v5.1.2) + contract tests
-
-```bash
-python mediation_emergency_contract_sim_v5_1_2.py
-pytest -q tests/test_v5_1_codebook_consistency.py
-```
-
-Emergency contract (legacy stable bench: v4.8)
-
-```bash
-python mediation_emergency_contract_sim_v4_8.py
-pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-```
-
-Emergency contract (v4.4 stress)
-
-```bash
-python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-```
-
----
-
 ## Project intent / non-goals
 
-Intent:
+### Intent
 
 * Reproducible safety and governance simulations
 * Explicit HITL semantics (pause/reset/ban)
 * Audit-ready decision traces (minimal ARL)
 
-Non-goals:
+### Non-goals
 
 * Production-grade autonomous deployment
 * Unbounded self-directed agent control
@@ -350,15 +408,12 @@ Non-goals:
 
 ## Data & safety notes
 
-* Use synthetic/dummy data only.
-* Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible.
-* Treat generated bundles (zip) as reviewable evidence, not canonical source.
+* Use synthetic/dummy data only
+* Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible
+* Treat generated bundles (zip) as reviewable evidence, not canonical source
 
 ---
 
 ## License
 
 Apache License 2.0 (see `LICENSE`)
-
-```
-```
