@@ -4,18 +4,18 @@
 Compatibility shim for ai_doc_orchestrator_kage3_v1_2_2_1.
 
 Why:
-- tests/test_ai_doc_orchestrator_kage3_v1_2_2.py imports `ai_doc_orchestrator_kage3_v1_2_2_1`
-  but the repository ships `ai_doc_orchestrator_kage3_v1_2_2.py`.
-- This shim preserves the import contract without changing existing modules.
+- tests/test_ai_doc_orchestrator_kage3_v1_2_2.py imports this module.
+- The repository's canonical implementation is now v1_2_3.
+- Keep import contract without changing tests.
 
 Policy:
-- Behavior is identical to v1_2_2 (alias).
+- Behavior delegates to v1_2_3.
 """
 
 from __future__ import annotations
 
-from ai_doc_orchestrator_kage3_v1_2_2 import *  # noqa: F401,F403
-import ai_doc_orchestrator_kage3_v1_2_2 as _impl
+from ai_doc_orchestrator_kage3_v1_2_3 import *  # noqa: F401,F403
+import ai_doc_orchestrator_kage3_v1_2_3 as _impl
 
 __version__ = getattr(_impl, "__version__", "1.2.2.1")
 __all__ = getattr(_impl, "__all__", [])
