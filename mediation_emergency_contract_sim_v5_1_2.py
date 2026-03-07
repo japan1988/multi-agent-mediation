@@ -321,7 +321,7 @@ SPEC_PACK = {
         "integrity": {
             "canon_json": "json.dumps(obj, ensure_ascii=False, separators=(',', ':'), sort_keys=True)",
             "row_hash_algo": "HMAC-SHA256",
-            "initial_prev_hash": "0" * 64,
+            "initial_prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
             "stored_fields_added": [
                 "prev_hash",
                 "row_hash",
@@ -359,10 +359,11 @@ SPEC_PACK = {
             "trust_before",
             "eval_before",
             "abnormal_arl_persistence",
-            "runs or runs_sample",
             "trust_after",
             "eval_after",
             "hitl_queue",
+            "runs",
+            "runs_sample",
         ],
         "meta": {
             "version": "5.1.2",
@@ -454,6 +455,8 @@ SPEC_PACK = {
         "fabricate_rate_out_of_range": "ValueError",
         "key_mode_file_missing": "FileNotFoundError",
         "key_mode_env_empty": "ValueError",
-        "trust_eval_grants_load_failure": "default/empty にフォールバック",
+        "trust_load_failure": "default/empty fallback",
+        "eval_load_failure": "default/empty fallback",
+        "grants_load_failure": "default/empty fallback",
     },
 }
