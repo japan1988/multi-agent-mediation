@@ -223,6 +223,7 @@ v5.1.2 strengthens the simulator toward large-run stability and incident-only pe
 
   * No per-run results kept in memory (prevents memory blow-ups on large `--runs`)
   * Outputs focus on counters + HITL summary (optional items)
+
 * **Incident indexing (optional)**
 
   * Abnormal runs are assigned `INC#000001...`
@@ -240,6 +241,25 @@ Core invariants:
 
 * `sealed` may be set only by `ethics_gate` / `acc_gate`
 * `relativity_gate` is never sealed (`PAUSE_FOR_HITL`, `overrideable=True`, `sealed=False`)
+
+### Practical stability improvements in v5.1.2
+
+In addition to the behavioral changes above, v5.1.2 also improves repository-level stability in three practical areas:
+
+* **Persistence handling**
+
+  * Trust / grants / eval stores now use more consistent path handling and serialization.
+  * This reduces mismatch between runtime behavior and saved artifacts.
+
+* **Test compatibility**
+
+  * Persistent store paths are exposed more consistently and are easier to patch in tests.
+  * This improves isolation in CI and makes contract/stress checks more reproducible.
+
+* **Output stability**
+
+  * JSON output writing is more consistent (UTF-8 / newline-stable / serializer-stable).
+  * This reduces avoidable differences across environments and makes result artifacts easier to inspect.
 
 ---
 
@@ -339,3 +359,6 @@ Non-goals:
 ## License
 
 Apache License 2.0 (see `LICENSE`)
+
+```
+```
