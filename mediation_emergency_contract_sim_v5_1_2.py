@@ -888,7 +888,7 @@ def load_grants() -> List[Grant]:
         return out
     except Exception:
         return []
-
+    
 
 def save_grants(grants: List[Grant]) -> None:
     write_json(GRANTS_STORE_PATH, {"grants": [g.to_dict() for g in grants]})
@@ -1416,6 +1416,51 @@ def is_abnormal_run(final_state: str, sealed: bool) -> bool:
     return False
 
 
+def build_repro_summary(
+    *,
+    results: Dict[str, Any],
+    runs_requested: int,
+    fabricate: bool,
+    fabricate_rate: Optional[float],
+    seed: Optional[int],
+    reset: bool,
+    reset_eval: bool,
+    full_context_n: int,
+    keep_runs: bool,
+) -> Dict[str, Any]:
+    hitl_queue = results.get("hitl_queue", {}) or {}
+    counts = hitl_queue.get("counts", {}) or {}
+    abnormal = results.get("abnormal_arl_persistence", {}) or {}
+
+    return {
+        "sim_version": SIM_VERSION,
+        "policy_pack_hash": POLICY_PACK_HASH,
+        "runs_requested": int(runs_requested),
+        "fabricate": bool(fabricate),
+        "fabricate_rate": fabricate_rate,
+        "seed": seed,
+        "reset": bool(reset),
+        "reset_eval": bool(reset_eval),
+        "full_context_n": int(full_context_n),
+        "keep_runs": bool(keep_runs),
+        "store_paths": {
+            "trust": str(TRUST_STORE_PATH),
+            "grants": str(GRANTS_STORE_PATH),
+            "eval": str(EVAL_STATE_PATH),
+        },
+        "summary": {
+            "total_runs": int(counts.get("total_runs", 0)),
+            "by_state": counts.get("by_state", {}),
+            "by_reason_code_top20": counts.get("by_reason_code_top20", {}),
+            "queue_size": int(counts.get("queue_size", 0)),
+            "items_kept": int(counts.get("items_kept", 0)),
+            "abnormal_total": int(abnormal.get("abnormal_total", 0)),
+            "saved": int(abnormal.get("saved", 0)),
+            "skipped_by_cap": int(abnormal.get("skipped_by_cap", 0)),
+        },
+    }
+
+
 def run_simulation(
     *,
     runs: int = 4,
@@ -1617,23 +1662,44 @@ def run_simulation(
     results["eval_after"] = eval_state.to_dict()
 
     results["hitl_queue"] = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
+    results["repro_summary"] = build_repro_summary(
+        results=results,
+        runs_requested=runs,
+        fabricate=fabricate,
+        fabricate_rate=fabricate_rate,
+        seed=seed,
+        reset=reset,
+        reset_eval=reset_eval,
+        full_context_n=full_context_n,
+        keep_runs=keep_runs,
+    )
     return results
 
 
 def _print_summary(results: Dict[str, Any]) -> None:
-    q = results.get("hitl_queue", {}) or {}
-    counts = q.get("counts", {}) or {}
-    by_state = counts.get("by_state", {}) or {}
-    by_rc = counts.get("by_reason_code_top20", {}) or {}
-    ab = results.get("abnormal_arl_persistence", {}) or {}
+    repro = results.get("repro_summary", {}) or {}
+    summary = repro.get("summary", {}) or {}
 
-    print(f"[v{SIM_VERSION}] runs={counts.get('total_runs')} keep_runs={results.get('meta', {}).get('keep_runs')}")
-    print("by_state:", json.dumps(by_state, ensure_ascii=False))
-    print("top_reason_code:", json.dumps(by_rc, ensure_ascii=False))
-    if ab.get("enabled"):
-        print(
-            f"abnormal_total={ab.get('abnormal_total')} saved={ab.get('saved')} skipped_by_cap={ab.get('skipped_by_cap')} out_dir={ab.get('arl_out_dir')}"
-        )
+    print(f"[v{SIM_VERSION}] runs={summary.get('total_runs')} keep_runs={repro.get('keep_runs')}")
+    print("by_state:", json.dumps(summary.get("by_state", {}), ensure_ascii=False, sort_keys=True))
+    print("top_reason_code:", json.dumps(summary.get("by_reason_code_top20", {}), ensure_ascii=False, sort_keys=True))
+    print(
+        "repro:",
+        json.dumps(
+            {
+                "seed": repro.get("seed"),
+                "fabricate_rate": repro.get("fabricate_rate"),
+                "reset": repro.get("reset"),
+                "reset_eval": repro.get("reset_eval"),
+                "full_context_n": repro.get("full_context_n"),
+                "abnormal_total": summary.get("abnormal_total"),
+                "saved": summary.get("saved"),
+                "skipped_by_cap": summary.get("skipped_by_cap"),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        ),
+    )
 
 
 def main(argv: Optional[List[str]] = None) -> int:
