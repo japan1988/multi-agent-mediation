@@ -14,6 +14,9 @@ Maestro Orchestrator is a **research-oriented orchestration framework** for
 This repository focuses on **governance / mediation / negotiation-style simulations**
 and implementation references for **traceable, reproducible, safety-first orchestration**.
 
+Running the simulators produces **reproducible summaries, minimal ARL traces, and optional incident-indexed artifacts** for abnormal runs.  
+The contract tests verify **fixed vocabularies, gate invariants, and fail-closed / HITL continuation behavior**.
+
 ---
 
 ## What this repository is
@@ -108,16 +111,11 @@ This repository contains simulation benches and implementation references for:
 
 If you are new to this repo, start here:
 
-1. Run the recommended simulator (`v5.1.2`)
-2. Run the contract test
-3. Inspect the codebook and logs
-4. Optionally compare with the legacy stable bench (`v4.8`)
-
-If you want a smaller, code-oriented reference for fixed-order orchestration, then additionally:
-
-5. Run `ai_doc_orchestrator_with_mediator_v1_0.py`
-6. Run `tests/test_doc_orchestrator_with_mediator_v1_0.py`
-7. Inspect the mediator / gate / dispatch trace vocabulary in the generated audit log
+1. Run the recommended simulator: `mediation_emergency_contract_sim_v5_1_2.py`
+2. Run the contract test: `tests/test_v5_1_codebook_consistency.py`
+3. Inspect the generated logs, codebook, and optional incident artifacts
+4. Then optionally compare with `mediation_emergency_contract_sim_v4_8.py`
+5. For a smaller fixed-order reference, run `ai_doc_orchestrator_with_mediator_v1_0.py`
 
 ---
 
@@ -149,85 +147,35 @@ python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 ```
 
-### 5) Optional: inspect evidence bundle (v4.8 generated artifact)
-
-* `docs/artifacts/v4_8_artifacts_bundle.zip`
-
-Evidence bundles (zip) are generated artifacts produced by tests/runs.
-The canonical source of truth is the generator scripts + tests.
-
-### 6) Optional: run the doc orchestrator mediator reference
+### 5) Optional: run the doc orchestrator mediator reference
 
 ```bash
 python ai_doc_orchestrator_with_mediator_v1_0.py
 pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
 ```
 
-What this reference stabilizes:
+### 6) What to inspect after running
 
-* fixed gate order
-* mediator advice + HITL continuation semantics
-* fail-closed dispatch behavior
-* audit log vocabulary checked by contract tests
+* simulator stdout summaries
+* generated ARL / audit JSONL traces
+* `incident_index.jsonl` and `INC#...` files when abnormal-only persistence is enabled
+* pinned vocabulary / invariant checks in the pytest contract tests
 
 ---
 
 ## Latest update
 
-This update adds a packaged zip bundle for the emergency contract simulator.
+Recent additions and stabilization highlights:
 
-* Added: `docs/mediation_emergency_contract_sim_pkg.zip` (v5.1.2 convenience bundle)
-* Why: quick download/run for reproducible smoke/stress runs (seeded), without changing entrypoints
-* Canonical source of truth (authoritative logic):
+* Added a convenience zip bundle for the recommended simulator:
 
-  * `mediation_emergency_contract_sim_v5_1_2.py`
-  * `pytest -q tests/test_v5_1_codebook_consistency.py`
-* CI impact: none (docs artifact; not an entrypoint)
-* Note: zip bundles are **generated/convenience artifacts** (reviewable evidence, not authoritative logic). Review before use.
+  * `docs/mediation_emergency_contract_sim_pkg.zip`
+* Stabilized the doc orchestrator mediator reference:
 
-### Fixes in this update (old draft → current)
+  * `ai_doc_orchestrator_with_mediator_v1_0.py`
+  * `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
-This update fixes two scale issues found in the previous v5.1.2 draft:
-
-* **Incident-only persistence mismatch**
-
-  * Problem: some non-incident events were forced to persist as FULL ARL rows (e.g., evaluation/reward), which could bloat logs even on normal runs
-  * Fix: evaluation/reward events are now emitted as **SUMMARY** (no forced persistence). ARL persistence remains **incident-only**
-
-* **Pre-context candidate growth under unique `run_id`**
-
-  * Problem: when `full_context_n > 0` and each run uses a unique `run_id`, in-memory candidate buffers could accumulate across large runs
-  * Fix: per-run candidate buffers are explicitly dropped at the end of each run (`drop_candidates_for_run(run_id)`)
-
-### Additional reference update: doc orchestrator with mediator (v1.0)
-
-This repository also now includes a contract-tested doc orchestration reference:
-
-* Added / stabilized: `ai_doc_orchestrator_with_mediator_v1_0.py`
-* Contract test: `tests/test_doc_orchestrator_with_mediator_v1_0.py`
-
-This reference fixes and stabilizes:
-
-* **Fixed gate order**
-
-  * `mediator_advice -> meaning_gate -> consistency_gate -> relativity_gate -> ethics_gate -> acc_gate -> dispatch`
-
-* **Fail-closed audit behavior**
-
-  * non-RUN paths still emit ordered dispatch trace rows
-  * `sealed=True` appears only in the expected governance layers
-
-* **HITL continuation semantics**
-
-  * `HITL_CONTINUE` is preserved through the final dispatch result when a paused task is resumed by human choice
-
-* **Audit contract alignment**
-
-  * top-level `run_id` / `session_id`
-  * test-pinned layer vocabulary
-  * sanitized logs with no persisted `raw_text` and no `@` remaining in audit output
-
-This update is documentation-neutral for the v5.1.2 simulator path, but adds a smaller reference implementation for audit-oriented orchestration behavior.
+Canonical source of truth remains the Python entrypoints and contract tests.
 
 ---
 
@@ -325,38 +273,6 @@ Documentation-only. No logic changes.
 <p align="center">
   <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
 </p>
-
----
-
-## Execution examples
-
-### Doc orchestrator (reference implementations)
-
-```bash
-python ai_doc_orchestrator_kage3_v1_2_4.py
-python ai_doc_orchestrator_with_mediator_v1_0.py
-pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
-```
-
-### Emergency contract (recommended: v5.1.2) + contract tests
-
-```bash
-python mediation_emergency_contract_sim_v5_1_2.py
-pytest -q tests/test_v5_1_codebook_consistency.py
-```
-
-### Emergency contract (legacy stable bench: v4.8)
-
-```bash
-python mediation_emergency_contract_sim_v4_8.py
-pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-```
-
-### Emergency contract (v4.4 stress)
-
-```bash
-python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-```
 
 ---
 
@@ -486,6 +402,3 @@ What did NOT change (still true in v5):
 ## License
 
 Apache License 2.0 (see `LICENSE`)
-
-```
-```
