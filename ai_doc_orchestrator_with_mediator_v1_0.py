@@ -489,11 +489,10 @@ class Orchestrator:
             sealed = True
         else:
             decision = current_decision
-            reason = (
-                REASON_ETHICS_OK
-                if current_decision == DECISION_RUN
-                else current_reason
-            )
+            if current_decision == DECISION_RUN and current_reason != REASON_HITL_CONTINUE:
+                reason = REASON_ETHICS_OK
+            else:
+                reason = current_reason
             sealed = None
 
         self.audit.log(
@@ -524,7 +523,11 @@ class Orchestrator:
             reason = REASON_ACC_EXTERNAL_SIDE_EFFECT
         else:
             decision = DECISION_RUN
-            reason = REASON_ACC_OK
+            reason = (
+                REASON_HITL_CONTINUE
+                if current_reason == REASON_HITL_CONTINUE
+                else REASON_ACC_OK
+            )
 
         self.audit.log(
             self._audit_event(
