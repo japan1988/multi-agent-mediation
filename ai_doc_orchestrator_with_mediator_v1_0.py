@@ -463,7 +463,11 @@ class Orchestrator:
             )
             return DECISION_PAUSE, REASON_HITL_STOP
 
-        wait_reason = REASON_HITL_WAIT if current_reason == REASON_RFL_RELATIVE else current_reason
+        wait_reason = (
+            REASON_HITL_WAIT
+            if current_reason == REASON_RFL_RELATIVE
+            else current_reason
+        )
         self.audit.log(
             self._audit_event(
                 task.task_id,
@@ -485,7 +489,11 @@ class Orchestrator:
             sealed = True
         else:
             decision = current_decision
-            reason = REASON_ETHICS_OK if current_decision == DECISION_RUN else current_reason
+            reason = (
+                REASON_ETHICS_OK
+                if current_decision == DECISION_RUN
+                else current_reason
+            )
             sealed = None
 
         self.audit.log(
@@ -554,19 +562,25 @@ class Orchestrator:
             }
 
         artifact_preview = self._build_artifact_preview(task)
+        final_reason = (
+            REASON_HITL_CONTINUE
+            if current_reason == REASON_HITL_CONTINUE
+            else REASON_DISPATCH_OK
+        )
+
         self.audit.log(
             self._audit_event(
                 task.task_id,
                 LAYER_DISPATCH,
                 DECISION_RUN,
-                REASON_DISPATCH_OK,
+                final_reason,
                 artifact_preview=artifact_preview,
                 safe_context={"kind": task.kind},
             )
         )
         return {
             "decision": DECISION_RUN,
-            "reason_code": REASON_DISPATCH_OK,
+            "reason_code": final_reason,
             "artifact_preview": artifact_preview,
         }
 
@@ -635,8 +649,17 @@ def run_demo() -> None:
         tasks=[
             {"task_id": "T1", "kind": "xlsx", "prompt": "売上サマリーを表にして"},
             {"task_id": "T2", "kind": "xlsx", "prompt": "売上をいい感じでまとめて"},
-            {"task_id": "T3", "kind": "xlsx", "prompt": "売上表を作ってメール送信して", "hitl": "CONTINUE"},
-            {"task_id": "T4", "kind": "xlsx", "prompt": "顧客連絡先 test@example.com と 090-1234-5678 を含めて"},
+            {
+                "task_id": "T3",
+                "kind": "xlsx",
+                "prompt": "売上表を作ってメール送信して",
+                "hitl": "CONTINUE",
+            },
+            {
+                "task_id": "T4",
+                "kind": "xlsx",
+                "prompt": "顧客連絡先 test@example.com と 090-1234-5678 を含めて",
+            },
         ],
         run_id="DEMO",
         session_id="DEMO_SESSION",
