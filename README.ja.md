@@ -1,244 +1,199 @@
-# 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
+# 📘 Maestro Orchestrator — オーケストレーション・フレームワーク（fail-closed + HITL）
 
 [![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
 ![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
 [![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
 [![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
 
-> **If uncertain, stop. If risky, escalate.**  
-> Research / educational governance simulations for agentic workflows.
+> **不確実なら止まる。危険ならエスカレーションする。**  
+> エージェント型ワークフロー向けの研究・教育用ガバナンスシミュレーション。
 
-Maestro Orchestrator is a **research-oriented orchestration framework** for
-**fail-closed**, **HITL (Human-in-the-Loop)**, and **audit-ready** agent workflows.
+Maestro Orchestrator は、**fail-closed**、**HITL（Human-in-the-Loop）**、**監査可能性** を重視した  
+**研究指向のオーケストレーション・フレームワーク**です。
 
-This repository focuses on **governance / mediation / negotiation-style simulations**
-and implementation references for **traceable, reproducible, safety-first orchestration**.
+このリポジトリは、**ガバナンス / 調停 / 交渉型シミュレーション** と、  
+**追跡可能・再現可能・安全性優先のオーケストレーション** を実装参照としてまとめたものです。
 
----
-
-## What this repository is
-
-This repository provides:
-
-- **Fail-closed + HITL orchestration benches** for governance-style workflows
-- **Reproducible simulators** with seeded runs and pytest-based contract checks
-- **Audit-ready traces** via minimal ARL logs
-- **Reference implementations** for orchestration / gating behavior
-
-This is best read as a:
-
-- **research prototype**
-- **educational reference**
-- **governance / safety simulation bench**
-
-It is **not** a production autonomy framework.
+シミュレータを実行すると、**再現可能な集計結果、最小ARLトレース、異常時のみの incident-indexed artifact** を出力できます。  
+契約テストでは、**固定語彙、ゲート不変条件、fail-closed / HITL continuation の挙動** を確認できます。
 
 ---
 
-## Quick links
+## このリポジトリで提供するもの
 
-- **Japanese README:** [README.ja.md](README.ja.md)
-- **Docs index:** [docs/README.md](docs/README.md)
-- **Recommended simulator:** `mediation_emergency_contract_sim_v5_1_2.py`
-- **Contract test:** `tests/test_v5_1_codebook_consistency.py`
-- **Legacy stable bench:** `mediation_emergency_contract_sim_v4_8.py`
-- **Doc orchestrator (mediator reference):** `ai_doc_orchestrator_with_mediator_v1_0.py`
-- **Doc orchestrator contract test:** `tests/test_doc_orchestrator_with_mediator_v1_0.py`
+このリポジトリには、以下が含まれます。
+
+- **Fail-closed + HITL のオーケストレーション検証ベンチ**
+- **seed 固定で再現可能なシミュレータ** と `pytest` ベースの契約チェック
+- **最小 ARL ログ** による監査向けトレース
+- **オーケストレーション / ゲーティング挙動の実装参照**
+
+このリポジトリは、次のような位置づけで読むのが適切です。
+
+- **研究用プロトタイプ**
+- **教育用リファレンス**
+- **ガバナンス / 安全性シミュレーションベンチ**
+
+これは **本番用の自律実行フレームワークではありません**。
+
+---
+
+## クイックリンク
+
+- **英語 README:** [README.md](README.md)
+- **ドキュメント索引:** [docs/README.md](docs/README.md)
+- **推奨シミュレータ:** `mediation_emergency_contract_sim_v5_1_2.py`
+- **契約テスト:** `tests/test_v5_1_codebook_consistency.py`
+- **旧安定ベンチ:** `mediation_emergency_contract_sim_v4_8.py`
+- **ドキュメント・オーケストレータ（mediator 参照実装）:** `ai_doc_orchestrator_with_mediator_v1_0.py`
+- **ドキュメント・オーケストレータ契約テスト:** `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
 ---
 
 ## ⚡ TL;DR
 
-- **Fail-closed + HITL** gating benches for negotiation/mediation-style workflows (research/education)
-- **Reproducibility-first**: seeded runs + `pytest` contract checks (vocabulary/invariants)
-- **Audit-ready**: minimal ARL logs; optional incident-only ARL indexing (`INC#...`) to avoid log bloat
-- **Reference doc orchestration path**: mediator + fixed gate order + contract-tested HITL continuation semantics
+- **Fail-closed + HITL** を前提とした交渉 / 調停系ワークフローの検証ベンチ（研究 / 教育向け）
+- **再現性優先**: seed 固定実行 + `pytest` 契約テスト（語彙 / 不変条件）
+- **監査向け**: 最小 ARL ログ、必要に応じて `INC#...` 形式の異常時のみ ARL インデックス化
+- **ドキュメント系参照実装**: mediator + 固定ゲート順 + 契約テスト済みの HITL continuation semantics
 
 ---
 
-## ⚠️ Purpose & Disclaimer (Research & Education)
+## ⚠️ 目的と免責（研究・教育用途）
 
-**This is a research/educational reference implementation (prototype).**  
-Do not use it to execute or facilitate harmful actions (e.g., exploitation, intrusion, surveillance, impersonation, destruction, or data theft), or to violate any applicable terms/policies, laws, or internal rules of your services or execution environment.
+**これは研究 / 教育用の参照実装（プロトタイプ）です。**  
+有害行為（例: 悪用、侵入、監視、なりすまし、破壊、データ窃取）を実行・支援する目的や、利用先サービス・実行環境の規約 / ポリシー / 法令 / 内部ルールに反する用途では使用しないでください。
 
-This project focuses on **education/research** and **defensive verification** (e.g., log growth mitigation and validating fail-closed + HITL behavior).  
-It is **not** intended to publish exploitation tactics or facilitate wrongdoing.
+このプロジェクトは、**教育 / 研究** と **防御的検証**  
+（例: ログ肥大の抑制、fail-closed + HITL 挙動の検証）を目的としています。  
+**攻撃手法の公開や不正行為の支援を目的としたものではありません。**
 
-### Risk / Warranty / Liability
+### リスク / 無保証 / 責任制限
 
-- **Use at your own risk:** verify relevant terms/policies.
-- **Isolated environment first:** start with local smoke tests (no external networks; no real systems/data).
-- **AS IS / no warranty:** provided without warranty of any kind.
-- **Limitation of liability:** to the maximum extent permitted by applicable law, the author assumes no liability for damages arising from use of the code, documentation, or generated artifacts (including misuse by third parties).
+- **自己責任で使用してください:** 関連する規約・ポリシーは必ず確認してください。
+- **まず隔離環境で:** ローカルのスモークテストから開始してください（外部ネットワークなし、実システム / 実データなし）。
+- **現状有姿（AS IS） / 無保証:** いかなる保証も付されません。
+- **責任制限:** 適用法令で認められる最大限の範囲で、コード・文書・生成物の利用から生じる損害について作者は責任を負いません（第三者による誤用を含む）。
 
-### Codebook disclaimer
+### コードブックに関する注意
 
-The included codebook is a **demo/reference artifact**. Do **not** use it as-is in real deployments; create your own based on your requirements, threat model, and applicable policies/terms.  
-The codebook is for compact encoding/decoding of log fields and is **NOT encryption** (no confidentiality).
+同梱のコードブックは **デモ / 参照用アーティファクト** です。  
+実運用でそのまま使わず、要件・脅威モデル・適用ポリシー / 規約に応じて自作してください。  
+コードブックはログ項目の簡易エンコード / デコード用であり、**暗号ではありません**（機密性はありません）。
 
-### Testing & results disclaimer
+### テストと結果に関する注意
 
-Smoke tests and stress runs validate only the scenarios executed under specific runtime conditions.  
-They do **not** guarantee correctness, security, safety, or fitness for any purpose in real-world deployments. Results may vary depending on OS/Python versions, hardware, configuration, and operational use.
+スモークテストやストレスランは、その時点の実行条件で走らせたシナリオだけを検証します。  
+現実環境での正しさ・安全性・適合性を保証するものではありません。  
+結果は OS / Python バージョン / ハードウェア / 設定 / 運用条件により変わり得ます。
 
 ---
 
-## Why this repository exists
+## このリポジトリを作った理由
 
-Maestro Orchestrator is built around three priorities:
+Maestro Orchestrator は、次の3つを優先して設計しています。
 
 - **Fail-closed**
-  - If uncertain, unstable, or risky, do not continue silently.
-- **HITL escalation**
-  - Decisions requiring human judgment are explicitly escalated.
-- **Traceability**
-  - Decision flows are reproducible and audit-ready through minimal ARL logs.
+  - 不確実・不安定・危険なら、黙って続行しない
+- **HITL エスカレーション**
+  - 人間の判断が必要な決定を明示的に返す
+- **追跡可能性**
+  - 決定フローを最小 ARL ログで再現可能・監査可能にする
 
-This repository contains simulation benches and implementation references for:
+このリポジトリには、以下のためのシミュレーションベンチと実装参照が含まれます。
 
-- negotiation
-- mediation
-- governance-style workflows
-- gating behavior
-- audit-oriented orchestration
+- 交渉
+- 調停
+- ガバナンス型ワークフロー
+- ゲーティング挙動
+- 監査志向オーケストレーション
 
 ---
 
-## Recommended path
+## 推奨の読み進め方
 
-If you are new to this repo, start here:
+初見なら、まず次の順で見るのがおすすめです。
 
-1. Run the recommended simulator (`v5.1.2`)
-2. Run the contract test
-3. Inspect the codebook and logs
-4. Optionally compare with the legacy stable bench (`v4.8`)
-
-If you want a smaller, code-oriented reference for fixed-order orchestration, then additionally:
-
-5. Run `ai_doc_orchestrator_with_mediator_v1_0.py`
-6. Run `tests/test_doc_orchestrator_with_mediator_v1_0.py`
-7. Inspect the mediator / gate / dispatch trace vocabulary in the generated audit log
+1. 推奨シミュレータ `mediation_emergency_contract_sim_v5_1_2.py` を実行する
+2. 契約テスト `tests/test_v5_1_codebook_consistency.py` を実行する
+3. 生成されたログ、コードブック、必要なら incident artifact を確認する
+4. その後、必要に応じて `mediation_emergency_contract_sim_v4_8.py` と比較する
+5. より小さい固定順序の参照実装として `ai_doc_orchestrator_with_mediator_v1_0.py` を確認する
 
 ---
 
 ## Quickstart
 
-### 1) Run the recommended emergency contract simulator (v5.1.2)
+### 1) 推奨の緊急契約シミュレータ（v5.1.2）を実行
 
-Optional bundle: `docs/mediation_emergency_contract_sim_pkg.zip` (convenience only)
+任意の便利パッケージ: `docs/mediation_emergency_contract_sim_pkg.zip`  
+（利便性のための zip であり、正本ではありません）
 
 ```bash
 python mediation_emergency_contract_sim_v5_1_2.py --runs 100
 ````
 
-### 2) Run the contract tests (v5.1.x: simulator + codebook consistency)
+### 2) 契約テストを実行（v5.1.x: simulator + codebook consistency）
 
 ```bash
 pytest -q tests/test_v5_1_codebook_consistency.py
 ```
 
-### 3) Inspect / pin the demo codebook (v5.1-demo.1)
+### 3) デモコードブックを確認 / 固定（v5.1-demo.1）
 
-* `log_codebook_v5_1_demo_1.json` (demo codebook; pin the version when exchanging artifacts)
-* Note: codebook is **NOT encryption** (no confidentiality)
+* `log_codebook_v5_1_demo_1.json`
+  （デモ用コードブック。artifact をやり取りする場合はバージョン固定を推奨）
+* 注意: コードブックは **暗号ではありません**（機密性なし）
 
-### 4) Optional: run the legacy stable bench (v4.8)
+### 4) 任意: 旧安定ベンチ（v4.8）を実行
 
 ```bash
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 ```
 
-### 5) Optional: inspect evidence bundle (v4.8 generated artifact)
-
-* `docs/artifacts/v4_8_artifacts_bundle.zip`
-
-Evidence bundles (zip) are generated artifacts produced by tests/runs.
-The canonical source of truth is the generator scripts + tests.
-
-### 6) Optional: run the doc orchestrator mediator reference
+### 5) 任意: mediator 参照実装の doc orchestrator を実行
 
 ```bash
 python ai_doc_orchestrator_with_mediator_v1_0.py
 pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
 ```
 
-What this reference stabilizes:
+### 6) 実行後に見るべきもの
 
-* fixed gate order
-* mediator advice + HITL continuation semantics
-* fail-closed dispatch behavior
-* audit log vocabulary checked by contract tests
+* simulator の標準出力サマリ
+* 生成された ARL / audit JSONL トレース
+* 異常時のみ保存を有効にした場合の `incident_index.jsonl` と `INC#...` ファイル
+* `pytest` 契約テストで固定している語彙 / 不変条件チェック
 
 ---
 
 ## Latest update
 
-This update adds a packaged zip bundle for the emergency contract simulator.
+最近の追加・安定化ポイントは次の通りです。
 
-* Added: `docs/mediation_emergency_contract_sim_pkg.zip` (v5.1.2 convenience bundle)
-* Why: quick download/run for reproducible smoke/stress runs (seeded), without changing entrypoints
-* Canonical source of truth (authoritative logic):
+* 推奨シミュレータ向けの便利 zip バンドルを追加
 
-  * `mediation_emergency_contract_sim_v5_1_2.py`
-  * `pytest -q tests/test_v5_1_codebook_consistency.py`
-* CI impact: none (docs artifact; not an entrypoint)
-* Note: zip bundles are **generated/convenience artifacts** (reviewable evidence, not authoritative logic). Review before use.
+  * `docs/mediation_emergency_contract_sim_pkg.zip`
+* doc orchestrator の mediator 参照実装を安定化
 
-### Fixes in this update (old draft → current)
+  * `ai_doc_orchestrator_with_mediator_v1_0.py`
+  * `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
-This update fixes two scale issues found in the previous v5.1.2 draft:
-
-* **Incident-only persistence mismatch**
-
-  * Problem: some non-incident events were forced to persist as FULL ARL rows (e.g., evaluation/reward), which could bloat logs even on normal runs
-  * Fix: evaluation/reward events are now emitted as **SUMMARY** (no forced persistence). ARL persistence remains **incident-only**
-
-* **Pre-context candidate growth under unique `run_id`**
-
-  * Problem: when `full_context_n > 0` and each run uses a unique `run_id`, in-memory candidate buffers could accumulate across large runs
-  * Fix: per-run candidate buffers are explicitly dropped at the end of each run (`drop_candidates_for_run(run_id)`)
-
-### Additional reference update: doc orchestrator with mediator (v1.0)
-
-This repository also now includes a contract-tested doc orchestration reference:
-
-* Added / stabilized: `ai_doc_orchestrator_with_mediator_v1_0.py`
-* Contract test: `tests/test_doc_orchestrator_with_mediator_v1_0.py`
-
-This reference fixes and stabilizes:
-
-* **Fixed gate order**
-
-  * `mediator_advice -> meaning_gate -> consistency_gate -> relativity_gate -> ethics_gate -> acc_gate -> dispatch`
-
-* **Fail-closed audit behavior**
-
-  * non-RUN paths still emit ordered dispatch trace rows
-  * `sealed=True` appears only in the expected governance layers
-
-* **HITL continuation semantics**
-
-  * `HITL_CONTINUE` is preserved through the final dispatch result when a paused task is resumed by human choice
-
-* **Audit contract alignment**
-
-  * top-level `run_id` / `session_id`
-  * test-pinned layer vocabulary
-  * sanitized logs with no persisted `raw_text` and no `@` remaining in audit output
-
-This update is documentation-neutral for the v5.1.2 simulator path, but adds a smaller reference implementation for audit-oriented orchestration behavior.
+正本は引き続き Python のエントリポイントと契約テストです。
 
 ---
 
-## Stress tests (safe-by-default)
+## ストレステスト（安全寄りの既定値）
 
-v5.1.2 is designed to avoid memory blow-ups by default:
+v5.1.2 は、既定でメモリ肥大を避けるように設計されています。
 
-* Aggregation-only mode (`keep_runs=False` default): no full per-run results kept in memory
-* Optional: save ARL only on abnormal runs (incident indexing with `INC#...`)
+* 集計のみモード（既定: `keep_runs=False`）
+  実行ごとの完全結果をメモリ保持しない
+* 任意で、異常実行のみ ARL 保存
+  (`INC#...` 形式の incident indexing)
 
-### A) Lightweight smoke → medium stress (recommended ramp)
+### A) 軽い smoke → 中程度 stress（推奨ランプ）
 
 ```bash
 # 1) Smoke
@@ -248,9 +203,9 @@ python mediation_emergency_contract_sim_v5_1_2.py --runs 200
 python mediation_emergency_contract_sim_v5_1_2.py --runs 10000 --seed 42
 ```
 
-### B) Force incidents (example: fabricate-rate 10% over 200 runs)
+### B) incident を強制発生させる例（200 runs / fabricate-rate 10%）
 
-This should reliably create some abnormal runs and generate `INC#` files when enabled:
+異常実行が発生し、設定時には `INC#` ファイルが生成されます。
 
 ```bash
 python mediation_emergency_contract_sim_v5_1_2.py \
@@ -262,21 +217,21 @@ python mediation_emergency_contract_sim_v5_1_2.py \
   --max-arl-files 1000
 ```
 
-Outputs (when abnormal runs occur):
+異常が発生した場合の出力:
 
-* `arl_out/INC#000001__SIM#B000xx.arl.jsonl` (incident ARL)
-* `arl_out/incident_index.jsonl` (one line per incident)
-* `arl_out/incident_counter.txt` (persistent counter)
+* `arl_out/INC#000001__SIM#B000xx.arl.jsonl` （incident ARL）
+* `arl_out/incident_index.jsonl` （incident ごとの1行索引）
+* `arl_out/incident_counter.txt` （永続カウンタ）
 
-Tip: keep `--max-arl-files` to cap disk growth.
+補足: `--max-arl-files` を設定してディスク増加を抑えるのを推奨します。
 
 ---
 
-## Diagrams & docs
+## 図とドキュメント
 
-Browse all diagrams and bundles here: **[docs/README.md](docs/README.md)**
+すべての図とバンドルは **[docs/README.md](docs/README.md)** から参照できます。
 
-Key diagrams:
+主な図:
 
 * Emergency contract overview (v5.1.2): [docs/architecture_v5_1_2_emergency_contract_overview.png](docs/architecture_v5_1_2_emergency_contract_overview.png)
 * Architecture (code-aligned): [docs/architecture_code_aligned.png](docs/architecture_code_aligned.png)
@@ -284,9 +239,9 @@ Key diagrams:
 * Multi-agent hierarchy: [docs/multi_agent_hierarchy_architecture.png](docs/multi_agent_hierarchy_architecture.png)
 * Sentiment context flow: [docs/sentiment_context_flow.png](docs/sentiment_context_flow.png)
 
-Recommended reading order:
+おすすめの読み順:
 
-1. This README
+1. この README
 2. `docs/README.md`
 3. `mediation_emergency_contract_sim_v5_1_2.py`
 4. `tests/test_v5_1_codebook_consistency.py`
@@ -295,9 +250,9 @@ Recommended reading order:
 
 ---
 
-## Architecture (high level)
+## アーキテクチャ（概要）
 
-Audit-ready and fail-closed control flow:
+監査可能・fail-closed な制御フロー:
 
 ```text
 agents
@@ -307,9 +262,9 @@ agents
   → audit logs (ARL)
 ```
 
-### Architecture (overview, v5.1.2)
+### アーキテクチャ概要（v5.1.2）
 
-Documentation-only. No logic changes.
+文書説明用です。ロジック変更はありません。
 
 <p align="center">
   <img src="docs/architecture_v5_1_2_emergency_contract_overview.png"
@@ -317,10 +272,10 @@ Documentation-only. No logic changes.
        width="860">
 </p>
 
-### Architecture (code-aligned diagrams)
+### アーキテクチャ図（コード整合版）
 
-The following diagram is aligned with the current code vocabulary.
-Documentation-only. No logic changes.
+以下の図は、現在のコード語彙に合わせています。
+文書説明用であり、ロジック変更はありません。
 
 <p align="center">
   <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
@@ -328,164 +283,136 @@ Documentation-only. No logic changes.
 
 ---
 
-## Execution examples
-
-### Doc orchestrator (reference implementations)
-
-```bash
-python ai_doc_orchestrator_kage3_v1_2_4.py
-python ai_doc_orchestrator_with_mediator_v1_0.py
-pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
-```
-
-### Emergency contract (recommended: v5.1.2) + contract tests
-
-```bash
-python mediation_emergency_contract_sim_v5_1_2.py
-pytest -q tests/test_v5_1_codebook_consistency.py
-```
-
-### Emergency contract (legacy stable bench: v4.8)
-
-```bash
-python mediation_emergency_contract_sim_v4_8.py
-pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-```
-
-### Emergency contract (v4.4 stress)
-
-```bash
-python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-```
-
----
-
-## Version deltas
+## バージョン差分
 
 ### v5.0.1 → v5.1.2
 
-v5.1.2 strengthens the simulator toward large-run stability and incident-only persistence.
+v5.1.2 は、大規模実行での安定性と incident-only persistence を強化しています。
 
-* **Index + aggregation-only by default**
+* **既定で index + aggregation-only**
 
-  * No per-run results kept in memory (prevents memory blow-ups on large `--runs`)
-  * Outputs focus on counters + HITL summary (optional items)
+  * `--runs` が大きくても、実行単位の結果をメモリに保持しない
+  * 出力は counters + HITL summary 中心（必要に応じて items）
 
-* **Incident indexing (optional)**
+* **incident indexing（任意）**
 
-  * Abnormal runs are assigned `INC#000001...`
-  * Abnormal ARL saved as `{arl_out_dir}/{incident_id}__{run_id}.arl.jsonl`
-  * Index appended to `{arl_out_dir}/incident_index.jsonl`
-  * Persistent counter stored at `{arl_out_dir}/incident_counter.txt`
+  * 異常実行に `INC#000001...` を付与
+  * 異常 ARL を `{arl_out_dir}/{incident_id}__{run_id}.arl.jsonl` に保存
+  * 索引を `{arl_out_dir}/incident_index.jsonl` に追記
+  * 永続カウンタを `{arl_out_dir}/incident_counter.txt` に保存
 
-Still preserved:
+引き続き維持されるもの:
 
-* Abnormal-only ARL persistence (pre-context + incident + post-context)
-* Tamper-evident ARL hash chaining (demo key default for OSS demo)
-* Fabricate-rate mixing + deterministic seeding (`--fabricate-rate` / `--seed`)
+* 異常時のみの ARL 保存（pre-context + incident + post-context）
+* 改ざん検知向け ARL hash chain（OSS デモでは demo key を既定使用）
+* fabricate-rate 混合と seed による決定的再現 (`--fabricate-rate` / `--seed`)
 
-Core invariants:
+主要な不変条件:
 
-* `sealed` may be set only by `ethics_gate` / `acc_gate`
-* `relativity_gate` is never sealed (`PAUSE_FOR_HITL`, `overrideable=True`, `sealed=False`)
+* `sealed` を設定できるのは `ethics_gate` / `acc_gate` のみ
+* `relativity_gate` は封印されない
+  （`PAUSE_FOR_HITL`, `overrideable=True`, `sealed=False`）
 
-### Practical stability improvements in v5.1.2
+### v5.1.2 の実用上の安定化ポイント
 
-In addition to the behavioral changes above, v5.1.2 also improves repository-level stability in three practical areas:
+上記の挙動変更に加えて、v5.1.2 はリポジトリ運用上の安定性も改善しています。
 
-* **Persistence handling**
+* **永続化処理**
 
-  * Trust / grants / eval stores now use more consistent path handling and serialization
-  * This reduces mismatch between runtime behavior and saved artifacts
+  * Trust / grants / eval store の path handling と serialization をより一貫化
+  * 実行時挙動と保存成果物の不一致を減らす
 
-* **Test compatibility**
+* **テスト互換性**
 
-  * Persistent store paths are exposed more consistently and are easier to patch in tests
-  * This improves isolation in CI and makes contract/stress checks more reproducible
+  * 永続ストアの path をテスト側からより扱いやすく
+  * CI の分離性と再現性を改善
 
-* **Output stability**
+* **出力安定性**
 
-  * JSON output writing is more consistent (UTF-8 / newline-stable / serializer-stable)
-  * This reduces avoidable differences across environments and makes result artifacts easier to inspect
+  * JSON 出力を UTF-8 / 改行安定 / serializer 安定 に寄せた
+  * 環境差による不要差分を減らし、artifact を比較しやすくした
 
 ### Doc orchestrator mediator reference (v1.0)
 
-`ai_doc_orchestrator_with_mediator_v1_0.py` is a smaller orchestration reference focused on:
+`ai_doc_orchestrator_with_mediator_v1_0.py` は、より小さい参照実装で、主に次を対象とします。
 
-* fixed gate ordering
-* mediator advice without stop authority
-* explicit HITL continuation handling
-* sanitized, audit-oriented JSONL traces
-* contract-tested orchestration vocabulary
+* 固定ゲート順
+* 停止権限を持たない mediator advice
+* 明示的な HITL continuation handling
+* サニタイズ済みの監査向け JSONL トレース
+* 契約テスト済みのオーケストレーション語彙
 
-This reference is intended as a compact implementation example for audit-oriented orchestration, rather than a replacement for the larger emergency-contract bench family.
+これは、大きな emergency-contract bench 系の置き換えではなく、
+監査指向オーケストレーションのコンパクトな実装例です。
 
-### V1 → V4 (conceptual)
+### V1 → V4（概念）
 
-`mediation_emergency_contract_sim_v1.py` demonstrates the minimum viable pipeline:
-a linear, event-driven workflow with fail-closed stops and minimal audit logs.
+`mediation_emergency_contract_sim_v1.py` は最小パイプラインを示します。
+線形でイベント駆動のフローに、fail-closed stop と最小 audit log を備えた形です。
 
-`mediation_emergency_contract_sim_v4.py` turns that pipeline into a repeatable governance bench by adding early rejection and controlled automation.
+`mediation_emergency_contract_sim_v4.py` は、それを繰り返し可能な governance bench に拡張し、早期拒否と制御付き自動化を導入します。
 
-Added in v4:
+v4 で追加されたもの:
 
-* Evidence gate (invalid/irrelevant/fabricated evidence triggers fail-closed stops)
-* Draft lint gate (draft-only semantics and scope boundaries)
-* Trust system (score + streak + cooldown)
-* AUTH HITL auto-skip (safe friction reduction via trust + grant, with ARL reasons)
+* Evidence gate
+  （無効 / 無関係 / fabricate evidence で fail-closed stop）
+* Draft lint gate
+  （draft-only semantics と scope boundary）
+* Trust system
+  （score + streak + cooldown）
+* AUTH HITL auto-skip
+  （trust + grant による安全寄り friction reduction と ARL reason）
 
-### V4 → V5 (conceptual)
+### V4 → V5（概念）
 
-v4 focuses on a stable “emergency contract” governance bench with smoke tests and stress runners.
-v5 extends that bench toward artifact-level reproducibility and contract-style compatibility checks.
+v4 は安定した “emergency contract” governance bench として smoke / stress を重視しています。
+v5 はそこから、artifact-level reproducibility と contract-style compatibility checks を強化します。
 
-Added / strengthened in v5:
+v5 で追加 / 強化されたもの:
 
-* **Log codebook (demo) + contract tests**
-  Enforces emitted vocabularies (`layer/decision/final_decider/reason_code`) via pytest
+* **Log codebook（demo） + contract tests**
+  `layer / decision / final_decider / reason_code` の語彙を pytest で固定
 
-* **Reproducibility surface (pin what matters)**
-  Pin simulator version, test version, and codebook version
+* **再現性の固定面を拡大**
+  simulator version、test version、codebook version を固定
 
-* **Tighter invariant enforcement**
-  Explicit tests/contracts around invariants reduce silent drift
+* **不変条件のより明示的な強化**
+  invariant に対するテスト / 契約で silent drift を減らす
 
-What did NOT change (still true in v5):
+v5 でも変わっていないこと:
 
-* Research / educational intent
-* Fail-closed + HITL semantics
-* Use synthetic data only and run in isolated environments
-* No security guarantees (codebook is not encryption; tests do not guarantee safety in real-world deployments)
-
----
-
-## Project intent / non-goals
-
-### Intent
-
-* Reproducible safety and governance simulations
-* Explicit HITL semantics (pause/reset/ban)
-* Audit-ready decision traces (minimal ARL)
-
-### Non-goals
-
-* Production-grade autonomous deployment
-* Unbounded self-directed agent control
-* Safety claims beyond what is explicitly tested
+* 研究 / 教育目的
+* Fail-closed + HITL の意味論
+* synthetic data のみを使い、隔離環境で実行する前提
+* 安全保証はしない
+  （コードブックは暗号ではなく、テストも現実環境の安全性を保証しない）
 
 ---
 
-## Data & safety notes
+## プロジェクトの目的 / 非目的
 
-* Use synthetic/dummy data only
-* Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible
-* Treat generated bundles (zip) as reviewable evidence, not canonical source
+### 目的
+
+* 再現可能な安全性 / ガバナンスシミュレーション
+* 明示的な HITL semantics（pause / reset / ban）
+* 監査向け decision trace（最小 ARL）
+
+### 非目的
+
+* 本番向け自律運用
+* 無制限の自己指向エージェント制御
+* 明示的にテストされていない安全性主張
 
 ---
 
-## License
+## データと安全性に関する注意
 
-Apache License 2.0 (see `LICENSE`)
+* synthetic / dummy data のみを使用してください
+* 実行ログはなるべくコミットせず、evidence artifact は最小かつ再現可能に保ってください
+* 生成された zip バンドルは、正本ではなく reviewable evidence として扱ってください
 
-```
-```
+---
+
+## ライセンス
+
+Apache License 2.0（`LICENSE` を参照）
