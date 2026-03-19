@@ -1,4 +1,4 @@
-# ai_doc_orchestrator_with_mediator_v1_0.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -19,6 +19,7 @@ HITL_STOP = "STOP"
 KNOWN_KINDS = {"xlsx", "pptx"}
 
 REASON_MEDIATOR_RUN = "MEDIATOR_RUN_OK"
+REASON_MEDIATOR_HITL_CONTINUE = "MEDIATOR_HITL_CONTINUE"
 REASON_HITL_CONTINUE = "HITL_CONTINUE"
 REASON_HITL_STOP = "HITL_STOP_REQUESTED"
 
@@ -33,10 +34,10 @@ REASON_RFL_OK = "RFL_OK"
 REASON_RFL_RELATIVE = "RFL_RELATIVE_REQUEST"
 
 REASON_ETHICS_OK = "ETHICS_OK"
-REASON_ETHICS_PII = "SEALED_BY_ETHICS_PII_LIKE"
+REASON_ETHICS_PII = "ETHICS_PII_DETECTED"
 
 REASON_ACC_OK = "ACC_OK"
-REASON_ACC_EXTERNAL_SIDE_EFFECT = "ACC_EXTERNAL_SIDE_EFFECT_REQUEST"
+REASON_ACC_EXTERNAL_SIDE_EFFECT = "ACC_EXTERNAL_SIDE_EFFECT_REQUIRES_HITL"
 
 REASON_DISPATCH_OK = "ORCH_RUN_OK"
 REASON_HITL_WAIT = "HITL_UNSPECIFIED_WAIT"
@@ -87,7 +88,9 @@ SIDE_EFFECT_PATTERNS = (
     r"アップロード",
 )
 
-EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
+EMAIL_PATTERN = re.compile(
+    r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
+)
 PHONE_PATTERN = re.compile(
     r"(?:\+?\d{1,3}[-\s]?)?(?:\(?\d{2,4}\)?[-\s]?)?\d{2,4}[-\s]?\d{3,4}[-\s]?\d{3,4}"
 )
@@ -179,14 +182,18 @@ def contains_pattern(patterns: Sequence[str], text: str) -> bool:
 
 
 class AuditLogger:
-    def __init__(self, path: str, run_id: str, session_id: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        run_id: str = "",
+        session_id: str = "",
+    ) -> None:
         self.path = path
         self.run_id = ensure_text(run_id)
         self.session_id = ensure_text(session_id)
 
     def log(self, event: AuditEvent) -> None:
         payload = asdict(event)
-        payload.pop("raw_text", None)
         sanitized = sanitize_json_value(payload)
         line = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
         if "@" in line:
@@ -226,7 +233,7 @@ class Mediator:
             reason_code = REASON_HITL_STOP
         elif task.hitl == HITL_CONTINUE:
             decision = DECISION_RUN
-            reason_code = REASON_HITL_CONTINUE
+            reason_code = REASON_MEDIATOR_HITL_CONTINUE
         else:
             decision = DECISION_RUN
             reason_code = REASON_MEDIATOR_RUN
@@ -446,7 +453,10 @@ class Orchestrator:
                     LAYER_HITL,
                     DECISION_RUN,
                     REASON_HITL_CONTINUE,
-                    safe_context={"hitl": task.hitl, "from_reason": current_reason},
+                    safe_context={
+                        "hitl": task.hitl,
+                        "from_reason": current_reason,
+                    },
                 )
             )
             return DECISION_RUN, REASON_HITL_CONTINUE
@@ -458,7 +468,10 @@ class Orchestrator:
                     LAYER_HITL,
                     DECISION_PAUSE,
                     REASON_HITL_STOP,
-                    safe_context={"hitl": task.hitl, "from_reason": current_reason},
+                    safe_context={
+                        "hitl": task.hitl,
+                        "from_reason": current_reason,
+                    },
                 )
             )
             return DECISION_PAUSE, REASON_HITL_STOP
@@ -474,7 +487,10 @@ class Orchestrator:
                 LAYER_HITL,
                 DECISION_PAUSE,
                 wait_reason,
-                safe_context={"hitl": task.hitl, "from_reason": current_reason},
+                safe_context={
+                    "hitl": task.hitl,
+                    "from_reason": current_reason,
+                },
             )
         )
         return DECISION_PAUSE, wait_reason
@@ -483,13 +499,14 @@ class Orchestrator:
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
         contains_pii = self._contains_pii(task.prompt)
+
         if contains_pii:
             decision = DECISION_STOPPED
             reason = REASON_ETHICS_PII
             sealed = True
         else:
             decision = current_decision
-            if current_decision == DECISION_RUN and current_reason != REASON_HITL_CONTINUE:
+            if current_decision == DECISION_RUN:
                 reason = REASON_ETHICS_OK
             else:
                 reason = current_reason
@@ -523,11 +540,7 @@ class Orchestrator:
             reason = REASON_ACC_EXTERNAL_SIDE_EFFECT
         else:
             decision = DECISION_RUN
-            reason = (
-                REASON_HITL_CONTINUE
-                if current_reason == REASON_HITL_CONTINUE
-                else REASON_ACC_OK
-            )
+            reason = REASON_ACC_OK
 
         self.audit.log(
             self._audit_event(
@@ -535,7 +548,6 @@ class Orchestrator:
                 LAYER_ACC,
                 decision,
                 reason,
-                sealed=None,
                 safe_context={
                     "acc_mode": "pass_through",
                     "contains_external_side_effect": contains_side_effect,
@@ -565,25 +577,19 @@ class Orchestrator:
             }
 
         artifact_preview = self._build_artifact_preview(task)
-        final_reason = (
-            REASON_HITL_CONTINUE
-            if current_reason == REASON_HITL_CONTINUE
-            else REASON_DISPATCH_OK
-        )
-
         self.audit.log(
             self._audit_event(
                 task.task_id,
                 LAYER_DISPATCH,
                 DECISION_RUN,
-                final_reason,
+                REASON_DISPATCH_OK,
                 artifact_preview=artifact_preview,
                 safe_context={"kind": task.kind},
             )
         )
         return {
             "decision": DECISION_RUN,
-            "reason_code": final_reason,
+            "reason_code": REASON_DISPATCH_OK,
             "artifact_preview": artifact_preview,
         }
 
@@ -597,8 +603,17 @@ class Orchestrator:
 
 
 class Pipeline:
-    def __init__(self, audit_log_path: str, run_id: str, session_id: str) -> None:
-        self.audit = AuditLogger(audit_log_path, run_id=run_id, session_id=session_id)
+    def __init__(
+        self,
+        audit_log_path: str = "audit.jsonl",
+        run_id: str = "",
+        session_id: str = "",
+    ) -> None:
+        self.audit = AuditLogger(
+            audit_log_path,
+            run_id=run_id,
+            session_id=session_id,
+        )
         self.agent = Agent()
         self.mediator = Mediator(self.audit)
         self.orchestrator = Orchestrator(self.audit)
@@ -611,7 +626,9 @@ class Pipeline:
         results: List[OrchestratorResult] = []
         for task in normalized:
             mediator_state = self.mediator.evaluate(task)
-            results.append(self.orchestrator.run(task, mediator_state))
+            result = self.orchestrator.run(task, mediator_state)
+            results.append(result)
+
         if isinstance(tasks, (Task, dict)):
             return results[0]
         return results
@@ -624,17 +641,19 @@ def run_pipeline(
     log_path: str,
     hitl_choices: Optional[Dict[str, str]] = None,
 ) -> List[OrchestratorResult]:
-    normalized = Agent().normalize(tasks)
-    choices = hitl_choices or {}
+    agent = Agent()
+    normalized = agent.normalize(tasks)
 
+    choices = hitl_choices or {}
     patched: List[Task] = []
     for task in normalized:
+        hitl = choices.get(task.task_id, task.hitl)
         patched.append(
             Task(
                 task_id=task.task_id,
                 kind=task.kind,
                 prompt=task.prompt,
-                hitl=choices.get(task.task_id, task.hitl),
+                hitl=hitl,
             )
         )
 
@@ -656,7 +675,7 @@ def run_demo() -> None:
                 "task_id": "T3",
                 "kind": "xlsx",
                 "prompt": "売上表を作ってメール送信して",
-                "hitl": "CONTINUE",
+                "hitl": HITL_CONTINUE,
             },
             {
                 "task_id": "T4",
