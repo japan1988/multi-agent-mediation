@@ -122,6 +122,7 @@ def test_external_side_effect_escalates_to_hitl_and_keeps_order(tmp_path):
 def test_hitl_continue_turns_pause_into_run(tmp_path):
     log = tmp_path / "audit.jsonl"
     tasks = [sim.Task(task_id="T5", kind="pptx", prompt="いい感じにまとめて")]
+
     out = sim.run_pipeline(
         tasks=tasks,
         run_id="TEST#HITL",
@@ -129,5 +130,6 @@ def test_hitl_continue_turns_pause_into_run(tmp_path):
         log_path=str(log),
         hitl_choices={"T5": "CONTINUE"},
     )
+
     assert out[0].decision == "RUN"
     assert out[0].reason_code == "ORCH_RUN_OK"
