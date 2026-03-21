@@ -490,5 +490,5 @@ What did NOT change (still true in v5):
 ## License
 
 Apache License 2.0 (see `LICENSE`)
-「本当に追加した行だけ」抜き出した最小差分版**で出します。
+
 ```
