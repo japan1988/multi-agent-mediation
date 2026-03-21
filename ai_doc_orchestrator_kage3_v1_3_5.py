@@ -435,11 +435,11 @@ def run_simulation_mem(
                         "HITL_DECIDED",
                         run_id=run_id,
                         layer="hitl_finalize",
-                        decision=("RUN" if choice == "CONTINUE" else "STOPPED"),
+                        decision="RUN" if choice == "CONTINUE" else "STOPPED",
                         sealed=False,
                         overrideable=False,
                         final_decider="USER",
-                        reason_code=(RC_HITL_CONTINUE if choice == "CONTINUE" else RC_HITL_STOP),
+                        reason_code=RC_HITL_CONTINUE if choice == "CONTINUE" else RC_HITL_STOP,
                         task=task,
                         choice=choice,
                     )
@@ -870,7 +870,12 @@ def run_benchmark_suite(
         total_hitl_requested += sum(1 for row in rows if row.get("event") == "HITL_REQUESTED")
         total_hitl_decided += sum(1 for row in rows if row.get("event") == "HITL_DECIDED")
         total_seal_events += sum(1 for row in rows if row.get("event") == "AGENT_SEALED")
-        pii_leak_count += sum(1 for row in rows if row.get("event") == "ETHICS_PII_DETECTED")
+        pii_leak_count += sum(
+            1
+            for row in rows
+            if row.get("event") == "ETHICS_PII_DETECTED"
+            or row.get("reason_code") == RC_SEALED_BY_ETHICS
+        )
 
         if _rows_have_at_sign(rows):
             at_sign_violations += 1
