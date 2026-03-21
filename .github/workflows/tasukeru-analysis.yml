@@ -1,118 +1,159 @@
-name: Tasukeru Analysis
-
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.py"
-      - "**/*.ipynb"
-      - "pyproject.toml"
-      - "requirements*.txt"
-      - ".github/workflows/tasukeru-analysis.yml"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  pull-requests: write
-
-concurrency:
-  group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
-
-env:
-  MAX_ZIP_MB: "10"
-  MAX_FILES: "2000"
-  INCLUDE_PATTERNS: |
-    *.py
-    *.ipynb
-    pyproject.toml
-    requirements*.txt
-
-jobs:
-  dependency-review:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Dependency review
-        uses: actions/dependency-review-action@v4
+      - name: Post / update PR comment
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+        uses: actions/github-script@v8
+        env:
+          RUFF_OUTCOME: ${{ steps.ruff.outcome }}
+          BANDIT_OUTCOME: ${{ steps.bandit.outcome }}
+          PYTEST_OUTCOME: ${{ steps.pytest.outcome }}
         with:
-          fail-on-severity: moderate
-          comment-summary-in-pr: always
-          license-check: false
+          script: |
+            const fs = require("node:fs");
 
-  quality-and-security:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+            const header = "<!-- tasukeru-analysis-fix-suggestions -->";
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.issue.number;
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-          cache: "pip"
+            function read(path) {
+              try {
+                return fs.readFileSync(path, "utf8");
+              } catch {
+                return "";
+              }
+            }
 
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
+            function firstLines(s, n = 25) {
+              return (s || "").split("\n").slice(0, n).join("\n").trim();
+            }
 
-      - name: Install project dependencies
-        shell: bash
-        run: |
-          if [[ -f requirements.txt ]]; then
-            python -m pip install -r requirements.txt
-          elif [[ -f pyproject.toml ]]; then
-            python -m pip install .
-          else
-            echo "No requirements.txt or pyproject.toml found. Skipping project dependency install."
-          fi
+            function section(tool, outcome, text) {
+              const ok = outcome !== "failure";
+              const lines = [`### ${tool}`, `- Status: ${ok ? "success" : "failure"}`];
 
-      - name: Install QA / security tools
-        run: |
-          python -m pip install ruff pytest bandit[toml]
+              if (!ok) {
+                if (tool === "Ruff") {
+                  lines.push("- Try locally: `ruff check . --fix`");
+                  lines.push("- Then normalize formatting: `ruff format .`");
+                  if (/F401/.test(text)) lines.push("- `F401`: unused import を削除、または再公開意図を明示。");
+                  if (/F821/.test(text)) lines.push("- `F821`: typo / 未 import / scope 漏れを確認。");
+                  if (/E402/.test(text)) lines.push("- `E402`: import の位置を確認。");
+                  if (/I001|I002/.test(text)) lines.push("- import 順序は `ruff check . --fix` で先に整える。");
+                }
 
-      - name: Ruff
-        run: ruff check .
+                if (tool === "Bandit") {
+                  lines.push("- Bandit は提案扱いです。workflow はこれ単体では fail しません。");
+                  lines.push("- ロジック変更前に手動確認してください。");
+                  if (/B101/.test(text)) lines.push("- `B101`: 本番コードの `assert` を明示例外へ置換するか確認。");
+                  if (/B602|B603|subprocess/.test(text)) lines.push("- subprocess 使用箇所を確認。`shell=True` 回避、引数検証、配列渡し優先。");
+                  if (/pickle|yaml\.load/.test(text)) lines.push("- 安全でないデシリアライズ経路を確認。safe loader 優先。");
+                  if (/exec\(|eval\(/.test(text)) lines.push("- `exec` / `eval` は必要性を再確認。");
+                }
 
-      - name: Bandit
-        run: |
-          bandit -r . \
-            -x .git,.venv,venv,__pycache__,.pytest_cache,build,dist
+                if (tool === "Pytest") {
+                  lines.push("- Reproduce locally with `pytest -q -x`.");
+                  if (/ModuleNotFoundError|ImportError/.test(text)) lines.push("- import path / install step / test discovery root を確認。");
+                  if (/AssertionError/.test(text)) lines.push("- 最初の failing assertion を先に直す。");
+                  if (/fixture .* not found/.test(text)) lines.push("- fixture 名、scope、`conftest.py` の配置を確認。");
+                }
 
-      - name: Pytest
-        shell: bash
-        run: |
-          if find . -type f \( -name "test_*.py" -o -name "*_test.py" \) | grep -q .; then
-            pytest -q
-          else
-            echo "No pytest test files found. Skipping pytest."
-          fi
+                lines.push("");
+                lines.push("<details><summary>log excerpt</summary>");
+                lines.push("");
+                lines.push("```text");
+                lines.push(firstLines(text) || "(no output captured)");
+                lines.push("```");
+                lines.push("</details>");
+              }
 
-  dependency-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+              return lines.join("\n");
+            }
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
+            function buildPraise(ruffOutcome, banditOutcome, pytestOutcome) {
+              const ruffOk = ruffOutcome !== "failure";
+              const banditOk = banditOutcome !== "failure";
+              const pytestOk = pytestOutcome !== "failure";
 
-      - name: Audit requirements.txt
-        if: hashFiles('requirements.txt') != ''
-        uses: pypa/gh-action-pip-audit@v1.1.0
-        with:
-          inputs: requirements.txt
+              if (ruffOk && banditOk && pytestOk) {
+                return [
+                  "## Tasukeru celebration",
+                  "",
+                  "素晴らしいです。今回の変更はかなり綺麗です。",
+                  "",
+                  "- Ruff: success",
+                  "- Bandit: success",
+                  "- Pytest: success",
+                  "",
+                  "静的チェック、提案系セキュリティ確認、テストの全部が通っています。",
+                  "かなり安心して見られるPRです。ここは自信を持って大丈夫です。",
+                  ""
+                ].join("\n");
+              }
 
-      - name: Audit pyproject project
-        if: hashFiles('requirements.txt') == '' && hashFiles('pyproject.toml') != ''
-        uses: pypa/gh-action-pip-audit@v1.1.0
-        with:
-          inputs: .
+              if (ruffOk && pytestOk && !banditOk) {
+                return [
+                  "## Tasukeru encouragement",
+                  "",
+                  "かなり良いです。必須ゲートは通っています。",
+                  "",
+                  "- Ruff: success",
+                  "- Pytest: success",
+                  "- Bandit: suggestion only",
+                  "",
+                  "つまりコード品質とテストは問題なしです。",
+                  "Bandit は確認候補を出しているだけなので、今の時点でも十分前進しています。",
+                  "落ち込む結果ではなく、仕上げ段階に入ったと見ていいです。",
+                  ""
+                ].join("\n");
+              }
 
-      - name: No dependency manifest found
-        if: hashFiles('requirements.txt') == '' && hashFiles('pyproject.toml') == ''
-        run: echo "No requirements.txt or pyproject.toml found. Skipping pip-audit."
+              return "";
+            }
+
+            const ruffText = read("tasukeru_logs/ruff.txt");
+            const banditText = read("tasukeru_logs/bandit.txt");
+            const pytestText = read("tasukeru_logs/pytest.txt");
+
+            const praise = buildPraise(
+              process.env.RUFF_OUTCOME,
+              process.env.BANDIT_OUTCOME,
+              process.env.PYTEST_OUTCOME
+            );
+
+            const body = [
+              header,
+              praise,
+              "## Tasukeru analysis result",
+              "",
+              section("Ruff", process.env.RUFF_OUTCOME, ruffText),
+              "",
+              section("Bandit", process.env.BANDIT_OUTCOME, banditText),
+              "",
+              section("Pytest", process.env.PYTEST_OUTCOME, pytestText),
+              "",
+              "Artifacts: `tasukeru-analysis-logs`",
+            ].filter(Boolean).join("\n");
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find((c) => (c.body || "").includes(header));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
