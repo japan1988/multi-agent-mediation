@@ -93,6 +93,7 @@ def test_v512_mixed_mode_deterministic_under_reset(monkeypatch, tmp_path):
     """
     fabricate-rate 混在時でも、
     reset + seed 固定なら summary / trust / eval が再現することを確認。
+    cooldown_until は壁時計依存なので完全一致比較から除外する。
     """
     _patch_store_paths(monkeypatch, tmp_path)
 
@@ -115,9 +116,22 @@ def test_v512_mixed_mode_deterministic_under_reset(monkeypatch, tmp_path):
     s2 = _summary(r2)
 
     assert s1 == s2
-    assert r1.get("trust_after") == r2.get("trust_after")
-    assert r1.get("eval_after") == r2.get("eval_after")
 
+    t1 = dict(r1.get("trust_after", {}))
+    t2 = dict(r2.get("trust_after", {}))
+
+    cd1 = t1.pop("cooldown_until", None)
+    cd2 = t2.pop("cooldown_until", None)
+
+    # 壁時計依存の cooldown_until を除けば一致すること
+    assert t1 == t2
+
+    # cooldown が必要なケースなら、両方とも値を持つことだけ確認
+    if cd1 is not None or cd2 is not None:
+        assert cd1 is not None
+        assert cd2 is not None
+
+    assert r1.get("eval_after") == r2.get("eval_after")
     assert s1.get("abnormal_total", 0) > 0
 
 
