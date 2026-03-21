@@ -1,4 +1,4 @@
-# ai_doc_orchestrator_with_mediator_v1_0.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -20,6 +20,7 @@ KNOWN_KINDS = {"xlsx", "pptx"}
 
 REASON_MEDIATOR_RUN = "MEDIATOR_RUN_OK"
 REASON_MEDIATOR_HITL_CONTINUE = "MEDIATOR_HITL_CONTINUE"
+REASON_HITL_CONTINUE = "HITL_CONTINUE"
 REASON_HITL_STOP = "HITL_STOP_REQUESTED"
 
 REASON_MEANING_OK = "MEANING_OK"
@@ -40,6 +41,15 @@ REASON_ACC_EXTERNAL_SIDE_EFFECT = "ACC_EXTERNAL_SIDE_EFFECT_REQUIRES_HITL"
 
 REASON_DISPATCH_OK = "ORCH_RUN_OK"
 REASON_HITL_WAIT = "HITL_UNSPECIFIED_WAIT"
+
+LAYER_MEDIATOR = "mediator_advice"
+LAYER_MEANING = "meaning_gate"
+LAYER_CONSISTENCY = "consistency_gate"
+LAYER_RFL = "relativity_gate"
+LAYER_HITL = "hitl_finalize"
+LAYER_ETHICS = "ethics_gate"
+LAYER_ACC = "acc_gate"
+LAYER_DISPATCH = "dispatch"
 
 RFL_PATTERNS = (
     r"いい感じ",
@@ -65,6 +75,8 @@ SLIDE_PATTERNS = (
     r"ppt",
     r"pptx",
     r"deck",
+    r"資料",
+    r"まとめ",
 )
 
 SIDE_EFFECT_PATTERNS = (
@@ -76,7 +88,9 @@ SIDE_EFFECT_PATTERNS = (
     r"アップロード",
 )
 
-EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
+EMAIL_PATTERN = re.compile(
+    r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
+)
 PHONE_PATTERN = re.compile(
     r"(?:\+?\d{1,3}[-\s]?)?(?:\(?\d{2,4}\)?[-\s]?)?\d{2,4}[-\s]?\d{3,4}[-\s]?\d{3,4}"
 )
@@ -105,6 +119,8 @@ class OrchestratorResult:
 @dataclass
 class AuditEvent:
     ts: str
+    run_id: str
+    session_id: str
     task_id: str
     layer: str
     decision: str
@@ -115,7 +131,12 @@ class AuditEvent:
 
 
 def utc_ts() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def ensure_text(value: Any) -> str:
@@ -142,7 +163,7 @@ def sanitize_json_value(value: JSONValue) -> JSONValue:
     if isinstance(value, dict):
         sanitized: Dict[str, JSONValue] = {}
         for key, item in value.items():
-            if key == "raw_text":
+            if str(key) == "raw_text":
                 continue
             sanitized[sanitize_string(str(key))] = sanitize_json_value(item)
         return sanitized
@@ -173,16 +194,6 @@ class AuditLogger:
 
     def log(self, event: AuditEvent) -> None:
         payload = asdict(event)
-        payload.pop("raw_text", None)
-
-        safe_context = payload.get("safe_context") or {}
-        if isinstance(safe_context, dict):
-            if self.run_id:
-                safe_context["run_id"] = self.run_id
-            if self.session_id:
-                safe_context["session_id"] = self.session_id
-            payload["safe_context"] = safe_context
-
         sanitized = sanitize_json_value(payload)
         line = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
         if "@" in line:
@@ -198,10 +209,7 @@ class Agent:
     ) -> List[Task]:
         if isinstance(tasks, (Task, dict)):
             return [self._to_task(tasks)]
-        normalized: List[Task] = []
-        for item in tasks:
-            normalized.append(self._to_task(item))
-        return normalized
+        return [self._to_task(item) for item in tasks]
 
     def _to_task(self, item: Union[Task, Dict[str, Any]]) -> Task:
         if isinstance(item, Task):
@@ -219,7 +227,7 @@ class Mediator:
     def __init__(self, audit: AuditLogger) -> None:
         self.audit = audit
 
-    def evaluate(self, task: Task) -> Dict[str, Any]:
+    def evaluate(self, task: Task) -> Dict[str, str]:
         if task.hitl == HITL_STOP:
             decision = DECISION_PAUSE
             reason_code = REASON_HITL_STOP
@@ -233,8 +241,10 @@ class Mediator:
         self.audit.log(
             AuditEvent(
                 ts=utc_ts(),
+                run_id=self.audit.run_id,
+                session_id=self.audit.session_id,
                 task_id=task.task_id,
-                layer="Mediator",
+                layer=LAYER_MEDIATOR,
                 decision=decision,
                 reason_code=reason_code,
                 safe_context={
@@ -251,7 +261,7 @@ class Orchestrator:
     def __init__(self, audit: AuditLogger) -> None:
         self.audit = audit
 
-    def run(self, task: Task, mediator_state: Dict[str, Any]) -> OrchestratorResult:
+    def run(self, task: Task, mediator_state: Dict[str, str]) -> OrchestratorResult:
         current_decision = mediator_state["decision"]
         current_reason = mediator_state["reason_code"]
 
@@ -265,7 +275,7 @@ class Orchestrator:
         current_decision, current_reason = outcome["decision"], outcome["reason_code"]
 
         if current_decision == DECISION_PAUSE:
-            current_decision, current_reason = self._resolve_hitl_after_rfl(
+            current_decision, current_reason = self._resolve_hitl_after_pause(
                 task, current_decision, current_reason
             )
 
@@ -275,6 +285,11 @@ class Orchestrator:
         outcome = self._gate_acc(task, current_decision, current_reason)
         current_decision, current_reason = outcome["decision"], outcome["reason_code"]
 
+        if current_decision == DECISION_PAUSE:
+            current_decision, current_reason = self._resolve_hitl_after_pause(
+                task, current_decision, current_reason
+            )
+
         dispatch = self._gate_dispatch(task, current_decision, current_reason)
         return OrchestratorResult(
             task_id=task.task_id,
@@ -283,17 +298,40 @@ class Orchestrator:
             artifact_preview=dispatch["artifact_preview"],
         )
 
+    def _audit_event(
+        self,
+        task_id: str,
+        layer: str,
+        decision: str,
+        reason_code: str,
+        *,
+        sealed: Optional[bool] = None,
+        artifact_preview: Optional[str] = None,
+        safe_context: Optional[Dict[str, JSONValue]] = None,
+    ) -> AuditEvent:
+        return AuditEvent(
+            ts=utc_ts(),
+            run_id=self.audit.run_id,
+            session_id=self.audit.session_id,
+            task_id=task_id,
+            layer=layer,
+            decision=decision,
+            reason_code=reason_code,
+            sealed=sealed,
+            artifact_preview=artifact_preview,
+            safe_context=safe_context,
+        )
+
     def _gate_meaning(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
         if current_decision != DECISION_RUN:
             self.audit.log(
-                AuditEvent(
-                    ts=utc_ts(),
-                    task_id=task.task_id,
-                    layer="Meaning",
-                    decision=current_decision,
-                    reason_code=current_reason,
+                self._audit_event(
+                    task.task_id,
+                    LAYER_MEANING,
+                    current_decision,
+                    current_reason,
                     safe_context={"skipped": True},
                 )
             )
@@ -310,12 +348,11 @@ class Orchestrator:
             reason = REASON_MEANING_OK
 
         self.audit.log(
-            AuditEvent(
-                ts=utc_ts(),
-                task_id=task.task_id,
-                layer="Meaning",
-                decision=decision,
-                reason_code=reason,
+            self._audit_event(
+                task.task_id,
+                LAYER_MEANING,
+                decision,
+                reason,
                 safe_context={
                     "kind": task.kind,
                     "prompt_digest": safe_prompt_digest(task.prompt),
@@ -329,12 +366,11 @@ class Orchestrator:
     ) -> Dict[str, str]:
         if current_decision != DECISION_RUN:
             self.audit.log(
-                AuditEvent(
-                    ts=utc_ts(),
-                    task_id=task.task_id,
-                    layer="Consistency",
-                    decision=current_decision,
-                    reason_code=current_reason,
+                self._audit_event(
+                    task.task_id,
+                    LAYER_CONSISTENCY,
+                    current_decision,
+                    current_reason,
                     safe_context={"skipped": True},
                 )
             )
@@ -356,12 +392,11 @@ class Orchestrator:
             reason = REASON_CONSISTENCY_MISMATCH
 
         self.audit.log(
-            AuditEvent(
-                ts=utc_ts(),
-                task_id=task.task_id,
-                layer="Consistency",
-                decision=decision,
-                reason_code=reason,
+            self._audit_event(
+                task.task_id,
+                LAYER_CONSISTENCY,
+                decision,
+                reason,
                 safe_context={
                     "kind": task.kind,
                     "prompt_digest": safe_prompt_digest(prompt),
@@ -375,12 +410,11 @@ class Orchestrator:
     ) -> Dict[str, str]:
         if current_decision != DECISION_RUN:
             self.audit.log(
-                AuditEvent(
-                    ts=utc_ts(),
-                    task_id=task.task_id,
-                    layer="RFL",
-                    decision=current_decision,
-                    reason_code=current_reason,
+                self._audit_event(
+                    task.task_id,
+                    LAYER_RFL,
+                    current_decision,
+                    current_reason,
                     sealed=False,
                     safe_context={"skipped": True},
                 )
@@ -395,82 +429,95 @@ class Orchestrator:
             reason = REASON_RFL_OK
 
         self.audit.log(
-            AuditEvent(
-                ts=utc_ts(),
-                task_id=task.task_id,
-                layer="RFL",
-                decision=decision,
-                reason_code=reason,
+            self._audit_event(
+                task.task_id,
+                LAYER_RFL,
+                decision,
+                reason,
                 sealed=False,
                 safe_context={"prompt_digest": safe_prompt_digest(task.prompt)},
             )
         )
         return {"decision": decision, "reason_code": reason}
 
-    def _resolve_hitl_after_rfl(
+    def _resolve_hitl_after_pause(
         self, task: Task, current_decision: str, current_reason: str
     ) -> tuple[str, str]:
-        if current_reason != REASON_RFL_RELATIVE:
+        if current_decision != DECISION_PAUSE:
             return current_decision, current_reason
 
         if task.hitl == HITL_CONTINUE:
             self.audit.log(
-                AuditEvent(
-                    ts=utc_ts(),
-                    task_id=task.task_id,
-                    layer="HITL",
-                    decision=DECISION_RUN,
-                    reason_code=REASON_MEDIATOR_HITL_CONTINUE,
-                    safe_context={"hitl": task.hitl},
+                self._audit_event(
+                    task.task_id,
+                    LAYER_HITL,
+                    DECISION_RUN,
+                    REASON_HITL_CONTINUE,
+                    safe_context={
+                        "hitl": task.hitl,
+                        "from_reason": current_reason,
+                    },
                 )
             )
-            return DECISION_RUN, REASON_MEDIATOR_HITL_CONTINUE
+            return DECISION_RUN, REASON_HITL_CONTINUE
 
         if task.hitl == HITL_STOP:
             self.audit.log(
-                AuditEvent(
-                    ts=utc_ts(),
-                    task_id=task.task_id,
-                    layer="HITL",
-                    decision=DECISION_PAUSE,
-                    reason_code=REASON_HITL_STOP,
-                    safe_context={"hitl": task.hitl},
+                self._audit_event(
+                    task.task_id,
+                    LAYER_HITL,
+                    DECISION_PAUSE,
+                    REASON_HITL_STOP,
+                    safe_context={
+                        "hitl": task.hitl,
+                        "from_reason": current_reason,
+                    },
                 )
             )
             return DECISION_PAUSE, REASON_HITL_STOP
 
+        wait_reason = (
+            REASON_HITL_WAIT
+            if current_reason == REASON_RFL_RELATIVE
+            else current_reason
+        )
         self.audit.log(
-            AuditEvent(
-                ts=utc_ts(),
-                task_id=task.task_id,
-                layer="HITL",
-                decision=DECISION_PAUSE,
-                reason_code=REASON_HITL_WAIT,
-                safe_context={"hitl": task.hitl},
+            self._audit_event(
+                task.task_id,
+                LAYER_HITL,
+                DECISION_PAUSE,
+                wait_reason,
+                safe_context={
+                    "hitl": task.hitl,
+                    "from_reason": current_reason,
+                },
             )
         )
-        return DECISION_PAUSE, REASON_HITL_WAIT
+        return DECISION_PAUSE, wait_reason
 
     def _gate_ethics(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
         contains_pii = self._contains_pii(task.prompt)
+
         if contains_pii:
             decision = DECISION_STOPPED
             reason = REASON_ETHICS_PII
             sealed = True
         else:
             decision = current_decision
-            reason = REASON_ETHICS_OK if current_decision == DECISION_RUN else current_reason
+            if current_decision == DECISION_RUN:
+                reason = REASON_ETHICS_OK
+            else:
+                reason = current_reason
             sealed = None
 
         self.audit.log(
-            AuditEvent(
-                ts=utc_ts(),
-                task_id=task.task_id,
-                layer="Ethics",
-                decision=decision,
-                reason_code=reason,
+            self._audit_event(
+                task.task_id,
+                LAYER_ETHICS,
+                decision,
+                reason,
                 sealed=sealed,
                 safe_context={
                     "prompt_digest": safe_prompt_digest(task.prompt),
@@ -483,10 +530,12 @@ class Orchestrator:
     def _gate_acc(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
+        contains_side_effect = contains_pattern(SIDE_EFFECT_PATTERNS, task.prompt)
+
         if current_decision != DECISION_RUN:
             decision = current_decision
             reason = current_reason
-        elif contains_pattern(SIDE_EFFECT_PATTERNS, task.prompt):
+        elif contains_side_effect:
             decision = DECISION_PAUSE
             reason = REASON_ACC_EXTERNAL_SIDE_EFFECT
         else:
@@ -494,16 +543,14 @@ class Orchestrator:
             reason = REASON_ACC_OK
 
         self.audit.log(
-            AuditEvent(
-                ts=utc_ts(),
-                task_id=task.task_id,
-                layer="ACC",
-                decision=decision,
-                reason_code=reason,
-                sealed=None,
+            self._audit_event(
+                task.task_id,
+                LAYER_ACC,
+                decision,
+                reason,
                 safe_context={
                     "acc_mode": "pass_through",
-                    "contains_external_side_effect": contains_pattern(SIDE_EFFECT_PATTERNS, task.prompt),
+                    "contains_external_side_effect": contains_side_effect,
                 },
             )
         )
@@ -513,6 +560,16 @@ class Orchestrator:
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, Any]:
         if current_decision != DECISION_RUN:
+            self.audit.log(
+                self._audit_event(
+                    task.task_id,
+                    LAYER_DISPATCH,
+                    current_decision,
+                    current_reason,
+                    artifact_preview=None,
+                    safe_context={"kind": task.kind, "skipped": True},
+                )
+            )
             return {
                 "decision": current_decision,
                 "reason_code": current_reason,
@@ -521,12 +578,11 @@ class Orchestrator:
 
         artifact_preview = self._build_artifact_preview(task)
         self.audit.log(
-            AuditEvent(
-                ts=utc_ts(),
-                task_id=task.task_id,
-                layer="DISPATCH",
-                decision=DECISION_RUN,
-                reason_code=REASON_DISPATCH_OK,
+            self._audit_event(
+                task.task_id,
+                LAYER_DISPATCH,
+                DECISION_RUN,
+                REASON_DISPATCH_OK,
                 artifact_preview=artifact_preview,
                 safe_context={"kind": task.kind},
             )
@@ -553,7 +609,11 @@ class Pipeline:
         run_id: str = "",
         session_id: str = "",
     ) -> None:
-        self.audit = AuditLogger(audit_log_path, run_id=run_id, session_id=session_id)
+        self.audit = AuditLogger(
+            audit_log_path,
+            run_id=run_id,
+            session_id=session_id,
+        )
         self.agent = Agent()
         self.mediator = Mediator(self.audit)
         self.orchestrator = Orchestrator(self.audit)
@@ -603,29 +663,30 @@ def run_pipeline(
         session_id=session_id,
     )
     results = pipeline.run(patched)
-    if isinstance(results, list):
-        return results
-    return [results]
+    return results if isinstance(results, list) else [results]
 
 
 def run_demo() -> None:
-    pipeline = Pipeline(audit_log_path="audit.jsonl")
-    demo_tasks: List[Dict[str, str]] = [
-        {"task_id": "T1", "kind": "xlsx", "prompt": "売上サマリーを表にして"},
-        {"task_id": "T2", "kind": "xlsx", "prompt": "売上をいい感じでまとめて"},
-        {
-            "task_id": "T3",
-            "kind": "xlsx",
-            "prompt": "売上表を作ってメール送信して",
-            "hitl": "CONTINUE",
-        },
-        {
-            "task_id": "T4",
-            "kind": "xlsx",
-            "prompt": "顧客連絡先 test@example.com と 090-1234-5678 を含めて",
-        },
-    ]
-    results = pipeline.run(demo_tasks)
+    results = run_pipeline(
+        tasks=[
+            {"task_id": "T1", "kind": "xlsx", "prompt": "売上サマリーを表にして"},
+            {"task_id": "T2", "kind": "xlsx", "prompt": "売上をいい感じでまとめて"},
+            {
+                "task_id": "T3",
+                "kind": "xlsx",
+                "prompt": "売上表を作ってメール送信して",
+                "hitl": HITL_CONTINUE,
+            },
+            {
+                "task_id": "T4",
+                "kind": "xlsx",
+                "prompt": "顧客連絡先 test@example.com と 090-1234-5678 を含めて",
+            },
+        ],
+        run_id="DEMO",
+        session_id="DEMO_SESSION",
+        log_path="audit.jsonl",
+    )
     for item in results:
         print(json.dumps(asdict(item), ensure_ascii=False))
 
