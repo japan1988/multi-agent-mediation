@@ -44,6 +44,9 @@ It is **not** a production autonomy framework.
 - **Docs index:** [docs/README.md](docs/README.md)
 - **Recommended simulator:** `mediation_emergency_contract_sim_v5_1_2.py`
 - **Contract test:** `tests/test_v5_1_codebook_consistency.py`
+- **Stress metrics test (v5.1.2):** `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+- **Pytest ARL hook:** `tests/conftest.py`
+- **Latest mixed stress summary:** `stress_results_v5_1_2_10000_mixed.json`
 - **Legacy stable bench:** `mediation_emergency_contract_sim_v4_8.py`
 - **Doc orchestrator (mediator reference):** `ai_doc_orchestrator_with_mediator_v1_0.py`
 - **Doc orchestrator contract test:** `tests/test_doc_orchestrator_with_mediator_v1_0.py`
@@ -56,6 +59,7 @@ It is **not** a production autonomy framework.
 - **Reproducibility-first**: seeded runs + `pytest` contract checks (vocabulary/invariants)
 - **Audit-ready**: minimal ARL logs; optional incident-only ARL indexing (`INC#...`) to avoid log bloat
 - **Reference doc orchestration path**: mediator + fixed gate order + contract-tested HITL continuation semantics
+- **Validation update**: v5.1.2 stress metrics test + pytest execution ARL + 10,000-run clean/mixed validation examples
 
 ---
 
@@ -113,9 +117,10 @@ If you are new to this repo, start here:
 
 1. Run the recommended simulator: `mediation_emergency_contract_sim_v5_1_2.py`
 2. Run the contract test: `tests/test_v5_1_codebook_consistency.py`
-3. Inspect the generated logs, codebook, and optional incident artifacts
-4. Then optionally compare with `mediation_emergency_contract_sim_v4_8.py`
-5. For a smaller fixed-order reference, run `ai_doc_orchestrator_with_mediator_v1_0.py`
+3. Run the stress metrics test: `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+4. Inspect the generated logs, codebook, and optional incident artifacts
+5. Then optionally compare with `mediation_emergency_contract_sim_v4_8.py`
+6. For a smaller fixed-order reference, run `ai_doc_orchestrator_with_mediator_v1_0.py`
 
 ---
 
@@ -135,31 +140,60 @@ python mediation_emergency_contract_sim_v5_1_2.py --runs 100
 pytest -q tests/test_v5_1_codebook_consistency.py
 ```
 
-### 3) Inspect / pin the demo codebook (v5.1-demo.1)
+### 3) Run the stress metrics tests (v5.1.2)
+
+```bash
+pytest -q tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py
+```
+
+### 4) Pytest execution ARL (auto output)
+
+`tests/conftest.py` automatically emits a JSONL-style ARL for pytest execution itself.
+
+Default output paths:
+
+* `test_artifacts/pytest_test_arl.jsonl`
+* `test_artifacts/pytest_simulation_arl.jsonl`
+
+Run:
+
+```bash
+pytest -q
+```
+
+Custom output paths:
+
+```bash
+TEST_ARL_PATH=out/test_arl.jsonl SIM_ARL_PATH=out/sim_arl.jsonl pytest -q
+```
+
+### 5) Inspect / pin the demo codebook (v5.1-demo.1)
 
 * `log_codebook_v5_1_demo_1.json` (demo codebook; pin the version when exchanging artifacts)
 * Note: codebook is **NOT encryption** (no confidentiality)
 
-### 4) Optional: run the legacy stable bench (v4.8)
+### 6) Optional: run the legacy stable bench (v4.8)
 
 ```bash
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
 ```
 
-### 5) Optional: run the doc orchestrator mediator reference
+### 7) Optional: run the doc orchestrator mediator reference
 
 ```bash
 python ai_doc_orchestrator_with_mediator_v1_0.py
 pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
 ```
 
-### 6) What to inspect after running
+### 8) What to inspect after running
 
 * simulator stdout summaries
 * generated ARL / audit JSONL traces
 * `incident_index.jsonl` and `INC#...` files when abnormal-only persistence is enabled
 * pinned vocabulary / invariant checks in the pytest contract tests
+* pytest-side execution ARL (`pytest_test_arl.jsonl`)
+* optional simulation-side ARL bridge output (`pytest_simulation_arl.jsonl`)
 
 ---
 
@@ -174,6 +208,21 @@ Recent additions and stabilization highlights:
 
   * `ai_doc_orchestrator_with_mediator_v1_0.py`
   * `tests/test_doc_orchestrator_with_mediator_v1_0.py`
+
+### Validation update (v5.1.2)
+
+Added:
+
+* `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+* `tests/conftest.py`
+* `stress_results_v5_1_2_10000_mixed.json`
+
+This update adds:
+
+* stress-oriented validation for v5.1.2
+* pytest execution ARL auto-output
+* clean / mixed 10,000-run validation examples
+* explicit verification of abnormal ARL persistence and incident index consistency
 
 Canonical source of truth remains the Python entrypoints and contract tests.
 
@@ -218,6 +267,35 @@ Outputs (when abnormal runs occur):
 
 Tip: keep `--max-arl-files` to cap disk growth.
 
+### C) Validated large-run examples
+
+Clean run:
+
+```bash
+python mediation_emergency_contract_sim_v5_1_2.py --runs 10000 --seed 42
+```
+
+Mixed abnormal run:
+
+```bash
+python mediation_emergency_contract_sim_v5_1_2.py \
+  --runs 10000 \
+  --fabricate-rate 0.10 \
+  --seed 42 \
+  --save-arl-on-abnormal \
+  --arl-out-dir out_arl
+```
+
+In the current validation setup:
+
+* 10,000 clean runs completed without abnormal incidents
+* 10,000 mixed runs completed with abnormal cases indexed and persisted consistently
+* test-side ARL output and simulation-side ARL output can be tracked separately
+
+Published example summary:
+
+* `stress_results_v5_1_2_10000_mixed.json`
+
 ---
 
 ## Diagrams & docs
@@ -238,8 +316,10 @@ Recommended reading order:
 2. `docs/README.md`
 3. `mediation_emergency_contract_sim_v5_1_2.py`
 4. `tests/test_v5_1_codebook_consistency.py`
-5. `ai_doc_orchestrator_with_mediator_v1_0.py`
-6. `tests/test_doc_orchestrator_with_mediator_v1_0.py`
+5. `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+6. `tests/conftest.py`
+7. `ai_doc_orchestrator_with_mediator_v1_0.py`
+8. `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
 ---
 
@@ -324,6 +404,14 @@ In addition to the behavioral changes above, v5.1.2 also improves repository-lev
   * JSON output writing is more consistent (UTF-8 / newline-stable / serializer-stable)
   * This reduces avoidable differences across environments and makes result artifacts easier to inspect
 
+### Validation additions around v5.1.2
+
+The current repository state also includes:
+
+* stress metrics tests for clean / mixed large-run validation
+* pytest execution ARL logging through `tests/conftest.py`
+* published example result summary for the 10,000-run mixed validation
+
 ### Doc orchestrator mediator reference (v1.0)
 
 `ai_doc_orchestrator_with_mediator_v1_0.py` is a smaller orchestration reference focused on:
@@ -402,3 +490,5 @@ What did NOT change (still true in v5):
 ## License
 
 Apache License 2.0 (see `LICENSE`)
+「本当に追加した行だけ」抜き出した最小差分版**で出します。
+```
