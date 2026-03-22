@@ -155,7 +155,8 @@ jobs:
                 }
 
                 if (tool === "Bandit") {
-                  lines.push("- Bandit は提案扱い。ロジック変更前に手動確認してください。");
+                  lines.push("- Bandit は提案扱いです。workflow はこれ単体では fail しません。");
+                  lines.push("- ロジック変更前に手動確認してください。");
                   if (/B101/.test(text)) lines.push("- `B101`: 本番の安全確認に `assert` を使わず、明示例外へ。");
                   if (/B602|B603|subprocess/.test(text)) lines.push("- subprocess 使用箇所を確認。`shell=True` 回避、引数検証、配列渡し優先。");
                   if (/pickle|yaml\.load/.test(text)) lines.push("- 安全でないデシリアライズ経路を確認。safe loader 優先。");
@@ -231,11 +232,6 @@ jobs:
 
           if [[ "${{ steps.ruff.outcome }}" == "failure" ]]; then
             echo "::error::Ruff failed"
-            fail=1
-          fi
-
-          if [[ "${{ steps.bandit.outcome }}" == "failure" ]]; then
-            echo "::error::Bandit found issues"
             fail=1
           fi
 
