@@ -307,17 +307,17 @@ jobs:
           python-version: "3.11"
 
       - name: Audit requirements.txt
-        if: hashFiles('requirements.txt') != ''
+        if: ${{ hashFiles('requirements.txt') != '' }}
         uses: pypa/gh-action-pip-audit@v1.1.0
         with:
           inputs: requirements.txt
 
       - name: Audit pyproject project
-        if: hashFiles('requirements.txt') == '' && hashFiles('pyproject.toml') != ''
+        if: ${{ hashFiles('requirements.txt') == '' && hashFiles('pyproject.toml') != '' }}
         uses: pypa/gh-action-pip-audit@v1.1.0
         with:
           inputs: .
 
       - name: No dependency manifest found
-        if: hashFiles('requirements.txt') == '' && hashFiles('pyproject.toml') == ''
+        if: ${{ hashFiles('requirements.txt') == '' && hashFiles('pyproject.toml') == '' }}
         run: echo "No requirements.txt or pyproject.toml found. Skipping pip-audit."
