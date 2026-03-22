@@ -835,13 +835,6 @@ def run_benchmark_suite(
     for i in range(int(runs)):
         run_id = f"SIM#{i:05d}"
 
-        # run ごとに 1 回だけ HITL の最終選択を決める
-        run_choice: HitlChoice = (
-            "CONTINUE" if random.Random(seed + i).random() < float(p_continue) else "STOP"
-        )
-
-        def resolver(_ctx: Dict[str, Any], _choice=run_choice) -> HitlChoice:
-            return _choice
 
         try:
             orch_res, rows = run_simulation_mem(
