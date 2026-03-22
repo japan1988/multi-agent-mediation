@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """
 ai_doc_orchestrator_kage3_v1_3_5.py
@@ -26,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import re
 import time
 from dataclasses import asdict, dataclass
@@ -834,7 +834,14 @@ def run_benchmark_suite(
 
     for i in range(int(runs)):
         run_id = f"SIM#{i:05d}"
-        resolver = make_random_hitl_resolver(seed=seed + i, p_continue=p_continue)
+
+        # run ごとに 1 回だけ HITL の最終選択を決める
+        run_choice: HitlChoice = (
+            "CONTINUE" if random.Random(seed + i).random() < float(p_continue) else "STOP"
+        )
+
+        def resolver(_ctx: Dict[str, Any], _choice=run_choice) -> HitlChoice:
+            return _choice
 
         try:
             orch_res, rows = run_simulation_mem(
