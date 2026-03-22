@@ -4,7 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
-import csv, random, sys
+
+import csv
+import random
+import sys
 
 # =========================
 # Negotiation configuration
