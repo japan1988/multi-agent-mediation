@@ -1,3 +1,4 @@
+
 # 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
 [![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
@@ -225,6 +226,12 @@ This update adds:
 * explicit verification of abnormal ARL persistence and incident index consistency
 
 Canonical source of truth remains the Python entrypoints and contract tests.
+
+### Developer feedback update
+
+Added `tasukeru-analysis`, a developer-assist workflow that complements basic CI by posting improvement suggestions and security-relevant review comments on pull requests.
+
+It is designed as a review-support layer for this research/educational repository. It does not guarantee safety or production readiness; for real-world or production use, always perform your own final review and validation.
 
 ---
 
@@ -490,5 +497,3 @@ What did NOT change (still true in v5):
 ## License
 
 Apache License 2.0 (see `LICENSE`)
-
-```

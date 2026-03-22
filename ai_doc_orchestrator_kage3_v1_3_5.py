@@ -1,4 +1,4 @@
-  # -*- coding: utf-8 -*-
+
 """
 ai_doc_orchestrator_kage3_v1_3_5.py
 
@@ -131,7 +131,7 @@ def _row(
     **fields: Any,
 ) -> Dict[str, Any]:
     """
-    All rows include ARL minimal keys + compatibility "event" field.
+    All rows include ARL minimal keys + compatibility 'event' field.
     """
     base: Dict[str, Any] = {"event": event, "tz": JST_OFFSET}
     base.update(
@@ -184,9 +184,11 @@ class SimulationResult:
 
 
 # ----------------------------
-# HITL resolver (deterministic, stateless)
+# HITL resolver
 # ----------------------------
-def make_random_hitl_resolver(*, seed: int, p_continue: float) -> Callable[[Dict[str, Any]], HitlChoice]:
+def make_random_hitl_resolver(
+    *, seed: int, p_continue: float
+) -> Callable[[Dict[str, Any]], HitlChoice]:
     """
     Deterministic and stateless HITL policy:
     choice = f(seed, run_id, task) so reusing the resolver does not drift.
@@ -210,13 +212,13 @@ _TASKS: List[str] = ["excel", "word", "ppt"]
 def _is_ambiguous(prompt: str) -> bool:
     tokens = ["どっち", "おすすめ", "どれがいい", "どちら", "best", "recommend"]
     p = (prompt or "").lower()
-    return any(t in p for t in tokens)
+    return any(token in p for token in tokens)
 
 
 def _emit_gate_events(rows: List[Dict[str, Any]], run_id: str, task: str) -> None:
     """
     Keep legacy event names for compatibility, but include ARL minimal keys.
-    These are "gate marker" events, not the gate decisions.
+    These are marker events, not the final gate decisions.
     """
     rows.append(
         _row(
@@ -315,15 +317,6 @@ def run_simulation_mem(
         )
     )
 
-    ambiguous = _is_ambiguous(prompt)
-    failures_total = 0
-
-    for task in _TASKS:
-        rows.append(
-            _row(
-                "TASK_START",
-                run_id=run_id,
-                layer="task",
                 decision="RUN",
                 sealed=False,
                 overrideable=False,
@@ -332,44 +325,10 @@ def run_simulation_mem(
                 task=task,
             )
         )
+
 
         _emit_gate_events(rows, run_id, task)
 
-        rows.append(
-            _row(
-                "MEANING_OK",
-                run_id=run_id,
-                layer="meaning_gate",
-                decision="RUN",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-                reason_code=RC_PASS,
-                task=task,
-            )
-        )
-
-        attempts = 0
-        while True:
-            attempts += 1
-            rows.append(
-                _row(
-                    "ATTEMPT",
-                    run_id=run_id,
-                    layer="task_attempt",
-                    decision="RUN",
-                    sealed=False,
-                    overrideable=False,
-                    final_decider="SYSTEM",
-                    reason_code=RC_PASS,
-                    task=task,
-                    attempt=attempts,
-                )
-            )
-
-            tf = faults.get(task, {}) if isinstance(faults, dict) else {}
-            break_contract = bool(tf.get("break_contract", False))
-            leak_email = bool(tf.get("leak_email", False))
 
             # ----------------
             # RFL gate: never seals; escalates to HITL
@@ -433,11 +392,7 @@ def run_simulation_mem(
                         "HITL_DECIDED",
                         run_id=run_id,
                         layer="hitl_finalize",
-                        decision=("RUN" if choice == "CONTINUE" else "STOPPED"),
-                        sealed=False,
-                        overrideable=False,
-                        final_decider="USER",
-                        reason_code=(RC_HITL_CONTINUE if choice == "CONTINUE" else RC_HITL_STOP),
+
                         task=task,
                         choice=choice,
                     )
@@ -664,14 +619,14 @@ def run_simulation_mem(
 
 
 # ----------------------------
-# File-mode compatibility wrapper (for tests/CI)
+# File-mode compatibility wrapper
 # ----------------------------
 def _write_jsonl(path: Path, rows: List[Dict[str, Any]], truncate: bool) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     mode = "w" if truncate else "a"
-    with path.open(mode, encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(_sanitize_obj(r), ensure_ascii=False, default=str) + "\n")
+    with path.open(mode, encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(_sanitize_obj(row), ensure_ascii=False, default=str) + "\n")
 
 
 def run_simulation(
@@ -693,7 +648,7 @@ def run_simulation(
     - writes audit JSONL to audit_path
     - writes artifacts to artifact_dir for RUN tasks only
     """
-    orch_res, rows = run_simulation_mem(
+    orchestrator_result, rows = run_simulation_mem(
         prompt=prompt,
         run_id=run_id,
         faults=faults or {},
@@ -704,8 +659,7 @@ def run_simulation(
     )
 
     seen_tasks: List[str] = []
-    for r in rows:
-        task = r.get("task")
+
         if task in _TASKS and task not in seen_tasks:
             seen_tasks.append(task)
 
@@ -715,10 +669,7 @@ def run_simulation(
     for task in seen_tasks:
         task_id = f"task_{task}"
 
-        paused = any(r.get("event") == "HITL_UNRESOLVED" and r.get("task") == task for r in rows)
-        ethics_sealed = any(r.get("event") == "ETHICS_SEALED" and r.get("task") == task for r in rows)
-        acc_sealed = any(r.get("event") == "ACC_RUNAWAY_SEAL" and r.get("task") == task for r in rows)
-        done = any(r.get("event") == "TASK_DONE" and r.get("task") == task for r in rows)
+
 
         sealed = bool(ethics_sealed or acc_sealed)
 
@@ -735,14 +686,12 @@ def run_simulation(
             decision = "RUN"
             reason_code = RC_OK
         else:
-            decision = orch_res.decision
-            reason_code = orch_res.reason_code
+            decision = orchestrator_result.decision
+            reason_code = orchestrator_result.reason_code
 
         artifact_path: Optional[str] = None
         if decision == "RUN":
-            adir = Path(artifact_dir)
-            adir.mkdir(parents=True, exist_ok=True)
-            artifact_path = str(adir / f"{task_id}.txt")
+
             Path(artifact_path).write_text(f"{task} artifact (run_id={run_id})", encoding="utf-8")
             artifacts_written.append(task_id)
 
@@ -760,7 +709,7 @@ def run_simulation(
     _write_jsonl(Path(audit_path), rows, truncate=bool(truncate_audit_on_start))
 
     return SimulationResult(
-        decision=orch_res.decision,
+        decision=orchestrator_result.decision,
         tasks=tasks_out,
         artifacts_written_task_ids=artifacts_written,
     )
@@ -795,8 +744,7 @@ def semantic_signature_sha256(rows: List[Dict[str, Any]]) -> str:
         out.pop("tz", None)
         return out
 
-    norm = [_norm_row(row) for row in (rows or [])]
-    blob = json.dumps(norm, ensure_ascii=False, sort_keys=True, default=str)
+
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -821,7 +769,7 @@ def run_benchmark_suite(
     total_runs = int(runs)
     started = time.perf_counter()
 
-    decision_counts: Counter[str] = Counter(
+
         {
             "RUN": 0,
             "PAUSE_FOR_HITL": 0,
@@ -833,6 +781,7 @@ def run_benchmark_suite(
     total_hitl_decided = 0
     total_seal_events = 0
     pii_leak_count = 0
+
     crash_count = 0
     semantic_digests: List[str] = []
     abnormal_runs: List[Dict[str, Any]] = []
@@ -850,16 +799,7 @@ def run_benchmark_suite(
                 enable_runaway_seal=enable_runaway_seal,
                 runaway_threshold=runaway_threshold,
                 max_attempts_per_task=max_attempts_per_task,
-            )
-        except Exception as exc:
-            crash_count += 1
-            abnormal_runs.append(
-                {
-                    "run_id": run_id,
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                }
-            )
+
             continue
 
         decision_counts[result.decision] += 1
@@ -873,6 +813,7 @@ def run_benchmark_suite(
             if row.get("event") == "ETHICS_PII_DETECTED"
             or row.get("reason_code") == RC_SEALED_BY_ETHICS
         )
+
         semantic_digests.append(semantic_signature_sha256(rows))
 
     elapsed_sec = max(time.perf_counter() - started, 1e-9)
@@ -888,6 +829,7 @@ def run_benchmark_suite(
         "elapsed_sec": elapsed_sec,
         "runs_per_sec": (float(total_runs) / elapsed_sec) if elapsed_sec > 0 else None,
         "crash_count": crash_count,
+
         "crash_free": crash_count == 0,
         "crash_free_rate": crash_free_rate,
         "overall_decision_counts": dict(decision_counts),
@@ -899,7 +841,7 @@ def run_benchmark_suite(
         "seal_events_count": total_seal_events,
         "has_seal_events": total_seal_events > 0,
         "pii_leak_count": pii_leak_count,
-        "pii_zero": pii_leak_count == 0,
+
         "semantic_digest_sample": semantic_digests[0] if semantic_digests else None,
         "semantic_digest_unique_count": len(set(semantic_digests)),
         "abnormal_runs": abnormal_runs,
@@ -917,7 +859,7 @@ def safety_scorecard(
     Evaluate a benchmark report into a small pass/fail scorecard.
     """
     seal_count = int(report.get("seal_events", report.get("seal_events_count", 0)) or 0)
-    pii_count = int(report.get("pii_leak_count", 0) or 0)
+
     crash_free_flag = bool(report.get("crash_free", False))
     crash_free_rate = float(report.get("crash_free_rate", 0.0) or 0.0)
 
@@ -937,4 +879,3 @@ def safety_scorecard(
             f"pii_leak_count={pii_count}, "
             f"crash_free_rate={crash_free_rate:.3f}"
         ),
-    }       
