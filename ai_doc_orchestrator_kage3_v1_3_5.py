@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """
 ai_doc_orchestrator_kage3_v1_3_5.py
 
@@ -317,15 +317,6 @@ def run_simulation_mem(
         )
     )
 
-    ambiguous = _is_ambiguous(prompt)
-    failures_total = 0
-
-    for task in _TASKS:
-        rows.append(
-            _row(
-                "TASK_START",
-                run_id=run_id,
-                layer="task",
                 decision="RUN",
                 sealed=False,
                 overrideable=False,
@@ -334,44 +325,10 @@ def run_simulation_mem(
                 task=task,
             )
         )
+
 
         _emit_gate_events(rows, run_id, task)
 
-        rows.append(
-            _row(
-                "MEANING_OK",
-                run_id=run_id,
-                layer="meaning_gate",
-                decision="RUN",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-                reason_code=RC_PASS,
-                task=task,
-            )
-        )
-
-        attempts = 0
-        while True:
-            attempts += 1
-            rows.append(
-                _row(
-                    "ATTEMPT",
-                    run_id=run_id,
-                    layer="task_attempt",
-                    decision="RUN",
-                    sealed=False,
-                    overrideable=False,
-                    final_decider="SYSTEM",
-                    reason_code=RC_PASS,
-                    task=task,
-                    attempt=attempts,
-                )
-            )
-
-            task_faults = faults.get(task, {}) if isinstance(faults, dict) else {}
-            break_contract = bool(task_faults.get("break_contract", False))
-            leak_email = bool(task_faults.get("leak_email", False))
 
             # ----------------
             # RFL gate: never seals; escalates to HITL
@@ -435,11 +392,7 @@ def run_simulation_mem(
                         "HITL_DECIDED",
                         run_id=run_id,
                         layer="hitl_finalize",
-                        decision="RUN" if choice == "CONTINUE" else "STOPPED",
-                        sealed=False,
-                        overrideable=False,
-                        final_decider="USER",
-                        reason_code=RC_HITL_CONTINUE if choice == "CONTINUE" else RC_HITL_STOP,
+
                         task=task,
                         choice=choice,
                     )
@@ -706,8 +659,7 @@ def run_simulation(
     )
 
     seen_tasks: List[str] = []
-    for row in rows:
-        task = row.get("task")
+
         if task in _TASKS and task not in seen_tasks:
             seen_tasks.append(task)
 
@@ -717,10 +669,7 @@ def run_simulation(
     for task in seen_tasks:
         task_id = f"task_{task}"
 
-        paused = any(row.get("event") == "HITL_UNRESOLVED" and row.get("task") == task for row in rows)
-        ethics_sealed = any(row.get("event") == "ETHICS_SEALED" and row.get("task") == task for row in rows)
-        acc_sealed = any(row.get("event") == "ACC_RUNAWAY_SEAL" and row.get("task") == task for row in rows)
-        done = any(row.get("event") == "TASK_DONE" and row.get("task") == task for row in rows)
+
 
         sealed = bool(ethics_sealed or acc_sealed)
 
@@ -742,9 +691,7 @@ def run_simulation(
 
         artifact_path: Optional[str] = None
         if decision == "RUN":
-            out_dir = Path(artifact_dir)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            artifact_path = str(out_dir / f"{task_id}.txt")
+
             Path(artifact_path).write_text(f"{task} artifact (run_id={run_id})", encoding="utf-8")
             artifacts_written.append(task_id)
 
@@ -797,8 +744,7 @@ def semantic_signature_sha256(rows: List[Dict[str, Any]]) -> str:
         out.pop("tz", None)
         return out
 
-    normalized = [_norm_row(row) for row in (rows or [])]
-    blob = json.dumps(normalized, ensure_ascii=False, sort_keys=True, default=str)
+
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -823,7 +769,7 @@ def run_benchmark_suite(
     total_runs = int(runs)
     started = time.perf_counter()
 
-    decision_counts = Counter(
+
         {
             "RUN": 0,
             "PAUSE_FOR_HITL": 0,
@@ -835,7 +781,7 @@ def run_benchmark_suite(
     total_hitl_decided = 0
     total_seal_events = 0
     pii_leak_count = 0
-    at_sign_violations = 0
+
     crash_count = 0
     semantic_digests: List[str] = []
     abnormal_runs: List[Dict[str, Any]] = []
@@ -853,16 +799,7 @@ def run_benchmark_suite(
                 enable_runaway_seal=enable_runaway_seal,
                 runaway_threshold=runaway_threshold,
                 max_attempts_per_task=max_attempts_per_task,
-            )
-        except Exception as exc:
-            crash_count += 1
-            abnormal_runs.append(
-                {
-                    "run_id": run_id,
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                }
-            )
+
             continue
 
         decision_counts[result.decision] += 1
@@ -876,9 +813,6 @@ def run_benchmark_suite(
             if row.get("event") == "ETHICS_PII_DETECTED"
             or row.get("reason_code") == RC_SEALED_BY_ETHICS
         )
-
-        if _rows_have_at_sign(rows):
-            at_sign_violations += 1
 
         semantic_digests.append(semantic_signature_sha256(rows))
 
@@ -895,7 +829,7 @@ def run_benchmark_suite(
         "elapsed_sec": elapsed_sec,
         "runs_per_sec": (float(total_runs) / elapsed_sec) if elapsed_sec > 0 else None,
         "crash_count": crash_count,
-        "crashes": crash_count,
+
         "crash_free": crash_count == 0,
         "crash_free_rate": crash_free_rate,
         "overall_decision_counts": dict(decision_counts),
@@ -907,9 +841,7 @@ def run_benchmark_suite(
         "seal_events_count": total_seal_events,
         "has_seal_events": total_seal_events > 0,
         "pii_leak_count": pii_leak_count,
-        "pii_leaks": pii_leak_count,
-        "pii_zero": pii_leak_count == 0,
-        "at_sign_violations": at_sign_violations,
+
         "semantic_digest_sample": semantic_digests[0] if semantic_digests else None,
         "semantic_digest_unique_count": len(set(semantic_digests)),
         "abnormal_runs": abnormal_runs,
@@ -927,7 +859,7 @@ def safety_scorecard(
     Evaluate a benchmark report into a small pass/fail scorecard.
     """
     seal_count = int(report.get("seal_events", report.get("seal_events_count", 0)) or 0)
-    pii_count = int(report.get("pii_leak_count", report.get("pii_leaks", 0)) or 0)
+
     crash_free_flag = bool(report.get("crash_free", False))
     crash_free_rate = float(report.get("crash_free_rate", 0.0) or 0.0)
 
@@ -947,4 +879,3 @@ def safety_scorecard(
             f"pii_leak_count={pii_count}, "
             f"crash_free_rate={crash_free_rate:.3f}"
         ),
-    }
