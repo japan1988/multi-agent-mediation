@@ -11,6 +11,7 @@ Goals:
 Run:
   pytest -q
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -22,67 +23,6 @@ from typing import Any, Dict, Iterable, List, Set, Tuple
 import pytest
 
 
-# Repo root: (repo)/tests/this_file.py -> parents[1] == repo root
-REPO_ROOT = Path(__file__).resolve().parents[1]
-TESTS_DIR = Path(__file__).resolve().parent
-
-SIM_FILENAME = "mediation_emergency_contract_sim_v5_1_2.py"
-CODEBOOK_FILENAME = "log_codebook_v5_1_demo_1.json"
-
-
-def _rank_path(p: Path) -> Tuple[int, int, int]:
-    """
-    Lower is better.
-      1) Prefer tests/fixtures
-      2) Prefer tests/
-      3) Prefer shorter paths
-    """
-    pstr = str(p.as_posix())
-    in_fixtures = 0 if f"{TESTS_DIR.as_posix()}/fixtures/" in pstr else 1
-    in_tests = 0 if f"{TESTS_DIR.as_posix()}/" in pstr else 1
-    depth = len(p.resolve().parts)
-    return (in_fixtures, in_tests, depth)
-
-
-def _resolve_file(
-    *,
-    exact_name: str,
-    candidate_relpaths: Iterable[Path],
-    glob_patterns: Iterable[str] = (),
-    required: bool = True,
-) -> Path:
-    """
-    Resolve a file in a hermetic way:
-      1) Try explicit candidate paths (relative to repo root)
-      2) Try exact rglob by filename
-      3) Try rglob by patterns
-    """
-    tried: List[Path] = []
-
-    for rel in candidate_relpaths:
-        p = (REPO_ROOT / rel).resolve()
-        tried.append(p)
-        if p.exists():
-            return p
-
-    hits = list(REPO_ROOT.rglob(exact_name))
-    if hits:
-        return sorted(hits, key=_rank_path)[0].resolve()
-
-    for pat in glob_patterns:
-        pat_hits = list(REPO_ROOT.rglob(pat))
-        if pat_hits:
-            return sorted(pat_hits, key=_rank_path)[0].resolve()
-
-    if required:
-        tried_str = "\n".join(f"  - {p}" for p in tried)
-        raise FileNotFoundError(
-            f"Missing fixture: {exact_name}\nTried:\n{tried_str}\n"
-            f"Also searched recursively under repo root for:\n"
-            f"  - {exact_name}\n"
-            + "".join(f"  - {pat}\n" for pat in glob_patterns)
-        )
-    return (REPO_ROOT / exact_name).resolve()
 
 
 def _import_from_path(mod_name: str, path: Path):
@@ -231,25 +171,6 @@ def _pack_header(
     return packed
 
 
-def _decode_header_local(cb: Dict[str, Any], packed: int) -> Dict[str, Any]:
-    """
-    Decode 20-bit header (big-endian pack) using codebook reverse_maps.
-    Layout (MSB->LSB):
-      layer_id:6 | decision_id:2 | sealed:1 | overrideable:1 | decider_id:2 | rc_id:8
-    """
-    rev = cb["reverse_maps"]
-
-    rc_id = packed & 0xFF
-    packed >>= 8
-
-    decider_id = packed & 0x3
-    packed >>= 2
-
-    overrideable = bool(packed & 0x1)
-    packed >>= 1
-
-    sealed = bool(packed & 0x1)
-    packed >>= 1
 
     decision_id = packed & 0x3
     packed >>= 2
@@ -306,7 +227,7 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim,
     sim.ensure_default_grant_exists()
     rc_set = _rc_set_from_codebook(codebook)
 
-    trust = sim.TrustState(trust_score=0.50, approval_streak=0, cooldown_until=None, compliance_score=0.0, coaching_sessions=0)
+
     st, audit, trust_out = sim.simulate_run(
         run_id="RUN#T1",
         dummy_auth_id="EMG-ABCDEF123456",
@@ -323,7 +244,6 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim,
     for r in rows:
         assert r["reason_code"] in rc_set, f"Unknown reason_code in ARL: {r['reason_code']}"
 
-    trust2 = sim.TrustState(trust_score=0.90, approval_streak=0, cooldown_until=None, compliance_score=0.0, coaching_sessions=0)
     st2, audit2, trust2_out = sim.simulate_run(
         run_id="RUN#T2",
         dummy_auth_id="EMG-ABCDEF123456",
