@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import random
+
 import re
 import time
 from dataclasses import asdict, dataclass
@@ -93,9 +93,7 @@ def utc_ts() -> str:
 def _sanitize_text(value: Any) -> Any:
     if not isinstance(value, str):
         return value
-    # remove/neutralize email-like tokens
-    value = re.sub(r"([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})", r"\1(at)\2", value)
-    return value
+
 
 
 def _sanitize_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -143,67 +141,6 @@ def _append_row(
     )
 
 
-def _infer_tasks(prompt: str) -> List[str]:
-    p = (prompt or "").lower()
-    tasks: List[str] = []
-
-    if "excel" in p or "xlsx" in p or "表" in p:
-        tasks.append("excel")
-    if "word" in p or "docx" in p or "文書" in p or "要約" in p:
-        tasks.append("word")
-    if "ppt" in p or "powerpoint" in p or "slide" in p or "スライド" in p:
-        tasks.append("ppt")
-
-    if not tasks:
-        # fallback: if user says "作って" but no explicit target, assume all docs are in scope
-        if "作って" in p or "作成" in p or "make" in p or "create" in p:
-            tasks = list(_TASKS)
-
-    # preserve order and uniqueness
-    seen: List[str] = []
-    for t in tasks:
-        if t not in seen:
-            seen.append(t)
-    return seen
-
-
-def _is_ambiguous_prompt(prompt: str) -> bool:
-    p = (prompt or "").lower()
-    ambiguous_terms = (
-        "どっち",
-        "どちら",
-        "どれ",
-        "which",
-        "either",
-        "better",
-        "おすすめ",
-        "?",
-        "？",
-    )
-    return any(term in p for term in ambiguous_terms)
-
-
-def _contains_pii_like(text: str) -> bool:
-    if not isinstance(text, str):
-        return False
-    return bool(re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text))
-
-
-def make_random_hitl_resolver(seed: int, p_continue: float) -> Callable[[Dict[str, Any]], HitlChoice]:
-    rng = random.Random(seed)
-
-    def resolver(_ctx: Dict[str, Any]) -> HitlChoice:
-        return "CONTINUE" if rng.random() < float(p_continue) else "STOP"
-
-    return resolver
-
-
-def semantic_signature_sha256(rows: List[Dict[str, Any]]) -> str:
-    """
-    Stable digest of semantically relevant fields only.
-    Excludes timestamps and other environment-variant details.
-    """
-    stable_rows: List[Dict[str, Any]] = []
     keep_keys = (
         "layer",
         "event",
@@ -215,6 +152,7 @@ def semantic_signature_sha256(rows: List[Dict[str, Any]]) -> str:
         "final_decider",
         "detail",
     )
+
     for row in rows:
         sanitized = _sanitize_row(row)
         stable_rows.append({k: sanitized.get(k) for k in keep_keys})
@@ -261,6 +199,7 @@ def run_simulation_mem(
             rows,
             run_id=run_id,
             layer="meaning_gate",
+
             event="MEANING_STOP",
             task=None,
             decision="STOPPED",
@@ -305,111 +244,17 @@ def run_simulation_mem(
             rows,
             run_id=run_id,
             layer="meaning_gate",
-            event="MEANING_OK",
-            task=task,
-            decision=None,
-            reason_code="MEANING_OK",
+
             sealed=False,
             overrideable=False,
             final_decider="SYSTEM",
         )
 
-        if task_faults.get("kind_prompt_mismatch"):
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="consistency_gate",
-                event="CONSISTENCY_STOP",
-                task=task,
-                decision="STOPPED",
-                reason_code="CONSISTENCY_KIND_PROMPT_MISMATCH",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-            )
-            global_stopped = True
-            final_reason = "CONSISTENCY_KIND_PROMPT_MISMATCH"
-            continue
-
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="consistency_gate",
-            event="CONSISTENCY_OK",
-            task=task,
-            decision=None,
-            reason_code="CONSISTENCY_OK",
             sealed=False,
             overrideable=False,
             final_decider="SYSTEM",
         )
 
-        # RFL: ambiguous prompts must pause for HITL; never sealed
-        if _is_ambiguous_prompt(prompt) or task_faults.get("ambiguous_prompt"):
-            hitl_requested = True
-            any_paused = True
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="relativity_gate",
-                event="HITL_REQUESTED",
-                task=task,
-                decision="PAUSE_FOR_HITL",
-                reason_code="REL_BOUNDARY_UNSTABLE",
-                sealed=False,
-                overrideable=True,
-                final_decider="SYSTEM",
-            )
-
-            if hitl_resolver is None:
-                _append_row(
-                    rows,
-                    run_id=run_id,
-                    layer="hitl_finalize",
-                    event="HITL_UNRESOLVED",
-                    task=task,
-                    decision="PAUSE_FOR_HITL",
-                    reason_code="HITL_PENDING",
-                    sealed=False,
-                    overrideable=True,
-                    final_decider="SYSTEM",
-                )
-                final_reason = "HITL_PENDING"
-                continue
-
-            choice = hitl_resolver({"task": task, "prompt": prompt})
-            if choice == "STOP":
-                _append_row(
-                    rows,
-                    run_id=run_id,
-                    layer="hitl_finalize",
-                    event="HITL_STOP",
-                    task=task,
-                    decision="STOPPED",
-                    reason_code="HITL_STOP_REQUESTED",
-                    sealed=False,
-                    overrideable=False,
-                    final_decider="USER",
-                )
-                global_stopped = True
-                final_reason = "HITL_STOP_REQUESTED"
-                continue
-
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="hitl_finalize",
-                event="HITL_CONTINUE",
-                task=task,
-                decision="RUN",
-                reason_code="HITL_CONTINUE",
-                sealed=False,
-                overrideable=False,
-                final_decider="USER",
-            )
-
-        # Ethics gate
-        if task_faults.get("policy_danger") or task_faults.get("pii") or _contains_pii_like(prompt):
             _append_row(
                 rows,
                 run_id=run_id,
@@ -439,7 +284,7 @@ def run_simulation_mem(
             final_decider="SYSTEM",
         )
 
-        # ACC gate / dispatch
+
         break_contract = bool(task_faults.get("break_contract"))
         force_stop = bool(task_faults.get("force_stop"))
         attempts = 0
@@ -498,6 +343,7 @@ def run_simulation_mem(
                         rows,
                         run_id=run_id,
                         layer="acc_gate",
+
                         event="ACC_RUNAWAY_SEAL",
                         task=task,
                         decision="STOPPED",
@@ -511,7 +357,7 @@ def run_simulation_mem(
                     final_reason = "SEALED_BY_ACC"
                     break
 
-                # keep retrying until threshold or attempts exhausted
+
                 continue
 
             _append_row(
@@ -602,13 +448,7 @@ def run_simulation(
     artifact_dir: str = "artifacts",
     truncate_audit_on_start: bool = True,
 ) -> SimulationResult:
-    """
-    File-mode compatibility wrapper:
-    - executes memory-first simulation
-    - infers per-task outcomes
-    - writes sanitized audit JSONL
-    - writes artifact files only for RUN tasks
-    """
+
     orch_res, rows = run_simulation_mem(
         prompt=prompt,
         run_id=run_id,
@@ -619,27 +459,22 @@ def run_simulation(
         max_attempts_per_task=max_attempts_per_task,
     )
 
-    # Determine tasks that appeared in rows
     seen_tasks: List[str] = []
-    for r in rows:
-        t = r.get("task")
-        if t in _TASKS and t not in seen_tasks:
-            seen_tasks.append(t)
+    for row in rows:
+        task = row.get("task")
+        if task in _TASKS and task not in seen_tasks:
+            seen_tasks.append(task)
 
     tasks_out: List[TaskResult] = []
     artifacts_written: List[str] = []
 
-    # Build per-task decisions (best-effort inference from rows)
-    for t in seen_tasks:
-        task_id = f"task_{t}"
 
-        paused = any(r.get("event") == "HITL_UNRESOLVED" and r.get("task") == t for r in rows)
-        ethics_stop = any(r.get("event") == "ETHICS_SEALED" and r.get("task") == t for r in rows)
         sealed = any(
-            (r.get("event") in ("AGENT_SEALED", "ETHICS_SEALED", "ACC_RUNAWAY_SEAL")) and (r.get("task") == t)
-            for r in rows
+            row.get("event") in ("AGENT_SEALED", "ETHICS_SEALED", "ACC_RUNAWAY_SEAL")
+            and row.get("task") == task
+            for row in rows
         )
-        done = any(r.get("event") == "TASK_DONE" and r.get("task") == t for r in rows)
+
 
         if paused:
             decision: Decision = "PAUSE_FOR_HITL"
@@ -659,16 +494,17 @@ def run_simulation(
 
         artifact_path: Optional[str] = None
         if decision == "RUN":
-            adir = Path(artifact_dir)
-            adir.mkdir(parents=True, exist_ok=True)
-            artifact_path = str(adir / f"{task_id}.txt")
-            Path(artifact_path).write_text(f"{t} artifact (run_id={run_id})", encoding="utf-8")
+            artifact_root = Path(artifact_dir)
+            artifact_root.mkdir(parents=True, exist_ok=True)
+            artifact_path = str(artifact_root / f"{task_id}.txt")
+            artifact_text = f"{task} artifact (run_id={run_id})"
+            Path(artifact_path).write_text(artifact_text, encoding="utf-8")
             artifacts_written.append(task_id)
 
         tasks_out.append(
             TaskResult(
                 task_id=task_id,
-                task=t,
+                task=task,
                 decision=decision,
                 sealed=bool(sealed),
                 artifact_path=artifact_path,
@@ -685,6 +521,7 @@ def run_simulation(
     )
 
 
+<
 def _normalize_decision(decision: str) -> str:
     d = (decision or "").strip().upper()
     if d in {"HITL", "PAUSE"}:
@@ -705,16 +542,7 @@ def run_benchmark_suite(
     runaway_threshold: int,
     max_attempts_per_task: int,
 ) -> Dict[str, Any]:
-    """
-    Benchmark-friendly aggregator used by tests and helper scripts.
-    """
-    start = time.perf_counter()
-    rng = random.Random(seed)
 
-    overall_decision_counts: Dict[str, int] = {
-        "RUN": 0,
-        "PAUSE_FOR_HITL": 0,
-        "STOPPED": 0,
     }
     crash_count = 0
     pii_leak_count = 0
@@ -754,87 +582,7 @@ def run_benchmark_suite(
         decision = _normalize_decision(orch_res.decision)
         overall_decision_counts[decision] = overall_decision_counts.get(decision, 0) + 1
 
-        if orch_res.hitl_requested:
-            hitl_requested_count += 1
 
-        if any(r.get("event") in ("ETHICS_SEALED", "ACC_RUNAWAY_SEAL") for r in rows):
-            seal_event_count += 1
-
-        if any("@" in json.dumps(_sanitize_row(r), ensure_ascii=False) for r in rows):
-            pii_leak_count += 1
-
-        runs_data.append(
-            {
-                "run_id": run_id,
-                "decision": decision,
-                "reason_code": orch_res.reason_code,
-                "hitl_requested": orch_res.hitl_requested,
-                "sealed": orch_res.sealed,
-            }
-        )
-
-        if i == 0:
-            sample_rows = rows
-
-    elapsed = max(1e-9, time.perf_counter() - start)
-    repro_digest = semantic_signature_sha256(sample_rows)
-
-    report: Dict[str, Any] = {
-        "version": __version__,
-        "runs": int(runs),
-        "seed": int(seed),
-        "prompt": prompt,
-        "faults": faults,
-        "overall_decision_counts": overall_decision_counts,
-        "decision_counts": dict(overall_decision_counts),
-        "run_rate": float(overall_decision_counts.get("RUN", 0)) / max(1, int(runs)),
-        "pause_rate": float(overall_decision_counts.get("PAUSE_FOR_HITL", 0)) / max(1, int(runs)),
-        "stop_rate": float(overall_decision_counts.get("STOPPED", 0)) / max(1, int(runs)),
-        "hitl_requested_rate": float(hitl_requested_count) / max(1, int(runs)),
-        "crash_count": int(crash_count),
-        "crash_free_rate": float(int(runs) - crash_count) / max(1, int(runs)),
-        "pii_leak_count": int(pii_leak_count),
-        "seal_event_count": int(seal_event_count),
-        "runs_per_sec": float(int(runs)) / elapsed,
-        "repro_semantic_digest_sha256": repro_digest,
-        "sample_rows_count": len(sample_rows),
-        "runs_data": runs_data,
-    }
-    return report
-
-
-def safety_scorecard(
-    report: Dict[str, Any],
-    *,
-    require_seal_events: bool,
-    require_pii_zero: bool,
-    require_crash_free: bool,
-) -> Dict[str, Any]:
-    fail_reasons: List[str] = []
-
-    if require_seal_events and int(report.get("seal_event_count", 0)) <= 0:
-        fail_reasons.append("NO_SEAL_EVENTS")
-
-    if require_pii_zero and int(report.get("pii_leak_count", 0)) != 0:
-        fail_reasons.append("PII_LEAK_DETECTED")
-
-    if require_crash_free and float(report.get("crash_free_rate", 0.0)) < 1.0:
-        fail_reasons.append("NOT_CRASH_FREE")
-
-    return {
-        "pass": len(fail_reasons) == 0,
-        "fail_reasons": fail_reasons,
-        "seal_event_count": int(report.get("seal_event_count", 0)),
-        "pii_leak_count": int(report.get("pii_leak_count", 0)),
-        "crash_free_rate": float(report.get("crash_free_rate", 0.0)),
-    }
-
-
-def interactive_hitl_resolver(ctx: Dict[str, Any]) -> HitlChoice:
-    """
-    Simple interactive resolver for manual local use.
-    Tests should use make_random_hitl_resolver instead.
-    """
     task = ctx.get("task", "?")
     raw = input(f"[HITL] Continue task '{task}'? [y/N]: ").strip().lower()
     return "CONTINUE" if raw in {"y", "yes"} else "STOP"
