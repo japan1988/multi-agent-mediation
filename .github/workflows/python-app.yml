@@ -37,12 +37,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -109,7 +109,7 @@ jobs:
 
       - name: Upload coverage xml (py3.11 only)
         if: always() && matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
@@ -117,7 +117,7 @@ jobs:
 
       - name: Upload pytest logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pytest-failure-logs-${{ matrix.python-version }}
           path: |
