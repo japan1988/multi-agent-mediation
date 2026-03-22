@@ -1,5 +1,3 @@
-
-
 Goals:
   - Enforce mapping consistency (reason_code, layer, decision, final_decider).
   - Ensure simulator never emits a reason_code not present in the codebook.
@@ -155,4 +153,4 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim,
 <
     assert any(r["sealed"] is True for r in rows2), "Expected at least one SEALED row"
     for r in rows2:
-        assert r["reason_code"] in rc_set, f"Unknown reason_code in ARL: {r['reason_code']}"
+        assert r["reason_code"] in rc_set, f"Unknown reason_code
