@@ -835,12 +835,6 @@ def run_benchmark_suite(
     for i in range(int(runs)):
         run_id = f"SIM#{i:05d}"
 
-        # benchmark 用:
-        # run ごとに deterministic だが、run 間では混在する resolver
-        run_rng = random.Random(seed + i)
-
-        def resolver(_ctx: Dict[str, Any], _rng=run_rng) -> HitlChoice:
-            return "CONTINUE" if _rng.random() < float(p_continue) else "STOP"
 
         try:
             orch_res, rows = run_simulation_mem(
