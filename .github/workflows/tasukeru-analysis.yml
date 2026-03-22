@@ -1,4 +1,3 @@
-  name: Tasukeru Analysis
 
 on:
   pull_request:
@@ -321,7 +320,3 @@ jobs:
       - name: No dependency manifest found
         if: ${{ hashFiles('requirements.txt') == '' && hashFiles('pyproject.toml') == '' }}
 
-        run: echo "No requirements.txt or pyproject.toml found. Skipping pip-audit."
-
-        run: echo "No requirements.txt or pyproject.toml found. Skipping pip-audit."    
- main
