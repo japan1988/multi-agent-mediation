@@ -157,7 +157,7 @@ jobs:
                 if (tool === "Bandit") {
                   lines.push("- Bandit は提案扱いです。workflow はこれ単体では fail しません。");
                   lines.push("- ロジック変更前に手動確認してください。");
-                  if (/B101/.test(text)) lines.push("- `B101`: 本番の安全確認に `assert` を使わず、明示例外へ。");
+                  if (/B101/.test(text)) lines.push("- `B101`: 本番コードの `assert` を明示例外へ置換するか確認。");
                   if (/B602|B603|subprocess/.test(text)) lines.push("- subprocess 使用箇所を確認。`shell=True` 回避、引数検証、配列渡し優先。");
                   if (/pickle|yaml\.load/.test(text)) lines.push("- 安全でないデシリアライズ経路を確認。safe loader 優先。");
                   if (/exec\(|eval\(/.test(text)) lines.push("- `exec` / `eval` は必要性を再確認。");
@@ -182,12 +182,60 @@ jobs:
               return lines.join("\n");
             }
 
+            function buildPraise(ruffOutcome, banditOutcome, pytestOutcome) {
+              const ruffOk = ruffOutcome !== "failure";
+              const banditOk = banditOutcome !== "failure";
+              const pytestOk = pytestOutcome !== "failure";
+
+              if (ruffOk && banditOk && pytestOk) {
+                return [
+                  "## Tasukeru celebration",
+                  "",
+                  "素晴らしいです。今回の変更はかなり綺麗です。",
+                  "",
+                  "- Ruff: success",
+                  "- Bandit: success",
+                  "- Pytest: success",
+                  "",
+                  "静的チェック、提案系セキュリティ確認、テストの全部が通っています。",
+                  "かなり安心して見られるPRです。ここは自信を持って大丈夫です。",
+                  ""
+                ].join("\n");
+              }
+
+              if (ruffOk && pytestOk && !banditOk) {
+                return [
+                  "## Tasukeru encouragement",
+                  "",
+                  "かなり良いです。必須ゲートは通っています。",
+                  "",
+                  "- Ruff: success",
+                  "- Pytest: success",
+                  "- Bandit: suggestion only",
+                  "",
+                  "つまりコード品質とテストは問題なしです。",
+                  "Bandit は確認候補を出しているだけなので、今の時点でも十分前進しています。",
+                  "落ち込む結果ではなく、仕上げ段階に入ったと見ていいです。",
+                  ""
+                ].join("\n");
+              }
+
+              return "";
+            }
+
             const ruffText = read("tasukeru_logs/ruff.txt");
             const banditText = read("tasukeru_logs/bandit.txt");
             const pytestText = read("tasukeru_logs/pytest.txt");
 
+            const praise = buildPraise(
+              process.env.RUFF_OUTCOME,
+              process.env.BANDIT_OUTCOME,
+              process.env.PYTEST_OUTCOME
+            );
+
             const body = [
               header,
+              praise,
               "## Tasukeru analysis result",
               "",
               section("Ruff", process.env.RUFF_OUTCOME, ruffText),
@@ -197,7 +245,7 @@ jobs:
               section("Pytest", process.env.PYTEST_OUTCOME, pytestText),
               "",
               "Artifacts: `tasukeru-analysis-logs`",
-            ].join("\n");
+            ].filter(Boolean).join("\n");
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
