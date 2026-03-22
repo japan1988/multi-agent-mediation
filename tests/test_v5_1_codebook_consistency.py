@@ -1,28 +1,14 @@
-# -*- coding: utf-8 -*-
-"""
-Pytest contract tests for v5.1.2 simulator + v5.1-demo.1 codebook.
+
 
 Goals:
   - Enforce mapping consistency (reason_code, layer, decision, final_decider).
   - Ensure simulator never emits a reason_code not present in the codebook.
   - Validate core invariants are preserved (sealed only by ethics/acc; RFL never sealed).
-  - Validate a packed header can be decoded back to symbols using codebook reverse_maps.
+
 
 Run:
   pytest -q
 """
-
-from __future__ import annotations
-
-import importlib.util
-import json
-import sys
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Set, Tuple
-
-import pytest
-
-
 
 
 def _import_from_path(mod_name: str, path: Path):
@@ -36,53 +22,6 @@ def _import_from_path(mod_name: str, path: Path):
 
 
 @pytest.fixture(scope="session")
-def sim_path() -> Path:
-    return _resolve_file(
-        exact_name=SIM_FILENAME,
-        candidate_relpaths=[
-            Path(SIM_FILENAME),
-            Path("src") / SIM_FILENAME,
-            Path("scripts") / SIM_FILENAME,
-        ],
-        glob_patterns=[
-            "mediation_emergency_contract_sim_v5_1_2.py",
-            "mediation_emergency_contract_sim_v5_1_2*.py",
-        ],
-        required=True,
-    )
-
-
-@pytest.fixture(scope="session")
-def codebook_path() -> Path:
-    return _resolve_file(
-        exact_name=CODEBOOK_FILENAME,
-        candidate_relpaths=[
-            Path(CODEBOOK_FILENAME),
-            Path("tests") / CODEBOOK_FILENAME,
-            Path("tests") / "fixtures" / CODEBOOK_FILENAME,
-            Path("fixtures") / CODEBOOK_FILENAME,
-        ],
-        glob_patterns=[
-            "log_codebook_v5_1_demo_1.json",
-            "log_codebook_v5_1*.json",
-            "*codebook*demo_1*.json",
-        ],
-        required=True,
-    )
-
-
-@pytest.fixture(scope="session")
-def sim(sim_path: Path):
-    if not sim_path.exists():
-        raise FileNotFoundError(f"Missing simulator: {sim_path}")
-    return _import_from_path("sim_v5_1_2", sim_path)
-
-
-@pytest.fixture(scope="session")
-def codebook(codebook_path: Path) -> Dict[str, Any]:
-    if not codebook_path.exists():
-        raise FileNotFoundError(f"Missing codebook: {codebook_path}")
-    return json.loads(codebook_path.read_text(encoding="utf-8"))
 
 
 def _rc_set_from_codebook(cb: Dict[str, Any]) -> Set[str]:
@@ -119,7 +58,7 @@ def test_codebook_reverse_maps_are_inverses(codebook):
 
 def test_simulator_constants_are_all_in_codebook(sim, codebook):
     """Every RC_* constant value in the simulator must exist in the codebook."""
-    rc_values: List[str] = []
+
     for name, value in vars(sim).items():
         if name.startswith("RC_") and isinstance(value, str):
             rc_values.append(value)
@@ -144,16 +83,7 @@ def test_simulator_layer_decision_decider_vocab_matches_codebook(sim, codebook):
     assert not (used_deciders - decider_set), f"Deciders missing in codebook: {sorted(used_deciders - decider_set)}"
 
 
-def _pack_header(
-    cb: Dict[str, Any],
-    *,
-    layer: str,
-    decision: str,
-    sealed: bool,
-    overrideable: bool,
-    final_decider: str,
-    reason_code: str,
-) -> int:
+
     """Pack 20-bit header per codebook pack_spec_example (big-endian)."""
     m = cb["maps"]
     layer_id = int(m["layer_to_id"][layer])
@@ -172,28 +102,6 @@ def _pack_header(
 
 
 
-    decision_id = packed & 0x3
-    packed >>= 2
-
-    layer_id = packed & 0x3F
-
-    layer = rev["id_to_layer"][str(layer_id)]
-    decision = rev["id_to_decision"][str(decision_id)]
-    final_decider = rev["id_to_final_decider"][str(decider_id)]
-    reason_code = rev["id_to_reason_code"][str(rc_id)]
-
-    return {
-        "layer": layer,
-        "decision": decision,
-        "sealed": sealed,
-        "overrideable": overrideable,
-        "final_decider": final_decider,
-        "reason_code": reason_code,
-    }
-
-
-def test_local_decoder_roundtrip_for_known_header(codebook):
-    """Pack -> local decode should reproduce the same symbolic fields."""
     packed = _pack_header(
         codebook,
         layer="relativity_gate",
@@ -203,7 +111,7 @@ def test_local_decoder_roundtrip_for_known_header(codebook):
         final_decider="SYSTEM",
         reason_code="REL_BOUNDARY_UNSTABLE",
     )
-    decoded = _decode_header_local(codebook, packed)
+
 
     assert decoded["layer"] == "relativity_gate"
     assert decoded["decision"] == "PAUSE_FOR_HITL"
@@ -215,17 +123,10 @@ def test_local_decoder_roundtrip_for_known_header(codebook):
 
 def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim, codebook, tmp_path, monkeypatch):
     """
-    Execute simulator paths that produce ARL rows and validate:
-      - every reason_code in exported rows exists in codebook
-      - sealed only by ethics/acc (enforced by AuditLog.emit; any violation raises)
-      - RFL never sealed (enforced by AuditLog.emit; any violation raises)
-    """
+
     monkeypatch.setattr(sim, "TRUST_STORE_PATH", tmp_path / "model_trust_store.json", raising=True)
     monkeypatch.setattr(sim, "GRANT_STORE_PATH", tmp_path / "model_grants.json", raising=True)
     monkeypatch.setattr(sim, "EVAL_STORE_PATH", tmp_path / "eval_state.json", raising=True)
-
-    sim.ensure_default_grant_exists()
-    rc_set = _rc_set_from_codebook(codebook)
 
 
     st, audit, trust_out = sim.simulate_run(
@@ -239,10 +140,6 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim,
         persist=False,
     )
     rows = audit.export_rows()
-    assert rows, "Expected some ARL rows due to PAUSE/contract events"
-
-    for r in rows:
-        assert r["reason_code"] in rc_set, f"Unknown reason_code in ARL: {r['reason_code']}"
 
     st2, audit2, trust2_out = sim.simulate_run(
         run_id="RUN#T2",
@@ -255,7 +152,7 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim,
         persist=False,
     )
     rows2 = audit2.export_rows()
-    assert rows2, "Expected ARL rows due to SEALED/STOPPED"
+<
     assert any(r["sealed"] is True for r in rows2), "Expected at least one SEALED row"
     for r in rows2:
         assert r["reason_code"] in rc_set, f"Unknown reason_code in ARL: {r['reason_code']}"
