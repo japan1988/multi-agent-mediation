@@ -255,6 +255,7 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
 
 
 
+
     rc_set = _rc_set_from_codebook(codebook)
 
     trust = sim.TrustState()
