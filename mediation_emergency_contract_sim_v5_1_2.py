@@ -1,4 +1,4 @@
- # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # Version: 5.1.2
 """
 Emergency contract mediation simulator (v5.1.2)
@@ -48,8 +48,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Literal, Optional, Tuple
-
-
 
 JST = timezone(timedelta(hours=9))
 SIM_VERSION = "5.1.2"
@@ -168,7 +166,6 @@ POLICY_PACK_HASH = "POLICY_PACK#SIM#V4_8_2"
 POLICY_PRIORITY = "LIFE > PEDESTRIAN > VEHICLE"
 POLICY_CASE_B = "CASE_B_PED_IN_CROSSWALK_EMERGENCY_PRESENT"
 
-
 # =========================
 # Incident policy (PAUSE selection)
 # =========================
@@ -183,7 +180,6 @@ INCIDENT_PAUSE_REASON_CODES = {
     RC_REL_BOUNDARY_UNSTABLE,
     RC_REL_REF_MISSING,
 }
-
 
 # =========================
 # Tamper-evident ARL chaining
@@ -239,7 +235,6 @@ def load_key_bytes(mode: str, key_file: str = "", key_env: str = "") -> Tuple[by
 class AuditLog:
     """Audit Row Log (ARL) optimized for incident-only persistence."""
 
-
     key: bytes = b""
     key_id: str = "demo-key"
     chain_id: str = field(default_factory=lambda: f"chain-{uuid.uuid4().hex[:12]}")
@@ -261,15 +256,10 @@ class AuditLog:
         sealed: bool,
         reason_code: str,
     ) -> bool:
-        # Sealed/STOPPED are always incidents.
         if sealed or decision == DECISION_STOP:
             return True
-
-        # PAUSE is NOT always an incident.
-        # To achieve "success run => ARL zero", only treat "dangerous PAUSE" as incidents.
         if decision == DECISION_PAUSE:
             return reason_code in INCIDENT_PAUSE_REASON_CODES
-
         if layer == LAYER_CONSISTENCY and reason_code != RC_OK:
             return True
         if reason_code in (RC_CONSISTENCY_BREAK, RC_CRIT_MISSING_REQUIRED_KEYS, RC_INVALID_EVENT):
@@ -362,13 +352,17 @@ class AuditLog:
         if extra:
             base.update(extra)
 
-        trigger = self._should_trigger_incident(layer=layer, decision=decision, sealed=sealed, reason_code=reason_code)
+        trigger = self._should_trigger_incident(
+            layer=layer,
+            decision=decision,
+            sealed=sealed,
+            reason_code=reason_code,
+        )
 
         incident_start = bool(trigger) and (run_id not in self._incident_post_remaining)
         if incident_start:
             self._replay_pre_context(run_id)
             self._incident_post_remaining[run_id] = max(0, int(self.post_context_n))
-
 
         in_post = (
             (not trigger)
@@ -917,7 +911,7 @@ def load_grants() -> List[Grant]:
         return out
     except Exception:
         return []
-    
+
 
 def save_grants(grants: List[Grant]) -> None:
     write_json(GRANTS_STORE_PATH, {"grants": [g.to_dict() for g in grants]})
@@ -1115,9 +1109,8 @@ def apply_trust_update(
 
     if reset_streak:
         trust.approval_streak = 0
-    else:
-        if applied > 0:
-            trust.approval_streak += 1
+    elif applied > 0:
+        trust.approval_streak += 1
 
     if set_cooldown:
         until = (datetime.now(JST) + timedelta(seconds=COOLDOWN_SECONDS)).isoformat(timespec="seconds")
@@ -1212,7 +1205,12 @@ def model_trust_gate(
         overrideable=True,
         final_decider=DECIDER_SYSTEM,
         reason_code=RC_TRUST_SCORE_LOW,
-
+        extra={
+            "trust_score": trust.trust_score,
+            "need": TRUST_NEED_FOR_AUTO,
+            "approval_streak": trust.approval_streak,
+            "grant_id": g.grant_id,
+        },
     )
     return False, RC_TRUST_SCORE_LOW, g.grant_id
 
@@ -1366,7 +1364,6 @@ def simulate_run(
         essentials=["schema_version", "auth_request_id", "auth_id", "context", "expires_at"],
         kind="auth_request",
     ):
-
         if persist:
             save_trust_state(trust)
         return st, audit, trust
@@ -1374,7 +1371,6 @@ def simulate_run(
     scenario = st.auth_request["context"]["scenario"]
     location_id = st.auth_request["context"]["location_id"]
     auto_ok, trust_reason, grant_id = model_trust_gate(audit, st, trust, scenario, location_id)
-
 
     if not auto_ok:
         audit.emit(
@@ -1448,7 +1444,6 @@ def simulate_run(
             overrideable=False,
             final_decider=DECIDER_USER,
             reason_code=RC_HITL_AUTH_APPROVE,
-
         )
         cap_remaining = apply_trust_update(
             audit,
@@ -1591,7 +1586,6 @@ def _first_non_run_row(arl: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 
 @dataclass
 class HitlQueueBuilder:
-
     max_items: int = 1000
     items: List[Dict[str, Any]] = field(default_factory=list)
     by_reason: Dict[str, int] = field(default_factory=dict)
@@ -1600,7 +1594,6 @@ class HitlQueueBuilder:
     def add_run(self, *, run_id: str, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> None:
         self.by_state[final_state] = self.by_state.get(final_state, 0) + 1
 
-        # abnormal states or sealed are candidates for HITL queue
         if final_state not in ("STOPPED", "PAUSE_FOR_HITL_AUTH", "PAUSE_FOR_HITL_FINALIZE") and not sealed:
             return
 
@@ -1729,7 +1722,6 @@ def append_incident_index(out_dir: Path, record: Dict[str, Any]) -> Path:
 
 
 def primary_reason_code_from_rows(rows: List[Any]) -> str:
-
     for r in rows:
         if isinstance(r, dict):
             decision = r.get("decision")
@@ -1816,7 +1808,7 @@ def run_simulation(
     key_env: str = "",
     keep_runs: bool = False,
     queue_max_items: int = 1000,
-    sample_runs: int = 20,
+    sample_runs: int = 10,
 ) -> Dict[str, Any]:
     if runs <= 0:
         runs = 1
@@ -1898,6 +1890,8 @@ def run_simulation(
             sealed=st.sealed,
             arl_rows=audit.rows,
         )
+        abnormal = is_abnormal_run(st.state, st.sealed)
+
         base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
         final_score = base_score * multiplier_snapshot
         abnormal = is_abnormal_run(st.state, st.sealed)
@@ -1951,7 +1945,6 @@ def run_simulation(
             if save_arl_on_abnormal and arl_out_dir:
                 if arl_saved < int(max_arl_files):
                     out_dir = Path(arl_out_dir)
-
                     incident_id = issue_incident_id(out_dir)
                     out_path = out_dir / f"{incident_id}__{rid}.arl.jsonl"
                     write_arl_jsonl(audit.rows, out_path)
@@ -2000,60 +1993,21 @@ def run_simulation(
             if sample_runs and len(results["runs_sample"]) < int(sample_runs):
                 results["runs_sample"].append(run_record)
 
-    # persist end-of-run stores once
     save_trust_state(trust)
     save_eval_state(eval_state)
 
     results["trust_after"] = trust.to_dict()
     results["eval_after"] = eval_state.to_dict()
-    results["hitl_queue"] = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
-    results["repro_summary"] = build_repro_summary(
-        results=results,
-        runs_requested=runs,
-        fabricate=fabricate,
-        fabricate_rate=fabricate_rate,
-        seed=seed,
-        reset=reset,
-        reset_eval=reset_eval,
-        full_context_n=full_context_n,
-        keep_runs=keep_runs,
-    )
-    return results
 
-
-def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Emergency contract mediation simulator (v5.1.2)")
-    p.add_argument("--runs", type=int, default=4)
-    p.add_argument("--fabricate", action="store_true")
-    p.add_argument("--fabricate-rate", type=float, default=None)
-    p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--no-reset", dest="reset", action="store_false")
-    p.add_argument("--no-reset-eval", dest="reset_eval", action="store_false")
-    p.add_argument("--save-arl-on-abnormal", action="store_true")
-    p.add_argument("--arl-out-dir", type=str, default="")
-    p.add_argument("--max-arl-files", type=int, default=1000)
-    p.add_argument("--full-context-n", type=int, default=0)
-    p.add_argument("--key-mode", choices=["demo", "file", "env"], default="demo")
-    p.add_argument("--key-file", type=str, default="")
-    p.add_argument("--key-env", type=str, default="")
-    p.add_argument("--keep-runs", action="store_true")
-    p.add_argument("--queue-max-items", type=int, default=1000)
-    p.add_argument("--sample-runs", type=int, default=20)
-    p.add_argument("--json-out", type=str, default="")
-    return p
-
-
-def main(argv: Optional[List[str]] = None) -> int:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
+ main
 
     results = run_simulation(
         runs=int(args.runs),
         fabricate=bool(args.fabricate),
         fabricate_rate=args.fabricate_rate,
         seed=args.seed,
-        reset=bool(args.reset),
-        reset_eval=bool(args.reset_eval),
+        reset=not bool(args.no_reset),
+        reset_eval=not bool(args.no_reset_eval),
         save_arl_on_abnormal=bool(args.save_arl_on_abnormal),
         arl_out_dir=str(args.arl_out_dir or ""),
         max_arl_files=int(args.max_arl_files),
@@ -2066,12 +2020,4 @@ def main(argv: Optional[List[str]] = None) -> int:
         sample_runs=int(args.sample_runs),
     )
 
-    if args.json_out:
-        write_json(Path(args.json_out), results)
-    else:
-        print(json.dumps(results, ensure_ascii=False, indent=2))
-    return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
