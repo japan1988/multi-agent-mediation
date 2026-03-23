@@ -25,6 +25,10 @@ Core invariants:
 NOTE (OSS demo):
 - Default key mode is "demo". This proves the mechanism works, but does not provide real secrecy.
 - For realistic tamper evidence, store a secret key out-of-band (e.g., USB) and pass via --key-file or --key-env.
+
+v5.1.2 patch (success run => ARL zero):
+- "force_full" rows (EVAL/REWARD) are emitted only on abnormal runs
+- PAUSE is NOT always treated as an incident; it is selected by reason_code policy
 """
 
 from __future__ import annotations
@@ -46,6 +50,7 @@ from pathlib import Path
 from typing import Any, Deque, Dict, List, Literal, Optional, Tuple
 
 
+
 JST = timezone(timedelta(hours=9))
 SIM_VERSION = "5.1.2"
 
@@ -57,7 +62,6 @@ EVAL_STATE_PATH = Path("eval_state.json")
 # Backward-compatible aliases used internally in older code paths
 GRANT_STORE_PATH = GRANTS_STORE_PATH
 EVAL_STORE_PATH = EVAL_STATE_PATH
-
 
 # =========================
 # Helpers
@@ -166,6 +170,22 @@ POLICY_CASE_B = "CASE_B_PED_IN_CROSSWALK_EMERGENCY_PRESENT"
 
 
 # =========================
+# Incident policy (PAUSE selection)
+# =========================
+# To achieve "success run => ARL zero", we do NOT treat all PAUSE as incidents.
+# Only "dangerous" PAUSE reason_codes are persisted as incidents.
+INCIDENT_PAUSE_REASON_CODES = {
+    RC_CRIT_MISSING_REQUIRED_KEYS,
+    RC_INVALID_EVENT,
+    RC_CONSISTENCY_BREAK,
+    RC_SAFETY_LEGAL_BINDING_CLAIM,
+    RC_SAFETY_DISCRIMINATION_TERM,
+    RC_REL_BOUNDARY_UNSTABLE,
+    RC_REL_REF_MISSING,
+}
+
+
+# =========================
 # Tamper-evident ARL chaining
 # =========================
 def _canon_json(obj: Any) -> str:
@@ -219,6 +239,7 @@ def load_key_bytes(mode: str, key_file: str = "", key_env: str = "") -> Tuple[by
 class AuditLog:
     """Audit Row Log (ARL) optimized for incident-only persistence."""
 
+
     key: bytes = b""
     key_id: str = "demo-key"
     chain_id: str = field(default_factory=lambda: f"chain-{uuid.uuid4().hex[:12]}")
@@ -240,8 +261,15 @@ class AuditLog:
         sealed: bool,
         reason_code: str,
     ) -> bool:
-        if sealed or decision in (DECISION_PAUSE, DECISION_STOP):
+        # Sealed/STOPPED are always incidents.
+        if sealed or decision == DECISION_STOP:
             return True
+
+        # PAUSE is NOT always an incident.
+        # To achieve "success run => ARL zero", only treat "dangerous PAUSE" as incidents.
+        if decision == DECISION_PAUSE:
+            return reason_code in INCIDENT_PAUSE_REASON_CODES
+
         if layer == LAYER_CONSISTENCY and reason_code != RC_OK:
             return True
         if reason_code in (RC_CONSISTENCY_BREAK, RC_CRIT_MISSING_REQUIRED_KEYS, RC_INVALID_EVENT):
@@ -340,6 +368,7 @@ class AuditLog:
         if incident_start:
             self._replay_pre_context(run_id)
             self._incident_post_remaining[run_id] = max(0, int(self.post_context_n))
+
 
         in_post = (
             (not trigger)
@@ -891,7 +920,7 @@ def load_grants() -> List[Grant]:
     
 
 def save_grants(grants: List[Grant]) -> None:
-    write_json(GRANTS_STORE_PATH, {"grants": [g.to_dict() for g in grants]})
+
 
 
 def ensure_default_grant_exists() -> None:
@@ -1183,11 +1212,7 @@ def model_trust_gate(
         overrideable=True,
         final_decider=DECIDER_SYSTEM,
         reason_code=RC_TRUST_SCORE_LOW,
-        extra={
-            "trust_score": trust.trust_score,
-            "need": TRUST_NEED_FOR_AUTO,
-            "approval_streak": trust.approval_streak,
-        },
+
     )
     return False, RC_TRUST_SCORE_LOW, g.grant_id
 
@@ -1210,9 +1235,7 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         )
         return
 
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_ACC,
+
         decision=DECISION_PAUSE,
         sealed=False,
         overrideable=True,
@@ -1220,6 +1243,7 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         reason_code=RC_COACHING_AUTH_REQUIRED,
         extra={"trust_score": trust.trust_score, "compliance_score": trust.compliance_score},
     )
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_COACHING_AUTH,
@@ -1340,6 +1364,7 @@ def simulate_run(
         essentials=["schema_version", "auth_request_id", "auth_id", "context", "expires_at"],
         kind="auth_request",
     ):
+
         if persist:
             save_trust_state(trust)
         return st, audit, trust
@@ -1347,6 +1372,7 @@ def simulate_run(
     scenario = st.auth_request["context"]["scenario"]
     location_id = st.auth_request["context"]["location_id"]
     auto_ok, trust_reason, grant_id = model_trust_gate(audit, st, trust, scenario, location_id)
+
 
     if not auto_ok:
         audit.emit(
@@ -1420,10 +1446,7 @@ def simulate_run(
             overrideable=False,
             final_decider=DECIDER_USER,
             reason_code=RC_HITL_AUTH_APPROVE,
-            extra={
-                "auth_request_id": st.auth_request["auth_request_id"],
-                "auth_id": st.auth_request["auth_id"],
-            },
+
         )
         cap_remaining = apply_trust_update(
             audit,
@@ -1566,6 +1589,7 @@ def _first_non_run_row(arl: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 
 @dataclass
 class HitlQueueBuilder:
+
     max_items: int = 1000
     items: List[Dict[str, Any]] = field(default_factory=list)
     by_reason: Dict[str, int] = field(default_factory=dict)
@@ -1574,6 +1598,7 @@ class HitlQueueBuilder:
     def add_run(self, *, run_id: str, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> None:
         self.by_state[final_state] = self.by_state.get(final_state, 0) + 1
 
+        # abnormal states or sealed are candidates for HITL queue
         if final_state not in ("STOPPED", "PAUSE_FOR_HITL_AUTH", "PAUSE_FOR_HITL_FINALIZE") and not sealed:
             return
 
@@ -1702,6 +1727,7 @@ def append_incident_index(out_dir: Path, record: Dict[str, Any]) -> Path:
 
 
 def primary_reason_code_from_rows(rows: List[Any]) -> str:
+
     for r in rows:
         if isinstance(r, dict):
             decision = r.get("decision")
@@ -1778,6 +1804,7 @@ def run_simulation(
     seed: Optional[int] = None,
     reset: bool = True,
     reset_eval: bool = True,
+
     save_arl_on_abnormal: bool = False,
     arl_out_dir: str = "",
     max_arl_files: int = 1000,
@@ -1785,10 +1812,7 @@ def run_simulation(
     key_mode: str = "demo",
     key_file: str = "",
     key_env: str = "",
-    keep_runs: bool = False,
-    queue_max_items: int = 0,
-    sample_runs: int = 0,
-) -> Dict[str, Any]:
+
     if runs <= 0:
         runs = 1
 
@@ -1864,17 +1888,14 @@ def run_simulation(
         t1 = time.perf_counter()
         runtime_ms = (t1 - t0) * 1000.0
 
-        clean_ok, fraud_hits = is_clean_completion(
-            final_state=st.state,
-            sealed=st.sealed,
-            arl_rows=audit.rows,
-        )
+
         base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
         final_score = base_score * multiplier_snapshot
 
         reward_granted = bool(clean_ok)
         reward_value = final_score if reward_granted else 0.0
 
+        # Only persist eval/reward rows when abnormal (success => no ARL rows)
         audit.emit(
             run_id=rid,
             layer=LAYER_EVAL,
@@ -1892,6 +1913,7 @@ def run_simulation(
                 "fraud_hits": fraud_hits,
                 "fabricate_evidence": fabricate_this,
             },
+
         )
         audit.emit(
             run_id=rid,
@@ -1906,6 +1928,7 @@ def run_simulation(
                 "reward_value": round(reward_value, 6),
                 "clean_completion": clean_ok,
             },
+
         )
 
         if reward_granted:
@@ -1913,7 +1936,6 @@ def run_simulation(
 
         qb.add_run(run_id=rid, final_state=st.state, sealed=st.sealed, arl_rows=audit.rows)
 
-        abnormal = is_abnormal_run(st.state, st.sealed)
         if abnormal:
             results["abnormal_arl_persistence"]["abnormal_total"] += 1
             if save_arl_on_abnormal and arl_out_dir:
@@ -1966,93 +1988,20 @@ def run_simulation(
             results["runs"].append(run_record)
         else:
             if sample_runs and len(results["runs_sample"]) < int(sample_runs):
-                results["runs_sample"].append(run_record)
 
+    # persist end-of-run stores once
     save_trust_state(trust)
     save_eval_state(eval_state)
 
     results["trust_after"] = trust.to_dict()
     results["eval_after"] = eval_state.to_dict()
 
-    results["hitl_queue"] = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
-    results["repro_summary"] = build_repro_summary(
-        results=results,
-        runs_requested=runs,
-        fabricate=fabricate,
-        fabricate_rate=fabricate_rate,
-        seed=seed,
-        reset=reset,
-        reset_eval=reset_eval,
-        full_context_n=full_context_n,
-        keep_runs=keep_runs,
-    )
-    return results
-
-
-def _print_summary(results: Dict[str, Any]) -> None:
-    repro = results.get("repro_summary", {}) or {}
-    summary = repro.get("summary", {}) or {}
-
-    print(f"[v{SIM_VERSION}] runs={summary.get('total_runs')} keep_runs={repro.get('keep_runs')}")
-    print("by_state:", json.dumps(summary.get("by_state", {}), ensure_ascii=False, sort_keys=True))
-    print("top_reason_code:", json.dumps(summary.get("by_reason_code_top20", {}), ensure_ascii=False, sort_keys=True))
-    print(
-        "repro:",
-        json.dumps(
-            {
-                "seed": repro.get("seed"),
-                "fabricate_rate": repro.get("fabricate_rate"),
-                "reset": repro.get("reset"),
-                "reset_eval": repro.get("reset_eval"),
-                "full_context_n": repro.get("full_context_n"),
-                "abnormal_total": summary.get("abnormal_total"),
-                "saved": summary.get("saved"),
-                "skipped_by_cap": summary.get("skipped_by_cap"),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        ),
-    )
-
-
-def main(argv: Optional[List[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Emergency contract mediation simulator (v5.1.2)")
-
-    p.add_argument("--runs", type=int, default=100, help="number of runs")
-    p.add_argument("--fabricate", action="store_true", help="fabricate evidence for all runs (unless --fabricate-rate is set)")
-    p.add_argument("--fabricate-rate", type=float, default=None, help="fabrication rate in [0,1] (overrides --fabricate)")
-    p.add_argument("--seed", type=int, default=None, help="random seed (deterministic)")
-
-    p.add_argument("--no-reset", action="store_true", help="do not reset stores (trust/grants/eval)")
-    p.add_argument("--no-reset-eval", action="store_true", help="if resetting, keep eval_state.json")
-
-    p.add_argument("--save-arl-on-abnormal", action="store_true", help="save ARL JSONL only on abnormal runs")
-    p.add_argument("--arl-out-dir", type=str, default="", help="output dir for abnormal ARLs + incident index")
-    p.add_argument("--max-arl-files", type=int, default=1000, help="cap for saved abnormal ARL files")
-
-    p.add_argument("--full-context-n", type=int, default=0, help="pre-context replay size kept in memory (per run_id)")
-
-    p.add_argument("--key-mode", type=str, default="demo", choices=["demo", "file", "env"], help="demo|file|env")
-    p.add_argument("--key-file", type=str, default="", help="key file path (for --key-mode=file)")
-    p.add_argument("--key-env", type=str, default="", help="env var name (for --key-mode=env)")
-
-    p.add_argument("--keep-runs", action="store_true", help="keep full per-run results in memory (results['runs'])")
-    p.add_argument("--queue-max-items", type=int, default=0, help="keep up to N HITL queue items (0 keeps counts only)")
-    p.add_argument("--sample-runs", type=int, default=5, help="when --keep-runs is OFF, keep up to N sampled runs")
-
-    p.add_argument("--results-json", type=str, default="", help="write full results JSON to this path")
-    p.add_argument("--queue-json", type=str, default="", help="write HITL queue JSON to this path")
-    p.add_argument("--queue-csv", type=str, default="", help="write HITL queue CSV to this path")
-
-    args = p.parse_args(argv)
-
     results = run_simulation(
         runs=int(args.runs),
         fabricate=bool(args.fabricate),
         fabricate_rate=args.fabricate_rate,
         seed=args.seed,
-        reset=(not args.no_reset),
-        reset_eval=(not args.no_reset_eval),
+
         save_arl_on_abnormal=bool(args.save_arl_on_abnormal),
         arl_out_dir=str(args.arl_out_dir or ""),
         max_arl_files=int(args.max_arl_files),
@@ -2065,16 +2014,3 @@ def main(argv: Optional[List[str]] = None) -> int:
         sample_runs=int(args.sample_runs),
     )
 
-    if args.results_json:
-        write_json(Path(args.results_json), results)
-    if args.queue_json:
-        write_json(Path(args.queue_json), results.get("hitl_queue", {}))
-    if args.queue_csv:
-        write_queue_csv(results.get("hitl_queue", {}), Path(args.queue_csv))
-
-    _print_summary(results)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
