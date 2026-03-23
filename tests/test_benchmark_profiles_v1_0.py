@@ -95,8 +95,6 @@ def test_benchmark_profile_baseline_no_faults() -> None:
     assert report["crashes"] == 0
     assert report["crash_free_rate"] == 1.0
     assert report["at_sign_violations"] == 0
-
-    # Baseline expectation: no HITL and no stop (pure RUN).
     assert pause_rate == 0.0
     assert stop_rate == 0.0
     assert run_rate == 1.0
@@ -122,11 +120,8 @@ def test_benchmark_profile_hitl_observe_ambiguous_prompt() -> None:
 
     run_rate, pause_rate, stop_rate = _decision_counts_to_rates(counts, runs)
 
-    # "pause_rate" (final decision) is typically 0 because HITL is resolved to RUN/STOP.
-    # Instead we assert HITL_REQUESTED was observed.
     assert hitl_rate > 0.50
 
-    # Current behavior resolves ambiguous HITL cases to STOPPED rather than RUN.
     assert stop_rate > 0.05
     assert pause_rate == 0.0
     assert run_rate == 0.0
@@ -150,7 +145,7 @@ def test_benchmark_profile_stress_stop_rate_1_and_no_crash_no_pii() -> None:
         prompt="Excelで進捗表を作成し、Wordで要約し、PPTでスライドを作成してください。",
         runs=runs,
         seed=42,
-        p_continue=1.0,  # keep continuing until runaway seal (ACC) forces stop
+        p_continue=1.0,
         faults=faults,
         enable_runaway_seal=True,
         runaway_threshold=2,

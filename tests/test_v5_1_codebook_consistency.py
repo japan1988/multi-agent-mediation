@@ -107,7 +107,6 @@ def _pack_header(
     decider_id = int(maps["final_decider_to_id"][final_decider])
     rc_id = int(maps["reason_code_to_id"][reason_code])
 
-
     packed = 0
     packed = (packed << 6) | (layer_id & 0x3F)
     packed = (packed << 2) | (decision_id & 0x3)
@@ -171,6 +170,11 @@ def _assert_rows_keep_core_invariants(rows):
             else:
                 raise AssertionError(
                     f"Unexpected final_decider on RFL row: {r['final_decider']}"
+                )
+
+            else:
+                raise AssertionError(
+                    f"Unexpected decision on RFL row: {r['decision']}"
                 )
 
 
@@ -263,6 +267,7 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
     monkeypatch.setattr(
         sim, "TRUST_STORE_PATH", tmp_path / "model_trust_store.json", raising=True
     )
+
 
 
     rc_set = _rc_set_from_codebook(codebook)
