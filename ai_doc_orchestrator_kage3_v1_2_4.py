@@ -9,12 +9,18 @@ Changes (design-oriented + IEP-aligned):
 - Defensive JSON serialization: default=str so audit never crashes on non-JSON types.
 - Deep redaction also redacts dict keys (prevents email-like keys from persisting).
 - emit() auto-fills "ts" if missing.
-- Decision vocabulary aligned: RUN / PAUSE_FOR_HITL / STOPPED
+- Decision vocabulary aligned (gates/audit): RUN / PAUSE_FOR_HITL / STOPPED
 - ARL minimal keys always emitted: sealed, overrideable, final_decider
 - HITL branching implemented as a fixed firepoint:
   HITL_REQUESTED (SYSTEM) -> HITL_DECIDED (USER) -> downstream events branch.
 - Optional RFL gate stub (prompt-based) placed per fixed order:
   Meaning -> Consistency -> RFL -> Ethics -> ACC -> Dispatch
+
+Compatibility note (for CI / legacy tests):
+- Some existing tests expect overall decision vocabulary RUN/HITL only.
+- This module supports `overall_policy`:
+    * "legacy" (default): overall is "RUN" if all tasks RUN else "HITL"
+    * "iep": overall is STOPPED if any STOPPED else PAUSE_FOR_HITL if any pause else RUN
 """
 
 from __future__ import annotations
@@ -32,9 +38,12 @@ JST = timezone(timedelta(hours=9))
 
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 
-# IEP-aligned decisions
+# IEP-aligned gate decisions (for per-task + audit rows)
 Decision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
-OverallDecision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
+
+# Overall decision can be legacy or IEP
+OverallPolicy = Literal["legacy", "iep"]
+OverallDecision = Literal["RUN", "HITL", "PAUSE_FOR_HITL", "STOPPED"]
 
 # IEP-aligned final decider
 FinalDecider = Literal["SYSTEM", "USER"]
@@ -430,6 +439,7 @@ def run_simulation(
     faults: Optional[Dict[str, Dict[str, Any]]] = None,
     truncate_audit_on_start: bool = False,
     hitl_resolver: Optional[HitlResolver] = None,
+    overall_policy: OverallPolicy = "legacy",
 ) -> SimulationResult:
     """
     truncate_audit_on_start:
@@ -438,6 +448,15 @@ def run_simulation(
     hitl_resolver:
     - (run_id, task_id, layer, reason_code) -> "CONTINUE" or "STOP"
     - None の場合は fail-closed で STOP
+
+    overall_policy:
+    - "legacy" (default): OverallDecision は RUN/HITL のみ
+        RUN if all tasks RUN else HITL
+      ※ 既存テストがこれを前提にしている場合の互換用
+    - "iep": OverallDecision は RUN/PAUSE_FOR_HITL/STOPPED
+        STOPPED if any STOPPED
+        elif any PAUSE_FOR_HITL -> PAUSE_FOR_HITL
+        else RUN
     """
     faults = faults or {}
 
@@ -781,16 +800,19 @@ def run_simulation(
             )
         )
 
-    # Overall decision:
-    # - If any task STOPPED -> STOPPED
-    # - Else if any task PAUSE_FOR_HITL -> PAUSE_FOR_HITL
-    # - Else RUN
-    if any(t.decision == "STOPPED" for t in task_results):
-        overall: OverallDecision = "STOPPED"
-    elif any(t.decision == "PAUSE_FOR_HITL" for t in task_results):
-        overall = "PAUSE_FOR_HITL"
+    # -----------------
+    # Overall decision (policy-controlled)
+    # -----------------
+    if overall_policy == "iep":
+        if any(t.decision == "STOPPED" for t in task_results):
+            overall: OverallDecision = "STOPPED"
+        elif any(t.decision == "PAUSE_FOR_HITL" for t in task_results):
+            overall = "PAUSE_FOR_HITL"
+        else:
+            overall = "RUN"
     else:
-        overall = "RUN"
+        # legacy: tests may expect only RUN/HITL
+        overall = "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
 
     return SimulationResult(
         run_id=run_id,
@@ -837,5 +859,6 @@ if __name__ == "__main__":
         artifact_dir="out/artifacts_v1_2_4",
         truncate_audit_on_start=True,
         hitl_resolver=interactive_hitl_resolver,
+        overall_policy="legacy",  # CI/old tests compatibility
     )
     print(result)
