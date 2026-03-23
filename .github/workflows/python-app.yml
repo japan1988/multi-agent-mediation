@@ -81,7 +81,8 @@ jobs:
       - name: Pytest
         run: |
           set -euo pipefail
-          pytest -q --maxfail=1 --disable-warnings --junitxml=junit-py${{ matrix.python-version }}.xml
+          pytest -q --maxfail=1 --disable-warnings \
+            --junitxml=junit-py${{ matrix.python-version }}.xml
 
       - name: Upload test artifacts
         if: always()
