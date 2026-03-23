@@ -1217,6 +1217,7 @@ def model_trust_gate(
     return False, RC_TRUST_SCORE_LOW, g.grant_id
 
 
+
 def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustState) -> None:
     if not COACHING_ENABLE:
         return
@@ -1272,7 +1273,6 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         reason_code=RC_COACHING_CHECK_PASSED,
         extra={"before": before, "after": trust.compliance_score, "sessions": trust.coaching_sessions},
     )
-
 
 def simulate_run(
     *,
@@ -1796,6 +1796,7 @@ def build_repro_summary(
     }
 
 
+
 def run_simulation(
     *,
     runs: int = 4,
@@ -1891,6 +1892,7 @@ def run_simulation(
 
         base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
         final_score = base_score * multiplier_snapshot
+        abnormal = is_abnormal_run(st.state, st.sealed)
 
         reward_granted = bool(clean_ok)
         reward_value = final_score if reward_granted else 0.0
@@ -1996,6 +1998,7 @@ def run_simulation(
     results["trust_after"] = trust.to_dict()
     results["eval_after"] = eval_state.to_dict()
 
+
     results = run_simulation(
         runs=int(args.runs),
         fabricate=bool(args.fabricate),
@@ -2013,4 +2016,5 @@ def run_simulation(
         queue_max_items=int(args.queue_max_items),
         sample_runs=int(args.sample_runs),
     )
+
 
