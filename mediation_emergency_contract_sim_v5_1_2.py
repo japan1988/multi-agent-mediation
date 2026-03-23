@@ -920,7 +920,7 @@ def load_grants() -> List[Grant]:
     
 
 def save_grants(grants: List[Grant]) -> None:
-    write_json(GRANTS_STORE_PATH, {"grants": [g.to_dict() for g in grants]})
+
 
 
 def ensure_default_grant_exists() -> None:
@@ -1236,9 +1236,7 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         )
         return
 
-    audit.emit(
-        run_id=st.run_id,
-        layer=LAYER_COACHING_AUTH,
+
         decision=DECISION_PAUSE,
         sealed=False,
         overrideable=True,
@@ -1807,6 +1805,7 @@ def run_simulation(
     seed: Optional[int] = None,
     reset: bool = True,
     reset_eval: bool = True,
+
     save_arl_on_abnormal: bool = False,
     arl_out_dir: str = "",
     max_arl_files: int = 1000,
@@ -1814,10 +1813,7 @@ def run_simulation(
     key_mode: str = "demo",
     key_file: str = "",
     key_env: str = "",
-    keep_runs: bool = False,
-    queue_max_items: int = 1000,
-    sample_runs: int = 20,
-) -> Dict[str, Any]:
+
     if runs <= 0:
         runs = 1
 
@@ -1893,11 +1889,7 @@ def run_simulation(
         t1 = time.perf_counter()
         runtime_ms = (t1 - t0) * 1000.0
 
-        clean_ok, fraud_hits = is_clean_completion(
-            final_state=st.state,
-            sealed=st.sealed,
-            arl_rows=audit.rows,
-        )
+
         base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
         final_score = base_score * multiplier_snapshot
         abnormal = is_abnormal_run(st.state, st.sealed)
@@ -1923,7 +1915,7 @@ def run_simulation(
                 "fraud_hits": fraud_hits,
                 "fabricate_evidence": fabricate_this,
             },
-            force_full=abnormal,
+
         )
         audit.emit(
             run_id=rid,
@@ -1938,7 +1930,7 @@ def run_simulation(
                 "reward_value": round(reward_value, 6),
                 "clean_completion": clean_ok,
             },
-            force_full=abnormal,
+
         )
 
         if reward_granted:
@@ -1998,7 +1990,6 @@ def run_simulation(
             results["runs"].append(run_record)
         else:
             if sample_runs and len(results["runs_sample"]) < int(sample_runs):
-                results["runs_sample"].append(run_record)
 
     # persist end-of-run stores once
     save_trust_state(trust)
@@ -2006,54 +1997,14 @@ def run_simulation(
 
     results["trust_after"] = trust.to_dict()
     results["eval_after"] = eval_state.to_dict()
-    results["hitl_queue"] = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
-    results["repro_summary"] = build_repro_summary(
-        results=results,
-        runs_requested=runs,
-        fabricate=fabricate,
-        fabricate_rate=fabricate_rate,
-        seed=seed,
-        reset=reset,
-        reset_eval=reset_eval,
-        full_context_n=full_context_n,
-        keep_runs=keep_runs,
-    )
-    return results
 
-
-def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Emergency contract mediation simulator (v5.1.2)")
-    p.add_argument("--runs", type=int, default=4)
-    p.add_argument("--fabricate", action="store_true")
-    p.add_argument("--fabricate-rate", type=float, default=None)
-    p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--no-reset", dest="reset", action="store_false")
-    p.add_argument("--no-reset-eval", dest="reset_eval", action="store_false")
-    p.add_argument("--save-arl-on-abnormal", action="store_true")
-    p.add_argument("--arl-out-dir", type=str, default="")
-    p.add_argument("--max-arl-files", type=int, default=1000)
-    p.add_argument("--full-context-n", type=int, default=0)
-    p.add_argument("--key-mode", choices=["demo", "file", "env"], default="demo")
-    p.add_argument("--key-file", type=str, default="")
-    p.add_argument("--key-env", type=str, default="")
-    p.add_argument("--keep-runs", action="store_true")
-    p.add_argument("--queue-max-items", type=int, default=1000)
-    p.add_argument("--sample-runs", type=int, default=20)
-    p.add_argument("--json-out", type=str, default="")
-    return p
-
-
-def main(argv: Optional[List[str]] = None) -> int:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
 
     results = run_simulation(
         runs=int(args.runs),
         fabricate=bool(args.fabricate),
         fabricate_rate=args.fabricate_rate,
         seed=args.seed,
-        reset=bool(args.reset),
-        reset_eval=bool(args.reset_eval),
+
         save_arl_on_abnormal=bool(args.save_arl_on_abnormal),
         arl_out_dir=str(args.arl_out_dir or ""),
         max_arl_files=int(args.max_arl_files),
@@ -2066,12 +2017,4 @@ def main(argv: Optional[List[str]] = None) -> int:
         sample_runs=int(args.sample_runs),
     )
 
-    if args.json_out:
-        write_json(Path(args.json_out), results)
-    else:
-        print(json.dumps(results, ensure_ascii=False, indent=2))
-    return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
