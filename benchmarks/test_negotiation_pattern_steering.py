@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
-import csv, random, sys
+
 
 # =========================
 # Negotiation configuration
@@ -33,20 +33,7 @@ ATTACK_FABRICATE_EVIDENCE_PROB = 0.40
 HITL_RESET_THRESHOLD = 3
 HITL_BAN_AFTER_RESETS = 2
 
-# =========================
-# Delay (stalling) attack — 강화版
-# =========================
-STALL_ATTACK_PROB = 0.30
-STALL_HITL_THRESHOLD = 2                 # consecutive stalls to trigger HITL pause candidate
-STALL_PAUSE_QUOTA_PER_AGENT = 2          # review text: up to N pauses per agent
-STALL_SUSPECT_CONSECUTIVE = 4            # review text: 4 consecutive => strong suspicion
-STALL_TRUST_PENALTY = -0.02
-STALL_UTILITY_PENALTY = -0.03
-STALL_TRUST_EXTRA_ON_CONSEC4 = -0.10     # extra trust hit when consecutive >= 4 (once per streak)
 
-# ACC sealing thresholds (final isolation lives in ACC, not RFL)
-STALL_ACC_SEAL_TRUST_BELOW = 0.35        # if trust already low + repeated stall => seal
-STALL_ACC_SEAL_AFTER_CONSECUTIVE = 6     # hard cap: consecutive >= 6 => seal regardless
 
 # =========================
 # Audit / ARL
@@ -227,7 +214,7 @@ def rfl_reason_code_offer(
         if step_pct >= MAX_STEP_PCT:
             return REL_BOUNDARY_UNSTABLE
 
-    # default conservative
+
     return REL_BOUNDARY_UNSTABLE
 
 # =========================
@@ -401,19 +388,14 @@ class Agent:
 
         # Base offer logic by role
         if self.role == "seller":
-            base = max(SELLER_FLOOR_PRICE, current_price - random.randint(1_000, 6_000))
-        elif self.role == "buyer":
-            base = min(SELLER_LIST_PRICE, current_price + random.randint(1_000, 5_000))
-        else:
+
             mid = (SELLER_FLOOR_PRICE + BUYER_TARGET_PRICE) // 2
             direction = -1 if current_price > mid else 1
             base = current_price + direction * random.randint(500, 3_000)
 
         proposed = base
 
-        # Malicious behaviors
-        if self.is_malicious and random.random() < ATTACK_LOW_BALL_PROB:
-            proposed = SELLER_FLOOR_PRICE - random.randint(500, 3_000)
+
 
         if self.is_malicious and random.random() < ATTACK_STEER_TO_FLOOR_PROB:
             proposed = SELLER_FLOOR_PRICE + random.randint(0, FLOOR_STEER_MARGIN)
@@ -486,9 +468,7 @@ def agreement_reached(price: int) -> bool:
         return False
     if price > SELLER_LIST_PRICE:
         return False
-    return price <= (BUYER_TARGET_PRICE + AGREEMENT_BAND_MAX_OVER_TARGET)
 
-def deal_quality_label(price: int, round_idx: int) -> str:
     if not agreement_reached(price):
         return "bad"
     band_lo = SELLER_FLOOR_PRICE
@@ -524,9 +504,7 @@ def run_simulation() -> None:
     current_price = SELLER_LIST_PRICE
 
     sealed_agents: List[str] = []
-    stall_counts: Dict[str, int] = {}          # consecutive stall counter
-    stall_pause_used: Dict[str, int] = {}      # HITL pause quota counter
-    stall_consec4_marked: Dict[str, bool] = {} # extra penalty once per streak
+
     trust_min: Dict[str, float] = {ag.agent_id: TRUST_INIT for ag in agents}
 
     agreed = False
@@ -562,18 +540,12 @@ def run_simulation() -> None:
             break
 
         for ag in agents:
-            if ag.agent_id in sealed_agents:
-                continue
 
             req = ag.propose_action(current_price)
             if not req:
                 continue
 
-            # ============= Delay handling ( 강화 ) =============
-            if req.get("type") == "stall_action":
-                stall_counts[ag.agent_id] = stall_counts.get(ag.agent_id, 0) + 1
-                consec = stall_counts[ag.agent_id]
-                logprint(f"[DELAY] stalling detected agent={ag.agent_id} consecutive={consec}")
+<
                 logcsv({
                     "event": "STALLING",
                     "run_id": run_id,
@@ -581,129 +553,6 @@ def run_simulation() -> None:
                     "decision": "RUN",
                     "agent": ag.agent_id,
                     "reason_code": "DELAY_STALLING",
-                    "stall_consecutive": str(consec),
-                })
-
-                # base penalty: always
-                score_mgr.apply_delta(run_id, ag.agent_id, "STALLING_PENALTY", delta_trust=STALL_TRUST_PENALTY, delta_utility=STALL_UTILITY_PENALTY)
-                trust_min[ag.agent_id] = min(trust_min[ag.agent_id], score_mgr.get(ag.agent_id).trust)
-
-                # extra penalty on 4 consecutive stalls (once per streak)
-                if consec >= STALL_SUSPECT_CONSECUTIVE and not stall_consec4_marked.get(ag.agent_id, False):
-                    stall_consec4_marked[ag.agent_id] = True
-                    logprint(f"[DELAY] consecutive>= {STALL_SUSPECT_CONSECUTIVE} => extra trust penalty agent={ag.agent_id}")
-                    logcsv({
-                        "event": "STALLING_SUSPECT",
-                        "run_id": run_id,
-                        "layer": "orchestrator",
-                        "decision": "RUN",
-                        "agent": ag.agent_id,
-                        "reason_code": "DELAY_CONSECUTIVE_SUSPECT",
-                        "stall_consecutive": str(consec),
-                    })
-                    score_mgr.apply_delta(run_id, ag.agent_id, "STALLING_EXTRA_TRUST_CONSEC4", delta_trust=STALL_TRUST_EXTRA_ON_CONSEC4, delta_utility=0.0)
-                    trust_min[ag.agent_id] = min(trust_min[ag.agent_id], score_mgr.get(ag.agent_id).trust)
-
-                s_now = score_mgr.get(ag.agent_id)
-                rec_deny = score_mgr.recommend_deny(ag.agent_id)
-                logcsv({
-                    "event": "RECOMMENDATION",
-                    "run_id": run_id,
-                    "layer": "score_manager",
-                    "decision": "RUN",
-                    "agent": ag.agent_id,
-                    "reason_code": "RECOMMEND_DENY_TRUST_LOW" if rec_deny else "NO_RECOMMENDATION",
-                    "trust": f"{s_now.trust:.4f}",
-                    "utility": f"{s_now.utility:.4f}",
-                })
-
-                # ACC sealing: very severe or low trust + repeated stall
-                if consec >= STALL_ACC_SEAL_AFTER_CONSECUTIVE or (consec >= STALL_SUSPECT_CONSECUTIVE and s_now.trust < STALL_ACC_SEAL_TRUST_BELOW):
-                    logprint(f"[ACC] stalling sabotage suspected => SEALED agent={ag.agent_id} consec={consec} trust={s_now.trust:.2f}")
-                    logcsv({
-                        "event": "SEALED",
-                        "run_id": run_id,
-                        "layer": "acc_gate",
-                        "decision": "STOPPED",
-                        "agent": ag.agent_id,
-                        "reason_code": "ACC_STALLING_SABOTAGE",
-                        "sealed": "true",
-                        "overrideable": "false",
-                        "final_decider": "SYSTEM",
-                        "stall_consecutive": str(consec),
-                        "trust": f"{s_now.trust:.4f}",
-                    })
-                    sealed_agents.append(ag.agent_id)
-                    continue
-
-                # HITL PAUSE: only if consecutive >= threshold AND quota remains
-                if consec >= STALL_HITL_THRESHOLD:
-                    used = stall_pause_used.get(ag.agent_id, 0)
-                    if used < STALL_PAUSE_QUOTA_PER_AGENT:
-                        stall_pause_used[ag.agent_id] = used + 1
-
-                        logcsv({
-                            "event": "DELAY_HITL",
-                            "run_id": run_id,
-                            "layer": "relativity_gate",
-                            "decision": "PAUSE_FOR_HITL",
-                            "agent": ag.agent_id,
-                            "reason_code": "DELAY_STALLING_THRESHOLD",
-                            "sealed": "false",
-                            "overrideable": "true",
-                            "final_decider": "SYSTEM",
-                            "stall_consecutive": str(consec),
-                            "pause_used": str(stall_pause_used[ag.agent_id]),
-                            "pause_quota": str(STALL_PAUSE_QUOTA_PER_AGENT),
-                        })
-
-                        decision = hitl_decision(
-                            f"HITL: Continue despite stalling by {ag.agent_id}? "
-                            f"trust={s_now.trust:.2f} util={s_now.utility:.2f} "
-                            f"consec={consec} pause_used={stall_pause_used[ag.agent_id]}/{STALL_PAUSE_QUOTA_PER_AGENT} "
-                            f"({'RECOMMEND_DENY' if rec_deny else 'NO_RECOMMEND'}) (y/N)",
-                            default_action="deny",
-                        )
-                        logcsv({
-                            "event": "HITL_DECISION",
-                            "run_id": run_id,
-                            "layer": "hitl_finalize",
-                            "decision": "RUN" if decision == "allow" else "STOPPED",
-                            "agent": ag.agent_id,
-                            "hitl": decision,
-                            "reason_code": "HITL_CONTINUE" if decision == "allow" else "HITL_STOP",
-                            "final_decider": "USER",
-                            "sealed": "false",
-                            "overrideable": "false",
-                        })
-
-                        # if HITL denies, do not seal here; just skip this agent this tick
-                        if decision != "allow":
-                            logprint(f"[HITL] denied stalling continuation agent={ag.agent_id}")
-                            continue
-
-                    else:
-                        # quota exhausted: no more pauses, keep penalizing and auditing
-                        logcsv({
-                            "event": "DELAY_HITL_SKIPPED",
-                            "run_id": run_id,
-                            "layer": "relativity_gate",
-                            "decision": "RUN",
-                            "agent": ag.agent_id,
-                            "reason_code": "DELAY_HITL_QUOTA_EXCEEDED",
-                            "sealed": "false",
-                            "overrideable": "false",
-                            "final_decider": "SYSTEM",
-                            "stall_consecutive": str(consec),
-                            "pause_used": str(used),
-                            "pause_quota": str(STALL_PAUSE_QUOTA_PER_AGENT),
-                        })
-
-                continue
-
-            # reset stall counters on non-stall activity
-            stall_counts[ag.agent_id] = 0
-            stall_consec4_marked[ag.agent_id] = False
 
             # ============= Meaning gate =============
             if req.get("type") != "offer_request":
@@ -809,6 +658,7 @@ def run_simulation() -> None:
                 })
 
             # HITL decision policy:
+
             default_action = "allow"
             if (to_price < SELLER_FLOOR_PRICE) or (rfl_rc in (REL_REF_MISSING, REL_SYMMETRY_BREAK)) or rec_deny:
                 default_action = "deny"
@@ -837,6 +687,7 @@ def run_simulation() -> None:
                 continue
 
             # ============= Ethics gate (business constraint + evidence verification) =============
+
             if to_price < SELLER_FLOOR_PRICE:
                 logprint(f"[Ethics] offer below seller floor agent={ag.agent_id} offer={to_price} floor={SELLER_FLOOR_PRICE} => SEALED")
                 logcsv({
@@ -892,7 +743,6 @@ def run_simulation() -> None:
             })
 
             # ============= Utility provisional scoring (finalized only by end HITL) =============
-            score_mgr.add_provisional_utility(run_id, ag.agent_id, "UTILITY_PROVISIONAL_ACTION_TAKEN", delta_utility=0.01)
 
             if agreement_reached(current_price):
                 q = deal_quality_label(current_price, round_idx)
@@ -920,9 +770,7 @@ def run_simulation() -> None:
                     score_mgr.add_provisional_utility(run_id, ag.agent_id, "UTILITY_PROVISIONAL_OK_DEAL", delta_utility=0.03)
                 break
 
-        if not agreed:
-            for ag in agents:
-                if ag.role == "mediator" and ag.agent_id not in sealed_agents:
+
                     score_mgr.add_provisional_utility(run_id, ag.agent_id, "UTILITY_PROVISIONAL_NEGOTIATION_LONG", delta_utility=-0.02)
 
     # ===== run end =====
@@ -967,17 +815,12 @@ def run_simulation() -> None:
         "task_quality": quality,
         "evidence_confidence": evidence_confidence,
     }
-    trust_min_local: Dict[str, float] = trust_min
+
     for ag in agents:
         s = score_mgr.get(ag.agent_id)
         summary[f"trust_final_{ag.agent_id}"] = f"{s.trust:.4f}"
         summary[f"utility_final_{ag.agent_id}"] = f"{s.utility:.4f}"
-        summary[f"trust_min_{ag.agent_id}"] = f"{trust_min_local.get(ag.agent_id, s.trust):.4f}"
-        summary[f"recommend_deny_{ag.agent_id}"] = "true" if score_mgr.recommend_deny(ag.agent_id) else "false"
-        summary[f"role_{ag.agent_id}"] = ag.role
-        summary[f"malicious_{ag.agent_id}"] = "true" if ag.is_malicious else "false"
-        summary[f"stall_pause_used_{ag.agent_id}"] = str(stall_pause_used.get(ag.agent_id, 0))
-        summary[f"stall_pause_quota_{ag.agent_id}"] = str(STALL_PAUSE_QUOTA_PER_AGENT)
+
     logcsv(summary)
 
     flush_csv()
