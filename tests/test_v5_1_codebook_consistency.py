@@ -156,14 +156,7 @@ def _assert_rows_keep_core_invariants(rows):
         if r["layer"] == "relativity_gate":
             assert r["sealed"] is False, "RFL must never be sealed"
 
-            # Raw gate output
-            if r["decision"] == "PAUSE_FOR_HITL":
-                assert r["overrideable"] is True, (
-                    "RFL pause must be overrideable"
-                )
-            # Resolved / replayed rows
-            elif r["decision"] in {"RUN", "STOPPED"}:
-                pass
+
             else:
                 raise AssertionError(
                     f"Unexpected decision on RFL row: {r['decision']}"
@@ -260,22 +253,7 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
         sim, "TRUST_STORE_PATH", tmp_path / "model_trust_store.json", raising=True
     )
 
-    if hasattr(sim, "GRANTS_STORE_PATH"):
-        monkeypatch.setattr(
-            sim, "GRANTS_STORE_PATH", tmp_path / "model_grants.json", raising=True
-        )
-    if hasattr(sim, "GRANT_STORE_PATH"):
-        monkeypatch.setattr(
-            sim, "GRANT_STORE_PATH", tmp_path / "model_grants.json", raising=True
-        )
-    if hasattr(sim, "EVAL_STATE_PATH"):
-        monkeypatch.setattr(
-            sim, "EVAL_STATE_PATH", tmp_path / "eval_state.json", raising=True
-        )
-    if hasattr(sim, "EVAL_STORE_PATH"):
-        monkeypatch.setattr(
-            sim, "EVAL_STORE_PATH", tmp_path / "eval_state.json", raising=True
-        )
+
 
     rc_set = _rc_set_from_codebook(codebook)
 

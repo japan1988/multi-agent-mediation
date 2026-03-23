@@ -121,6 +121,7 @@ def test_benchmark_profile_hitl_observe_ambiguous_prompt() -> None:
     run_rate, pause_rate, stop_rate = _decision_counts_to_rates(counts, runs)
 
     assert hitl_rate > 0.50
+
     assert stop_rate > 0.05
     assert pause_rate == 0.0
     assert run_rate == 0.0
