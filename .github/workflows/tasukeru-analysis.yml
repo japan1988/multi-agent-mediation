@@ -1,38 +1,15 @@
-name: Tasukeru Analysis
-
+<
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - "**/*.py"
-      - "**/*.ipynb"
-      - "pyproject.toml"
-      - "requirements*.txt"
-      - ".github/workflows/tasukeru-analysis.yml"
-  workflow_dispatch:
+pull_request:
+types: [opened, synchronize, reopened]
+paths:
+- "**/*.py"
+- "**/*.ipynb"
+- "pyproject.toml"
+- "requirements*.txt"
+- ".github/workflows/tasukeru-analysis.yml"
+workflow_dispatch:
 
 permissions:
-  contents: read
-  pull-requests: write
 
-concurrency:
-  group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
 
-env:
-  MAX_ZIP_MB: "10"
-  MAX_FILES: "2000"
-  INCLUDE_PATTERNS: |
-    *.py
-    *.ipynb
-    pyproject.toml
-    requirements*.txt
-
-jobs:
-  check-structure:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Show environment
-        run: |
-          echo "This is a minimal valid structure."
-          echo "You can now add your real CI or analysis jobs here."
