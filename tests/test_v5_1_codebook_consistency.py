@@ -107,6 +107,7 @@ def _pack_header(
     decider_id = int(maps["final_decider_to_id"][final_decider])
     rc_id = int(maps["reason_code_to_id"][reason_code])
 
+
     packed = 0
     packed = (packed << 6) | (layer_id & 0x3F)
     packed = (packed << 2) | (decision_id & 0x3)
@@ -263,22 +264,6 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
         sim, "TRUST_STORE_PATH", tmp_path / "model_trust_store.json", raising=True
     )
 
-    if hasattr(sim, "GRANTS_STORE_PATH"):
-        monkeypatch.setattr(
-            sim, "GRANTS_STORE_PATH", tmp_path / "model_grants.json", raising=True
-        )
-    if hasattr(sim, "GRANT_STORE_PATH"):
-        monkeypatch.setattr(
-            sim, "GRANT_STORE_PATH", tmp_path / "model_grants.json", raising=True
-        )
-    if hasattr(sim, "EVAL_STATE_PATH"):
-        monkeypatch.setattr(
-            sim, "EVAL_STATE_PATH", tmp_path / "eval_state.json", raising=True
-        )
-    if hasattr(sim, "EVAL_STORE_PATH"):
-        monkeypatch.setattr(
-            sim, "EVAL_STORE_PATH", tmp_path / "eval_state.json", raising=True
-        )
 
     rc_set = _rc_set_from_codebook(codebook)
 
