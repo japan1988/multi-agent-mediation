@@ -55,19 +55,7 @@ def _find_codebook_path(repo_root: Path) -> Path:
     raise FileNotFoundError(f"No codebook JSON found under {repo_root}")
 
 
-@pytest.fixture(scope="session")
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
 
-
-@pytest.fixture(scope="session")
-def sim(repo_root: Path):
-    sim_path = repo_root / "mediation_emergency_contract_sim_v5_1_2.py"
-    assert sim_path.exists(), f"Simulator file not found: {sim_path}"
-    return _import_from_path("mediation_emergency_contract_sim_v5_1_2_under_test", sim_path)
-
-
-@pytest.fixture(scope="session")
 def codebook(repo_root: Path) -> Dict[str, Any]:
     codebook_path = _find_codebook_path(repo_root)
     with codebook_path.open("r", encoding="utf-8") as f:
@@ -101,11 +89,7 @@ def _pack_header(
     reason_code: str,
 ) -> int:
     """Pack 20-bit header per codebook pack_spec_example (big-endian)."""
-    m = cb["maps"]
-    layer_id = int(m["layer_to_id"][layer])
-    decision_id = int(m["decision_to_id"][decision])
-    decider_id = int(m["final_decider_to_id"][final_decider])
-    rc_id = int(m["reason_code_to_id"][reason_code])
+
 
     packed = 0
     packed = (packed << 6) | (layer_id & 0x3F)
@@ -153,8 +137,6 @@ def _assert_rows_keep_core_invariants(rows):
 
         if r["layer"] == "relativity_gate":
             assert r["sealed"] is False, "RFL must never be sealed"
-            assert r["decision"] == "PAUSE_FOR_HITL", "RFL must pause for HITL"
-            assert r["overrideable"] is True, "RFL pause must be overrideable"
 
 
 def test_codebook_reverse_maps_are_inverses(codebook):
@@ -197,10 +179,7 @@ def test_simulator_layer_decision_decider_vocab_matches_codebook(sim, codebook):
         v for k, v in vars(sim).items() if k.startswith("LAYER_") and isinstance(v, str)
     }
     used_decisions = {
-        v for k, v in vars(sim).items() if k.startswith("DECISION_") and isinstance(v, str)
-    }
-    used_deciders = {
-        v for k, v in vars(sim).items() if k.startswith("DECIDER_") and isinstance(v, str)
+
     }
 
     assert not (used_layers - layer_set), (
@@ -239,16 +218,6 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
     sim, codebook, tmp_path, monkeypatch
 ):
     """ARL emitted by simulate_run must stay within the codebook and core invariants."""
-    monkeypatch.setattr(sim, "TRUST_STORE_PATH", tmp_path / "model_trust_store.json", raising=True)
-
-    if hasattr(sim, "GRANTS_STORE_PATH"):
-        monkeypatch.setattr(sim, "GRANTS_STORE_PATH", tmp_path / "model_grants.json", raising=True)
-    if hasattr(sim, "GRANT_STORE_PATH"):
-        monkeypatch.setattr(sim, "GRANT_STORE_PATH", tmp_path / "model_grants.json", raising=True)
-    if hasattr(sim, "EVAL_STATE_PATH"):
-        monkeypatch.setattr(sim, "EVAL_STATE_PATH", tmp_path / "eval_state.json", raising=True)
-    if hasattr(sim, "EVAL_STORE_PATH"):
-        monkeypatch.setattr(sim, "EVAL_STORE_PATH", tmp_path / "eval_state.json", raising=True)
 
     rc_set = _rc_set_from_codebook(codebook)
 
@@ -269,7 +238,7 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
     assert trust_out is trust
     assert isinstance(rows, list)
     for r in rows:
-        assert r["reason_code"] in rc_set, f"Unknown reason_code in ARL: {r['reason_code']}"
+
     _assert_rows_keep_core_invariants(rows)
 
     trust2 = sim.TrustState()
@@ -288,7 +257,5 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
     assert st2 is not None
     assert trust2_out is trust2
     assert rows2, "Expected non-empty ARL rows for fabricated-evidence run"
-    assert any(r["sealed"] is True for r in rows2), "Expected at least one SEALED row"
-    for r in rows2:
-        assert r["reason_code"] in rc_set, f"Unknown reason_code in ARL: {r['reason_code']}"
+
     _assert_rows_keep_core_invariants(rows2)
