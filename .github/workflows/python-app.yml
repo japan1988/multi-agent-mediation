@@ -26,6 +26,7 @@ jobs:
   test:
     name: test (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     strategy:
       fail-fast: false
@@ -60,26 +61,26 @@ jobs:
         run: |
           set -euo pipefail
           if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+            python -m pip install -r requirements.txt
           fi
           if [ -f requirements-dev.txt ]; then
-            pip install -r requirements-dev.txt
+            python -m pip install -r requirements-dev.txt
           fi
-          pip install pytest pytest-cov pytest-xdist ruff yamllint
+          python -m pip install pytest pytest-cov pytest-xdist ruff yamllint
 
       - name: Lint workflow (self check)
         run: |
           set -euo pipefail
-          cat > .yamllint-ci.yml <<'YAML'
-          extends: default
-          rules:
-            brackets: disable
-            truthy: disable
-            document-start: disable
-            line-length:
-              max: 140
-              level: warning
-          YAML
+          printf '%s\n' \
+            'extends: default' \
+            'rules:' \
+            '  brackets: disable' \
+            '  truthy: disable' \
+            '  document-start: disable' \
+            '  line-length:' \
+            '    max: 140' \
+            '    level: warning' \
+            > .yamllint-ci.yml
           yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
 
       - name: Ruff check (report only, no annotations)
