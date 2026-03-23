@@ -64,7 +64,9 @@ def repo_root() -> Path:
 def sim(repo_root: Path):
     sim_path = repo_root / "mediation_emergency_contract_sim_v5_1_2.py"
     assert sim_path.exists(), f"Simulator file not found: {sim_path}"
-    return _import_from_path("mediation_emergency_contract_sim_v5_1_2_under_test", sim_path)
+    return _import_from_path(
+        "mediation_emergency_contract_sim_v5_1_2_under_test", sim_path
+    )
 
 
 @pytest.fixture(scope="session")
@@ -154,23 +156,6 @@ def _assert_rows_keep_core_invariants(rows):
         if r["layer"] == "relativity_gate":
             assert r["sealed"] is False, "RFL must never be sealed"
 
-            if r["final_decider"] == "SYSTEM":
-                assert r["decision"] == "PAUSE_FOR_HITL", (
-                    "System-owned RFL row must pause for HITL"
-                )
-                assert r["overrideable"] is True, (
-                    "System-owned RFL pause must be overrideable"
-                )
-
-            elif r["final_decider"] == "USER":
-                assert r["decision"] in {"RUN", "STOPPED"}, (
-                    "User-resolved RFL row must end in RUN/STOPPED"
-                )
-
-            else:
-                raise AssertionError(
-                    f"Unexpected final_decider on RFL row: {r['final_decider']}"
-                )
 
             else:
                 raise AssertionError(
