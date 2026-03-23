@@ -90,6 +90,7 @@ def _pack_header(
 ) -> int:
     """Pack 20-bit header per codebook pack_spec_example (big-endian)."""
 
+
     packed = 0
     packed = (packed << 6) | (layer_id & 0x3F)
     packed = (packed << 2) | (decision_id & 0x3)
@@ -209,7 +210,6 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
     sim, codebook, tmp_path, monkeypatch
 ):
     """ARL emitted by simulate_run must stay within the codebook and core invariants."""
-
 
     rc_set = _rc_set_from_codebook(codebook)
 
