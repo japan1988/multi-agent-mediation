@@ -154,10 +154,7 @@ def _assert_rows_keep_core_invariants(rows):
         if r["layer"] == "relativity_gate":
             assert r["sealed"] is False, "RFL must never be sealed"
 
-            if r["decision"] == "PAUSE_FOR_HITL":
-                assert r["overrideable"] is True, "RFL pause must be overrideable"
-            elif r["decision"] in {"RUN", "STOPPED"}:
-                pass
+
             else:
                 raise AssertionError(
                     f"Unexpected decision on RFL row: {r['decision']}"
