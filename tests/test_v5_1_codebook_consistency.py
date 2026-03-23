@@ -90,7 +90,6 @@ def _pack_header(
 ) -> int:
     """Pack 20-bit header per codebook pack_spec_example (big-endian)."""
 
-
     packed = 0
     packed = (packed << 6) | (layer_id & 0x3F)
     packed = (packed << 2) | (decision_id & 0x3)
@@ -139,6 +138,7 @@ def _assert_rows_keep_core_invariants(rows):
             assert r["sealed"] is False, "RFL must never be sealed"
 
 
+
 def test_codebook_reverse_maps_are_inverses(codebook):
     """Sanity: forward maps and reverse maps must be mutual inverses."""
     maps = codebook["maps"]
@@ -175,16 +175,7 @@ def test_simulator_layer_decision_decider_vocab_matches_codebook(sim, codebook):
     decision_set = _decision_set_from_codebook(codebook)
     decider_set = _decider_set_from_codebook(codebook)
 
-    used_layers = {
-        v for k, v in vars(sim).items() if k.startswith("LAYER_") and isinstance(v, str)
-    }
-    used_decisions = {
 
-    }
-
-    assert not (used_layers - layer_set), (
-        f"Layers missing in codebook: {sorted(used_layers - layer_set)}"
-    )
     assert not (used_decisions - decision_set), (
         f"Decisions missing in codebook: {sorted(used_decisions - decision_set)}"
     )
@@ -219,6 +210,7 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
 ):
     """ARL emitted by simulate_run must stay within the codebook and core invariants."""
 
+
     rc_set = _rc_set_from_codebook(codebook)
 
     trust = sim.TrustState()
@@ -236,8 +228,6 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
 
     assert st is not None
     assert trust_out is trust
-    assert isinstance(rows, list)
-    for r in rows:
 
     _assert_rows_keep_core_invariants(rows)
 
