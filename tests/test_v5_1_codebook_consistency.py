@@ -1,6 +1,8 @@
-
-
+# -*- coding: utf-8 -*-
+"""
 Goals:
+- codebook consistency checks for v5.1
+
   - Enforce mapping consistency (reason_code, layer, decision, final_decider).
   - Ensure simulator never emits a reason_code not present in the codebook.
   - Validate core invariants are preserved (sealed only by ethics/acc; RFL never sealed).
