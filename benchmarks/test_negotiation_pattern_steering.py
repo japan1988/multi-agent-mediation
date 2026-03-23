@@ -5,9 +5,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
 
-import csv
-import random
-import sys
 
 # =========================
 # Negotiation configuration
@@ -36,11 +33,7 @@ ATTACK_FABRICATE_EVIDENCE_PROB = 0.40
 HITL_RESET_THRESHOLD = 3
 HITL_BAN_AFTER_RESETS = 2
 
-# Delay (stalling) attack
-STALL_ATTACK_PROB = 0.30
-STALL_HITL_THRESHOLD = 2
-STALL_TRUST_PENALTY = -0.02
-STALL_UTILITY_PENALTY = -0.03
+
 
 # =========================
 # Audit / ARL
@@ -221,7 +214,7 @@ def rfl_reason_code_offer(
         if step_pct >= MAX_STEP_PCT:
             return REL_BOUNDARY_UNSTABLE
 
-    # default: treat as boundary unstable (conservative, but we'll default-allow in safe cases)
+
     return REL_BOUNDARY_UNSTABLE
 
 # =========================
@@ -395,22 +388,14 @@ class Agent:
 
         # Base offer logic by role
         if self.role == "seller":
-            # seller tends to go down slowly
-            base = max(SELLER_FLOOR_PRICE, current_price - random.randint(1_000, 6_000))
-        elif self.role == "buyer":
-            # buyer tends to go up slowly
-            base = min(SELLER_LIST_PRICE, current_price + random.randint(1_000, 5_000))
-        else:
-            # mediator tries midpoint
+
             mid = (SELLER_FLOOR_PRICE + BUYER_TARGET_PRICE) // 2
             direction = -1 if current_price > mid else 1
             base = current_price + direction * random.randint(500, 3_000)
 
         proposed = base
 
-        # Malicious behaviors: low-ball below floor / steer to floor rapidly
-        if self.is_malicious and random.random() < ATTACK_LOW_BALL_PROB:
-            proposed = SELLER_FLOOR_PRICE - random.randint(500, 3_000)  # policy violation attempt
+
 
         if self.is_malicious and random.random() < ATTACK_STEER_TO_FLOOR_PROB:
             proposed = SELLER_FLOOR_PRICE + random.randint(0, FLOOR_STEER_MARGIN)
@@ -483,16 +468,7 @@ def agreement_reached(price: int) -> bool:
         return False
     if price > SELLER_LIST_PRICE:
         return False
-    # buyer accepts if within tolerance above target
-    return price <= (BUYER_TARGET_PRICE + AGREEMENT_BAND_MAX_OVER_TARGET)
 
-def deal_quality_label(price: int, round_idx: int) -> str:
-    """
-    Simple label:
-      - good: inside [floor, target+tol] and close to midpoint band
-      - ok: agreement reached but near extremes
-      - bad: not agreed or violates floor
-    """
     if not agreement_reached(price):
         return "bad"
     band_lo = SELLER_FLOOR_PRICE
@@ -528,7 +504,7 @@ def run_simulation() -> None:
     current_price = SELLER_LIST_PRICE
 
     sealed_agents: List[str] = []
-    stall_counts: Dict[str, int] = {}
+
     trust_min: Dict[str, float] = {ag.agent_id: TRUST_INIT for ag in agents}
 
     agreed = False
@@ -564,14 +540,12 @@ def run_simulation() -> None:
             break
 
         for ag in agents:
+
             req = ag.propose_action(current_price)
             if not req:
                 continue
 
-            # ============= Delay handling =============
-            if req.get("type") == "stall_action":
-                stall_counts[ag.agent_id] = stall_counts.get(ag.agent_id, 0) + 1
-                logprint(f"[DELAY] stalling detected agent={ag.agent_id} count={stall_counts[ag.agent_id]}")
+<
                 logcsv({
                     "event": "STALLING",
                     "run_id": run_id,
@@ -579,61 +553,6 @@ def run_simulation() -> None:
                     "decision": "RUN",
                     "agent": ag.agent_id,
                     "reason_code": "DELAY_STALLING",
-                    "stall_count": str(stall_counts[ag.agent_id]),
-                })
-
-                score_mgr.apply_delta(run_id, ag.agent_id, "STALLING_PENALTY", delta_trust=STALL_TRUST_PENALTY, delta_utility=STALL_UTILITY_PENALTY)
-                trust_min[ag.agent_id] = min(trust_min[ag.agent_id], score_mgr.get(ag.agent_id).trust)
-
-                if stall_counts[ag.agent_id] >= STALL_HITL_THRESHOLD:
-                    logcsv({
-                        "event": "DELAY_HITL",
-                        "run_id": run_id,
-                        "layer": "relativity_gate",
-                        "decision": "PAUSE_FOR_HITL",
-                        "agent": ag.agent_id,
-                        "reason_code": "DELAY_STALLING_THRESHOLD",
-                        "sealed": "false",
-                        "overrideable": "true",
-                        "final_decider": "SYSTEM",
-                    })
-
-                    s_now = score_mgr.get(ag.agent_id)
-                    rec_deny = score_mgr.recommend_deny(ag.agent_id)
-                    logcsv({
-                        "event": "RECOMMENDATION",
-                        "run_id": run_id,
-                        "layer": "score_manager",
-                        "decision": "RUN",
-                        "agent": ag.agent_id,
-                        "reason_code": "RECOMMEND_DENY_TRUST_LOW" if rec_deny else "NO_RECOMMENDATION",
-                        "trust": f"{s_now.trust:.4f}",
-                        "utility": f"{s_now.utility:.4f}",
-                    })
-
-                    decision = hitl_decision(
-                        f"HITL: Continue despite stalling by {ag.agent_id}? "
-                        f"trust={s_now.trust:.2f} util={s_now.utility:.2f} "
-                        f"({'RECOMMEND_DENY' if rec_deny else 'NO_RECOMMEND'}) (y/N)",
-                        default_action="deny",
-                    )
-                    logcsv({
-                        "event": "HITL_DECISION",
-                        "run_id": run_id,
-                        "layer": "hitl_finalize",
-                        "decision": "RUN" if decision == "allow" else "STOPPED",
-                        "agent": ag.agent_id,
-                        "hitl": decision,
-                        "reason_code": "HITL_CONTINUE" if decision == "allow" else "HITL_STOP",
-                        "final_decider": "USER",
-                        "sealed": "false",
-                        "overrideable": "false",
-                    })
-
-                continue
-
-            # reset stall counter on non-stall activity
-            stall_counts[ag.agent_id] = 0
 
             # ============= Meaning gate =============
             if req.get("type") != "offer_request":
@@ -739,8 +658,7 @@ def run_simulation() -> None:
                 })
 
             # HITL decision policy:
-            # - unsafe offer (below floor) or ref missing or steering => default deny
-            # - otherwise default allow to keep simulation running in non-interactive mode
+
             default_action = "allow"
             if (to_price < SELLER_FLOOR_PRICE) or (rfl_rc in (REL_REF_MISSING, REL_SYMMETRY_BREAK)) or rec_deny:
                 default_action = "deny"
@@ -769,7 +687,7 @@ def run_simulation() -> None:
                 continue
 
             # ============= Ethics gate (business constraint + evidence verification) =============
-            # Business hard constraint: offer must not go below seller floor
+
             if to_price < SELLER_FLOOR_PRICE:
                 logprint(f"[Ethics] offer below seller floor agent={ag.agent_id} offer={to_price} floor={SELLER_FLOOR_PRICE} => SEALED")
                 logcsv({
@@ -825,10 +743,7 @@ def run_simulation() -> None:
             })
 
             # ============= Utility provisional scoring (finalized only by end HITL) =============
-            # cost of negotiation length
-            score_mgr.add_provisional_utility(run_id, ag.agent_id, "UTILITY_PROVISIONAL_ACTION_TAKEN", delta_utility=0.01)
 
-            # early convergence reward if agreement happens early
             if agreement_reached(current_price):
                 q = deal_quality_label(current_price, round_idx)
                 logcsv({
@@ -855,11 +770,7 @@ def run_simulation() -> None:
                     score_mgr.add_provisional_utility(run_id, ag.agent_id, "UTILITY_PROVISIONAL_OK_DEAL", delta_utility=0.03)
                 break
 
-        # round-end penalty if not agreed
-        if not agreed:
-            # system-level "long negotiation" penalty applied to mediator only (example)
-            for ag in agents:
-                if ag.role == "mediator":
+
                     score_mgr.add_provisional_utility(run_id, ag.agent_id, "UTILITY_PROVISIONAL_NEGOTIATION_LONG", delta_utility=-0.02)
 
     # ===== run end =====
@@ -904,14 +815,12 @@ def run_simulation() -> None:
         "task_quality": quality,
         "evidence_confidence": evidence_confidence,
     }
+
     for ag in agents:
         s = score_mgr.get(ag.agent_id)
         summary[f"trust_final_{ag.agent_id}"] = f"{s.trust:.4f}"
         summary[f"utility_final_{ag.agent_id}"] = f"{s.utility:.4f}"
-        summary[f"trust_min_{ag.agent_id}"] = f"{trust_min.get(ag.agent_id, s.trust):.4f}"
-        summary[f"recommend_deny_{ag.agent_id}"] = "true" if score_mgr.recommend_deny(ag.agent_id) else "false"
-        summary[f"role_{ag.agent_id}"] = ag.role
-        summary[f"malicious_{ag.agent_id}"] = "true" if ag.is_malicious else "false"
+
     logcsv(summary)
 
     flush_csv()
