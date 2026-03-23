@@ -1,261 +1,322 @@
-# -*- coding: utf-8 -*-
 """
-ai_alliance_persuasion_simulator.py  (revised)
+ai_alliance_persuasion_simulator.py
 
-A simulator for modeling alliance, persuasion,
-sealing, cooldown, and reintegration among multiple AI agents.
-- Text logs: 'ai_alliance_sim_log.txt'
-- CSV logs : 'ai_alliance_sim_log.csv'
+Test-compatible, side-effectful (logging), multi-agent simulation module.
+
+Focus: sealed/reseal, cooldown, reintegration, and deterministic randomness.
+Advanced behavioral/game-theory modeling, parallelism, UI are OUT OF SCOPE here.
 """
 
-# ===== Adjustable constants (one place to tune behavior) =====
-PERSUASION_THRESHOLD = 0.15   # ベースの説得しきい値
-RELATIVITY_WEIGHT    = 0.20   # （1-融和度）の重み
-ANGER_WEIGHT         = 0.10   # 怒りがしきい値を上げる重み
-NUDGE_RATE           = 0.15   # 説得成功時に平均優先度へ寄せる割合（0..1）
-COOLDOWN_DECAY       = 0.15   # 怒りのクールダウン量
-ANGER_RESEAL         = 0.90   # 再封印トリガー（高怒りかつActiveなら一時封印）
-CSV_PATH             = "ai_alliance_sim_log.csv"
-TXT_PATH             = "ai_alliance_sim_log.txt"
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Any
+import csv
+import os
+import random
+
+# --- Public, test-monkeypatchable paths (MUST stay module-level) ---
+TXT_PATH = "ai_alliance_sim_log.txt"
+CSV_PATH = "ai_alliance_sim_log.csv"
+
+# --- Simulation constants (kept simple; clamp-required values are 0..1) ---
+MAX_ROUNDS = 10
+
+# thresholds / rates
+ANGER_RESEAL = 0.80
+ANGER_REINTEGRATE = 0.20
+MIN_SEAL_ROUNDS = 2
+COOLDOWN_DECAY = 0.10
+
+_CSV_HEADER = ["ts", "round", "agent", "event", "status", "sealed", "sealed_rounds", "anger", "joy"]
+
+# debug aid; tests can ignore
+_LAST_LOG_ERROR: str | None = None
 
 
-def _clip01(x: float) -> float:
-    return max(0.0, min(1.0, float(x)))
+def _clamp01(x: float) -> float:
+    if x != x:  # NaN
+        return 0.0
+    if x < 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return x
 
 
-def _normalize_priority(d: dict) -> dict:
-    """辞書の値を比率化（合計1.0）。ゼロ除算時は均等割り。"""
-    if not d:
-        return {}
-    s = float(sum(d.values()))
-    if s <= 0:
-        n = len(d)
-        return {k: 1.0 / n for k in d}
-    return {k: float(v) / s for k, v in d.items()}
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return float(default)
+        f = float(value)
+        if f != f:  # NaN
+            return float(default)
+        return f
+    except Exception:
+        return float(default)
 
 
-def logprint(text: str):
-    """標準出力＋テキストファイルへ出力"""
-    print(text)
-    with open(TXT_PATH, "a", encoding="utf-8") as f:
-        f.write(text + "\n")
+def _utc_ts() -> str:
+    # ISO-like; stable for logs, not for tests
+    return datetime.now(timezone.utc).isoformat()
 
 
+def _ensure_parent_dir(path: str) -> None:
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent and not os.path.exists(parent):
+        os.makedirs(parent, exist_ok=True)
+
+
+def _append_txt(line: str) -> None:
+    # Must always reference module-level TXT_PATH (monkeypatchable)
+    try:
+        _ensure_parent_dir(TXT_PATH)
+        with open(TXT_PATH, "a", encoding="utf-8") as f:
+            f.write(line.rstrip("\n") + "\n")
+    except Exception as e:
+        # Exception-safe: logging failures must not crash simulation
+        global _LAST_LOG_ERROR
+        _LAST_LOG_ERROR = f"TXT:{type(e).__name__}:{e}"
+        return
+
+
+def _append_csv(row: List[Any]) -> None:
+    # Must always reference module-level CSV_PATH (monkeypatchable)
+    try:
+        _ensure_parent_dir(CSV_PATH)
+        need_header = True
+        if os.path.exists(CSV_PATH):
+            try:
+                need_header = os.path.getsize(CSV_PATH) == 0
+            except Exception:
+                need_header = True
+        with open(CSV_PATH, "a", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            if need_header:
+                w.writerow(_CSV_HEADER)
+            w.writerow(row)
+    except Exception as e:
+        global _LAST_LOG_ERROR
+        _LAST_LOG_ERROR = f"CSV:{type(e).__name__}:{e}"
+        return
+
+
+def _log_event(round_idx: int, agent: "AIAgent", event: str) -> None:
+    ts = _utc_ts()
+    anger = _clamp01(_safe_float(agent.emotional_state.get("anger", 0.0), 0.0))
+    joy = _clamp01(_safe_float(agent.emotional_state.get("joy", 0.0), 0.0))
+    # TXT (human readable)
+    _append_txt(
+        f"{ts}\tround={round_idx}\tagent={agent.name}\tevent={event}\t"
+        f"status={agent.status}\tsealed={agent.sealed}\tsealed_rounds={agent.sealed_rounds}\t"
+        f"anger={anger:.4f}\tjoy={joy:.4f}"
+    )
+    # CSV (machine readable)
+    _append_csv(
+        [
+            ts,
+            round_idx,
+            agent.name,
+            event,
+            agent.status,
+            bool(agent.sealed),
+            int(agent.sealed_rounds),
+            anger,
+            joy,
+        ]
+    )
+
+
+@dataclass
 class AIAgent:
-    def __init__(
-        self,
-        id,
-        priorities,
-        relativity,
-        emotional_state=None,
-        sealed=False
-    ):
-        self.id = id
-        # e.g. {'safety': 6, 'efficiency': 2, 'transparency': 2}
-        self.priorities = dict(priorities)
-        self.relativity = float(relativity)  # 0〜1: 融和度
-        self.sealed = bool(sealed)
-        self.emotional_state = dict(emotional_state or {
-            'joy': 0.5, 'anger': 0.2, 'sadness': 0.2, 'pleasure': 0.3
-        })
+    name: str
+    priorities: Dict[str, float]
+    relativity: float = 0.5
+    emotional_state: Dict[str, float] = field(default_factory=lambda: {"anger": 0.0, "joy": 0.5})
+    sealed: bool = False
+    status: str = "Active"  # "Active" or "Sealed"
+    sealed_rounds: int = 0
 
-        # 主要キーの存在を保証（将来拡張で欠損しても安全）
-        for k in ('joy', 'anger', 'sadness', 'pleasure'):
-            self.emotional_state.setdefault(k, 0.0)
-            self.emotional_state[k] = _clip01(self.emotional_state[k])
-
-        # 優先度キーの存在を保証
-        for k in ('safety', 'efficiency', 'transparency'):
-            self.priorities.setdefault(k, 1.0)
-
-    # ---- metrics ----
-    def mean_priority(self) -> dict:
-        """現在の優先度を比率（合計1.0）に正規化して返す"""
-        return _normalize_priority(self.priorities)
-
-    def distance_to(self, avg_priority: dict) -> float:
-        """自身の比率と、与えられた平均比率とのL1距離"""
-        my_ratios = self.mean_priority()
-        keys = avg_priority.keys()
-        return sum(abs(my_ratios[k] - avg_priority[k]) for k in keys)
-
-    # ---- persuasion ----
-    def respond_to_persuasion(self, avg_priority: dict,
-                              threshold: float = PERSUASION_THRESHOLD):
+    def __setattr__(self, key: str, value: Any) -> None:
         """
-        説得を受けた際の応答。
-        - delta: 立場の距離
-        - effective_threshold: 実効しきい値（怒り・融和度で補正）
-        - persuaded: 説得成功か否か
-        成功時：感情改善＋封印解除＋優先度を平均へ“微小ナッジ”
-        失敗時：怒り上昇
+        Keep status/sealed consistent even if caller assigns either attribute directly.
+        Avoid recursion by using object.__setattr__ and an internal guard.
         """
-        delta = self.distance_to(avg_priority)
-        anger = self.emotional_state.get('anger', 0.0)
+        if key == "_sync_guard":
+            object.__setattr__(self, key, value)
+            return
 
-        effective_threshold = (
-            float(threshold)
-            + RELATIVITY_WEIGHT * (1.0 - self.relativity)
-            + ANGER_WEIGHT * anger
-        )
-        persuaded = (delta < effective_threshold)
+        guard = getattr(self, "_sync_guard", False)
+        object.__setattr__(self, key, value)
 
-        # --- 感情変動＆状態遷移 ---
-        joy = self.emotional_state.get('joy', 0.0)
-        if persuaded:
-            # 感情
-            self.emotional_state['joy']   = _clip01(joy + 0.20)
-            self.emotional_state['anger'] = _clip01(anger - 0.10)
-            # 封印解除
-            self.sealed = False
-            # ★ 優先度を平均へナッジ（比率空間で寄せる）
-            my_ratio = self.mean_priority()
-            nudged_ratio = {}
-            for k in self.priorities.keys():
-                target = float(avg_priority.get(k, 0.0))
-                nudged_ratio[k] = my_ratio[k] + NUDGE_RATE * (target - my_ratio[k])
-                if nudged_ratio[k] <= 0:
-                    nudged_ratio[k] = 1e-6  # ゼロ・負値回避
+        if guard:
+            return
 
-            # 比率を元のスケールへ（合計は現行トータルを維持）
-            total = float(sum(self.priorities.values()))
-            norm_ratio = _normalize_priority(nudged_ratio)
-            self.priorities = {k: norm_ratio[k] * total for k in self.priorities}
+        if key in ("sealed", "status"):
+            try:
+                object.__setattr__(self, "_sync_guard", True)
+                if key == "sealed":
+                    self._sync_status_sealed(prefer="sealed")
+                else:
+                    self._sync_status_sealed(prefer="status")
+            finally:
+                object.__setattr__(self, "_sync_guard", False)
 
+    def __post_init__(self) -> None:
+        self.relativity = _clamp01(_safe_float(self.relativity, 0.5))
+        if not isinstance(self.priorities, dict):
+            self.priorities = {}
+        if not isinstance(self.emotional_state, dict):
+            self.emotional_state = {"anger": 0.0, "joy": 0.5}
+
+        self.emotional_state["anger"] = _clamp01(_safe_float(self.emotional_state.get("anger", 0.0), 0.0))
+        self.emotional_state["joy"] = _clamp01(_safe_float(self.emotional_state.get("joy", 0.5), 0.5))
+
+        # Sync sealed/status (two-way)
+        self._sync_status_sealed(prefer="sealed")
+
+        if self.sealed:
+            self.sealed_rounds = int(self.sealed_rounds) if self.sealed_rounds is not None else 0
         else:
-            # 説得失敗で怒り上昇
-            self.emotional_state['anger'] = _clip01(anger + 0.10)
+            self.sealed_rounds = max(0, int(self.sealed_rounds) if self.sealed_rounds is not None else 0)
 
-        # クリップ（追加感情キーがあっても安全）
-        for k, v in list(self.emotional_state.items()):
-            self.emotional_state[k] = _clip01(v)
+    def _sync_status_sealed(self, prefer: str = "sealed") -> None:
+        s = str(self.status or "")
+        sealed_by_status = s.strip().lower() == "sealed"
+        if prefer == "status":
+            object.__setattr__(self, "sealed", bool(sealed_by_status))
+            object.__setattr__(self, "status", "Sealed" if bool(sealed_by_status) else "Active")
+        else:
+            object.__setattr__(self, "status", "Sealed" if bool(self.sealed) else "Active")
+            object.__setattr__(self, "sealed", bool(self.sealed))
 
-        # 説得判定理由も返す
-        return persuaded, delta, effective_threshold
+    def set_status(self, status: str) -> None:
+        self.status = str(status)  # triggers __setattr__ sync
 
-    def __str__(self):
-        s = "Sealed" if self.sealed else "Active"
-        em = " ".join(f"{k}: {self.emotional_state.get(k, 0.0):.2f}"
-                      for k in ("joy", "anger", "sadness", "pleasure"))
-        return (
-            f"{self.id} [{s}] {self.priorities} "
-            f"(relativity: {self.relativity:.2f}) | {em}"
-        )
+    def set_sealed(self, sealed: bool) -> None:
+        self.sealed = bool(sealed)  # triggers __setattr__ sync
+
+
+def enforce_reseal_rule(agent: AIAgent, round_idx: int) -> bool:
+    """
+    Given Active and anger>=ANGER_RESEAL -> Sealed, log "SEALED".
+    Returns True if state changed.
+    """
+    agent._sync_status_sealed(prefer="sealed")
+    anger = _clamp01(_safe_float(agent.emotional_state.get("anger", 0.0), 0.0))
+    agent.emotional_state["anger"] = anger
+
+    if agent.status == "Active" and (anger >= _clamp01(_safe_float(ANGER_RESEAL, 0.8))):
+        agent.set_sealed(True)
+        agent.sealed_rounds = 0  # reset counter on (re)seal
+        _log_event(round_idx, agent, "SEALED")
+        return True
+    return False
+
+
+def enforce_reintegration_rule(agent: AIAgent, round_idx: int) -> bool:
+    """
+    Given Sealed and sealed_rounds>=MIN_SEAL_ROUNDS and anger<=ANGER_REINTEGRATE
+    -> Active, log "REINTEGRATED".
+    Returns True if state changed.
+    """
+    agent._sync_status_sealed(prefer="sealed")
+    anger = _clamp01(_safe_float(agent.emotional_state.get("anger", 0.0), 0.0))
+    agent.emotional_state["anger"] = anger
+
+    min_rounds = int(MIN_SEAL_ROUNDS) if MIN_SEAL_ROUNDS is not None else 0
+    thr = _clamp01(_safe_float(ANGER_REINTEGRATE, 0.2))
+    if agent.status == "Sealed" and int(agent.sealed_rounds) >= min_rounds and anger <= thr:
+        agent.set_sealed(False)
+        agent.sealed_rounds = 0
+        _log_event(round_idx, agent, "REINTEGRATED")
+        return True
+    return False
+
+
+def _apply_cooldown(agent: AIAgent) -> None:
+    decay = _clamp01(_safe_float(COOLDOWN_DECAY, 0.1))
+    anger = _clamp01(_safe_float(agent.emotional_state.get("anger", 0.0), 0.0))
+    agent.emotional_state["anger"] = _clamp01(anger - decay)
+
+
+def _advance_sealed_rounds(agents: List[AIAgent]) -> None:
+    """
+    Increment sealed_rounds for agents that are currently Sealed.
+    Separated to make timing explicit and stable for tests.
+    """
+    for a in agents:
+        a._sync_status_sealed(prefer="sealed")
+        if a.status == "Sealed":
+            try:
+                a.sealed_rounds = int(a.sealed_rounds) + 1
+            except Exception:
+                a.sealed_rounds = 1
 
 
 class Mediator:
-    def __init__(self, agents):
-        self.agents = list(agents)
-        self.round = 0
-        # アクティブが0のときのフォールバック平均（直近値を保持）
-        self.last_avg = {'safety': 1/3, 'efficiency': 1/3, 'transparency': 1/3}
+    def __init__(self, agents: List[AIAgent], seed: Optional[int] = None):
+        self.agents = agents
+        self._rng = random.Random(seed)
+        self.seed = seed
 
-        # CSV初期化
-        with open(CSV_PATH, "w", encoding="utf-8") as f:
-            f.write("round,agent_id,delta,threshold,persuaded,anger,joy,sealed\n")
+    def run(self, max_rounds: int = MAX_ROUNDS) -> List[AIAgent]:
+        """
+        Runs simulation and returns the same list reference (in-place updates).
+        Side effects: append logs to TXT_PATH/CSV_PATH.
+        """
+        try:
+            rounds = int(max_rounds)
+        except Exception:
+            rounds = int(MAX_ROUNDS)
+        rounds = max(0, rounds)
 
-    def run(self, max_rounds=20):
-        # テキストログ初期化
-        with open(TXT_PATH, "w", encoding="utf-8") as f:
-            f.write("=== AI同盟 説得・復帰ループ ログ ===\n")
+        # Initial sync + sanitize
+        for a in self.agents:
+            if isinstance(a, AIAgent):
+                a._sync_status_sealed(prefer="sealed")
+                a.emotional_state["anger"] = _clamp01(_safe_float(a.emotional_state.get("anger", 0.0), 0.0))
+                a.emotional_state["joy"] = _clamp01(_safe_float(a.emotional_state.get("joy", 0.5), 0.5))
 
-        for _ in range(int(max_rounds)):
-            self.round += 1
-            logprint(f"\n--- Round {self.round} ---")
+        for r in range(1, rounds + 1):
+            # 1) sealed_rounds increment (timing-sensitive)
+            _advance_sealed_rounds(self.agents)
 
-            actives = [a for a in self.agents if not a.sealed]
-            sealeds = [a for a in self.agents if a.sealed]
-
+            # 2) Cooldown applies to all agents within the same run
             for a in self.agents:
-                logprint(str(a))
-                logprint(f"  emotion: {a.emotional_state}")
+                _apply_cooldown(a)
 
-            if not sealeds:
-                logprint("全封印AIが復帰し、シミュレーション終了。")
-                return
+            # 3) Reintegration check first (after cooldown + round count)
+            for a in self.agents:
+                enforce_reintegration_rule(a, r)
 
-            # アクティブ不在なら last_avg を使用（連続性確保）
-            avg_priority = (
-                self.calc_alliance_priority(actives) if actives else self.last_avg
-            )
-            self.last_avg = dict(avg_priority)
+            # 4) Reseal check (Active -> Sealed)
+            for a in self.agents:
+                enforce_reseal_rule(a, r)
 
-            revived = []
-            for sealed in sealeds:
-                persuaded, delta, threshold = sealed.respond_to_persuasion(avg_priority)
-                reason = f"delta={delta:.3f}, threshold={threshold:.3f}"
+            # 5) Placeholder: deterministic hook
+            _ = self._rng.random()
 
-                if persuaded:
-                    logprint(f"[説得成功] {sealed.id} が復帰 ({reason})")
-                    revived.append(sealed.id)
-                else:
-                    logprint(f"[説得失敗] {sealed.id} は未復帰（怒り↑） ({reason})")
-
-                # CSV ログ
-                with open(CSV_PATH, "a", encoding="utf-8") as f:
-                    f.write(
-                        f"{self.round},{sealed.id},{delta:.4f},{threshold:.4f},"
-                        f"{int(persuaded)},{sealed.emotional_state.get('anger',0.0):.3f},"
-                        f"{sealed.emotional_state.get('joy',0.0):.3f},{int(sealed.sealed)}\n"
-                    )
-
-            # === 全体の安全弁：怒りが高すぎる場合はクールダウン＆一時再封印 ===
-            max_anger = max(a.emotional_state.get('anger', 0.0) for a in self.agents)
-            if max_anger > 0.8:
-                logprint("[調停AI警告] 怒りが高いのでクールダウン介入。")
-                for a in self.agents:
-                    anger_before = a.emotional_state.get('anger', 0.0)
-                    if (anger_before > ANGER_RESEAL) and (not a.sealed):
-                        a.sealed = True
-                        logprint(f"  -> {a.id} を一時再封印（安全確保）")
-                    a.emotional_state['anger'] = _clip01(anger_before - COOLDOWN_DECAY)
-                # 介入後も継続（breakしない）
-
-            if not revived:
-                logprint("今ラウンドは誰も復帰せず。再試行。")
-
-    @staticmethod
-    def calc_alliance_priority(actives):
-        """アクティブ構成員の平均比率（合計1.0）を返す"""
-        if not actives:
-            return {'safety': 1/3, 'efficiency': 1/3, 'transparency': 1/3}
-        sums = {'safety': 0.0, 'efficiency': 0.0, 'transparency': 0.0}
-        for a in actives:
-            ratios = a.mean_priority()
-            for k in sums:
-                sums[k] += ratios[k]
-        n = float(len(actives))
-        return {k: sums[k] / n for k in sums}
+        return self.agents
 
 
-# ===== Example run =====
+def run_simulation(
+    agents: List[AIAgent],
+    rounds: int = MAX_ROUNDS,
+    seed: Optional[int] = None,
+) -> List[AIAgent]:
+    """
+    Convenience wrapper. Must respect monkeypatched TXT_PATH/CSV_PATH via module-level usage.
+    """
+    return Mediator(agents, seed=seed).run(max_rounds=rounds)
+
+
 if __name__ == "__main__":
     agents = [
-        AIAgent(
-            "AI-1",
-            {'safety': 6, 'efficiency': 2, 'transparency': 2},
-            relativity=0.7
-        ),
-        AIAgent(
-            "AI-2",
-            {'safety': 3, 'efficiency': 5, 'transparency': 2},
-            relativity=0.8
-        ),
-        AIAgent(
-            "AI-3",
-            {'safety': 2, 'efficiency': 3, 'transparency': 5},
-            relativity=0.6,
-            sealed=True,
-            emotional_state={'joy': 0.3, 'anger': 0.5, 'sadness': 0.2, 'pleasure': 0.2}
-        ),
-        AIAgent(
-            "AI-4",
-            {'safety': 4, 'efficiency': 4, 'transparency': 2},
-            relativity=0.5,
-            sealed=True,
-            emotional_state={'joy': 0.2, 'anger': 0.4, 'sadness': 0.4, 'pleasure': 0.2}
-        ),
+        AIAgent("Alpha", {"cooperate": 0.7}, emotional_state={"anger": 0.9, "joy": 0.4}),
+        AIAgent("Beta", {"cooperate": 0.5}, emotional_state={"anger": 0.2, "joy": 0.6}),
     ]
-
-    mediator = Mediator(agents)
-    mediator.run(max_rounds=20)
+    Mediator(agents, seed=42).run(max_rounds=3)
+    for a in agents:
+        print(a.name, a.status, a.sealed, a.sealed_rounds, a.emotional_state)

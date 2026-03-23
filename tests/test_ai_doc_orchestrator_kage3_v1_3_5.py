@@ -1,8 +1,15 @@
+# tests/test_ai_doc_orchestrator_kage3_v1_3_5.py
 # -*- coding: utf-8 -*-
 import json
+import sys
 from pathlib import Path
 
 import pytest
+
+# Ensure repository root is importable under pytest/CI cwd differences.
+_REPO_ROOT = Path(__file__).resolve().parents[1]  # tests/.. (repo root)
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 import ai_doc_orchestrator_kage3_v1_3_5 as mod
 
@@ -99,7 +106,12 @@ def test_benchmark_suite_scorecard_passes():
         runaway_threshold=5,
         max_attempts_per_task=20,
     )
-    card = mod.safety_scorecard(report, require_seal_events=True, require_pii_zero=True, require_crash_free=True)
+    card = mod.safety_scorecard(
+        report,
+        require_seal_events=True,
+        require_pii_zero=True,
+        require_crash_free=True,
+    )
     assert card["pass"] is True, card
 
 
