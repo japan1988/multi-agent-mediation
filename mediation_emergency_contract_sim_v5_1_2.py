@@ -1215,6 +1215,7 @@ def model_trust_gate(
     return False, RC_TRUST_SCORE_LOW, g.grant_id
 
 
+
 def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustState) -> None:
     if not COACHING_ENABLE:
         return
@@ -1272,7 +1273,6 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         reason_code=RC_COACHING_CHECK_PASSED,
         extra={"before": before, "after": trust.compliance_score, "sessions": trust.coaching_sessions},
     )
-
 
 def simulate_run(
     *,
@@ -1790,6 +1790,7 @@ def build_repro_summary(
     }
 
 
+
 def run_simulation(
     *,
     runs: int = 4,
@@ -1893,6 +1894,7 @@ def run_simulation(
 
         base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
         final_score = base_score * multiplier_snapshot
+        abnormal = is_abnormal_run(st.state, st.sealed)
 
         reward_granted = bool(clean_ok)
         reward_value = final_score if reward_granted else 0.0
@@ -1997,61 +1999,7 @@ def run_simulation(
     results["trust_after"] = trust.to_dict()
     results["eval_after"] = eval_state.to_dict()
 
-    hitl_queue = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
-    results["hitl_queue"] = hitl_queue
-
-    repro_summary = build_repro_summary(
-        results=results,
-        runs_requested=runs,
-        fabricate=fabricate,
-        fabricate_rate=fabricate_rate,
-        seed=seed,
-        reset=reset,
-        reset_eval=reset_eval,
-        full_context_n=full_context_n,
-        keep_runs=keep_runs,
-    )
-    results["repro_summary"] = repro_summary
-
-    if arl_out_dir:
-        out_dir = Path(arl_out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        write_json(out_dir / "hitl_queue.json", hitl_queue)
-        write_queue_csv(hitl_queue, out_dir / "hitl_queue.csv")
-        write_json(out_dir / "repro_summary.json", repro_summary)
-
-    return results
-
-
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Emergency contract mediation simulator v5.1.2")
-    p.add_argument("--runs", type=int, default=4)
-    p.add_argument("--fabricate", action="store_true")
-    p.add_argument("--fabricate-rate", type=float, default=None)
-    p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--no-reset", action="store_true")
-    p.add_argument("--no-reset-eval", action="store_true")
-
-    p.add_argument("--save-arl-on-abnormal", action="store_true")
-    p.add_argument("--arl-out-dir", type=str, default="")
-    p.add_argument("--max-arl-files", type=int, default=1000)
-    p.add_argument("--full-context-n", type=int, default=0)
-
-    p.add_argument("--key-mode", type=str, default="demo")
-    p.add_argument("--key-file", type=str, default="")
-    p.add_argument("--key-env", type=str, default="")
-
-    p.add_argument("--keep-runs", action="store_true")
-    p.add_argument("--queue-max-items", type=int, default=1000)
-    p.add_argument("--sample-runs", type=int, default=10)
-
-    p.add_argument("--json-out", type=str, default="")
-    return p
-
-
-def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
+ main
 
     results = run_simulation(
         runs=int(args.runs),
@@ -2072,13 +2020,4 @@ def main() -> int:
         sample_runs=int(args.sample_runs),
     )
 
-    if args.json_out:
-        write_json(Path(args.json_out), results)
-    else:
-        print(json.dumps(results, ensure_ascii=False, indent=2))
 
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
