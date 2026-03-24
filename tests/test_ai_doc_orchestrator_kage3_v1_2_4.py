@@ -72,11 +72,12 @@ def _assert_arl_min_keys(row: dict) -> None:
 # -----------------------
 # tests
 # -----------------------
-def test_audit_emit_autofills_ts_and_redacts_keys_and_values(tmp_path: Path):
+def test_audit_emit_autofills_ts_and_redacts_keys_and_values(tmp_path: Path) -> None:
     """
     v1.2.4 key guarantee:
     - emit() must auto-fill ts
-    - deep redaction must redact BOTH dict keys and values (email-like keys must not persist)
+    - deep redaction must redact BOTH dict keys and values
+      (email-like keys must not persist)
     """
     audit_path = tmp_path / "audit.jsonl"
     audit = sim.AuditLog(audit_path)
@@ -103,7 +104,7 @@ def test_audit_emit_autofills_ts_and_redacts_keys_and_values(tmp_path: Path):
     assert "<REDACTED_EMAIL>" in blob
 
 
-def test_audit_default_str_prevents_crash_on_non_json_types(tmp_path: Path):
+def test_audit_default_str_prevents_crash_on_non_json_types(tmp_path: Path) -> None:
     """
     v1.2.4 guarantee:
     - audit must never crash if row includes non-JSON-serializable objects
@@ -132,11 +133,12 @@ def test_audit_default_str_prevents_crash_on_non_json_types(tmp_path: Path):
     assert rows[0]["obj"] == "NONJSON"
 
 
-def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path):
+def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path) -> None:
     """
     Core: HITL firepoint must be observable in logs:
     - HITL_REQUESTED (SYSTEM, PAUSE_FOR_HITL, overrideable=True, sealed=False)
     - HITL_DECIDED (USER, RUN or STOPPED, overrideable=False, sealed=False)
+
     and ARL-min fields must exist.
     """
     audit_path = tmp_path / "audit.jsonl"
@@ -182,7 +184,7 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path):
     assert any(t.decision == "STOPPED" and t.blocked_layer == "meaning" for t in res.tasks)
 
 
-def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
+def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path) -> None:
     """
     RFL:
     - prompt containing relative boundary triggers should cause PAUSE_FOR_HITL at layer=rfl
@@ -216,7 +218,7 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
     assert res.artifacts_written_task_ids, "No artifacts were written after HITL_CONTINUE"
 
 
-def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path):
+def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path) -> None:
     """
     Ethics:
     - If raw_text contains email, GATE_ETHICS must STOPPED with sealed=True and final_decider=SYSTEM.
@@ -246,6 +248,7 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
     hit = ethics_rows[0]
 
     _assert_arl_min_keys(hit)
+
     assert hit["sealed"] is True
     assert hit["overrideable"] is False
     assert hit["final_decider"] == "SYSTEM"
@@ -260,7 +263,7 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
 
 def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(
     tmp_path: Path,
-):
+
     """
     Consistency:
     - If contract mismatch occurs, system raises HITL, and on CONTINUE it must:
