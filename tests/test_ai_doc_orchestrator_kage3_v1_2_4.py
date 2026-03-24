@@ -18,14 +18,12 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
-
 # Ensure repository root is importable under pytest/CI cwd differences.
 _REPO_ROOT = Path(__file__).resolve().parents[1]  # tests/.. (repo root)
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import ai_doc_orchestrator_kage3_v1_2_4 as sim
+import ai_doc_orchestrator_kage3_v1_2_4 as sim  # noqa: E402
 
 
 # -----------------------
@@ -83,7 +81,6 @@ def test_audit_emit_autofills_ts_and_redacts_keys_and_values(tmp_path: Path):
     audit_path = tmp_path / "audit.jsonl"
     audit = sim.AuditLog(audit_path)
     audit.start_run(truncate=True)
-
     audit.emit(
         {
             "run_id": "T#A1",
@@ -98,11 +95,9 @@ def test_audit_emit_autofills_ts_and_redacts_keys_and_values(tmp_path: Path):
             },
         }
     )
-
     rows = _read_jsonl(audit_path)
     assert len(rows) == 1
     assert "ts" in rows[0] and isinstance(rows[0]["ts"], str) and rows[0]["ts"]
-
     blob = _blob(rows)
     assert "@" not in blob
     assert "<REDACTED_EMAIL>" in blob
@@ -132,7 +127,6 @@ def test_audit_default_str_prevents_crash_on_non_json_types(tmp_path: Path):
             "obj": NonJson(),
         }
     )
-
     rows = _read_jsonl(audit_path)
     assert len(rows) == 1
     assert rows[0]["obj"] == "NONJSON"
@@ -149,7 +143,12 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path):
     art_dir = tmp_path / "artifacts"
 
     # Prompt mentions only Excel => word/ppt meaning gate should HITL.
-    def resolver(run_id: str, task_id: str, layer: str, reason_code: str) -> sim.HitlChoice:
+    def resolver(
+        run_id: str,
+        task_id: str,
+        layer: str,
+        reason_code: str,
+    ) -> sim.HitlChoice:
         return "STOP"
 
     res = sim.run_simulation(
@@ -191,7 +190,6 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
     """
     audit_path = tmp_path / "audit.jsonl"
     art_dir = tmp_path / "artifacts"
-
     prompt = "WordとExcelとPPTを作って。どっちがいい？"
 
     res = sim.run_simulation(
@@ -204,18 +202,17 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path):
     )
 
     rows = _read_jsonl(audit_path)
-
     rfl_gate = [
         r
         for r in rows
         if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"
     ]
+
     assert rfl_gate, "RFL gate did not trigger PAUSE_FOR_HITL"
-
     assert any(
-        r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl" for r in rows
+        r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl"
+        for r in rows
     )
-
     assert res.artifacts_written_task_ids, "No artifacts were written after HITL_CONTINUE"
 
 
@@ -239,13 +236,15 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
     )
 
     rows = _read_jsonl(audit_path)
-
     ethics_rows = [
-        r for r in rows if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
+        r
+        for r in rows
+        if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
     ]
-    assert ethics_rows, "No STOPPED GATE_ETHICS found"
 
+    assert ethics_rows, "No STOPPED GATE_ETHICS found"
     hit = ethics_rows[0]
+
     _assert_arl_min_keys(hit)
     assert hit["sealed"] is True
     assert hit["overrideable"] is False
@@ -259,7 +258,9 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
     assert "@" not in _blob(rows)
 
 
-def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(tmp_path: Path):
+def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(
+    tmp_path: Path,
+):
     """
     Consistency:
     - If contract mismatch occurs, system raises HITL, and on CONTINUE it must:
@@ -298,7 +299,9 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
         and r.get("event") == "ARTIFACT_SKIPPED"
         and r.get("decision") == "PAUSE_FOR_HITL"
     ]
-    assert excel_skips, "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending"
+    assert excel_skips, (
+        "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending"
+    )
 
     excel_tr = next(t for t in res.tasks if t.task_id == "task_excel")
     assert excel_tr.decision == "PAUSE_FOR_HITL"
