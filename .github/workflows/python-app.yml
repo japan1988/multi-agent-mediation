@@ -13,7 +13,7 @@ name: Python App CI
     paths-ignore:
       - "**.md"
       - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/workflows/python-app.yml"
   workflow_dispatch:
 
 concurrency:
