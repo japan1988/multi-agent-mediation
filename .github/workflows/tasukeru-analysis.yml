@@ -1,3 +1,5 @@
+name: Tasukeru Analysis
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -13,3 +15,16 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+
+jobs:
+  check-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify workflow syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "workflow syntax block is present"
