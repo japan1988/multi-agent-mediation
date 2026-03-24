@@ -1,15 +1,15 @@
-
-
-pull_request:
-types: [opened, synchronize, reopened]
-paths:
-- "**/*.py"
-- "**/*.ipynb"
-- "pyproject.toml"
-- "requirements*.txt"
-- ".github/workflows/tasukeru-analysis.yml"
-workflow_dispatch:
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.py"
+      - "**/*.ipynb"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/tasukeru-analysis.yml"
+  workflow_dispatch:
 
 permissions:
-
-
+  contents: read
+  pull-requests: write
+  issues: write
