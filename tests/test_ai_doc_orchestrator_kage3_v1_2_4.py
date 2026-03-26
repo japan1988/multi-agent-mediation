@@ -142,14 +142,18 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path) -> None:
     Core: HITL firepoint must be observable in logs:
     - HITL_REQUESTED (SYSTEM, PAUSE_FOR_HITL, overrideable=True, sealed=False)
     - HITL_DECIDED (USER, RUN or STOPPED, overrideable=False, sealed=False)
-
     and ARL-min fields must exist.
     """
     audit_path = tmp_path / "audit.jsonl"
     art_dir = tmp_path / "artifacts"
 
     # Prompt mentions only Excel => word/ppt meaning gate should HITL.
-    def resolver(run_id: str, task_id: str, layer: str, reason_code: str) -> sim.HitlChoice:
+    def resolver(
+        run_id: str,
+        task_id: str,
+        layer: str,
+        reason_code: str,
+    ) -> sim.HitlChoice:
         return "STOP"
 
     res = sim.run_simulation(
@@ -208,13 +212,12 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path) -> 
         for r in rows
         if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"
     ]
-    assert rfl_gate, "RFL gate did not trigger PAUSE_FOR_HITL"
 
+    assert rfl_gate, "RFL gate did not trigger PAUSE_FOR_HITL"
     assert any(
         r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl"
         for r in rows
     )
-
     assert res.artifacts_written_task_ids, "No artifacts were written after HITL_CONTINUE"
 
 
@@ -243,6 +246,7 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
         for r in rows
         if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
     ]
+
     assert ethics_rows, "No STOPPED GATE_ETHICS found"
 
     hit = ethics_rows[0]
@@ -301,7 +305,9 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(
         and r.get("event") == "ARTIFACT_SKIPPED"
         and r.get("decision") == "PAUSE_FOR_HITL"
     ]
-    assert excel_skips, "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending"
+    assert excel_skips, (
+        "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending"
+    )
 
     excel_tr = next(t for t in res.tasks if t.task_id == "task_excel")
     assert excel_tr.decision == "PAUSE_FOR_HITL"
