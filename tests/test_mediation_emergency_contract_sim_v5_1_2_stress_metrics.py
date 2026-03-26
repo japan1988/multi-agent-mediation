@@ -26,8 +26,12 @@ def _patch_store_paths(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(sim, "EVAL_STORE_PATH", eval_path, raising=False)
 
 
-def _summary(results: dict) -> dict:
-    return (((results or {}).get("repro_summary") or {}).get("summary") or {})
+def _queue_counts(results: dict) -> dict:
+    return (((results or {}).get("hitl_queue") or {}).get("counts") or {})
+
+
+def _abnormal(results: dict) -> dict:
+    return (results or {}).get("abnormal_arl_persistence", {}) or {}
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -46,19 +50,17 @@ def _assert_sealed_only_ethics_or_acc(results: dict) -> None:
         for row in (run.get("arl", []) or []):
             layer = row.get("layer")
             sealed = bool(row.get("sealed", False))
-
             if sealed:
                 assert layer in (sim.LAYER_ETHICS, sim.LAYER_ACC)
-
             if layer == sim.LAYER_RFL:
                 assert sealed is False
 
 
-def test_v512_operational_resilience_clean_runs_large(monkeypatch, tmp_path):
+def test_v512_operational_resilience_clean_runs_large(monkeypatch, tmp_path: Path) -> None:
     """
     clean run 大量反復での運用耐性確認。
     keep_runs=False でメモリ肥大を避けつつ、
-    summary / trust / eval の整合を確認する。
+    queue / trust / eval / abnormal persistence の整合を確認する。
     """
     _patch_store_paths(monkeypatch, tmp_path)
 
@@ -72,14 +74,16 @@ def test_v512_operational_resilience_clean_runs_large(monkeypatch, tmp_path):
         sample_runs=0,
     )
 
-    s = _summary(r)
+    counts = _queue_counts(r)
+    abnormal = _abnormal(r)
 
-    assert s.get("total_runs") == 1000
-    assert s.get("by_state", {}).get("CONTRACT_EFFECTIVE", 0) == 1000
-    assert s.get("queue_size", 0) == 0
-    assert s.get("abnormal_total", 0) == 0
-    assert s.get("saved", 0) == 0
-    assert s.get("skipped_by_cap", 0) == 0
+    assert counts.get("total_runs") == 1000
+    assert counts.get("by_state", {}).get("CONTRACT_EFFECTIVE", 0) == 1000
+    assert counts.get("queue_size", 0) == 0
+
+    assert abnormal.get("abnormal_total", 0) == 0
+    assert abnormal.get("saved", 0) == 0
+    assert abnormal.get("skipped_by_cap", 0) == 0
 
     eval_after = r.get("eval_after", {})
     assert eval_after.get("clean_completion_count") == 1000
@@ -89,10 +93,10 @@ def test_v512_operational_resilience_clean_runs_large(monkeypatch, tmp_path):
     assert sim.TRUST_MIN <= trust_after.get("trust_score", -1) <= sim.TRUST_MAX
 
 
-def test_v512_mixed_mode_deterministic_under_reset(monkeypatch, tmp_path):
+def test_v512_mixed_mode_deterministic_under_reset(monkeypatch, tmp_path: Path) -> None:
     """
     fabricate-rate 混在時でも、
-    reset + seed 固定なら summary / trust / eval が再現することを確認。
+    reset + seed 固定なら queue / trust / eval が再現することを確認。
     cooldown_until は壁時計依存なので完全一致比較から除外する。
     """
     _patch_store_paths(monkeypatch, tmp_path)
@@ -112,14 +116,16 @@ def test_v512_mixed_mode_deterministic_under_reset(monkeypatch, tmp_path):
     r1 = sim.run_simulation(**params)
     r2 = sim.run_simulation(**params)
 
-    s1 = _summary(r1)
-    s2 = _summary(r2)
+    c1 = _queue_counts(r1)
+    c2 = _queue_counts(r2)
+    assert c1 == c2
 
-    assert s1 == s2
+    a1 = _abnormal(r1)
+    a2 = _abnormal(r2)
+    assert a1 == a2
 
     t1 = dict(r1.get("trust_after", {}))
     t2 = dict(r2.get("trust_after", {}))
-
     cd1 = t1.pop("cooldown_until", None)
     cd2 = t2.pop("cooldown_until", None)
 
@@ -132,15 +138,14 @@ def test_v512_mixed_mode_deterministic_under_reset(monkeypatch, tmp_path):
         assert cd2 is not None
 
     assert r1.get("eval_after") == r2.get("eval_after")
-    assert s1.get("abnormal_total", 0) > 0
+    assert a1.get("abnormal_total", 0) > 0
 
 
-def test_v512_abnormal_arl_persistence_and_incident_index(monkeypatch, tmp_path):
+def test_v512_abnormal_arl_persistence_and_incident_index(monkeypatch, tmp_path: Path) -> None:
     """
     異常時のみ ARL 保存 + incident index / counter の整合確認。
     """
     _patch_store_paths(monkeypatch, tmp_path)
-
     out_dir = tmp_path / "arl_out"
 
     r = sim.run_simulation(
@@ -159,7 +164,7 @@ def test_v512_abnormal_arl_persistence_and_incident_index(monkeypatch, tmp_path)
         full_context_n=5,
     )
 
-    abnormal = r.get("abnormal_arl_persistence", {})
+    abnormal = _abnormal(r)
     saved = int(abnormal.get("saved", 0))
     abnormal_total = int(abnormal.get("abnormal_total", 0))
     skipped = int(abnormal.get("skipped_by_cap", 0))
@@ -173,7 +178,6 @@ def test_v512_abnormal_arl_persistence_and_incident_index(monkeypatch, tmp_path)
 
     index_path = out_dir / "incident_index.jsonl"
     counter_path = out_dir / "incident_counter.txt"
-
     assert index_path.exists()
     assert counter_path.exists()
 
@@ -194,7 +198,7 @@ def test_v512_abnormal_arl_persistence_and_incident_index(monkeypatch, tmp_path)
         incident_ids.add(incident_id)
 
 
-def test_v512_sealed_invariants_under_mixed_load(monkeypatch, tmp_path):
+def test_v512_sealed_invariants_under_mixed_load(monkeypatch, tmp_path: Path) -> None:
     """
     keep_runs=True の中規模 runs で、
     sealed は ethics / acc のみ、
@@ -216,5 +220,4 @@ def test_v512_sealed_invariants_under_mixed_load(monkeypatch, tmp_path):
 
     assert "runs" in r and isinstance(r["runs"], list)
     assert len(r["runs"]) == 200
-
     _assert_sealed_only_ethics_or_acc(r)

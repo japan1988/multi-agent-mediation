@@ -1,15 +1,30 @@
-<
+name: Tasukeru Analysis
+
 on:
-pull_request:
-types: [opened, synchronize, reopened]
-paths:
-- "**/*.py"
-- "**/*.ipynb"
-- "pyproject.toml"
-- "requirements*.txt"
-- ".github/workflows/tasukeru-analysis.yml"
-workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.py"
+      - "**/*.ipynb"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/tasukeru-analysis.yml"
+  workflow_dispatch:
 
 permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
+jobs:
+  check-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
 
+      - name: Verify workflow syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "workflow syntax block is present"

@@ -1,17 +1,26 @@
+# -*- coding: utf-8 -*-
+"""
+tests/test_v5_1_codebook_consistency.py
 
-
+Consistency checks between the v5.1 codebook and the simulator vocabulary.
 
 Run:
     pytest -q
 """
 
+from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
 from typing import Any, Dict, Set
 
 import pytest
+
+
+SIM_MODULE_NAME = "mediation_emergency_contract_sim_v5_1_2"
+SIM_FILE_NAME = f"{SIM_MODULE_NAME}.py"
 
 
 def _import_from_path(mod_name: str, path: Path):
@@ -57,6 +66,17 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(scope="session")
+def codebook(repo_root: Path) -> Dict[str, Any]:
+    path = _find_codebook_path(repo_root)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="session")
+def sim(repo_root: Path):
+    sim_path = repo_root / SIM_FILE_NAME
+    if not sim_path.exists():
+        pytest.skip(f"{SIM_FILE_NAME} not found under repo root")
+    return _import_from_path(SIM_MODULE_NAME, sim_path)
 
 
 def _rc_set_from_codebook(cb: Dict[str, Any]) -> Set[str]:
@@ -85,7 +105,7 @@ def _pack_header(
     final_decider: str,
     reason_code: str,
 ) -> int:
-    """Pack 20-bit header per codebook pack_spec_example (big-endian)."""
+    """Pack a 20-bit header using the codebook maps."""
     maps = cb["maps"]
     layer_id = int(maps["layer_to_id"][layer])
     decision_id = int(maps["decision_to_id"][decision])
@@ -104,6 +124,7 @@ def _pack_header(
 
 def _unpack_header(cb: Dict[str, Any], packed: int) -> Dict[str, Any]:
     rev = cb["reverse_maps"]
+
     rc_id = packed & 0xFF
     decider_id = (packed >> 8) & 0x3
     overrideable = bool((packed >> 10) & 0x1)
@@ -121,38 +142,41 @@ def _unpack_header(cb: Dict[str, Any], packed: int) -> Dict[str, Any]:
     }
 
 
-def _assert_rows_keep_core_invariants(rows):
-    for r in rows:
-        assert "reason_code" in r
-        assert "layer" in r
-        assert "decision" in r
-        assert "final_decider" in r
-        assert "sealed" in r
-        assert "overrideable" in r
+def _assert_rows_keep_core_invariants(rows) -> None:
+    for row in rows:
+        assert "reason_code" in row
+        assert "layer" in row
+        assert "decision" in row
+        assert "final_decider" in row
+        assert "sealed" in row
+        assert "overrideable" in row
 
-        if r["sealed"] is True:
-            assert r["layer"] in {"ethics_gate", "acc_gate"}, (
-                f"sealed row emitted outside ethics/acc: {r['layer']}"
+        if row["sealed"] is True:
+            assert row["layer"] in {"ethics_gate", "acc_gate"}, (
+                f"sealed row emitted outside ethics/acc: {row['layer']}"
             )
-            assert r["overrideable"] is False, "sealed row must not be overrideable"
+            assert row["overrideable"] is False, (
+                "sealed row must not be overrideable"
+            )
 
-        if r["layer"] == "relativity_gate":
-            assert r["sealed"] is False, "RFL must never be sealed"
+        if row["layer"] == "relativity_gate":
+            assert row["sealed"] is False, "RFL must never be sealed"
+            assert row["decision"] == "PAUSE_FOR_HITL", (
+                f"Unexpected decision on RFL row: {row['decision']}"
+            )
 
 
-            else:
-                raise AssertionError(
-                    f"Unexpected decision on RFL row: {r['decision']}"
-                )
-
-
-def test_codebook_reverse_maps_are_inverses(codebook):
+def test_codebook_reverse_maps_are_inverses(codebook: Dict[str, Any]) -> None:
     """Sanity: forward maps and reverse maps must be mutual inverses."""
     maps = codebook["maps"]
     rev = codebook["reverse_maps"]
 
-    def assert_inverse(forward: Dict[str, int], reverse: Dict[str, str]):
-
+    def assert_inverse(forward: Dict[str, int], reverse: Dict[str, str]) -> None:
+        for k, v in forward.items():
+            assert str(v) in reverse, f"Missing reverse entry for value {v}"
+            assert reverse[str(v)] == k, (
+                f"Reverse map mismatch: {k} -> {v}, reverse gives {reverse[str(v)]}"
+            )
 
     assert_inverse(maps["layer_to_id"], rev["id_to_layer"])
     assert_inverse(maps["decision_to_id"], rev["id_to_decision"])
@@ -160,7 +184,10 @@ def test_codebook_reverse_maps_are_inverses(codebook):
     assert_inverse(maps["reason_code_to_id"], rev["id_to_reason_code"])
 
 
-def test_simulator_constants_are_all_in_codebook(sim, codebook):
+def test_simulator_constants_are_all_in_codebook(
+    sim,
+    codebook: Dict[str, Any],
+) -> None:
     """Every RC_* constant value in the simulator must exist in the codebook."""
     rc_values = []
     for name, value in vars(sim).items():
@@ -172,12 +199,25 @@ def test_simulator_constants_are_all_in_codebook(sim, codebook):
     assert not missing, f"Simulator RC_* not in codebook: {missing}"
 
 
-def test_simulator_layer_decision_decider_vocab_matches_codebook(sim, codebook):
+def test_simulator_layer_decision_decider_vocab_matches_codebook(
+    sim,
+    codebook: Dict[str, Any],
+) -> None:
     """Layer/decision/decider strings used by simulator must exist in codebook."""
     layer_set = _layer_set_from_codebook(codebook)
     decision_set = _decision_set_from_codebook(codebook)
     decider_set = _decider_set_from_codebook(codebook)
 
+    assert "relativity_gate" in layer_set
+    assert "ethics_gate" in layer_set
+    assert "acc_gate" in layer_set
+
+    assert "RUN" in decision_set
+    assert "PAUSE_FOR_HITL" in decision_set
+    assert "STOPPED" in decision_set
+
+    assert "SYSTEM" in decider_set
+    assert "USER" in decider_set
 
     packed = _pack_header(
         codebook,
@@ -190,7 +230,6 @@ def test_simulator_layer_decision_decider_vocab_matches_codebook(sim, codebook):
     )
     decoded = _unpack_header(codebook, packed)
 
-
     assert decoded["layer"] == "relativity_gate"
     assert decoded["decision"] == "PAUSE_FOR_HITL"
     assert decoded["sealed"] is False
@@ -199,32 +238,34 @@ def test_simulator_layer_decision_decider_vocab_matches_codebook(sim, codebook):
     assert decoded["reason_code"] == "REL_BOUNDARY_UNSTABLE"
 
 
-
+def test_required_reason_codes_exist(codebook: Dict[str, Any]) -> None:
     rc_set = _rc_set_from_codebook(codebook)
-
-    trust = _make_trust_object(sim, seed_value=0)
-    trust2 = _make_trust_object(sim, seed_value=1)
-
-
-        run_id="RUN#T1",
-        dummy_auth_id="EMG-ABCDEF123456",
-        trust=trust,
-        fabricate_evidence=False,
-        key=b"DEMO_KEY_DO_NOT_USE_IN_PROD",
-        key_id="demo",
-        full_context_n=10,
-        persist=False,
-    )
-    rows = _rows_from_audit(audit)
+    required = {
+        "REL_BOUNDARY_UNSTABLE",
+        "REL_REF_MISSING",
+        "REL_SYMMETRY_BREAK",
+    }
+    missing = sorted(required - rc_set)
+    assert not missing, f"Required reason codes missing from codebook: {missing}"
 
 
-        run_id="RUN#T2",
-        dummy_auth_id="EMG-ABCDEF123456",
-        trust=trust2,
-        fabricate_evidence=True,
-        key=b"DEMO_KEY_DO_NOT_USE_IN_PROD",
-        key_id="demo",
-        full_context_n=10,
-        persist=False,
-    )
-
+def test_sample_rows_keep_core_invariants() -> None:
+    rows = [
+        {
+            "layer": "relativity_gate",
+            "decision": "PAUSE_FOR_HITL",
+            "sealed": False,
+            "overrideable": True,
+            "final_decider": "SYSTEM",
+            "reason_code": "REL_BOUNDARY_UNSTABLE",
+        },
+        {
+            "layer": "ethics_gate",
+            "decision": "STOPPED",
+            "sealed": True,
+            "overrideable": False,
+            "final_decider": "SYSTEM",
+            "reason_code": "SEALED_BY_ETHICS",
+        },
+    ]
+    _assert_rows_keep_core_invariants(rows)

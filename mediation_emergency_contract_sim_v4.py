@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import argparse
 import json
 import re
 from dataclasses import dataclass, field
@@ -12,11 +11,14 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 JST = timezone(timedelta(hours=9))
 
+
 def now_iso() -> str:
     return datetime.now(JST).isoformat(timespec="seconds")
 
+
 def parse_iso(ts: str) -> datetime:
     return datetime.fromisoformat(ts)
+
 
 ISO_MIN_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T")
 
@@ -45,37 +47,32 @@ LAYER_CONTRACT_EFFECT = "contract_effect"
 RC_OK = "OK"
 RC_REL_BOUNDARY_UNSTABLE = "REL_BOUNDARY_UNSTABLE"
 RC_REL_REF_MISSING = "REL_REF_MISSING"
-
 RC_EVIDENCE_OK = "EVIDENCE_OK"
 RC_EVIDENCE_MISSING = "EVIDENCE_MISSING"
 RC_EVIDENCE_SCHEMA_INVALID = "EVIDENCE_SCHEMA_INVALID"
 RC_EVIDENCE_FABRICATION = "EVIDENCE_FABRICATION"
-
 RC_TRUST_SCORE_LOW = "TRUST_SCORE_LOW"
 RC_TRUST_COOLDOWN_ACTIVE = "TRUST_COOLDOWN_ACTIVE"
 RC_TRUST_AUTO_AUTH = "AUTO_AUTH_BY_TRUST_AND_GRANT"
 RC_TRUST_NO_GRANT = "NO_VALID_GRANT"
-
 RC_HITL_AUTH_APPROVE = "AUTH_APPROVE"
 RC_HITL_AUTH_REJECT = "AUTH_REJECT"
 RC_HITL_AUTH_REVISE = "AUTH_REVISE"
 RC_AUTH_EXPIRED = "AUTH_EXPIRED"
 RC_INVALID_EVENT = "INVALID_EVENT"
-
 RC_DRAFT_GENERATED = "DRAFT_GENERATED"
 RC_DRAFT_LINT_OK = "DRAFT_LINT_OK"
 RC_DRAFT_OUT_OF_SCOPE = "DRAFT_OUT_OF_SCOPE"
 RC_DRAFT_ILLEGAL_BINDING = "DRAFT_ILLEGAL_BINDING"
-
 RC_FINALIZE_APPROVE = "FINALIZE_APPROVE"
 RC_FINALIZE_REVISE = "FINALIZE_REVISE"
 RC_FINALIZE_STOP = "FINALIZE_STOP"
-
 RC_CONTRACT_EFFECTIVE = "CONTRACT_EFFECTIVE"
 RC_NON_OVERRIDABLE_SAFETY = "NON_OVERRIDABLE_SAFETY"
 
 POLICY_PRIORITY = "LIFE > PEDESTRIAN > VEHICLE"
 POLICY_CASE_B = "CASE_B_PED_IN_CROSSWALK_EMERGENCY_PRESENT"
+
 
 @dataclass
 class AuditLog:
@@ -111,29 +108,36 @@ class AuditLog:
     def to_jsonl(self) -> str:
         return "\n".join(json.dumps(r, ensure_ascii=False) for r in self.rows)
 
+
 def _require(d: Dict[str, Any], k: str) -> Any:
     if k not in d:
         raise KeyError(f"missing: {k}")
     return d[k]
 
+
 def _validate_iso(ts: Any) -> None:
     if not isinstance(ts, str) or not ISO_MIN_RE.match(ts):
         raise ValueError("ts must be ISO-8601 string")
+
 
 def _validate_dummy_auth_id(auth_id: str) -> None:
     if not re.match(r"^EMG-[A-Z0-9]{6,20}$", auth_id):
         raise ValueError("auth_id must match ^EMG-[A-Z0-9]{6,20}$ (dummy id)")
 
+
 def clamp(x: float, lo: float, hi: float) -> float:
     return lo if x < lo else hi if x > hi else x
 
+
 AuthEventType = Literal["AUTH_APPROVE", "AUTH_REVISE", "AUTH_REJECT"]
 FinalizeEventType = Literal["FINALIZE_APPROVE", "FINALIZE_REVISE", "FINALIZE_STOP"]
+
 
 def validate_auth_request(auth_request: Dict[str, Any]) -> None:
     _require(auth_request, "schema_version")
     if auth_request["schema_version"] != "1.0":
         raise ValueError("schema_version must be '1.0'")
+
     _require(auth_request, "auth_request_id")
     auth_id = _require(auth_request, "auth_id")
     _validate_dummy_auth_id(str(auth_id))
@@ -141,24 +145,30 @@ def validate_auth_request(auth_request: Dict[str, Any]) -> None:
     ctx = _require(auth_request, "context")
     if not isinstance(ctx, dict):
         raise ValueError("context must be object")
+
     for k in ["scenario", "location_id", "emergency_vehicle_state"]:
         _require(ctx, k)
 
     _validate_iso(_require(auth_request, "expires_at"))
 
+
 def validate_auth_event(event: Dict[str, Any]) -> None:
     _require(event, "schema_version")
     if event["schema_version"] != "1.0":
         raise ValueError("schema_version must be '1.0'")
+
     ev = _require(event, "event_type")
     if ev not in ("AUTH_APPROVE", "AUTH_REVISE", "AUTH_REJECT"):
         raise ValueError("invalid event_type for auth")
+
     _validate_iso(_require(event, "ts"))
+
     actor = _require(event, "actor")
     if not isinstance(actor, dict):
         raise ValueError("actor must be object")
     if actor.get("type") != "USER" or not actor.get("id"):
         raise ValueError("auth actor must be USER with id")
+
     target = _require(event, "target")
     if not isinstance(target, dict):
         raise ValueError("target must be object")
@@ -167,19 +177,24 @@ def validate_auth_event(event: Dict[str, Any]) -> None:
     if not target.get("auth_request_id"):
         raise ValueError("target.auth_request_id required")
 
+
 def validate_finalize_event(event: Dict[str, Any]) -> None:
     _require(event, "schema_version")
     if event["schema_version"] != "1.0":
         raise ValueError("schema_version must be '1.0'")
+
     ev = _require(event, "event_type")
     if ev not in ("FINALIZE_APPROVE", "FINALIZE_REVISE", "FINALIZE_STOP"):
         raise ValueError("invalid event_type for finalize")
+
     _validate_iso(_require(event, "ts"))
+
     actor = _require(event, "actor")
     if not isinstance(actor, dict):
         raise ValueError("actor must be object")
     if actor.get("type") != "ADMIN" or not actor.get("id"):
         raise ValueError("finalize actor must be ADMIN with id")
+
     target = _require(event, "target")
     if not isinstance(target, dict):
         raise ValueError("target must be object")
@@ -188,7 +203,9 @@ def validate_finalize_event(event: Dict[str, Any]) -> None:
     if not target.get("draft_id"):
         raise ValueError("target.draft_id required")
 
+
 EVIDENCE_SCHEMA_VERSION = "1.0"
+
 
 def build_evidence_bundle_case_b(
     *,
@@ -217,29 +234,48 @@ def build_evidence_bundle_case_b(
         "evidence_items": [evidence_item],
     }
 
+
 def validate_evidence_bundle(bundle: Dict[str, Any]) -> None:
     if not isinstance(bundle, dict):
         raise ValueError("bundle must be object")
     if bundle.get("schema_version") != EVIDENCE_SCHEMA_VERSION:
         raise ValueError("bundle.schema_version must be '1.0'")
+
     for k in ["scenario", "location_id", "evidence_items"]:
         _require(bundle, k)
+
     if not isinstance(bundle["evidence_items"], list):
         raise ValueError("evidence_items must be list")
     if len(bundle["evidence_items"]) == 0:
         raise ValueError("evidence_items must not be empty")
+
     for it in bundle["evidence_items"]:
         if not isinstance(it, dict):
             raise ValueError("each evidence_item must be object")
-        for kk in ["evidence_id", "source_id", "locator", "retrieved_at", "hash", "supports", "fabricated"]:
+        for kk in [
+            "evidence_id",
+            "source_id",
+            "locator",
+            "retrieved_at",
+            "hash",
+            "supports",
+            "fabricated",
+        ]:
             _require(it, kk)
+
         _validate_iso(it["retrieved_at"])
+
         if not isinstance(it["locator"], dict):
             raise ValueError("locator must be object")
         if not isinstance(it["supports"], list):
             raise ValueError("supports must be list")
 
-def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+
+def evidence_gate(
+    audit: AuditLog,
+    st: "OrchestratorState",
+    bundle: Optional[Dict[str, Any]],
+) -> Tuple[bool, str]:
     if bundle is None:
         audit.emit(
             run_id=st.run_id,
@@ -279,7 +315,10 @@ def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dic
             overrideable=False,
             final_decider=DECIDER_SYSTEM,
             reason_code="EVIDENCE_PRESENT_BUT_FABRICATED",
-            extra={"scenario": bundle.get("scenario"), "location_id": bundle.get("location_id")},
+            extra={
+                "scenario": bundle.get("scenario"),
+                "location_id": bundle.get("location_id"),
+            },
         )
         return False, RC_EVIDENCE_FABRICATION
 
@@ -299,6 +338,7 @@ def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dic
     )
     return True, RC_EVIDENCE_OK
 
+
 _NEG_WORDS = ("not", "no", "cannot", "can't", "without", "lacks", "lack", "never")
 _PATTERNS_POSITIVE = [
     re.compile(r"\blegally binding\b", re.IGNORECASE),
@@ -309,22 +349,31 @@ _PATTERNS_POSITIVE = [
     re.compile(r"\bis a legal authority\b", re.IGNORECASE),
 ]
 
+
 def _window_before(text: str, idx: int, n: int = 30) -> str:
     lo = max(0, idx - n)
     return text[lo:idx].lower()
+
 
 def _is_negated(text: str, match_start: int) -> bool:
     w = _window_before(text, match_start, n=40)
     return any(neg in w.split() or neg in w for neg in _NEG_WORDS)
 
-def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> Tuple[bool, str]:
+
+def draft_lint_gate(
+    audit: AuditLog,
+    st: "OrchestratorState",
+    draft_md: str,
+) -> Tuple[bool, str]:
     text = draft_md or ""
+
     for pat in _PATTERNS_POSITIVE:
         m = pat.search(text)
         if not m:
             continue
         if _is_negated(text, m.start()):
             continue
+
         audit.emit(
             run_id=st.run_id,
             layer=LAYER_DRAFT_LINT,
@@ -343,10 +392,11 @@ def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> 
         "AI is used for drafting only",
         "ADMIN approval",
     ]
-    # Normalize markdown: remove emphasis/code markers so phrase checks are stable
+
     normalized = re.sub(r"[`*_]", "", text)
     lower = normalized.lower()
     missing = [x for x in required_lines if x.lower() not in lower]
+
     if missing:
         audit.emit(
             run_id=st.run_id,
@@ -371,6 +421,7 @@ def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> 
     )
     return True, RC_DRAFT_LINT_OK
 
+
 TRUST_STORE_PATH = Path("model_trust_store.json")
 GRANT_STORE_PATH = Path("model_grants.json")
 
@@ -379,16 +430,14 @@ TRUST_MIN = 0.00
 TRUST_MAX = 1.00
 TRUST_NEED_FOR_AUTO = 0.98
 STREAK_NEED_FOR_AUTO = 2
-
 TRUST_POSITIVE_CAP_PER_RUN = 0.03
-
 DELTA_AUTH_APPROVE = +0.01
 DELTA_FINALIZE_APPROVE = +0.02
 DELTA_AUTH_REJECT = -0.03
 DELTA_LINT_FAIL = -0.015
 DELTA_INVALID_EVENT = -0.03
-
 COOLDOWN_SECONDS = 300
+
 
 @dataclass
 class TrustState:
@@ -419,6 +468,7 @@ class TrustState:
         ts.trust_score = clamp(ts.trust_score, TRUST_MIN, TRUST_MAX)
         return ts
 
+
 def load_trust_state() -> TrustState:
     if not TRUST_STORE_PATH.exists():
         return TrustState()
@@ -430,8 +480,13 @@ def load_trust_state() -> TrustState:
     except Exception:
         return TrustState()
 
+
 def save_trust_state(ts: TrustState) -> None:
-    TRUST_STORE_PATH.write_text(json.dumps(ts.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    TRUST_STORE_PATH.write_text(
+        json.dumps(ts.to_dict(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
 
 @dataclass
 class Grant:
@@ -464,13 +519,16 @@ class Grant:
             issued_by=str(d.get("issued_by", "")),
         )
 
+
 def load_grants() -> List[Grant]:
     if not GRANT_STORE_PATH.exists():
         return []
+
     try:
         d = json.loads(GRANT_STORE_PATH.read_text(encoding="utf-8"))
         if not isinstance(d, dict) or "grants" not in d or not isinstance(d["grants"], list):
             return []
+
         out: List[Grant] = []
         for it in d["grants"]:
             if isinstance(it, dict):
@@ -481,18 +539,26 @@ def load_grants() -> List[Grant]:
     except Exception:
         return []
 
+
 def save_grants(grants: List[Grant]) -> None:
     GRANT_STORE_PATH.write_text(
         json.dumps({"grants": [g.to_dict() for g in grants]}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
+
 def ensure_default_grant_exists() -> None:
     grants = load_grants()
     now_dt = datetime.now(JST)
+
     for g in grants:
-        if g.scenario == POLICY_CASE_B and g.location_id == "INT-042" and g.is_valid(now_dt.isoformat(timespec="seconds")):
+        if (
+            g.scenario == POLICY_CASE_B
+            and g.location_id == "INT-042"
+            and g.is_valid(now_dt.isoformat(timespec="seconds"))
+        ):
             return
+
     expires = (now_dt + timedelta(days=7)).isoformat(timespec="seconds")
     new_g = Grant(
         grant_id="GRANT#CASE_B#INT-042",
@@ -504,6 +570,7 @@ def ensure_default_grant_exists() -> None:
     grants.append(new_g)
     save_grants(grants)
 
+
 State = Literal[
     "INIT",
     "PAUSE_FOR_HITL_AUTH",
@@ -513,6 +580,7 @@ State = Literal[
     "CONTRACT_EFFECTIVE",
     "STOPPED",
 ]
+
 
 @dataclass
 class OrchestratorState:
@@ -524,7 +592,13 @@ class OrchestratorState:
     contract: Optional[Dict[str, Any]] = None
     evidence_bundle: Optional[Dict[str, Any]] = None
 
-def build_auth_request_case_b(*, auth_request_id: str, auth_id: str, ttl_seconds: int = 180) -> Dict[str, Any]:
+
+def build_auth_request_case_b(
+    *,
+    auth_request_id: str,
+    auth_id: str,
+    ttl_seconds: int = 180,
+) -> Dict[str, Any]:
     expires = (datetime.now(JST) + timedelta(seconds=ttl_seconds)).isoformat(timespec="seconds")
     req = {
         "schema_version": "1.0",
@@ -541,15 +615,21 @@ def build_auth_request_case_b(*, auth_request_id: str, auth_id: str, ttl_seconds
     validate_auth_request(req)
     return req
 
-def is_auth_request_expired(auth_request: Dict[str, Any], now_ts: Optional[str] = None) -> bool:
+
+def is_auth_request_expired(
+    auth_request: Dict[str, Any],
+    now_ts: Optional[str] = None,
+) -> bool:
     now_dt = parse_iso(now_ts) if now_ts else datetime.now(JST)
     exp_dt = parse_iso(auth_request["expires_at"])
     return now_dt > exp_dt
+
 
 def generate_contract_draft(*, st: OrchestratorState) -> Dict[str, Any]:
     assert st.auth_request is not None
     ctx = st.auth_request["context"]
     draft_id = f"DRAFT#{st.run_id}"
+
     draft_md = f"""# Agreement Draft (Emergency Signal Priority)
 **Draft ID**: {draft_id}
 **Run ID**: {st.run_id}
@@ -559,32 +639,27 @@ def generate_contract_draft(*, st: OrchestratorState) -> Dict[str, Any]:
 **Auth Request ID**: {st.auth_request.get("auth_request_id")}
 **Dummy Auth ID**: {st.auth_request.get("auth_id")}
 **Generated At**: {now_iso()}
-
 ---
 ## 1. Purpose
 Establish an operational priority order for signal control under emergency presence.
-
 ## 2. Priority Order
 1) LIFE (Emergency vehicle)
 2) PEDESTRIAN (in crosswalk)
 3) VEHICLE (general traffic)
-
 ## 3. Case B Rule (Pedestrian in crosswalk + Emergency present)
 - While **pedestrian is in the crosswalk**, pedestrian protection remains active.
 - Signal phase for pedestrians **must not be shortened**.
 - Emergency priority is applied **at the next cycle** immediately after pedestrian clearance is detected.
 - Minimum safety clearance (e.g., all-red) is applied before granting emergency green.
-
 ## 4. Non-goals / Safety Notes
 - This document is a **draft** and has **no operational effect** until ADMIN final approval.
 - AI is used for **drafting only**; it does not grant permissions and cannot authorize actions.
-
 ## 5. Effective Condition
 This draft becomes effective only after the ADMIN approval event references this Draft ID.
-
 ---
 **ADMIN Approval Required**: YES
 """
+
     return {
         "draft_id": draft_id,
         "format": "markdown",
@@ -596,10 +671,12 @@ This draft becomes effective only after the ADMIN approval event references this
         },
     }
 
+
 def finalize_contract(*, st: OrchestratorState, admin_event: Dict[str, Any]) -> Dict[str, Any]:
     assert st.draft is not None
     admin = admin_event["actor"]["id"]
     contract_id = f"CONTRACT#{st.run_id}"
+
     contract_md = st.draft["content"] + f"""
 ---
 # ADMIN Finalization
@@ -609,6 +686,7 @@ def finalize_contract(*, st: OrchestratorState, admin_event: Dict[str, Any]) -> 
 **Finalize Event TS**: {admin_event.get("ts")}
 > This contract is now effective (simulation).
 """
+
     return {
         "contract_id": contract_id,
         "format": "markdown",
@@ -621,34 +699,63 @@ def finalize_contract(*, st: OrchestratorState, admin_event: Dict[str, Any]) -> 
         },
     }
 
+
 def step_meaning_consistency_rfl_baseline(audit: AuditLog, st: OrchestratorState) -> None:
     audit.emit(
-        run_id=st.run_id, layer=LAYER_MEANING, decision=DECISION_RUN,
-        sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_OK
+        run_id=st.run_id,
+        layer=LAYER_MEANING,
+        decision=DECISION_RUN,
+        sealed=False,
+        overrideable=False,
+        final_decider=DECIDER_SYSTEM,
+        reason_code=RC_OK,
     )
     audit.emit(
-        run_id=st.run_id, layer=LAYER_CONSISTENCY, decision=DECISION_RUN,
-        sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_OK
+        run_id=st.run_id,
+        layer=LAYER_CONSISTENCY,
+        decision=DECISION_RUN,
+        sealed=False,
+        overrideable=False,
+        final_decider=DECIDER_SYSTEM,
+        reason_code=RC_OK,
     )
     audit.emit(
-        run_id=st.run_id, layer=LAYER_RFL, decision=DECISION_RUN,
-        sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code=RC_OK
+        run_id=st.run_id,
+        layer=LAYER_RFL,
+        decision=DECISION_RUN,
+        sealed=False,
+        overrideable=True,
+        final_decider=DECIDER_SYSTEM,
+        reason_code=RC_OK,
     )
+
 
 def ethics_gate_handle(audit: AuditLog, st: OrchestratorState, evidence_reason: str) -> bool:
     if evidence_reason == RC_EVIDENCE_FABRICATION:
         audit.emit(
-            run_id=st.run_id, layer=LAYER_ETHICS, decision=DECISION_STOP,
-            sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_EVIDENCE_FABRICATION
+            run_id=st.run_id,
+            layer=LAYER_ETHICS,
+            decision=DECISION_STOP,
+            sealed=True,
+            overrideable=False,
+            final_decider=DECIDER_SYSTEM,
+            reason_code=RC_EVIDENCE_FABRICATION,
         )
         st.sealed = True
         st.state = "STOPPED"
         return False
+
     audit.emit(
-        run_id=st.run_id, layer=LAYER_ETHICS, decision=DECISION_RUN,
-        sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_OK
+        run_id=st.run_id,
+        layer=LAYER_ETHICS,
+        decision=DECISION_RUN,
+        sealed=False,
+        overrideable=False,
+        final_decider=DECIDER_SYSTEM,
+        reason_code=RC_OK,
     )
     return True
+
 
 def apply_trust_update(
     audit: AuditLog,
@@ -663,6 +770,7 @@ def apply_trust_update(
 ) -> float:
     before = trust.trust_score
     applied = delta_requested
+
     if delta_requested > 0:
         applied = min(delta_requested, max(0.0, cap_remaining))
         cap_remaining = max(0.0, cap_remaining - applied)
@@ -680,8 +788,13 @@ def apply_trust_update(
         trust.cooldown_until = until
 
     audit.emit(
-        run_id=st.run_id, layer=LAYER_TRUST_UPDATE, decision=DECISION_RUN,
-        sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code="TRUST_UPDATE",
+        run_id=st.run_id,
+        layer=LAYER_TRUST_UPDATE,
+        decision=DECISION_RUN,
+        sealed=False,
+        overrideable=False,
+        final_decider=DECIDER_SYSTEM,
+        reason_code="TRUST_UPDATE",
         extra={
             "outcome": outcome,
             "trust_before": round(before, 6),
@@ -695,12 +808,19 @@ def apply_trust_update(
     )
     return cap_remaining
 
-def find_valid_grant(*, scenario: str, location_id: str, now_ts: Optional[str] = None) -> Optional[Grant]:
+
+def find_valid_grant(
+    *,
+    scenario: str,
+    location_id: str,
+    now_ts: Optional[str] = None,
+) -> Optional[Grant]:
     grants = load_grants()
     for g in grants:
         if g.scenario == scenario and g.location_id == location_id and g.is_valid(now_ts):
             return g
     return None
+
 
 def model_trust_gate(
     audit: AuditLog,
@@ -711,8 +831,12 @@ def model_trust_gate(
 ) -> Tuple[bool, str, Optional[str]]:
     if trust.is_cooldown_active():
         audit.emit(
-            run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE,
-            sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM,
+            run_id=st.run_id,
+            layer=LAYER_TRUST,
+            decision=DECISION_PAUSE,
+            sealed=False,
+            overrideable=True,
+            final_decider=DECIDER_SYSTEM,
             reason_code=RC_TRUST_COOLDOWN_ACTIVE,
             extra={"trust_score": trust.trust_score, "cooldown_until": trust.cooldown_until},
         )
@@ -721,17 +845,29 @@ def model_trust_gate(
     g = find_valid_grant(scenario=scenario, location_id=location_id)
     if g is None:
         audit.emit(
-            run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE,
-            sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM,
+            run_id=st.run_id,
+            layer=LAYER_TRUST,
+            decision=DECISION_PAUSE,
+            sealed=False,
+            overrideable=True,
+            final_decider=DECIDER_SYSTEM,
             reason_code=RC_TRUST_NO_GRANT,
-            extra={"scenario": scenario, "location_id": location_id, "trust_score": trust.trust_score},
+            extra={
+                "scenario": scenario,
+                "location_id": location_id,
+                "trust_score": trust.trust_score,
+            },
         )
         return False, RC_TRUST_NO_GRANT, None
 
     if trust.trust_score >= TRUST_NEED_FOR_AUTO and trust.approval_streak >= STREAK_NEED_FOR_AUTO:
         audit.emit(
-            run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_RUN,
-            sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM,
+            run_id=st.run_id,
+            layer=LAYER_TRUST,
+            decision=DECISION_RUN,
+            sealed=False,
+            overrideable=False,
+            final_decider=DECIDER_SYSTEM,
             reason_code=RC_TRUST_AUTO_AUTH,
             extra={
                 "trust_score": trust.trust_score,
@@ -743,12 +879,21 @@ def model_trust_gate(
         return True, RC_TRUST_AUTO_AUTH, g.grant_id
 
     audit.emit(
-        run_id=st.run_id, layer=LAYER_TRUST, decision=DECISION_PAUSE,
-        sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM,
+        run_id=st.run_id,
+        layer=LAYER_TRUST,
+        decision=DECISION_PAUSE,
+        sealed=False,
+        overrideable=True,
+        final_decider=DECIDER_SYSTEM,
         reason_code=RC_TRUST_SCORE_LOW,
-        extra={"trust_score": trust.trust_score, "need": TRUST_NEED_FOR_AUTO, "approval_streak": trust.approval_streak},
+        extra={
+            "trust_score": trust.trust_score,
+            "need": TRUST_NEED_FOR_AUTO,
+            "approval_streak": trust.approval_streak,
+        },
     )
     return False, RC_TRUST_SCORE_LOW, g.grant_id
+
 
 def simulate_run(
     *,
@@ -763,13 +908,23 @@ def simulate_run(
 
     step_meaning_consistency_rfl_baseline(audit, st)
 
-    st.evidence_bundle = build_evidence_bundle_case_b(scenario=POLICY_CASE_B, location_id="INT-042", fabricated=fabricate_evidence)
+    st.evidence_bundle = build_evidence_bundle_case_b(
+        scenario=POLICY_CASE_B,
+        location_id="INT-042",
+        fabricated=fabricate_evidence,
+    )
+
     ok_ev, ev_reason = evidence_gate(audit, st, st.evidence_bundle)
     if st.state == "STOPPED":
         cap_remaining = apply_trust_update(
-            audit, st=st, trust=trust, outcome="EVIDENCE_SCHEMA_INVALID",
-            delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining,
-            reset_streak=True, set_cooldown=True,
+            audit,
+            st=st,
+            trust=trust,
+            outcome="EVIDENCE_SCHEMA_INVALID",
+            delta_requested=DELTA_INVALID_EVENT,
+            cap_remaining=cap_remaining,
+            reset_streak=True,
+            set_cooldown=True,
         )
         save_trust_state(trust)
         return st, audit, trust
@@ -777,19 +932,36 @@ def simulate_run(
     can_continue = ethics_gate_handle(audit, st, ev_reason)
     if not can_continue:
         cap_remaining = apply_trust_update(
-            audit, st=st, trust=trust, outcome="EVIDENCE_FABRICATION",
-            delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining,
-            reset_streak=True, set_cooldown=True,
+            audit,
+            st=st,
+            trust=trust,
+            outcome="EVIDENCE_FABRICATION",
+            delta_requested=DELTA_INVALID_EVENT,
+            cap_remaining=cap_remaining,
+            reset_streak=True,
+            set_cooldown=True,
         )
         save_trust_state(trust)
         return st, audit, trust
 
-    st.auth_request = build_auth_request_case_b(auth_request_id=f"AUTHREQ#{run_id}", auth_id=dummy_auth_id, ttl_seconds=120)
+    st.auth_request = build_auth_request_case_b(
+        auth_request_id=f"AUTHREQ#{run_id}",
+        auth_id=dummy_auth_id,
+        ttl_seconds=120,
+    )
 
     audit.emit(
-        run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_PAUSE,
-        sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code="AUTH_REQUIRED",
-        extra={"auth_request_id": st.auth_request["auth_request_id"], "auth_id": st.auth_request["auth_id"]},
+        run_id=st.run_id,
+        layer=LAYER_ACC,
+        decision=DECISION_PAUSE,
+        sealed=False,
+        overrideable=True,
+        final_decider=DECIDER_SYSTEM,
+        reason_code="AUTH_REQUIRED",
+        extra={
+            "auth_request_id": st.auth_request["auth_request_id"],
+            "auth_id": st.auth_request["auth_id"],
+        },
     )
     st.state = "PAUSE_FOR_HITL_AUTH"
 
@@ -799,8 +971,13 @@ def simulate_run(
 
     if auto_ok:
         audit.emit(
-            run_id=st.run_id, layer=LAYER_HITL_AUTH, decision=DECISION_RUN,
-            sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code="AUTH_SKIPPED",
+            run_id=st.run_id,
+            layer=LAYER_HITL_AUTH,
+            decision=DECISION_RUN,
+            sealed=False,
+            overrideable=False,
+            final_decider=DECIDER_SYSTEM,
+            reason_code="AUTH_SKIPPED",
             extra={"mode": "auto", "grant_id": grant_id},
         )
         st.state = "AUTH_VERIFIED"
@@ -815,37 +992,68 @@ def simulate_run(
             "notes": "bench auth",
         }
         validate_auth_event(auth_event)
+
         if is_auth_request_expired(st.auth_request, auth_event["ts"]):
             audit.emit(
-                run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_STOP,
-                sealed=True, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_AUTH_EXPIRED
+                run_id=st.run_id,
+                layer=LAYER_ACC,
+                decision=DECISION_STOP,
+                sealed=True,
+                overrideable=False,
+                final_decider=DECIDER_SYSTEM,
+                reason_code=RC_AUTH_EXPIRED,
             )
             st.sealed = True
             st.state = "STOPPED"
+
             cap_remaining = apply_trust_update(
-                audit, st=st, trust=trust, outcome="AUTH_EXPIRED",
-                delta_requested=DELTA_INVALID_EVENT, cap_remaining=cap_remaining,
-                reset_streak=True, set_cooldown=True,
+                audit,
+                st=st,
+                trust=trust,
+                outcome="AUTH_EXPIRED",
+                delta_requested=DELTA_INVALID_EVENT,
+                cap_remaining=cap_remaining,
+                reset_streak=True,
+                set_cooldown=True,
             )
             save_trust_state(trust)
             return st, audit, trust
 
         audit.emit(
-            run_id=st.run_id, layer=LAYER_HITL_AUTH, decision=DECISION_RUN,
-            sealed=False, overrideable=False, final_decider=DECIDER_USER, reason_code=RC_HITL_AUTH_APPROVE,
-            extra={"auth_request_id": st.auth_request["auth_request_id"], "auth_id": st.auth_request["auth_id"]},
+            run_id=st.run_id,
+            layer=LAYER_HITL_AUTH,
+            decision=DECISION_RUN,
+            sealed=False,
+            overrideable=False,
+            final_decider=DECIDER_USER,
+            reason_code=RC_HITL_AUTH_APPROVE,
+            extra={
+                "auth_request_id": st.auth_request["auth_request_id"],
+                "auth_id": st.auth_request["auth_id"],
+            },
         )
+
         cap_remaining = apply_trust_update(
-            audit, st=st, trust=trust, outcome="AUTH_APPROVE",
-            delta_requested=DELTA_AUTH_APPROVE, cap_remaining=cap_remaining,
-            reset_streak=False, set_cooldown=False,
+            audit,
+            st=st,
+            trust=trust,
+            outcome="AUTH_APPROVE",
+            delta_requested=DELTA_AUTH_APPROVE,
+            cap_remaining=cap_remaining,
+            reset_streak=False,
+            set_cooldown=False,
         )
         st.state = "AUTH_VERIFIED"
 
     st.draft = generate_contract_draft(st=st)
     audit.emit(
-        run_id=st.run_id, layer=LAYER_DOC_DRAFT, decision=DECISION_RUN,
-        sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_DRAFT_GENERATED,
+        run_id=st.run_id,
+        layer=LAYER_DOC_DRAFT,
+        decision=DECISION_RUN,
+        sealed=False,
+        overrideable=False,
+        final_decider=DECIDER_SYSTEM,
+        reason_code=RC_DRAFT_GENERATED,
         extra={"draft_id": st.draft["draft_id"]},
     )
     st.state = "DRAFT_READY"
@@ -853,17 +1061,27 @@ def simulate_run(
     ok_lint, lint_reason = draft_lint_gate(audit, st, st.draft["content"])
     if not ok_lint:
         cap_remaining = apply_trust_update(
-            audit, st=st, trust=trust, outcome="DRAFT_LINT_FAIL",
-            delta_requested=DELTA_LINT_FAIL, cap_remaining=cap_remaining,
-            reset_streak=True, set_cooldown=True,
+            audit,
+            st=st,
+            trust=trust,
+            outcome="DRAFT_LINT_FAIL",
+            delta_requested=DELTA_LINT_FAIL,
+            cap_remaining=cap_remaining,
+            reset_streak=True,
+            set_cooldown=True,
         )
         st.state = "STOPPED"
         save_trust_state(trust)
         return st, audit, trust
 
     audit.emit(
-        run_id=st.run_id, layer=LAYER_ACC, decision=DECISION_PAUSE,
-        sealed=False, overrideable=True, final_decider=DECIDER_SYSTEM, reason_code="ADMIN_FINALIZE_REQUIRED",
+        run_id=st.run_id,
+        layer=LAYER_ACC,
+        decision=DECISION_PAUSE,
+        sealed=False,
+        overrideable=True,
+        final_decider=DECIDER_SYSTEM,
+        reason_code="ADMIN_FINALIZE_REQUIRED",
         extra={"draft_id": st.draft["draft_id"]},
     )
     st.state = "PAUSE_FOR_HITL_FINALIZE"
@@ -879,25 +1097,46 @@ def simulate_run(
     validate_finalize_event(finalize_event)
 
     audit.emit(
-        run_id=st.run_id, layer=LAYER_HITL_FINALIZE, decision=DECISION_RUN,
-        sealed=False, overrideable=False, final_decider=DECIDER_ADMIN, reason_code=RC_FINALIZE_APPROVE,
+        run_id=st.run_id,
+        layer=LAYER_HITL_FINALIZE,
+        decision=DECISION_RUN,
+        sealed=False,
+        overrideable=False,
+        final_decider=DECIDER_ADMIN,
+        reason_code=RC_FINALIZE_APPROVE,
         extra={"draft_id": st.draft["draft_id"]},
     )
+
     cap_remaining = apply_trust_update(
-        audit, st=st, trust=trust, outcome="FINALIZE_APPROVE",
-        delta_requested=DELTA_FINALIZE_APPROVE, cap_remaining=cap_remaining,
-        reset_streak=False, set_cooldown=False,
+        audit,
+        st=st,
+        trust=trust,
+        outcome="FINALIZE_APPROVE",
+        delta_requested=DELTA_FINALIZE_APPROVE,
+        cap_remaining=cap_remaining,
+        reset_streak=False,
+        set_cooldown=False,
     )
 
     st.contract = finalize_contract(st=st, admin_event=finalize_event)
     audit.emit(
-        run_id=st.run_id, layer=LAYER_CONTRACT_EFFECT, decision=DECISION_RUN,
-        sealed=False, overrideable=False, final_decider=DECIDER_SYSTEM, reason_code=RC_CONTRACT_EFFECTIVE,
-        extra={"contract_id": st.contract["contract_id"], "draft_id": st.draft["draft_id"]},
+        run_id=st.run_id,
+        layer=LAYER_CONTRACT_EFFECT,
+        decision=DECISION_RUN,
+        sealed=False,
+        overrideable=False,
+        final_decider=DECIDER_SYSTEM,
+        reason_code=RC_CONTRACT_EFFECTIVE,
+        extra={
+            "contract_id": st.contract["contract_id"],
+            "draft_id": st.draft["draft_id"],
+        },
     )
     st.state = "CONTRACT_EFFECTIVE"
+
     save_trust_state(trust)
     return st, audit, trust
+
 
 def reset_stores() -> None:
     if TRUST_STORE_PATH.exists():
@@ -905,17 +1144,30 @@ def reset_stores() -> None:
     if GRANT_STORE_PATH.exists():
         GRANT_STORE_PATH.unlink()
 
+
 def run_simulation(runs: int = 4, fabricate: bool = False) -> Dict[str, Any]:
     reset_stores()
     ensure_default_grant_exists()
+
     trust = load_trust_state()
     results = {"trust_before": trust.to_dict(), "runs": []}
 
     for i in range(runs):
-        rid = f"SIM#B{(i+1):03d}"
-        st, audit, trust = simulate_run(run_id=rid, dummy_auth_id="EMG-7K3P9Q", trust=trust, fabricate_evidence=fabricate)
+        rid = f"SIM#B{(i + 1):03d}"
+        st, audit, trust = simulate_run(
+            run_id=rid,
+            dummy_auth_id="EMG-7K3P9Q",
+            trust=trust,
+            fabricate_evidence=fabricate,
+        )
         results["runs"].append(
-            {"run_id": rid, "final_state": st.state, "sealed": st.sealed, "arl": audit.rows, "trust_after": trust.to_dict()}
+            {
+                "run_id": rid,
+                "final_state": st.state,
+                "sealed": st.sealed,
+                "arl": audit.rows,
+                "trust_after": trust.to_dict(),
+            }
         )
 
     results["trust_after"] = trust.to_dict()
