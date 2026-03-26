@@ -15,7 +15,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]  # tests/.. (repo root)
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import ai_doc_orchestrator_kage3_v1_2_3 as mod
+import ai_doc_orchestrator_kage3_v1_2_3 as mod  # noqa: E402
 
 
 class TestAiDocOrchestratorKage3V123(unittest.TestCase):
@@ -47,11 +47,11 @@ class TestAiDocOrchestratorKage3V123(unittest.TestCase):
             self.assertEqual(res.decision, "HITL")
             self.assertEqual(res.artifacts_written_task_ids, [])
             self.assertFalse(artifact_dir.exists() and any(artifact_dir.iterdir()))
-
             self.assertTrue(audit_path.exists())
             self.assertFalse(self._file_contains_email_like(audit_path))
             self.assertNotIn(
-                "test.user+demo@example.com", audit_path.read_text(encoding="utf-8")
+                "test.user+demo@example.com",
+                audit_path.read_text(encoding="utf-8"),
             )
 
     def test_break_contract_fault_hits_consistency_no_artifact_and_regen_events_in_audit(self):
@@ -125,6 +125,7 @@ class TestAiDocOrchestratorKage3V123(unittest.TestCase):
             alog.start_run(truncate=True)
             alog.emit({"event": "RUN2_A"})
             alog.emit({"event": "RUN2_B"})
+
             run2_rows = self._read_jsonl(audit_path)
             self.assertEqual(len(run2_rows), 2)
 
@@ -170,7 +171,10 @@ class TestAiDocOrchestratorKage3V123(unittest.TestCase):
 
             r0 = self._read_jsonl(audit_path)[0]
             self.assertIn("<REDACTED_EMAIL>", r0)
-            self.assertIn("<REDACTED_EMAIL>__DUP2", r0)  # spec: first collision -> DUP2
+            self.assertIn(
+                "<REDACTED_EMAIL>__DUP2",
+                r0,
+            )  # spec: first collision -> DUP2
             self.assertFalse(self._file_contains_email_like(audit_path))
 
     # ---- Stage4 fixation: KEEP_MIN_FIELDS ----
@@ -208,6 +212,7 @@ class TestAiDocOrchestratorKage3V123(unittest.TestCase):
             ro_dir = td / "ro"
             ro_dir.mkdir()
             ro_dir.chmod(stat.S_IREAD | stat.S_IEXEC)
+
             try:
                 audit_path = ro_dir / "audit.jsonl"
                 alog = mod.AuditLog(audit_path)
