@@ -82,6 +82,7 @@ def test_audit_emit_autofills_ts_and_redacts_keys_and_values(tmp_path: Path) -> 
     audit_path = tmp_path / "audit.jsonl"
     audit = sim.AuditLog(audit_path)
     audit.start_run(truncate=True)
+
     audit.emit(
         {
             "run_id": "T#A1",
@@ -96,9 +97,11 @@ def test_audit_emit_autofills_ts_and_redacts_keys_and_values(tmp_path: Path) -> 
             },
         }
     )
+
     rows = _read_jsonl(audit_path)
     assert len(rows) == 1
     assert "ts" in rows[0] and isinstance(rows[0]["ts"], str) and rows[0]["ts"]
+
     blob = _blob(rows)
     assert "@" not in blob
     assert "<REDACTED_EMAIL>" in blob
@@ -128,6 +131,7 @@ def test_audit_default_str_prevents_crash_on_non_json_types(tmp_path: Path) -> N
             "obj": NonJson(),
         }
     )
+
     rows = _read_jsonl(audit_path)
     assert len(rows) == 1
     assert rows[0]["obj"] == "NONJSON"
@@ -138,7 +142,6 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path) -> None:
     Core: HITL firepoint must be observable in logs:
     - HITL_REQUESTED (SYSTEM, PAUSE_FOR_HITL, overrideable=True, sealed=False)
     - HITL_DECIDED (USER, RUN or STOPPED, overrideable=False, sealed=False)
-
     and ARL-min fields must exist.
     """
     audit_path = tmp_path / "audit.jsonl"
@@ -245,8 +248,8 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
     ]
 
     assert ethics_rows, "No STOPPED GATE_ETHICS found"
-    hit = ethics_rows[0]
 
+    hit = ethics_rows[0]
     _assert_arl_min_keys(hit)
 
     assert hit["sealed"] is True
@@ -263,7 +266,7 @@ def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path
 
 def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(
     tmp_path: Path,
-
+) -> None:
     """
     Consistency:
     - If contract mismatch occurs, system raises HITL, and on CONTINUE it must:
