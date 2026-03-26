@@ -1,4 +1,4 @@
-  name: Python App CI
+ name: Python App CI
 
 on:
   push:
@@ -95,4 +95,4 @@ jobs:
             .pytest_cache
             **/.pytest_cache
             **/pytest*.log
-            **/junit-*.xml  
+            **/junit-*.xml
