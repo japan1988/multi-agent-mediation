@@ -1,4 +1,3 @@
-python
 def test_codebook_roundtrip_and_sets(codebook: Dict[str, Any]) -> None:
     layer_set = _layer_set_from_codebook(codebook)
     decision_set = _decision_set_from_codebook(codebook)
