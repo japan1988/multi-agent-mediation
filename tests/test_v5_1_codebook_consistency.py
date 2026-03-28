@@ -1,26 +1,4 @@
-## 結論
-
-この断片は**そのままだと壊れています**。
-主な原因は **インデント崩れ** なので、下の形に直してください。
-
-## 理由
-
-壊れている点は主に3つです。
-
-1. `decider_set = ...` の行頭に余計なスペースがある
-   → トップレベルで `IndentationError` の原因になります。
-
-2. `def test_required_reason_codes_exist(...)` の中身が字下げされていない
-   → 関数本体として解釈されません。
-
-3. `def test_sample_rows_keep_core_invariants(...)` の中身も字下げされていない
-   → 同じく構文エラーになります。
-
-## 補足
-
-そのまま置き換えるなら、こうです。
-
-```python
+python
 def test_codebook_roundtrip_and_sets(codebook: Dict[str, Any]) -> None:
     layer_set = _layer_set_from_codebook(codebook)
     decision_set = _decision_set_from_codebook(codebook)
