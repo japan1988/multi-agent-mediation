@@ -65,8 +65,3 @@ def test_sample_rows_keep_core_invariants() -> None:
         },
     ]
     _assert_rows_keep_core_invariants(rows)
-```
-
-補足で1点あります。
-最初のブロックは関数外に置くより、**今のように `test_codebook_roundtrip_and_sets(...)` として1つのテスト関数にまとめる方が安全**です。
-**確実性：高い／日付：2026-03-26**
