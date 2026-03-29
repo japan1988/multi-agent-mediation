@@ -1,26 +1,4 @@
-## 結論
 
-はい。**このファイルは修正した方がいい**です。
-直すべき点は3つです。
-
-1. `import pytest` を削除
-2. `import mediation_emergency_contract_sim_v5_1_2 as sim` に `# noqa: E402` を付ける
-3. **`tests/tests/...` 配下なので** `_REPO_ROOT` は `parents[2]` にする
-
-## 理由
-
-このファイルは lint だけでなく、パス指定も少し危ないです。
-
-* `F401` は未使用の `pytest`
-* `E402` は `sys.path.insert(...)` の後ろにある import
-* さらにこのファイルは `tests/tests/` 配下なので、`parents[1]` だと `tests/` を指します
-  リポジトリ直下を確実に指すなら `parents[2]` の方が安全です
-
-## 補足
-
-そのまま置き換えられる修正版のフルコードです。
-
-```python
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -248,9 +226,3 @@ def test_verify_arl_rows_on_saved_incident_file(tmp_path: Path, monkeypatch) -> 
     )
     assert ok is True
     assert err is None
-```
-
-これでこのファイルの `F401` と `E402` は消せます。
-ただし、もし次に `KeyError: 'repro_summary'` が出たら、**テストではなく `mediation_emergency_contract_sim_v5_1_2.py` 側で `results["repro_summary"]` を入れていない**のが原因です。
-
-**確実性：高い／日付：2026-03-26**
