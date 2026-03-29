@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -41,7 +40,9 @@ def _reason_sequence(index_rows: list[dict]) -> list[str]:
     return [str(row.get("primary_reason_code")) for row in index_rows]
 
 
-def test_repro_summary_same_seed_same_contract_summary(tmp_path: Path, monkeypatch) -> None:
+def test_repro_summary_same_seed_same_contract_summary(
+    tmp_path: Path, monkeypatch
+) -> None:
     _patch_store_paths(monkeypatch, tmp_path)
 
     out1 = tmp_path / "arl_out_1"
@@ -101,7 +102,9 @@ def test_repro_summary_same_seed_same_contract_summary(tmp_path: Path, monkeypat
     assert s1["summary"] == s2["summary"]
 
 
-def test_incident_index_reason_sequence_same_seed(tmp_path: Path, monkeypatch) -> None:
+def test_incident_index_reason_sequence_same_seed(
+    tmp_path: Path, monkeypatch
+) -> None:
     _patch_store_paths(monkeypatch, tmp_path)
 
     out1 = tmp_path / "arl_out_1"
@@ -159,7 +162,9 @@ def test_incident_index_reason_sequence_same_seed(tmp_path: Path, monkeypatch) -
     assert sealed1 == sealed2
 
 
-def test_repro_summary_written_inside_results_json(tmp_path: Path, monkeypatch) -> None:
+def test_repro_summary_written_inside_results_json(
+    tmp_path: Path, monkeypatch
+) -> None:
     _patch_store_paths(monkeypatch, tmp_path)
 
     results = sim.run_simulation(
@@ -192,7 +197,9 @@ def test_repro_summary_written_inside_results_json(tmp_path: Path, monkeypatch) 
     assert saved["repro_summary"]["summary"]["total_runs"] == 50
 
 
-def test_verify_arl_rows_on_saved_incident_file(tmp_path: Path, monkeypatch) -> None:
+def test_verify_arl_rows_on_saved_incident_file(
+    tmp_path: Path, monkeypatch
+) -> None:
     _patch_store_paths(monkeypatch, tmp_path)
 
     out_dir = tmp_path / "arl_out"
