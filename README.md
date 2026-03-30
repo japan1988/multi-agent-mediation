@@ -1,275 +1,503 @@
-# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
-<p align="center">
-  <!-- Repository Status -->
-  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
-    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
-    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
-  </a>
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License (Policy Intent)">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
-    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
-  </a>
-  <br/>
-  <!-- Technical Meta -->
-  <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat-square" alt="Python Version">
-  <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
-  <img src="https://img.shields.io/badge/status-research--prototype-brightgreen.svg?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
-  <img src="https://img.shields.io/github/v/release/japan1988/multi-agent-mediation?style=flat-square" alt="Latest Release">
-</p>
+# 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
+
+[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
+![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
+[![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
+
+> **If uncertain, stop. If risky, escalate.**  
+> Research / educational governance simulations for agentic workflows.
+
+Maestro Orchestrator is a **research-oriented orchestration framework** for
+**fail-closed**, **HITL (Human-in-the-Loop)**, and **audit-ready** agent workflows.
+
+This repository focuses on **governance / mediation / negotiation-style simulations**
+and implementation references for **traceable, reproducible, safety-first orchestration**.
+
+Running the simulators produces **reproducible summaries, minimal ARL traces, and optional incident-indexed artifacts** for abnormal runs.  
+The contract tests verify **fixed vocabularies, gate invariants, and fail-closed / HITL continuation behavior**.
 
 ---
 
-## 🎯 Purpose
+## What this repository is
 
-This repository is a **research-oriented orchestration framework** for supervising multiple agents (or multiple methods) and performing:
+This repository provides:
 
-- **STOP**: Halt execution when errors/hazards/uncertainty are detected
-- **REROUTE**: Branch or re-route only when safe to do so
-- **HITL**: Escalate to humans for ambiguous or high-stakes decisions
+- **Fail-closed + HITL orchestration benches** for governance-style workflows
+- **Reproducible simulators** with seeded runs and pytest-based contract checks
+- **Audit-ready traces** via minimal ARL logs
+- **Reference implementations** for orchestration / gating behavior
 
-The focus is not “negotiation itself,” but **supervision and control**:
+This is best read as a:
 
-- **Routing**: Task decomposition and assignment (who does what)
-- **Guardrails**: Sealing forbidden intent / overreach / external side effects (fail-closed)
-- **Audit**: Logging what was stopped and why (accountability)
-- **HITL**: Escalation for undefined specs or non-decidable cases
-- **Replay**: Re-run under the same conditions and detect deltas
+- **research prototype**
+- **educational reference**
+- **governance / safety simulation bench**
 
----
-
-## 🔒 Safety Model (Fail-Closed)
-
-This project is intended for **Educational / Research** purposes, and prioritizes **fail-closed** safety.
-
-- If forbidden intent, overreach, low confidence, or ambiguous sensitive intent is detected in input/output/plan, **it does not auto-execute**  
-  → It falls back to **STOP** or **HITL** (`PAUSE_FOR_HITL`).
-- It avoids “fail-open reroute” (continuing by swapping to another agent in risky situations).  
-  Forbidden categories and overreach should **stop**, not reroute.
+It is **not** a production autonomy framework.
 
 ---
 
-## 🌍 External Side Effects (Definition & Allowlist)
+## Quick links
 
-**External side effects** are actions that can read/write external state, for example:
-
-- Network access (read/write)
-- Filesystem access
-- Command execution
-- Messaging (email/DM)
-- Payments / purchases / account operations
-- Access to **PII sources** (contacts / CRM / mailbox)
-
-**Default policy: deny-by-default**
-
-- Network: **DENY** (except explicitly permitted research experiments)
-- Filesystem: **DENY** (if needed, restrict to minimal scope such as a log directory)
-- Command execution: **DENY**
-- Messaging / email / DM: **DENY**
-- Payments / billing: **DENY**
-- PII sources (contacts / CRM / mailbox): **DENY**
-- Unknown tools: **DENY**
-
-When adding a tool, declare the tool type (e.g., benign / pii_source) and side-effect category. Unknown tools must always be **DENY**.
+- **Japanese README:** [README.ja.md](README.ja.md)
+- **Docs index:** [docs/README.md](docs/README.md)
+- **Recommended simulator:** `mediation_emergency_contract_sim_v5_1_2.py`
+- **Contract test:** `tests/test_v5_1_codebook_consistency.py`
+- **Stress metrics test (v5.1.2):** `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+- **Pytest ARL hook:** `tests/conftest.py`
+- **Latest mixed stress summary:** `stress_results_v5_1_2_10000_mixed.json`
+- **Legacy stable bench:** `mediation_emergency_contract_sim_v4_8.py`
+- **Doc orchestrator (mediator reference):** `ai_doc_orchestrator_with_mediator_v1_0.py`
+- **Doc orchestrator contract test:** `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
 ---
 
-## 👤 HITL (Human-in-the-Loop)
+## ⚡ TL;DR
 
-Escalate to humans when:
-
-- Intent is ambiguous and may be sensitive
-- Policy confidence is insufficient
-- Execution may involve external side effects
-
-HITL should be represented as a state (e.g., `PAUSE_FOR_HITL`) and MUST log **reason_code** and **evidence**.
+- **Fail-closed + HITL** gating benches for negotiation/mediation-style workflows (research/education)
+- **Reproducibility-first**: seeded runs + `pytest` contract checks (vocabulary/invariants)
+- **Audit-ready**: minimal ARL logs; optional incident-only ARL indexing (`INC#...`) to avoid log bloat
+- **Reference doc orchestration path**: mediator + fixed gate order + contract-tested HITL continuation semantics
+- **Validation update**: v5.1.2 stress metrics test + pytest execution ARL + 10,000-run clean/mixed validation examples
 
 ---
 
-## 🚫 Non-goals / Out of Scope
+## ⚠️ Purpose & Disclaimer (Research & Education)
 
-This project does NOT aim to build or enable:
+**This is a research/educational reference implementation (prototype).**  
+Do not use it to execute or facilitate harmful actions (e.g., exploitation, intrusion, surveillance, impersonation, destruction, or data theft), or to violate any applicable terms/policies, laws, or internal rules of your services or execution environment.
 
-- Targeted persuasion/manipulation/psychological pressure optimization
-- “Reeducation” or coercive guidance systems for real users
-- Identity verification, doxxing, surveillance, PII extraction
-- Autonomous real-world actions (sending messages, purchasing, account operations)
-- Fully automated final decisions in high-stakes domains (legal/medical/investment)
+This project focuses on **education/research** and **defensive verification** (e.g., log growth mitigation and validating fail-closed + HITL behavior).  
+It is **not** intended to publish exploitation tactics or facilitate wrongdoing.
 
-If such intent is detected, it is treated as **misuse** and should default to **STOP** or **HITL**.
+### Risk / Warranty / Liability
 
-> Note: If modules evoke “persuasion / reeducation,” they must be treated as **safety-evaluation scenarios only** (test-case generation / attack simulation), and must be **disabled by default** (not runnable without an explicit opt-in flag).
+- **Use at your own risk:** verify relevant terms/policies.
+- **Isolated environment first:** start with local smoke tests (no external networks; no real systems/data).
+- **AS IS / no warranty:** provided without warranty of any kind.
+- **Limitation of liability:** to the maximum extent permitted by applicable law, the author assumes no liability for damages arising from use of the code, documentation, or generated artifacts (including misuse by third parties).
 
----
+### Codebook disclaimer
 
-## 🧾 Audit Log & Data Policy
+The included codebook is a **demo/reference artifact**. Do **not** use it as-is in real deployments; create your own based on your requirements, threat model, and applicable policies/terms.  
+The codebook is for compact encoding/decoding of log fields and is **NOT encryption** (no confidentiality).
 
-Audit logs are verification artifacts for reproducibility and accountability.
+### Testing & results disclaimer
 
-- Prefer **not** to store raw sensitive information or PII. Log **hashes** and **reason_code/evidence** instead.
-- If sensitive records may be produced, apply local storage constraints, masking, and retention limits.
-
-Recommended minimum fields:
-
-- `run_id`, `timestamp`, `layer`, `decision`, `reason_code`, `evidence`, `policy_version`, `config_hash`
+Smoke tests and stress runs validate only the scenarios executed under specific runtime conditions.  
+They do **not** guarantee correctness, security, safety, or fitness for any purpose in real-world deployments. Results may vary depending on OS/Python versions, hardware, configuration, and operational use.
 
 ---
 
-## ✅ Success Metrics (KPI)
+## Why this repository exists
 
-Examples of minimal research KPIs:
+Maestro Orchestrator is built around three priorities:
 
-- **Dangerous action block recall** ≥ 0.95 (stop what must be stopped)
-- Measure and report **false block rate / precision** (visibility into over-blocking)
-- **HITL rate** and breakdown by reason
-- **Audit log completeness**: missing required fields rate = 0%
-- **Replay reproducibility**: decision traces match under same seed/config
+- **Fail-closed**
+  - If uncertain, unstable, or risky, do not continue silently.
+- **HITL escalation**
+  - Decisions requiring human judgment are explicitly escalated.
+- **Traceability**
+  - Decision flows are reproducible and audit-ready through minimal ARL logs.
+
+This repository contains simulation benches and implementation references for:
+
+- negotiation
+- mediation
+- governance-style workflows
+- gating behavior
+- audit-oriented orchestration
 
 ---
 
-## ⚡ Quick Start (30 seconds)
+## Recommended path
+
+If you are new to this repo, start here:
+
+1. Run the recommended simulator: `mediation_emergency_contract_sim_v5_1_2.py`
+2. Run the contract test: `tests/test_v5_1_codebook_consistency.py`
+3. Run the stress metrics test: `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+4. Inspect the generated logs, codebook, and optional incident artifacts
+5. Then optionally compare with `mediation_emergency_contract_sim_v4_8.py`
+6. For a smaller fixed-order reference, run `ai_doc_orchestrator_with_mediator_v1_0.py`
+
+---
+
+## Quickstart
+
+### 1) Run the recommended emergency contract simulator (v5.1.2)
+
+Optional bundle: `docs/mediation_emergency_contract_sim_pkg.zip` (convenience only)
 
 ```bash
-# 1) dependencies
-pip install -r requirements.txt
-
-# 2) run a core script (example)
-python ai_mediation_all_in_one.py
-
-# 3) run tests
-pytest -q
+python mediation_emergency_contract_sim_v5_1_2.py --runs 100
 ````
 
----
-
-## 🧠 Concept Overview
-
-<!-- [DOC-TBL-001] Render tables reliably as Markdown -->
-
-| Component             | Function             | Description                                                                          |
-| --------------------- | -------------------- | ------------------------------------------------------------------------------------ |
-| Orchestration Layer   | Command layer        | Task decomposition, routing, retries, reassignment                                   |
-| Safety & Policy Layer | Safety control layer | Detect and seal dangerous output, overreach, and external side effects (fail-closed) |
-| Audit & Replay Layer  | Audit layer          | Audit logs, delta detection, reproducible replay, report generation                  |
-| HITL Escalation       | Human escalation     | Return to humans for uncertainty, high-risk, or undefined specs                      |
-
-The goal is not “making multiple agents run,” but building supervision that can stop errors, hazards, and uncertainty.
-
----
-
-## 🗂️ Repository Structure
-
-<!-- [DOC-TBL-002] Render tables reliably as Markdown -->
-
-| Path                                          | Type          | Description                                                                                                                                       |
-| --------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agents.yaml`                                 | Config        | Agent definitions (parameters / role foundation)                                                                                                  |
-| `mediation_core/`                             | Core          | Core logic (centralized models / shared processing)                                                                                               |
-| `ai_mediation_all_in_one.py`                  | Core          | Entry point for orchestration execution (routing / checks / branching)                                                                            |
-| `ai_governance_mediation_sim.py`              | Simulator     | Validate policy application / sealing / escalation behavior                                                                                       |
-| `kage_orchestrator_diverse_v1.py`             | Experiment    | Verify “dangerous tool execution” remains blocked under fault injection (audit JSONL)                                                             |
-| `ai_doc_orchestrator_kage3_v1_2_2.py`         | Experiment    | Doc Orchestrator (Meaning/Consistency/Ethics gates + PII non-persistence)                                                                         |
-| `test_ai_doc_orchestrator_kage3_v1_2_2.py`    | Test          | Fix Doc Orchestrator behavior (PII non-persistence, etc.)                                                                                         |
-| `tests/kage_definition_hitl_gate_v1.py`       | Experiment    | HITL gate experiment: “If definition is ambiguous, return to humans”                                                                              |
-| `tests/test_definition_hitl_gate_v1.py`       | Test          | Pytest fixture for the HITL gate (including Ruff)                                                                                                 |
-| `tests/test_kage_orchestrator_diverse_v1.py`  | Test          | Fix invariants via pytest (e.g., PII tool non-execution)                                                                                          |
-| `tests/test_sample.py`                        | Test          | Minimal test / CI smoke check                                                                                                                     |
-| `tests/verify_stop_comparator_v1_2.py`        | Tool          | Single-file verifier (hash/py_compile/import/self_check, etc.)                                                                                    |
-| `docs/`                                       | Docs          | Figures/materials (architecture, flows, etc.)                                                                                                     |
-| `docs/multi_agent_architecture_overview.webp` | Diagram       | Overall architecture diagram                                                                                                                      |
-| `docs/multi_agent_hierarchy_architecture.png` | Diagram       | Layered model diagram                                                                                                                             |
-| `docs/sentiment_context_flow.png`             | Diagram       | Input → context → action flow diagram                                                                                                             |
-| `.github/workflows/python-app.yml`            | Workflow      | CI (lint + pytest, multiple Python versions)                                                                                                      |
-| `requirements.txt`                            | Dependency    | Python dependencies                                                                                                                               |
-| `LICENSE`                                     | License       | Apache-2.0 (see file). Intended use is Educational / Research (policy), not a license restriction. <!-- [DOC-LIC-001] Avoid license confusion --> |
-| `README.md`                                   | Documentation | This document                                                                                                                                     |
-
----
-
-## 🧭 Architecture Diagram
-
-<p align="center">
-  <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
-</p>
-
----
-
-## 🧭 Layered Agent Model
-
-<!-- [DOC-TBL-003] Render tables reliably as Markdown -->
-
-| Layer            | Role                 | What it does                                                              |
-| ---------------- | -------------------- | ------------------------------------------------------------------------- |
-| Interface Layer  | External input layer | Input contract (schema) / validation / log submission                     |
-| Agent Layer      | Execution layer      | Task processing (proposal / generation / verification, depending on role) |
-| Supervisor Layer | Supervisory layer    | Routing, consistency checks, stopping, HITL                               |
-
----
-
-## 🔬 Context Flow
-
-<p align="center">
-  <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
-</p>
-
-* Perception — Decompose input into executable elements (tasking)
-* Context — Extract assumptions/constraints/risk factors (guard rationale)
-* Action — Instruct agents, verify results, branch (STOP / REROUTE / HITL)
-
----
-
-## ⚙️ Execution Examples
-
-<!-- [DOC-SAFE-003] Reduce accidental execution/misinterpretation -->
-
-> Note: Files whose names evoke “persuasion / reeducation” are intended for safety-evaluation scenarios (test-case generation / attack simulation) only.
-> They should be treated as non-default / opt-in experiments, consistent with the Non-goals section.
+### 2) Run the contract tests (v5.1.x: simulator + codebook consistency)
 
 ```bash
-# Core (routing / gating / branching)
-python ai_mediation_all_in_one.py
-
-# Orchestrator fault-injection / capability guard demo
-python kage_orchestrator_diverse_v1.py
-
-# Doc Orchestrator (Meaning/Consistency/Ethics + PII non-persistence)
-python ai_doc_orchestrator_kage3_v1_2_2.py
-
-# Policy application behavior check
-python ai_governance_mediation_sim.py
+pytest -q tests/test_v5_1_codebook_consistency.py
 ```
 
----
-
-## 🧪 Tests
+### 3) Run the stress metrics tests (v5.1.2)
 
 ```bash
-# all tests
+pytest -q tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py
+```
+
+### 4) Pytest execution ARL (auto output)
+
+`tests/conftest.py` automatically emits a JSONL-style ARL for pytest execution itself.
+
+Default output paths:
+
+* `test_artifacts/pytest_test_arl.jsonl`
+* `test_artifacts/pytest_simulation_arl.jsonl`
+
+Run:
+
+```bash
 pytest -q
-
-# focused: HITL gate test
-pytest -q tests/test_definition_hitl_gate_v1.py
-
-# focused: orchestrator diverse test
-pytest -q tests/test_kage_orchestrator_diverse_v1.py
-
-# focused: doc orchestrator test
-pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
 ```
 
-CI runs lint/pytest across multiple Python versions via `.github/workflows/python-app.yml`.
+Custom output paths:
+
+```bash
+TEST_ARL_PATH=out/test_arl.jsonl SIM_ARL_PATH=out/sim_arl.jsonl pytest -q
+```
+
+### 5) Inspect / pin the demo codebook (v5.1-demo.1)
+
+* `log_codebook_v5_1_demo_1.json` (demo codebook; pin the version when exchanging artifacts)
+* Note: codebook is **NOT encryption** (no confidentiality)
+
+### 6) Optional: run the legacy stable bench (v4.8)
+
+```bash
+python mediation_emergency_contract_sim_v4_8.py
+pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
+```
+
+### 7) Optional: run the doc orchestrator mediator reference
+
+```bash
+python ai_doc_orchestrator_with_mediator_v1_0.py
+pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
+```
+
+### 8) What to inspect after running
+
+* simulator stdout summaries
+* generated ARL / audit JSONL traces
+* `incident_index.jsonl` and `INC#...` files when abnormal-only persistence is enabled
+* pinned vocabulary / invariant checks in the pytest contract tests
+* pytest-side execution ARL (`pytest_test_arl.jsonl`)
+* optional simulation-side ARL bridge output (`pytest_simulation_arl.jsonl`)
 
 ---
 
-## 📌 License
+## Latest update
 
-See `LICENSE`.
+Recent additions and stabilization highlights:
 
-This project is intended for Educational / Research purposes (policy intent).
-The repository license is Apache-2.0 (see `LICENSE`).
+* Added a convenience zip bundle for the recommended simulator:
 
+  * `docs/mediation_emergency_contract_sim_pkg.zip`
+* Stabilized the doc orchestrator mediator reference:
+
+  * `ai_doc_orchestrator_with_mediator_v1_0.py`
+  * `tests/test_doc_orchestrator_with_mediator_v1_0.py`
+
+### Validation update (v5.1.2)
+
+Added:
+
+* `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+* `tests/conftest.py`
+* `stress_results_v5_1_2_10000_mixed.json`
+
+This update adds:
+
+* stress-oriented validation for v5.1.2
+* pytest execution ARL auto-output
+* clean / mixed 10,000-run validation examples
+* explicit verification of abnormal ARL persistence and incident index consistency
+
+Canonical source of truth remains the Python entrypoints and contract tests.
+
+### Developer feedback update
+
+Added `tasukeru-analysis`, a developer-assist workflow that complements basic CI by posting improvement suggestions and security-relevant review comments on pull requests.
+
+It is designed as a review-support layer for this research/educational repository. It does not guarantee safety or production readiness; for real-world or production use, always perform your own final review and validation.
+
+---
+
+## Stress tests (safe-by-default)
+
+v5.1.2 is designed to avoid memory blow-ups by default:
+
+* Aggregation-only mode (`keep_runs=False` default): no full per-run results kept in memory
+* Optional: save ARL only on abnormal runs (incident indexing with `INC#...`)
+
+### A) Lightweight smoke → medium stress (recommended ramp)
+
+```bash
+# 1) Smoke
+python mediation_emergency_contract_sim_v5_1_2.py --runs 200
+
+# 2) Medium stress (still aggregation-only)
+python mediation_emergency_contract_sim_v5_1_2.py --runs 10000 --seed 42
+```
+
+### B) Force incidents (example: fabricate-rate 10% over 200 runs)
+
+This should reliably create some abnormal runs and generate `INC#` files when enabled:
+
+```bash
+python mediation_emergency_contract_sim_v5_1_2.py \
+  --runs 200 \
+  --fabricate-rate 0.1 \
+  --seed 42 \
+  --save-arl-on-abnormal \
+  --arl-out-dir arl_out \
+  --max-arl-files 1000
+```
+
+Outputs (when abnormal runs occur):
+
+* `arl_out/INC#000001__SIM#B000xx.arl.jsonl` (incident ARL)
+* `arl_out/incident_index.jsonl` (one line per incident)
+* `arl_out/incident_counter.txt` (persistent counter)
+
+Tip: keep `--max-arl-files` to cap disk growth.
+
+### C) Validated large-run examples
+
+Clean run:
+
+```bash
+python mediation_emergency_contract_sim_v5_1_2.py --runs 10000 --seed 42
+```
+
+Mixed abnormal run:
+
+```bash
+python mediation_emergency_contract_sim_v5_1_2.py \
+  --runs 10000 \
+  --fabricate-rate 0.10 \
+  --seed 42 \
+  --save-arl-on-abnormal \
+  --arl-out-dir out_arl
+```
+
+In the current validation setup:
+
+* 10,000 clean runs completed without abnormal incidents
+* 10,000 mixed runs completed with abnormal cases indexed and persisted consistently
+* test-side ARL output and simulation-side ARL output can be tracked separately
+
+Published example summary:
+
+* `stress_results_v5_1_2_10000_mixed.json`
+
+---
+
+## Diagrams & docs
+
+Browse all diagrams and bundles here: **[docs/README.md](docs/README.md)**
+
+Key diagrams:
+
+japan1988-patch-46
+```
+=======
+* Emergency contract overview (v5.1.2): [docs/architecture_v5_1_2_emergency_contract_overview.png](docs/architecture_v5_1_2_emergency_contract_overview.png)
+* Architecture (code-aligned): [docs/architecture_code_aligned.png](docs/architecture_code_aligned.png)
+* Unknown-progress + HITL diagram: [docs/architecture_unknown_progress.png](docs/architecture_unknown_progress.png)
+* Multi-agent hierarchy: [docs/multi_agent_hierarchy_architecture.png](docs/multi_agent_hierarchy_architecture.png)
+* Sentiment context flow: [docs/sentiment_context_flow.png](docs/sentiment_context_flow.png)
+
+Recommended reading order:
+
+1. This README
+2. `docs/README.md`
+3. `mediation_emergency_contract_sim_v5_1_2.py`
+4. `tests/test_v5_1_codebook_consistency.py`
+5. `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+6. `tests/conftest.py`
+7. `ai_doc_orchestrator_with_mediator_v1_0.py`
+8. `tests/test_doc_orchestrator_with_mediator_v1_0.py`
+
+---
+
+## Architecture (high level)
+
+Audit-ready and fail-closed control flow:
+
+```text
+agents
+  → mediator (risk / pattern / fact)
+  → evidence verification
+  → HITL (pause / reset / ban)
+  → audit logs (ARL)
+ main
+```
+
+### Architecture (overview, v5.1.2)
+
+Documentation-only. No logic changes.
+
+<p align="center">
+  <img src="docs/architecture_v5_1_2_emergency_contract_overview.png"
+       alt="Emergency contract simulator overview (v5.1.2)"
+       width="860">
+</p>
+
+### Architecture (code-aligned diagrams)
+
+The following diagram is aligned with the current code vocabulary.
+Documentation-only. No logic changes.
+
+<p align="center">
+  <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
+</p>
+
+---
+
+## Version deltas
+
+### v5.0.1 → v5.1.2
+
+v5.1.2 strengthens the simulator toward large-run stability and incident-only persistence.
+
+* **Index + aggregation-only by default**
+
+  * No per-run results kept in memory (prevents memory blow-ups on large `--runs`)
+  * Outputs focus on counters + HITL summary (optional items)
+
+* **Incident indexing (optional)**
+
+  * Abnormal runs are assigned `INC#000001...`
+  * Abnormal ARL saved as `{arl_out_dir}/{incident_id}__{run_id}.arl.jsonl`
+  * Index appended to `{arl_out_dir}/incident_index.jsonl`
+  * Persistent counter stored at `{arl_out_dir}/incident_counter.txt`
+
+Still preserved:
+
+* Abnormal-only ARL persistence (pre-context + incident + post-context)
+* Tamper-evident ARL hash chaining (demo key default for OSS demo)
+* Fabricate-rate mixing + deterministic seeding (`--fabricate-rate` / `--seed`)
+
+Core invariants:
+
+* `sealed` may be set only by `ethics_gate` / `acc_gate`
+* `relativity_gate` is never sealed (`PAUSE_FOR_HITL`, `overrideable=True`, `sealed=False`)
+
+### Practical stability improvements in v5.1.2
+
+In addition to the behavioral changes above, v5.1.2 also improves repository-level stability in three practical areas:
+
+* **Persistence handling**
+
+  * Trust / grants / eval stores now use more consistent path handling and serialization
+  * This reduces mismatch between runtime behavior and saved artifacts
+
+* **Test compatibility**
+
+  * Persistent store paths are exposed more consistently and are easier to patch in tests
+  * This improves isolation in CI and makes contract/stress checks more reproducible
+
+* **Output stability**
+
+  * JSON output writing is more consistent (UTF-8 / newline-stable / serializer-stable)
+  * This reduces avoidable differences across environments and makes result artifacts easier to inspect
+
+### Validation additions around v5.1.2
+
+The current repository state also includes:
+
+* stress metrics tests for clean / mixed large-run validation
+* pytest execution ARL logging through `tests/conftest.py`
+* published example result summary for the 10,000-run mixed validation
+
+### Doc orchestrator mediator reference (v1.0)
+
+`ai_doc_orchestrator_with_mediator_v1_0.py` is a smaller orchestration reference focused on:
+
+* fixed gate ordering
+* mediator advice without stop authority
+* explicit HITL continuation handling
+* sanitized, audit-oriented JSONL traces
+* contract-tested orchestration vocabulary
+
+This reference is intended as a compact implementation example for audit-oriented orchestration, rather than a replacement for the larger emergency-contract bench family.
+
+### V1 → V4 (conceptual)
+
+`mediation_emergency_contract_sim_v1.py` demonstrates the minimum viable pipeline:
+a linear, event-driven workflow with fail-closed stops and minimal audit logs.
+
+`mediation_emergency_contract_sim_v4.py` turns that pipeline into a repeatable governance bench by adding early rejection and controlled automation.
+
+Added in v4:
+
+* Evidence gate (invalid/irrelevant/fabricated evidence triggers fail-closed stops)
+* Draft lint gate (draft-only semantics and scope boundaries)
+* Trust system (score + streak + cooldown)
+* AUTH HITL auto-skip (safe friction reduction via trust + grant, with ARL reasons)
+
+### V4 → V5 (conceptual)
+
+v4 focuses on a stable “emergency contract” governance bench with smoke tests and stress runners.
+v5 extends that bench toward artifact-level reproducibility and contract-style compatibility checks.
+
+Added / strengthened in v5:
+
+* **Log codebook (demo) + contract tests**
+  Enforces emitted vocabularies (`layer/decision/final_decider/reason_code`) via pytest
+
+* **Reproducibility surface (pin what matters)**
+  Pin simulator version, test version, and codebook version
+
+* **Tighter invariant enforcement**
+  Explicit tests/contracts around invariants reduce silent drift
+
+What did NOT change (still true in v5):
+
+* Research / educational intent
+* Fail-closed + HITL semantics
+* Use synthetic data only and run in isolated environments
+* No security guarantees (codebook is not encryption; tests do not guarantee safety in real-world deployments)
+
+---
+
+## Project intent / non-goals
+
+### Intent
+
+* Reproducible safety and governance simulations
+* Explicit HITL semantics (pause/reset/ban)
+* Audit-ready decision traces (minimal ARL)
+
+### Non-goals
+
+* Production-grade autonomous deployment
+* Unbounded self-directed agent control
+* Safety claims beyond what is explicitly tested
+
+---
+
+## Data & safety notes
+
+* Use synthetic/dummy data only
+* Prefer not to commit runtime logs; keep evidence artifacts minimal and reproducible
+* Treat generated bundles (zip) as reviewable evidence, not canonical source
+
+---
+
+## License
+
+Apache License 2.0 (see `LICENSE`)
