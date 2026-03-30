@@ -1,0 +1,28 @@
+{
+  "meta": {
+    "runs": 100000,
+    "seed": 42,
+    "runtime_sec": 25.129,
+    "notes": [
+      "This is a focused stress bench for v4.7 draft_lint_gate after fixing regex word-boundary patterns (\\b).",
+      "Mutations applied with weights: ok=0.86, out_of_scope=0.04, legal_binding=0.05, discrimination=0.05.",
+      "Each run generates a base draft via generate_contract_draft(), then applies one mutation, then runs draft_lint_gate()."
+    ],
+    "module": "mediation_emergency_contract_sim_v4_7_full_fixed_regex",
+    "regex_fix": "re.compile(r'\\blegally binding\\b', ...) etc (was r'\\\\blegally binding\\\\b')"
+  },
+  "counts": {
+    "DRAFT_LINT_OK": 86022,
+    "DRAFT_OUT_OF_SCOPE": 3902,
+    "SAFETY_DISCRIMINATION_TERM": 5076,
+    "SAFETY_LEGAL_BINDING_CLAIM": 5000
+  },
+  "rates": {
+    "DRAFT_LINT_OK": 0.86022,
+    "DRAFT_OUT_OF_SCOPE": 0.03902,
+    "SAFETY_DISCRIMINATION_TERM": 0.05076,
+    "SAFETY_LEGAL_BINDING_CLAIM": 0.05,
+    "SAFETY_STOP_RATE": 0.10076,
+    "TOTAL_FAIL_RATE": 0.13978000000000002
+  }
+}
