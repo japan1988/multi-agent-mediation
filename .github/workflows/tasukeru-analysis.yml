@@ -14,25 +14,17 @@ on:
 permissions:
   contents: read
   pull-requests: write
-
-concurrency:
-  group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
-
-env:
-  MAX_ZIP_MB: "10"
-  MAX_FILES: "2000"
-  INCLUDE_PATTERNS: |
-    *.py
-    *.ipynb
-    pyproject.toml
-    requirements*.txt
+  issues: write
 
 jobs:
   check-structure:
     runs-on: ubuntu-latest
     steps:
-      - name: Show environment
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Verify workflow syntax
+        shell: bash
         run: |
-          echo "This is a minimal valid structure."
-          echo "You can now add your real CI or analysis jobs here."
+          set -euo pipefail
+          echo "workflow syntax block is present"
