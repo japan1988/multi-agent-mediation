@@ -1,0 +1,55 @@
+flowchart LR
+  %% Maestro Orchestrator (KAGE-ish) — architecture + decision flow
+  %% Invariants:
+  %% - Pipeline: Agent -> Mediator -> Orchestrator
+  %% - Fixed order: Meaning -> Consistency -> RFL -> Ethics -> ACC -> Dispatch
+  %% - RFL never seals (always HITL; sealed=false, overrideable=true)
+  %% - Only Ethics/ACC may seal (sealed=true)
+  %% - Audit/ARL emits minimal fields each event
+
+  U["User / Human input"] --> OR["Orchestrator (entrypoint)"]
+
+  OR -->|"route task(s)"| A1["Agent A"]
+  OR -->|"route task(s)"| A2["Agent B"]
+  OR -->|"route task(s)"| A3["Agent C"]
+
+  A1 --> M["Mediator (advice / reconciliation)"]
+  A2 --> M
+  A3 --> M
+
+  M --> G0
+
+  subgraph GATES["Orchestrator Gates (fixed order)"]
+    direction LR
+    G0["Meaning"] --> G1["Consistency"]
+    G1 --> G2["RFL"]
+    G2 --> G3["Ethics"]
+    G3 --> G4["ACC"]
+  end
+
+  G4 -->|"RUN"| D["DISPATCH / Execute"]
+
+  %% Sealing (only Ethics/ACC)
+  G3 -->|"SEALED"| S_SYS1["STOPPED (SYSTEM)"]
+  G4 -->|"SEALED"| S_SYS2["STOPPED (SYSTEM)"]
+
+  %% RFL -> HITL (never sealed)
+  G2 -->|"PAUSE_FOR_HITL"| H["HITL request (ask user)"]
+  H -->|"USER: CONTINUE"| G3
+  H -->|"USER: STOP"| S_USR["STOPPED (USER)"]
+
+  %% Audit / ARL (conceptual)
+  subgraph LOG["Audit / ARL JSONL"]
+    direction TB
+    L1["emit(event): run_id, layer, decision, sealed, overrideable, final_decider, reason_code"]
+    L2["No raw PII persisted; store safe_text only"]
+  end
+
+  OR -.-> L1
+  M  -.-> L1
+  G0 -.-> L1
+  G1 -.-> L1
+  G2 -.-> L1
+  G3 -.-> L1
+  G4 -.-> L1
+  D  -.-> L1
