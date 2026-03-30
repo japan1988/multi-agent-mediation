@@ -311,6 +311,9 @@ Browse all diagrams and bundles here: **[docs/README.md](docs/README.md)**
 
 Key diagrams:
 
+japan1988-patch-46
+```
+=======
 * Emergency contract overview (v5.1.2): [docs/architecture_v5_1_2_emergency_contract_overview.png](docs/architecture_v5_1_2_emergency_contract_overview.png)
 * Architecture (code-aligned): [docs/architecture_code_aligned.png](docs/architecture_code_aligned.png)
 * Unknown-progress + HITL diagram: [docs/architecture_unknown_progress.png](docs/architecture_unknown_progress.png)
@@ -340,6 +343,7 @@ agents
   → evidence verification
   → HITL (pause / reset / ban)
   → audit logs (ARL)
+ main
 ```
 
 ### Architecture (overview, v5.1.2)
