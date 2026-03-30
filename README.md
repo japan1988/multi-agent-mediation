@@ -1,4 +1,47 @@
 
+
+<p align="center">
+  <!-- 📊 Repository Status -->
+  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
+    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
+    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
+    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
+  </a>
+  <br/>
+  <!-- ⚙️ Technical Meta -->
+  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square" alt="Python Version">
+  <img src="https://img.shields.io/badge/code%20style-Black-000000.svg?style=flat-square" alt="Code Style: Black">
+  <img src="https://img.shields.io/badge/use--case-Education%20%26%20Research-blue.svg?style=flat-square" alt="Use Case: Education & Research">
+  <img src="https://img.shields.io/badge/framework-Research%20AI%20Framework-blueviolet.svg?style=flat-square" alt="Framework: Research AI">
+  <img src="https://img.shields.io/badge/KAGE-Compatible-purple.svg?style=flat-square" alt="KAGE Compatible">
+</p>
+
+<!-- Direct CI badge text link -->
+[CI Status (Python App)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+
+---
+
+このリリースは参考用です。現時点で正式公開の予定はありません。  
+This release is for reference only. No active or planned publication.
+
+---
+
+## 🧩 System Overview / システム概要
+
+This repository demonstrates a **multi-agent mediation framework** that models  
+negotiation, compromise, and ethical control between agents with simple emotion signals.  
+本リポジトリは、感情シグナルと倫理フィルターを組み合わせた  
+**多エージェント調停フレームワーク**の実験実装です。
+
+---
+=======
 # 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
 [![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
@@ -7,8 +50,17 @@
 [![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
 
 
+
 ## 🎯 Purpose / 目的
 
+
+感情・文脈・意思決定の循環構造を可視化し、社会的影響を考慮した行動モデルを構築。  
+複数エージェント間の交渉・妥協・調停を通して、  
+**社会的均衡点（Social Equilibrium）** を探る実験的 AI フレームワークです。
+
+The goal is to visualize how “feelings, context, and actions” interact,  
+and to explore possible social balance points through repeated mediation between agents.
+=======
 本リポジトリは、複数エージェント（または複数手法）を統括し、**誤り・危険・不確実**を検知した場合に **停止（STOP）／分岐（REROUTE）／人間へ差し戻し（HITL）** を行うための **研究用オーケストレーション（Orchestration）フレームワーク**です。
 
 主眼は「交渉そのもの」ではなく、次の統括機能です：
@@ -18,6 +70,7 @@
 - **Audit**: いつ何を理由に止めたかのログ化（証跡）
 - **HITL**: 判断不能や重要判断は人間へエスカレーション
 - **Replay**: 同条件で再実行し、差分検知できるようにする
+
 
 ---
 
@@ -33,6 +86,10 @@
 > **If uncertain, stop. If risky, escalate.**  
 > Research / educational governance simulations for agentic workflows.
 
+
+> 🎯 目的は「自律 AI の倫理的制御」と「社会的妥当性の再現」。  
+> 感情を再現しても、意思決定層は倫理フィルターによって安全に封印されます。
+=======
 Maestro Orchestrator is a **research-oriented orchestration framework** for
 **fail-closed**, **HITL (Human-in-the-Loop)**, and **audit-ready** agent workflows.
 
@@ -41,6 +98,7 @@ and implementation references for **traceable, reproducible, safety-first orches
 
 Running the simulators produces **reproducible summaries, minimal ARL traces, and optional incident-indexed artifacts** for abnormal runs.  
 The contract tests verify **fixed vocabularies, gate invariants, and fail-closed / HITL continuation behavior**.
+
 
 ---
 
@@ -56,6 +114,29 @@ This repository provides:
 
 This is best read as a:
 
+
+| Path | Type | Description / 説明 |
+|------|------|--------------------|
+| `agents.yaml`                    | Config   | エージェント設定パラメータ定義 |
+| `ai_mediation_all_in_one.py`     | Core     | 調停アルゴリズム統合モジュール |
+| `ai_alliance_persuasion_sim.py`  | Simulator| 説得・同盟形成シミュレーション |
+| `ai_governance_mediation_sim.py` | Simulator| 政策・ガバナンス調停シミュレーション |
+| `ai_hierarchy_dynamics_full_log_*.py` | Logger | 階層の動態ログ取得・再生 |
+| `docs/multi_agent_architecture_overview.webp` | Diagram | システム全体構成図 |
+| `docs/multi_agent_hierarchy_architecture.png` | Diagram | 階層アーキテクチャ図 |
+| `docs/sentiment_context_flow.png`           | Diagram | 感情・文脈フローダイアグラム |
+| `.github/workflows/python-app.yml` | CI      | GitHub Actions 設定 |
+| `requirements.txt`                | Dependency | Python 依存関係 |
+| `LICENSE`                         | License | 教育・研究ライセンス |
+| `README.md`                       | Doc     | 本ドキュメント |
+
+※ すべての `.py` モジュールは単体実行可能です。  
+`ai_mediation_all_in_one.py` が中核モジュールとして調停シナリオを統合します。
+
+---
+
+## 🧱 **Architecture Diagram / 構成図**
+=======
 
 ## 🌍 External Side Effects (Definition & Allowlist) / 外部副作用（定義と許可リスト）
 
@@ -88,6 +169,14 @@ This is best read as a:
 
 以下の状況では、人間判断（HITL）へ差し戻すことを推奨します：
 
+
+- Human Input → verify_info → supervisor → agents → logger  
+- Supervisor が整合性・安定性・再交渉のフローを統一管理します。
+
+---
+
+## 🧩 **Layered Agent Model / 階層エージェントモデル**
+=======
 - 意図が曖昧でセンシティブの可能性がある
 - ポリシー確信度が不足
 - 実行が外部副作用を伴う可能性がある
@@ -119,6 +208,7 @@ It is **not** a production autonomy framework.
 ---
 
 ## ⚡ TL;DR
+  
 
 - **Fail-closed + HITL** gating benches for negotiation/mediation-style workflows (research/education)
 - **Reproducibility-first**: seeded runs + `pytest` contract checks (vocabulary/invariants)
@@ -504,6 +594,13 @@ Published example summary:
 
 ---
 
+
+| Layer | Role | What it does |
+|-------|------|--------------|
+| **Interface Layer**  | Input from outside | Receives human input and sends logs. |
+| **Agent Layer**      | Thinking & feeling | Controls decisions, simple emotions, and dialogue. |
+| **Supervisor Layer** | Overall check      | Watches the whole system, checks consistency, and runs basic ethics checks. |
+=======
 ## Diagrams & docs
 
 Browse all diagrams and bundles here: **[docs/README.md](docs/README.md)**
@@ -532,6 +629,7 @@ Recommended reading order:
 7. `ai_doc_orchestrator_with_mediator_v1_0.py`
 8. `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
+
 ---
 
 ## Architecture (high level)
@@ -557,6 +655,15 @@ Documentation-only. No logic changes.
        width="860">
 </p>
 
+
+### 🧠 Emotion Cycle Model
+
+1. **Perception** — Takes the input and turns it into simple “emotion signals”.  
+2. **Context** — Looks at the situation and background of the negotiation.  
+3. **Action** — Combines the situation and emotion, then chooses the next action.
+
+> 🧩 At every step, the **Ethical Seal** checks the result and blocks outputs that may be harmful.
+=======
 ### Architecture (code-aligned diagrams)
 
 The following diagram is aligned with the current code vocabulary.
@@ -566,10 +673,26 @@ Documentation-only. No logic changes.
   <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
 </p>
 
+
 ---
 
 ## Version deltas
 
+
+```bash
+# 基本実行 / Basic run
+python3 ai_mediation_all_in_one.py
+
+# ログ付き実行 / Run with logging
+python3 ai_mediation_all_in_one.py --log logs/session_001.jsonl
+
+# 政策調停モード / Policy mediation mode
+python3 ai_governance_mediation_sim.py --scenario policy_ethics
+🧾 Citation Format / 引用形式
+Japan1988 (2025). Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator.
+GitHub Repository: https://github.com/japan1988/multi-agent-mediation
+License: Educational / Research License v1.1
+=======
 ### v5.0.1 → v5.1.2
 
 v5.1.2 strengthens the simulator toward large-run stability and incident-only persistence.
@@ -611,6 +734,7 @@ In addition to the behavioral changes above, v5.1.2 also improves repository-lev
   * Persistent store paths are exposed more consistently and are easier to patch in tests
   * This improves isolation in CI and makes contract/stress checks more reproducible
 
+
 * **Output stability**
 
   * JSON output writing is more consistent (UTF-8 / newline-stable / serializer-stable)
@@ -620,12 +744,65 @@ In addition to the behavioral changes above, v5.1.2 also improves repository-lev
 
 The current repository state also includes:
 
+
+You may:
+
+Use this project for non-commercial education and research.
+
+Use parts of the code in academic work, with proper citation.
+
+Run and modify it in your own local environment.
+
+🚫 Prohibited / 禁止事項
+商用利用・無断再配布・再販
+=======
 * stress metrics tests for clean / mixed large-run validation
 * pytest execution ARL logging through `tests/conftest.py`
 * published example result summary for the 10,000-run mixed validation
 
+
 ### Doc orchestrator mediator reference (v1.0)
 
+
+You may not:
+
+Use this project for commercial services or products.
+
+Redistribute or resell it without permission.
+
+Publish modified versions without clear credit to the original author.
+
+⚖️ Liability / 免責
+本ソフトウェアおよび資料の利用により生じた損害・倫理的影響・判断結果に関して、
+開発者および貢献者は一切の責任を負いません。
+
+This project is for learning and research.
+The developers and contributors are not responsible for any damage, wrong decisions,
+or ethical problems that come from using this software or its documents.
+
+📈 Release Highlights / 更新履歴
+Version	Date	Main changes / 主な変更内容
+v1.0.0	2025-04-01	初回公開：構造・感情・調停モジュール統合
+v1.1.0	2025-08-04	階層動態ログ・再教育モジュールを追加
+v1.2.0	2025-10-28	README 再構成・OSS 公開用バッジ対応版
+🤝 Contributing / 貢献ガイド
+Fork リポジトリ / Fork this repository.
+
+新ブランチを作成 / Create a new branch:
+
+git checkout -b feature/new-module
+コードを編集・テストを追加 / Change the code and add simple tests.
+
+Pull Request を作成し、以下を説明 / Open a Pull Request and explain:
+
+何を変更したか / what you changed
+
+なぜ有用か / why it is useful
+
+Educational and research contributions are welcome.
+Please always care about ethics, safety, and clear explanations.
+
+=======
 `ai_doc_orchestrator_with_mediator_v1_0.py` is a smaller orchestration reference focused on:
 
 * fixed gate ordering
@@ -703,3 +880,4 @@ What did NOT change (still true in v5):
 
 Apache License 2.0 (see `LICENSE`)
  main
+
