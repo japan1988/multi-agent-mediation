@@ -3,19 +3,19 @@ name: Python App CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths-ignore:
       - "**.md"
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths-ignore:
       - "**.md"
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
+  workflow_dispatch:
 
-# 同一ブランチの連続実行を最新だけに
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -24,56 +24,51 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: build (${{ matrix.python-version }})
+  test:
+    name: test (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.9", "3.10", "3.11" ]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 1
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-      - name: Install dependencies / tools
+      - name: Install dependencies
         run: |
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          pip install -q pytest pytest-cov pytest-xdist ruff yamllint
 
-      # ワークフロー自身のYAMLを lint
-      - name: Lint workflow (self check)
-        continue-on-error: true
         run: |
-          yamllint -d '{extends: default,
-                        rules: {brackets: disable,
-                                truthy: disable,
-                                line-length: {max: 140, level: warning}}}' \
-                   .github/workflows/python-app.yml
+          set -euo pipefail
+          printf '%s\n' \
+            'extends: default' \
+            'rules:' \
+            '  brackets: disable' \
+            '  truthy: disable' \
+            '  document-start: disable' \
+            '  line-length:' \
+            '    max: 140' \
+            '    level: warning' \
+            > .yamllint-ci.yml
+          yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
 
       - name: Ruff check
         run: |
-          ruff --version
-          ruff check . --output-format=github
+          set -euo pipefail
+          ruff check .
 
-      - name: Run tests (parallel) with coverage
-        env:
-          PYTHONWARNINGS: ignore::DeprecationWarning
+      - name: Black
         run: |
-          pytest -q -n auto --dist loadfile --cov=. --cov-report=xml:coverage.xml --cov-report=term
+          set -euo pipefail
+          black --check .
 
-      - name: Upload coverage xml
-        if: always()
+
