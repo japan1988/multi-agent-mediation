@@ -1,3 +1,4 @@
+ japan1988-patch-3
 # name: Python Application CI
 # on:
 #   push:
@@ -38,3 +39,79 @@
 #         env:
 #           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 #           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+=======
+---
+name: Python App CI
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+  pull_request:
+    branches: ["main"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'extends: default' \
+            'rules:' \
+            '  brackets: disable' \
+            '  truthy: disable' \
+            '  document-start: disable' \
+            '  line-length:' \
+            '    max: 140' \
+            '    level: warning' \
+            > .yamllint-ci.yml
+          yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
+
+      - name: Ruff check
+        run: |
+          set -euo pipefail
+          ruff check .
+
+      - name: Black
+        run: |
+          set -euo pipefail
+          black --check .
+
+
+ main

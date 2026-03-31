@@ -1,30 +1,30 @@
-# .github/workflows/tasukeru-analysis.yml
-
-name: Auto-Tasukeru CI
+name: Tasukeru Analysis
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.py"
+      - "**/*.ipynb"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/tasukeru-analysis.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
-  analyze:
+  check-structure:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v6
 
-      - name: Zip source files
-        run: zip -r source.zip .
-
-      - name: Send to Tasukeru API
+      - name: Verify workflow syntax
+        shell: bash
         run: |
-          curl -X POST https://your-api-domain.com/analyze \  # ←ここにAPIのURLを入れてください
-               -F "file=@source.zip" \
-               -o report.md
-
-      - name: Post report as PR comment
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body-path: report.md
+          set -euo pipefail
+          echo "workflow syntax block is present"

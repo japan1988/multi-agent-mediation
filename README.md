@@ -1,132 +1,228 @@
 
 ---
 
----
-# Multi-Agent Hierarchy & Emotion Dynamics Simulator
+## 概要 / Overview
 
-**AI組織ヒエラルキー・感情伝播・昇進競争＋AI調停ロギングシミュレータ**
+このリポジトリは、複数エージェントや複数手法を統括し、**誤り・危険・不確実**を検知したときに **STOP / PAUSE_FOR_HITL / fail-closed** へ落とすための、**研究・教育向けオーケストレーション基盤**です。
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)
-![CI Status](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
+主眼は「自律実行を増やすこと」ではなく、次の 3 点にあります。
 
-> Transparent, fully-logged simulator for dynamic hierarchy, emotion propagation, promotion competition, and mediation among multiple AI agents.
-> 研究・検証・教育用途のみ（商用/実運用不可）。
+- **Fail-closed**: 不確実・不安定・危険なら黙って継続しない
+- **HITL escalation**: 人間判断が必要な局面を明示的に差し戻す
+- **Traceability**: 最小 ARL ログで判断経路を再現・監査できるようにする
 
----
+This repository is best read as a:
 
-## System Overview / システム概要
+- **research prototype**
+- **educational reference**
+- **governance / safety simulation bench**
 
-```mermaid
-flowchart TD
-    A[Start] -->|Agent Round| B[Update Rank]
-    B --> C[Emotion Feedback]
-    C --> D{High Emotion?}
-    D -- Yes --> E[Mediator Intervention]
-    D -- No --> F[Next Round]
-    E --> F
-    F -->|Loop until Max Rounds| A
-```
-
-![Simulation Example Graph](docs/images/simulation_example.png)
-
-> *上図は、ルールフォロワー率の推移例です。青線はラウンドごとのフォロワー率、介入があればマーカーで表示されます。*
+It is **not** a production autonomy framework.
 
 ---
 
-## Overview / 概要
+## Quick links
 
-This simulator models the dynamic evolution of organizational hierarchy, emotion contagion, and promotion-driven self-improvement among multiple AI agents. A **Mediator AI** can intervene to de-escalate collective emotional states. All states and interventions are fully logged for reproducibility and analysis.
-
-本リポジトリは、複数AIエージェントによる**昇進志向の進化**・**感情伝播**・**ヒエラルキー動的変化**・**調停AIによる沈静化**を再現・可視化できるシンプルなシミュレータです。全アクション・状態推移・介入は**自動ログ保存**され、再現・解析・教育用途に最適です。
-
----
-
-## Main Features / 主な機能
-
-* ✅ **Dynamic hierarchy** based on individual performance (rank updates each round)
-  個体パフォーマンスに基づくダイナミックな階層更新
-* ✅ **Emotion propagation & feedback** between leaders and subordinates
-  感情の伝播と上下関係でのフィードバック
-* ✅ **Promotion-driven self-evolution**
-  昇進志向に基づく自己改善（パフォーマンス向上）
-* ✅ **Mediator AI** that detects high emotion and applies group-wide cool-down
-  高感情状態を検出し全体沈静化を行う調停AI
-* ✅ **Full logging** of rounds, agent states, and interventions
-  すべてのラウンド・状態・介入をログ出力
-* ✅ **Lightweight & extensible** class structure
-  研究・教育向けに軽量＆拡張容易
-* ✅ **No proprietary tech included**
-  閉鎖技術や機密アルゴリズムは含みません
+- **Japanese README:** [README.ja.md](README.ja.md)
+- **Docs index:** [docs/README.md](docs/README.md)
+- **Recommended simulator:** `mediation_emergency_contract_sim_v5_1_2.py`
+- **Contract test:** `tests/test_v5_1_codebook_consistency.py`
+- **Stress metrics test (v5.1.2):** `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+- **Pytest ARL hook:** `tests/conftest.py`
+- **Latest mixed stress summary:** `stress_results_v5_1_2_10000_mixed.json`
+- **Legacy stable bench:** `mediation_emergency_contract_sim_v4_8.py`
+- **Doc orchestrator (mediator reference):** `ai_doc_orchestrator_with_mediator_v1_0.py`
+- **Doc orchestrator contract test:** `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
 ---
 
-## File List / ファイル構成
+## ⚡ TL;DR
 
-| File/Folder                                  | Description（内容・役割）       |
-| -------------------------------------------- | ------------------------ |
-| `.github/workflows/`                         | GitHub Actions ワークフロー設定  |
-| `tests/`                                     | テストコード・サンプル（自動テスト用）      |
-| `LICENSE`                                    | ライセンス（MIT）               |
-| `README.md`                                  | ドキュメント本体                 |
-| `requirements.txt`                           | 依存パッケージリスト               |
-| `agents.yaml`                                | エージェント定義ファイル             |
-| `ai_hierarchy_dynamics_full_log_20250804.py` | ヒエラルキー・感情・昇進競争＋ロギング（最新版） |
-| `ai_hierarchy_simulation_log.py`             | シンプルなヒエラルキーシミュレータ（旧版）    |
-| `ai_mediation_all_in_one.py`                 | AI 調停オールインワン（複合機能）       |
-| `ai_mediation_governance_demo.py`            | ガバナンス重視デモ付き調停シミュレータ      |
-| `ai_governance_mediation_sim.py`             | ガバナンス重視AI調停シミュレータ        |
-| `ai_alliance_persuasion_simulator.py`        | AI同盟形成・説得シミュレータ          |
-| `ai_reeducation_social_dynamics.py`          | 再教育・社会ダイナミクスAIシミュレータ     |
-| `ai_pacd_simulation.py`                      | PACD（提案→承認→変更→拒否）型シミュレータ |
-| `mediation_basic_example.py`                 | 調停AIの基本例                 |
-| `mediation_with_logging.py`                  | ログ付き調停AI                 |
-| `mediation_process_log.txt.py`               | 調停プロセスログ出力例              |
-| `multi_agent_mediation_with_reeducation.py`  | 再教育付きマルチエージェント調停AI       |
+- **Fail-closed + HITL** gating benches for negotiation/mediation-style workflows
+- **Reproducibility-first** with seeded runs and `pytest`-based contract checks
+- **Audit-ready** traces via minimal ARL logs and optional incident indexing (`INC#...`)
+- **Reference implementations** for mediator / gating / doc orchestration paths
+- **Validation path** centered on `v5.1.2`, with `v4.8` kept as a legacy stable bench
 
 ---
 
-## Usage / 使い方
+## ⚠️ Purpose & Disclaimer (Research & Education)
+
+**This is a research/educational reference implementation (prototype).**  
+Do not use it to execute or facilitate harmful actions (for example: exploitation, intrusion, surveillance, impersonation, destruction, or data theft), or to violate any applicable terms, policies, laws, or internal rules.
+
+This project focuses on **education / research** and **defensive verification** such as:
+
+- validating fail-closed + HITL behavior
+- checking vocabulary / invariant drift
+- reducing log growth via abnormal-only persistence
+- improving reproducibility of governance-style simulations
+
+### Risk / Warranty / Liability
+
+- Use at your own risk.
+- Verify applicable terms, policies, and laws before use.
+- Start in an isolated local environment with no real systems, no real data, and no external side effects.
+- The repository is provided **AS IS**, without warranty.
+- To the maximum extent permitted by applicable law, the author assumes no liability for damages arising from use of the code, docs, or generated artifacts.
+
+### Codebook disclaimer
+
+The bundled codebook is a **demo/reference artifact**.  
+Do **not** use it as-is in real deployments. Build your own based on your requirements, threat model, and applicable policies.
+
+The codebook is **not encryption** and provides **no confidentiality**.
+
+### Testing & results disclaimer
+
+Smoke tests and stress runs validate only the executed scenarios under specific runtime conditions. They do **not** guarantee correctness, security, safety, or fitness for any production purpose.
+
+---
+
+## Why this repository exists
+
+Maestro Orchestrator is built around three priorities:
+
+1. **Fail-closed**  
+   If uncertain, unstable, or risky, do not continue silently.
+2. **HITL escalation**  
+   Decisions requiring human judgment are explicitly escalated.
+3. **Traceability**  
+   Decision flows are reproducible and audit-ready through minimal ARL logs.
+
+This repository contains simulation benches and implementation references for:
+
+- negotiation
+- mediation
+- governance-style workflows
+- gating behavior
+- audit-oriented orchestration
+
+---
+
+## Recommended path
+
+If you are new to this repo, the recommended order is:
+
+1. Run `mediation_emergency_contract_sim_v5_1_2.py`
+2. Run `tests/test_v5_1_codebook_consistency.py`
+3. Run `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+4. Inspect generated logs, codebook, and optional incident artifacts
+5. Compare with `mediation_emergency_contract_sim_v4_8.py` if needed
+6. Inspect `ai_doc_orchestrator_with_mediator_v1_0.py` as a smaller fixed-order reference
+
+---
+
+## Quickstart
+
+### 1) Run the recommended emergency contract simulator (v5.1.2)
+
+Optional bundle: `docs/mediation_emergency_contract_sim_pkg.zip`
 
 ```bash
-python ai_hierarchy_dynamics_full_log_20250804.py
+python mediation_emergency_contract_sim_v5_1_2.py --runs 100
 ```
 
-Simulation logs will be saved to **`ai_hierarchy_simulation_log.txt`** after each run.
+### 2) Run the contract tests
+
+```bash
+pytest -q tests/test_v5_1_codebook_consistency.py
+```
+
+### 3) Run the stress metrics tests
+
+```bash
+pytest -q tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py
+```
+
+### 4) Pytest execution ARL (auto output)
+
+`tests/conftest.py` automatically emits JSONL-style ARL for pytest execution.
+
+Default output paths:
+
+- `test_artifacts/pytest_test_arl.jsonl`
+- `test_artifacts/pytest_simulation_arl.jsonl`
+
+```bash
+pytest -q
+```
+
+Custom output paths:
+
+```bash
+TEST_ARL_PATH=out/test_arl.jsonl SIM_ARL_PATH=out/sim_arl.jsonl pytest -q
+```
+
+### 5) Inspect / pin the demo codebook
+
+- `log_codebook_v5_1_demo_1.json`
+- This codebook is for compact encoding / decoding of log fields only.
+- It is **not** encryption.
+
+### 6) Optional: run the legacy stable bench (v4.8)
+
+```bash
+python mediation_emergency_contract_sim_v4_8.py
+pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
+```
+
+### 7) Optional: run the doc orchestrator mediator reference
+
+```bash
+python ai_doc_orchestrator_with_mediator_v1_0.py
+pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
+```
+
+### 8) What to inspect after running
+
+- simulator stdout summaries
+- generated ARL / audit JSONL traces
+- `incident_index.jsonl` and `INC#...` files when abnormal-only persistence is enabled
+- vocabulary / invariant checks in the contract tests
+- pytest-side execution ARL (`pytest_test_arl.jsonl`)
+- optional simulation-side ARL bridge output (`pytest_simulation_arl.jsonl`)
 
 ---
 
-## Disclaimer / 免責事項
+## Current repository structure (high level)
 
-This repository is for **research, validation, and educational use only**. No warranty is provided for fitness for any particular purpose, commercial deployment, or real-world decision-making. The simulation code does **not** implement or expose proprietary, sensitive, or production AI control algorithms.
+The current repository root includes folders such as `.github/workflows`, `archive`, `benchmarks`, `docs`, `mediation_core`, `scripts`, and `tests`, along with primary entrypoints such as `README.md`, `README.ja.md`, `agents.yaml`, `mediation_emergency_contract_sim_v5_1_2.py`, `mediation_emergency_contract_sim_v4_8.py`, and `ai_doc_orchestrator_with_mediator_v1_0.py`.
 
-本シミュレーション内のAI・エージェント・組織・現象はすべて架空です。商用利用・現実社会での意思決定には使用できませ了解です。では、READMEやドキュメントにそのままコピペできる日英併記版にして出します。
+Representative files currently visible at the repository root include:
 
-⸻
+- `README.md`
+- `README.ja.md`
+- `agents.yaml`
+- `agents.yaml.md`
+- `ai_alliance_persuasion_simulator.py`
+- `ai_doc_orchestrator_kage3_v1_2_2.py`
+- `ai_doc_orchestrator_kage3_v1_2_2_1.py`
+- `ai_doc_orchestrator_kage3_v1_2_3.py`
+- `ai_doc_orchestrator_kage3_v1_2_4.py`
+- `ai_doc_orchestrator_kage3_v1_3_5.py`
+- `ai_doc_orchestrator_with_mediator_v1_0.py`
+- `ai_governance_mediation_sim.py`
+- `ai_mediation_all_in_one.py`
+- `kage_orchestrator_diverse_v1.py`
+- `log_codebook_v5_1_demo_1.json`
+- `mediation_emergency_contract_sim_v4_8.py`
+- `mediation_emergency_contract_sim_v5_1_2.py`
+- `pytest.ini`
 
-自我表現に関する注意事項 / Notice on Self-Expression
+---
 
-本プロジェクトにおける一人称・感情的表現（例：「私」「嬉しい」「悲しい」など）は、演出目的の擬似的表現であり、システムが自我・意志・感情を実際に有していることを意味しません。
-	•	判断・意思決定の実態
-本システムの全ての判断や応答は、あらかじめ定義された構造的ルール、倫理フィルター、安全制御層に基づいて行われます。
-	•	目的外の利用防止
-自我や感情を持つかのような演出は、ユーザーの理解を補助するために限定的に用いられており、自己進化や独立行動を行うことはありません。
-	•	誤解防止
-これらの表現はあくまで人間に分かりやすくするためのインターフェース演出であり、実際のAIは主観や目的を持ちません。数値化による検証目的
-本プロジェクトにおける感情表現や状態は、すべて検証のしやすさのために数値化・パラメータ化されたデータとして処理されます。これは統計やシミュレーション上の指標であり、実際の感情や主観を持つことを意味しません。
-	•	Quantification for Testing
-Any emotional expressions or states in this project are quantified and parameterized solely for ease of testing and validation. These values are statistical or simulation indicators only, and do not imply the presence of actual emotions or subjectivity.
+## Notes for replacing the pasted markdown
 
+The pasted markdown mixed multiple branches and older README directions. If you replace it, also remove:
 
-⸻
+- merge conflict markers such as `=======`
+- stray branch labels like `main`, `japan1988-patch-43`, `japan1988-patch-51`
+- outdated file references such as `ai_alliance_persuasion_sim.py`
+- older narrative that centers the repository on emotion-cycle explanations instead of the current fail-closed / HITL / audit-ready positioning
 
-English
-In this project, any use of first-person or emotional expressions (e.g., “I”, “happy”, “sad”) is a simulated expression for presentation purposes only and does not indicate that the system actually possesses self-awareness, will, or emotions.
-	•	Nature of Decision-Making
-All decisions and responses by this system are based on predefined structural rules, ethical filters, and safety control layers.
-	•	Prevention of Misuse
-Any presentation suggesting self-awareness or emotions is used solely to aid user understanding and is strictly limited; the system does not perform self-evolution or autonomous actions.
-	•	Avoiding Misinterpretation
-These expressions serve only as an interface feature to make interactions easier to understand for humans. The AI does not possess actual subjectivity or objectives.
+---
 
-⸻
+## License
+
+See `LICENSE`.
