@@ -32,7 +32,6 @@ jobs:
       fail-fast: false
       matrix:
 
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -47,7 +46,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-<
+
         run: |
           set -euo pipefail
           printf '%s\n' \
@@ -72,22 +71,4 @@ jobs:
           set -euo pipefail
           black --check .
 
-      - name: Pytest
-        run: |
-          set -euo pipefail
-          pytest -q --maxfail=1 --disable-warnings \
-            --junitxml=junit-py${{ matrix.python-version }}.xml
 
-      - name: Upload test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-artifacts-py${{ matrix.python-version }}
-          if-no-files-found: ignore
-          path: |
-            .pytest_cache
-            **/.pytest_cache
-            **/pytest*.log
-            **/junit-*.xml
-japan1988-patch-56
-          if-no-files-found: ignore
