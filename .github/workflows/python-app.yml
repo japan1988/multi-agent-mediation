@@ -1,3 +1,4 @@
+---
 name: Python App CI
 
 on:
@@ -30,11 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11"]
 
-    defaults:
-      run:
-        shell: bash
 
     steps:
       - name: Checkout
@@ -50,11 +47,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Lint workflow YAML
+<
         run: |
           set -euo pipefail
           printf '%s\n' \
@@ -98,6 +91,3 @@ jobs:
             **/junit-*.xml
 japan1988-patch-56
           if-no-files-found: ignore
-          
-=======
-main
