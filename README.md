@@ -1,19 +1,3 @@
-# Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
-
-[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
-![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
-[![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
-[![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
-
-> **If uncertain, stop. If risky, escalate.**  
-> Research / educational governance simulations for agentic workflows.
-
-Maestro Orchestrator is a **research-oriented orchestration framework** for **fail-closed**, **HITL (Human-in-the-Loop)**, and **audit-ready** agent workflows.
-
-This repository focuses on **governance / mediation / negotiation-style simulations** and implementation references for **traceable, reproducible, safety-first orchestration**.
-
-Running the simulators produces **reproducible summaries, minimal ARL traces, and optional incident-indexed artifacts** for abnormal runs.  
-The contract tests verify **fixed vocabularies, gate invariants, and fail-closed / HITL continuation behavior**.
 
 ---
 
