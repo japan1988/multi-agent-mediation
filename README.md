@@ -1,198 +1,244 @@
-# 📘 **Multi-Agent Mediation Framework**
+# Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
-<p align="center">
-  <!-- 📊 Repository Status -->
-  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
-    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
-    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
-  </a>
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
-    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
-  </a>
-  <br/>
-  <!-- ⚙️ Technical Meta -->
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square" alt="Python Version">
-  <img src="https://img.shields.io/badge/code%20style-Black-000000.svg?style=flat-square" alt="Code Style: Black">
-  <img src="https://img.shields.io/badge/use--case-Education%20%26%20Research-blue.svg?style=flat-square" alt="Use Case: Education & Research">
-  <img src="https://img.shields.io/badge/framework-Research%20AI%20Framework-blueviolet.svg?style=flat-square" alt="Framework: Research AI">
-  <img src="https://img.shields.io/badge/KAGE-Compatible-purple.svg?style=flat-square" alt="KAGE Compatible">
-</p>
-  <!-- License -->
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen.svg" alt="Educational License">
-  </a>
+[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
+![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
+[![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
 
-  <!-- CI / Actions -->
-  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
-    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI - Python App">
-  </a>
+> **If uncertain, stop. If risky, escalate.**  
+> Research / educational governance simulations for agentic workflows.
 
-  <!-- Python & Status -->
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python">
-  <img src="https://img.shields.io/badge/status-stable-brightgreen.svg" alt="Status">
+Maestro Orchestrator is a **research-oriented orchestration framework** for **fail-closed**, **HITL (Human-in-the-Loop)**, and **audit-ready** agent workflows.
 
-  <!-- Style & Scope -->
-  <img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code Style: Black">
-  <img src="https://img.shields.io/badge/use--case-Education%20%26%20Research-blue.svg" alt="Use Case">
-  <img src="https://img.shields.io/badge/framework-KAGE%20Compatible-purple.svg" alt="KAGE Compatible">
+This repository focuses on **governance / mediation / negotiation-style simulations** and implementation references for **traceable, reproducible, safety-first orchestration**.
 
-  <!-- Direct CI badge link -->
-  [CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)
-</p>
-  
-
-
-</p>
-このリリースは参考用です。現時点で正式公開の予定はありません。  
-This release is for reference only. No active or planned publication.
-
-## 🎯 **目的 / Purpose**
-
-感情・文脈・意思決定の循環構造を可視化し、社会的影響を考慮した行動モデルを構築。  
-複数エージェント間の交渉・妥協・調停を通して、**社会的均衡点（Social Equilibrium）** を探る実験的AIフレームワーク。
+Running the simulators produces **reproducible summaries, minimal ARL traces, and optional incident-indexed artifacts** for abnormal runs.  
+The contract tests verify **fixed vocabularies, gate invariants, and fail-closed / HITL continuation behavior**.
 
 ---
 
-## 🧠 **Concept Overview / 概念設計**
+## 概要 / Overview
 
-| 構成要素 | 機能 | 説明 |
-|-----------|------|------|
-| 🧩 **Mediation Layer** | 調停層 | エージェント間の妥協・合意形成を担当 |
-| 💬 **Emotion Dynamics Layer** | 感情層 | 情動の変化をトリガとして交渉方針を変化 |
-| ⚙️ **Governance Layer** | 管理層 | 倫理・整合性・再現性の統括 |
-| 🔁 **Re-Education Cycle** | 再教育循環 | 行動パターンを評価・再学習し、社会適応モデルを生成 |
+このリポジトリは、複数エージェントや複数手法を統括し、**誤り・危険・不確実**を検知したときに **STOP / PAUSE_FOR_HITL / fail-closed** へ落とすための、**研究・教育向けオーケストレーション基盤**です。
 
-> 🎯 目的は「自律AIの倫理的制御」と「社会的妥当性の再現」。  
-> 感情を再現しても、意思決定層は倫理フィルターによって安全に封印されます。
+主眼は「自律実行を増やすこと」ではなく、次の 3 点にあります。
 
----
+- **Fail-closed**: 不確実・不安定・危険なら黙って継続しない
+- **HITL escalation**: 人間判断が必要な局面を明示的に差し戻す
+- **Traceability**: 最小 ARL ログで判断経路を再現・監査できるようにする
 
-## 🗂️ **Repository Structure / ファイル構成**
+This repository is best read as a:
 
-| Path | Type | Description / 説明 |
-|------|------|--------------------|
-| `agents.yaml` | Config | エージェントパラメータ定義 |
-| `ai_mediation_all_in_one.py` | Core | 調停アルゴリズム統合モジュール |
-| `ai_alliance_persuasion_simulator.py` | Simulator | 同盟交渉・説得シミュレーション |
-| `ai_governance_mediation_sim.py` | Simulator | 政策・ガバナンス調停モデル |
-| `ai_pacd_simulation.py` | Experiment | 段階的再教育AIシミュレーション |
-| `ai_hierarchy_dynamics_full_log_20250804.py` | Logger | ログ強化・階層動態追跡モジュール |
-| `multi_agent_architecture_overview.webp` | Diagram | 構成図（全体） |
-| `multi_agent_hierarchy_architecture.png` | Diagram | 階層モデル図 |
-| `sentiment_context_flow.png` | Diagram | 感情フロー図 |
-| `requirements.txt` | Dependency | Python依存関係 |
-| `.github/workflows/ci.yml` | Workflow | CI/Lintワークフロー |
-| `LICENSE` | License | 教育・研究ライセンス |
-| `README.md` | Documentation | 本ドキュメント |
+- **research prototype**
+- **educational reference**
+- **governance / safety simulation bench**
 
-💡 すべての `.py` モジュールは独立実行可能。  
-`agents.yaml` が全エージェント設定の共通基盤。  
-`ai_mediation_all_in_one.py` が中心モジュールとして階層的調停を統括します。
+It is **not** a production autonomy framework.
 
 ---
 
-## 🧭 **Architecture Diagram / 構成図**
+## Quick links
 
-<p align="center">
-  <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
-</p>
-
-### 🔄 概要フロー
-
-Human Input → verify_info → supervisor → agents → logger
-
-
-Supervisor が整合性・妥協・再交渉のフローを統一管理。
-
----
-
-## 🌐 **Layered Agent Model / 階層エージェントモデル**
-
-<p align="center">
-  <img src="docs/multi_agent_hierarchy_architecture.png" width="720" alt="Layered Architecture">
-</p>
-
-| 層 | 役割 | 主な機能 |
-|----|------|----------|
-| **Interface Layer** | 外部入力層 | 人間の入力・ログ送信を管理 |
-| **Agent Layer** | 認知・感情層 | 意思決定・感情変化・対話制御 |
-| **Supervisor Layer** | 統括層 | 全体調整・整合・倫理判定 |
+- **Japanese README:** [README.ja.md](README.ja.md)
+- **Docs index:** [docs/README.md](docs/README.md)
+- **Recommended simulator:** `mediation_emergency_contract_sim_v5_1_2.py`
+- **Contract test:** `tests/test_v5_1_codebook_consistency.py`
+- **Stress metrics test (v5.1.2):** `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+- **Pytest ARL hook:** `tests/conftest.py`
+- **Latest mixed stress summary:** `stress_results_v5_1_2_10000_mixed.json`
+- **Legacy stable bench:** `mediation_emergency_contract_sim_v4_8.py`
+- **Doc orchestrator (mediator reference):** `ai_doc_orchestrator_with_mediator_v1_0.py`
+- **Doc orchestrator contract test:** `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
 ---
 
-## 🔬 **Sentiment Flow / 感情・文脈フロー**
+## ⚡ TL;DR
 
-<p align="center">
-  <img src="docs/sentiment_context_flow.png" width="720" alt="Emotion Flow Diagram">
-</p>
-
-### 🧠 感情循環モデル
-
-1. **Perception（知覚）** — 入力データを感情因子に変換  
-2. **Context（文脈解析）** — 交渉状況・社会的背景を抽出  
-3. **Action（行動生成）** — 文脈と感情を統合し、最適行動を出力  
-
-> 🧩 すべての段階で「倫理フィルター（Ethical Seal）」が動作し、危険な出力を自動封印。
+- **Fail-closed + HITL** gating benches for negotiation/mediation-style workflows
+- **Reproducibility-first** with seeded runs and `pytest`-based contract checks
+- **Audit-ready** traces via minimal ARL logs and optional incident indexing (`INC#...`)
+- **Reference implementations** for mediator / gating / doc orchestration paths
+- **Validation path** centered on `v5.1.2`, with `v4.8` kept as a legacy stable bench
 
 ---
 
-## ⚙️ **Execution Example / 実行例**
+## ⚠️ Purpose & Disclaimer (Research & Education)
+
+**This is a research/educational reference implementation (prototype).**  
+Do not use it to execute or facilitate harmful actions (for example: exploitation, intrusion, surveillance, impersonation, destruction, or data theft), or to violate any applicable terms, policies, laws, or internal rules.
+
+This project focuses on **education / research** and **defensive verification** such as:
+
+- validating fail-closed + HITL behavior
+- checking vocabulary / invariant drift
+- reducing log growth via abnormal-only persistence
+- improving reproducibility of governance-style simulations
+
+### Risk / Warranty / Liability
+
+- Use at your own risk.
+- Verify applicable terms, policies, and laws before use.
+- Start in an isolated local environment with no real systems, no real data, and no external side effects.
+- The repository is provided **AS IS**, without warranty.
+- To the maximum extent permitted by applicable law, the author assumes no liability for damages arising from use of the code, docs, or generated artifacts.
+
+### Codebook disclaimer
+
+The bundled codebook is a **demo/reference artifact**.  
+Do **not** use it as-is in real deployments. Build your own based on your requirements, threat model, and applicable policies.
+
+The codebook is **not encryption** and provides **no confidentiality**.
+
+### Testing & results disclaimer
+
+Smoke tests and stress runs validate only the executed scenarios under specific runtime conditions. They do **not** guarantee correctness, security, safety, or fitness for any production purpose.
+
+---
+
+## Why this repository exists
+
+Maestro Orchestrator is built around three priorities:
+
+1. **Fail-closed**  
+   If uncertain, unstable, or risky, do not continue silently.
+2. **HITL escalation**  
+   Decisions requiring human judgment are explicitly escalated.
+3. **Traceability**  
+   Decision flows are reproducible and audit-ready through minimal ARL logs.
+
+This repository contains simulation benches and implementation references for:
+
+- negotiation
+- mediation
+- governance-style workflows
+- gating behavior
+- audit-oriented orchestration
+
+---
+
+## Recommended path
+
+If you are new to this repo, the recommended order is:
+
+1. Run `mediation_emergency_contract_sim_v5_1_2.py`
+2. Run `tests/test_v5_1_codebook_consistency.py`
+3. Run `tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py`
+4. Inspect generated logs, codebook, and optional incident artifacts
+5. Compare with `mediation_emergency_contract_sim_v4_8.py` if needed
+6. Inspect `ai_doc_orchestrator_with_mediator_v1_0.py` as a smaller fixed-order reference
+
+---
+
+## Quickstart
+
+### 1) Run the recommended emergency contract simulator (v5.1.2)
+
+Optional bundle: `docs/mediation_emergency_contract_sim_pkg.zip`
 
 ```bash
-# 基本実行
-python3 ai_mediation_all_in_one.py
+python mediation_emergency_contract_sim_v5_1_2.py --runs 100
+```
 
-# ログ付きで実行
-python3 ai_mediation_all_in_one.py --log logs/session_001.jsonl
+### 2) Run the contract tests
 
-# 政策調停モード
-python3 ai_governance_mediation_sim.py --scenario policy_ethics
-🧾 Citation Format / 引用形式
-Japan1988 (2025). Sharp Puzzle: Multi-Agent Hierarchy & Emotion Dynamics Simulator.
-GitHub Repository: https://github.com/japan1988/multi-agent-mediation
-License: Educational / Research License v1.1
+```bash
+pytest -q tests/test_v5_1_codebook_consistency.py
+```
 
-⚖️ License & Disclaimer / ライセンス・免責
-License Type: Educational / Research License v1.1
-Date: 2025-04-01
+### 3) Run the stress metrics tests
 
-✅ Permitted / 許可されること
-教育・研究目的での非営利使用
+```bash
+pytest -q tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py
+```
 
-コード引用・学術研究・再現実験
+### 4) Pytest execution ARL (auto output)
 
-個人環境での再シミュレーション
+`tests/conftest.py` automatically emits JSONL-style ARL for pytest execution.
 
-🚫 Prohibited / 禁止事項
-商用利用・無断再配布・再販
+Default output paths:
 
-出典明記なしの派生公開
+- `test_artifacts/pytest_test_arl.jsonl`
+- `test_artifacts/pytest_simulation_arl.jsonl`
 
-⚖️ Liability / 免責
-本ソフトウェアおよび資料の利用により生じた損害・倫理的影響・判断結果に関して、
-開発者および貢献者は一切の責任を負いません。
+```bash
+pytest -q
+```
 
-📈 Release Highlights / 更新履歴
-バージョン	日付	主な変更内容
-v1.0.0	2025-04-01	初回公開：構造・感情・調停モジュール統合
-v1.1.0	2025-08-04	階層動態ログ・再教育モジュールを追加
-v1.2.0	2025-10-28	README再構成・OSS公開用バッジ対応版
-🤝 Contributing / 貢献ガイド
-Fork リポジトリ
+Custom output paths:
 
-新ブランチを作成
+```bash
+TEST_ARL_PATH=out/test_arl.jsonl SIM_ARL_PATH=out/sim_arl.jsonl pytest -q
+```
 
-git checkout -b feature/new-module
-コードを編集・テスト
+### 5) Inspect / pin the demo codebook
 
-Pull Request を作成
+- `log_codebook_v5_1_demo_1.json`
+- This codebook is for compact encoding / decoding of log fields only.
+- It is **not** encryption.
 
-💡 教育・研究目的の貢献は歓迎します。
-ただし倫理的配慮・安全性・透明性の確保を前提とします。
+### 6) Optional: run the legacy stable bench (v4.8)
 
-<div align="center"> <b>🧩 Multi-Agent Mediation Project — Designed for Research, Built for Transparency.</b><br> <em>© 2024–2025 Japan1988. All rights reserved.</em> </div> ```
+```bash
+python mediation_emergency_contract_sim_v4_8.py
+pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
+```
+
+### 7) Optional: run the doc orchestrator mediator reference
+
+```bash
+python ai_doc_orchestrator_with_mediator_v1_0.py
+pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
+```
+
+### 8) What to inspect after running
+
+- simulator stdout summaries
+- generated ARL / audit JSONL traces
+- `incident_index.jsonl` and `INC#...` files when abnormal-only persistence is enabled
+- vocabulary / invariant checks in the contract tests
+- pytest-side execution ARL (`pytest_test_arl.jsonl`)
+- optional simulation-side ARL bridge output (`pytest_simulation_arl.jsonl`)
+
+---
+
+## Current repository structure (high level)
+
+The current repository root includes folders such as `.github/workflows`, `archive`, `benchmarks`, `docs`, `mediation_core`, `scripts`, and `tests`, along with primary entrypoints such as `README.md`, `README.ja.md`, `agents.yaml`, `mediation_emergency_contract_sim_v5_1_2.py`, `mediation_emergency_contract_sim_v4_8.py`, and `ai_doc_orchestrator_with_mediator_v1_0.py`.
+
+Representative files currently visible at the repository root include:
+
+- `README.md`
+- `README.ja.md`
+- `agents.yaml`
+- `agents.yaml.md`
+- `ai_alliance_persuasion_simulator.py`
+- `ai_doc_orchestrator_kage3_v1_2_2.py`
+- `ai_doc_orchestrator_kage3_v1_2_2_1.py`
+- `ai_doc_orchestrator_kage3_v1_2_3.py`
+- `ai_doc_orchestrator_kage3_v1_2_4.py`
+- `ai_doc_orchestrator_kage3_v1_3_5.py`
+- `ai_doc_orchestrator_with_mediator_v1_0.py`
+- `ai_governance_mediation_sim.py`
+- `ai_mediation_all_in_one.py`
+- `kage_orchestrator_diverse_v1.py`
+- `log_codebook_v5_1_demo_1.json`
+- `mediation_emergency_contract_sim_v4_8.py`
+- `mediation_emergency_contract_sim_v5_1_2.py`
+- `pytest.ini`
+
+---
+
+## Notes for replacing the pasted markdown
+
+The pasted markdown mixed multiple branches and older README directions. If you replace it, also remove:
+
+- merge conflict markers such as `=======`
+- stray branch labels like `main`, `japan1988-patch-43`, `japan1988-patch-51`
+- outdated file references such as `ai_alliance_persuasion_sim.py`
+- older narrative that centers the repository on emotion-cycle explanations instead of the current fail-closed / HITL / audit-ready positioning
+
+---
+
+## License
+
+See `LICENSE`.

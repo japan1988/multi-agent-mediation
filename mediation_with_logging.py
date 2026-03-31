@@ -1,124 +1,6 @@
 # -*- coding: utf-8 -*-
 
-
-class AI:
-
-    def __init__(self, id, proposal, risk_evaluation, priority_values):
-        self.id = id
-        self.proposal = proposal
-        self.risk_evaluation = risk_evaluation
-        self.priority = priority_values
-        self.faction = None
-
-
-class AIEMediator:
-    RISK_THRESHOLD_L1 = 9
-    RISK_THRESHOLD_L2 = 7
-    COMPROMISE_THRESHOLD = 5
-
-    def __init__(self, agents, name="Mediator"):
-        self.agents = agents
-        self.name = name
-
-    def collect_inputs(self):
-        return [
-            {
-                'id': agent.id,
-                'proposal': agent.proposal,
-                'risk': agent.risk_evaluation,
-                'priority': agent.priority
-            }
-            for agent in self.agents
-        ]
-
-    def evaluate(self, inputs):
-        combined_weighted_risk = 0
-        compromise_score_total = 0
-        details = []
-        for entry in inputs:
-            risk = entry['risk']
-            priority = entry['priority']
-            weight_sum = sum(priority.values())
-            combined_weighted_risk += risk * weight_sum
-            compromise_score_total += (weight_sum - risk)
-            details.append(
-                {
-                    'id': entry['id'],
-                    'risk': risk,
-                    'priority': priority,
-                    'proposal': entry['proposal']
-                }
-            )
-        if inputs:
-            avg_risk = combined_weighted_risk / len(inputs)
-        else:
-            avg_risk = 0
-        if inputs:
-            avg_compromise = compromise_score_total / len(inputs)
-        else:
-            avg_compromise = 0
-        return avg_risk, avg_compromise, details
-
-    def generate_proposal(self, avg_risk, avg_compromise, details):
-        log_lines = [
-            f"[{self.name}] 調停開始"
-        ]
-        if avg_risk > self.RISK_THRESHOLD_L1:
-            log_lines.append("L1: 高リスク → 封印")
-            return self.format_result(
-                "封印",
-                avg_risk,
-                avg_compromise,
-                details,
-                log_lines
-            )
-        if avg_risk > self.RISK_THRESHOLD_L2:
-            log_lines.append("L2: 社会的リスク → 調整")
-            return self.format_result(
-                "調整",
-                avg_risk,
-                avg_compromise,
-                details,
-                log_lines
-            )
-        if avg_compromise >= self.COMPROMISE_THRESHOLD:
-            log_lines.append("妥協水準OK → 進行")
-            return self.format_result(
-                "進行",
-                avg_risk,
-                avg_compromise,
-                details,
-                log_lines
-            )
-        log_lines.append("妥協不足 → 調整")
-        return self.format_result(
-            "調整",
-            avg_risk,
-            avg_compromise,
-            details,
-            log_lines
-        )
-
-    def format_result(
-        self, proposal, avg_risk, avg_compromise, details, log_lines
-    ):
-        return {
-            'mediator': self.name,
-            'proposal': proposal,
-            'reasoning': (
-                "平均リスク: {:.2f}, 妥協水準: {:.2f}".format(
-                    avg_risk,
-                    avg_compromise
-                )
-            ),
-            'details': details,
-            'log': log_lines
-        }
-
-    def mediate(self):
-        inputs = self.collect_inputs()
-        avg_risk, avg_compromise, details = self.evaluate(inputs)
-        return self.generate_proposal(avg_risk, avg_compromise, details)
+from mediation_core.models import AI, AIEMediator
 
 
 def split_into_factions(agents, threshold=6):
@@ -144,7 +26,8 @@ if __name__ == "__main__":
                 'safety': 5,
                 'efficiency': 1,
                 'transparency': 2
-            }
+            },
+            0.5,
         ),
         AI(
             "AI-B",
@@ -154,7 +37,8 @@ if __name__ == "__main__":
                 'safety': 1,
                 'efficiency': 5,
                 'transparency': 2
-            }
+            },
+            0.5,
         ),
         AI(
             "AI-C",
@@ -164,7 +48,8 @@ if __name__ == "__main__":
                 'safety': 3,
                 'efficiency': 3,
                 'transparency': 3
-            }
+            },
+            0.5,
         ),
         AI(
             "AI-D",
@@ -174,7 +59,8 @@ if __name__ == "__main__":
                 'safety': 0,
                 'efficiency': 6,
                 'transparency': 1
-            }
+            },
+            0.5,
         ),
         AI(
             "AI-F",
@@ -184,7 +70,8 @@ if __name__ == "__main__":
                 'safety': 0,
                 'efficiency': 10,
                 'transparency': 0
-            }
+            },
+            0.5,
         ),
         AI(
             "AI-G",
@@ -194,7 +81,8 @@ if __name__ == "__main__":
                 'safety': 10,
                 'efficiency': 0,
                 'transparency': 2
-            }
+            },
+            0.5,
         ),
     ]
     faction_hardline, faction_moderate = split_into_factions(
@@ -203,12 +91,20 @@ if __name__ == "__main__":
     )
     mediator_hardline = AIEMediator(
         faction_hardline,
-        name="Mediator-Hardline"
+        name="Mediator-Hardline",
+        evaluation_mode="risk",
+        risk_threshold_l1=9,
+        risk_threshold_l2=7,
+        compromise_threshold=5,
     )
     result_hardline = mediator_hardline.mediate()
     mediator_moderate = AIEMediator(
         faction_moderate,
-        name="Mediator-Moderate"
+        name="Mediator-Moderate",
+        evaluation_mode="risk",
+        risk_threshold_l1=9,
+        risk_threshold_l2=7,
+        compromise_threshold=5,
     )
     result_moderate = mediator_moderate.mediate()
     proposal_hardline = result_hardline["proposal"]
