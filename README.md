@@ -1,5 +1,12 @@
+ japan1988-patch-24
+
+# 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
+
+[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
+=======
 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 ![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)
+ main
 ![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
 ![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
 ![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)
