@@ -1,3 +1,46 @@
+ japan1988-patch-3
+# name: Python Application CI
+# on:
+#   push:
+#     branches: [ "main" ]
+#   pull_request:
+#     branches: [ "main" ]
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+#       - name: Set up Python
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: "3.10"
+#       - name: Install dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+#       - name: Lint with flake8
+#         run: |
+#           pip install flake8
+#           flake8 .
+#       - name: Type check with mypy
+#         run: |
+#           pip install mypy
+#           mypy .
+#       - name: Run tests with coverage
+#         run: |
+#           pip install pytest coverage
+#           coverage run -m pytest
+#           coverage report
+#       - name: Upload coverage to Coveralls
+#         run: |
+#           pip install coveralls
+#           coveralls
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+=======
+---
 name: Python App CI
 
 on:
@@ -30,11 +73,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11"]
-
-    defaults:
-      run:
-        shell: bash
 
     steps:
       - name: Checkout
@@ -50,11 +88,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
 
-      - name: Lint workflow YAML
         run: |
           set -euo pipefail
           printf '%s\n' \
@@ -79,25 +113,5 @@ jobs:
           set -euo pipefail
           black --check .
 
-      - name: Pytest
-        run: |
-          set -euo pipefail
-          pytest -q --maxfail=1 --disable-warnings \
-            --junitxml=junit-py${{ matrix.python-version }}.xml
 
-      - name: Upload test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-artifacts-py${{ matrix.python-version }}
-          if-no-files-found: ignore
-          path: |
-            .pytest_cache
-            **/.pytest_cache
-            **/pytest*.log
-            **/junit-*.xml
-japan1988-patch-56
-          if-no-files-found: ignore
-          
-=======
-main
+ main
