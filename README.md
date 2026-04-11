@@ -1,5 +1,3 @@
- japan1988-patch-24
-
 # 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
 [![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
@@ -172,3 +170,5 @@ older narrative that centers the repository on emotion-cycle explanations instea
 ---
 License
 See `LICENSE`.
+
+
