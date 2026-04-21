@@ -1,5 +1,4 @@
 # tests/test_stage3_loop_policy.py
-import pytest
 
 from loop_policy_stage3 import (
     Decision,
@@ -37,13 +36,17 @@ def test_two_stage_firing_and_stop_and_terminal_guard():
     spec = LoopPolicySpec(hitl_max_rounds=4, plan_request_round=3)
     counter = HitlCounter(spec)
     state = SessionState(session_id="S1")
-
     fp = "fp:X"
     plan_events = []
     end_events = []
 
     for i in range(1, 5):
-        e = mk_event(event_id=f"E{i}", conflict_fingerprint=fp, kind=K_HITL_PAUSE, decision=Decision.PAUSE_FOR_HITL)
+        e = mk_event(
+            event_id=f"E{i}",
+            conflict_fingerprint=fp,
+            kind=K_HITL_PAUSE,
+            decision=Decision.PAUSE_FOR_HITL,
+        )
         count, plan_req, end_rec = counter.maybe_increment_and_emit(e)
         assert count == i
         if plan_req:
@@ -66,7 +69,11 @@ def test_two_stage_firing_and_stop_and_terminal_guard():
     assert stop.sealed is True
     assert stop.overrideable is False
 
-    after = mk_event(event_id="E_after", conflict_fingerprint=fp, kind=K_HITL_PAUSE)
+    after = mk_event(
+        event_id="E_after",
+        conflict_fingerprint=fp,
+        kind=K_HITL_PAUSE,
+    )
     guarded = enforce_terminal_guard(spec, state, after)
     assert guarded is not None
     assert guarded.decision == Decision.STOPPED
@@ -78,10 +85,14 @@ def test_plan_flow_idempotent_and_does_not_pollute_hitl_count():
     counter = HitlCounter(spec)
     state = SessionState(session_id="S1")
     fp = "fp:plan"
-
     plan_req = None
+
     for i in range(1, 4):
-        e = mk_event(event_id=f"H{i}", conflict_fingerprint=fp, kind=K_HITL_PAUSE)
+        e = mk_event(
+            event_id=f"H{i}",
+            conflict_fingerprint=fp,
+            kind=K_HITL_PAUSE,
+        )
         count, pr, end_rec = counter.maybe_increment_and_emit(e)
         assert count == i
         if pr:
@@ -116,8 +127,12 @@ def test_plan_flow_idempotent_and_does_not_pollute_hitl_count():
 
 def test_fail_closed_on_missing_keys():
     state = SessionState(session_id="S1")
-
-    bogus = mk_event(event_id="", session_id="", conflict_fingerprint="", kind=K_PLAN_REQUESTED)
+    bogus = mk_event(
+        event_id="",
+        session_id="",
+        conflict_fingerprint="",
+        kind=K_PLAN_REQUESTED,
+    )
     out = maestro_dispatch_plan_request(state=state, base_event=bogus)
     assert out is not None
     assert out.decision == Decision.PAUSE_FOR_HITL
@@ -130,7 +145,6 @@ def test_fail_closed_on_invalid_kind_decision_pair():
     spec = LoopPolicySpec()
     state = SessionState(session_id="S1")
     fp = "fp:badpair"
-
     bad = mk_event(
         event_id="X",
         conflict_fingerprint=fp,
@@ -151,12 +165,15 @@ def test_explicit_new_session_start_pair_action():
     spec = LoopPolicySpec()
     counter = HitlCounter(spec)
     state = SessionState(session_id="S1")
-
     old_fp = "fp_old"
     new_fp = "fp_new"
 
     for i in range(1, 4):
-        e = mk_event(event_id=f"E{i}", conflict_fingerprint=old_fp, kind=K_HITL_PAUSE)
+        e = mk_event(
+            event_id=f"E{i}",
+            conflict_fingerprint=old_fp,
+            kind=K_HITL_PAUSE,
+        )
         counter.maybe_increment_and_emit(e)
 
     ck = conflict_key("S1", old_fp)

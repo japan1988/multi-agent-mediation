@@ -468,3 +468,4 @@ jobs:
           fi
 
           echo "No findings detected"
+          
