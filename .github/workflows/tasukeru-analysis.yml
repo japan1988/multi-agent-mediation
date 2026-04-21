@@ -1,655 +1,89 @@
-from pathlib import Path
-import textwrap
-
-workflow = textwrap.dedent(
-    r"""
-    name: Tasukeru Analysis
-
-    on:
-      pull_request:
-        types: [opened, synchronize, reopened]
-        paths:
-          - "**/*.py"
-          - "**/*.ipynb"
-          - "pyproject.toml"
-          - "pylock.*.toml"
-          - "requirements*.txt"
-          - "pytest.ini"
-          - "tox.ini"
-          - "setup.cfg"
-          - ".bandit"
-          - "ruff.toml"
-          - ".ruff.toml"
-          - ".github/workflows/tasukeru-analysis.yml"
-      workflow_dispatch:
-
-    permissions:
-      contents: read
-      pull-requests: write
-      security-events: write
-
-    concurrency:
-      group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
-      cancel-in-progress: true
-
-    jobs:
-      quality-and-security:
-        runs-on: ubuntu-latest
-        timeout-minutes: 25
-
-        steps:
-          - name: Checkout
-            uses: actions/checkout@v6
-
-          - name: Setup Python
-            uses: actions/setup-python@v6
-            with:
-              python-version: "3.11"
-              cache: "pip"
-              cache-dependency-path: |
-                requirements*.txt
-                pyproject.toml
-                pylock.*.toml
-
-          - name: Setup reviewdog
-            uses: reviewdog/action-setup@v1
-            with:
-              reviewdog_version: latest
-
-          - name: Install project dependencies
-            shell: bash
-            run: |
-              set -euo pipefail
-              python -m pip install --upgrade pip
-
-              if [ -f requirements-dev.txt ]; then
-                pip install -r requirements-dev.txt
-              fi
-
-              if [ -f requirements.txt ]; then
-                pip install -r requirements.txt
-              fi
-
-              pip install pytest ruff "bandit[sarif,toml]" pip-audit
-
-          - name: Run Ruff (JSON)
-            shell: bash
-            run: |
-              set +e
-              ruff check . --output-format=json > ruff.json
-              status=$?
-              echo "$status" > .ruff.exitcode
-              exit 0
-
-          - name: Run Bandit (JSON)
-            shell: bash
-            run: |
-              set +e
-              bandit -r . \
-                -f json \
-                -o bandit.json \
-                -x .git,.venv,venv,__pycache__,build,dist,node_modules,.pytest_cache,.mypy_cache \
-                >/dev/null 2>&1
-              status=$?
-              echo "$status" > .bandit.exitcode
-              exit 0
-
-          - name: Run Bandit (SARIF)
-            shell: bash
-            run: |
-              set +e
-              bandit -r . \
-                -f sarif \
-                -o bandit.sarif \
-                -x .git,.venv,venv,__pycache__,build,dist,node_modules,.pytest_cache,.mypy_cache \
-                >/dev/null 2>&1
-              exit 0
-
-          - name: Run pip-audit (JSON)
-            shell: bash
-            run: |
-              set +e
-              shopt -s nullglob
-
-              reqs=(requirements*.txt)
-              pylocks=(pylock.*.toml)
-
-              if (( ${#reqs[@]} > 0 )); then
-                args=()
-                for f in "${reqs[@]}"; do
-                  args+=(-r "$f")
-                done
-                pip-audit -f json -o pip-audit.json "${args[@]}"
-                status=$?
-              elif [[ -f pyproject.toml ]]; then
-                if (( ${#pylocks[@]} > 0 )); then
-                  pip-audit --locked . -f json -o pip-audit.json
-                else
-                  pip-audit . -f json -o pip-audit.json
-                fi
-                status=$?
-              else
-                printf '{"dependencies":[]}\n' > pip-audit.json
-                status=0
-              fi
-
-              echo "$status" > .pip_audit.exitcode
-              exit 0
-
-          - name: Run pytest (JUnit XML)
-            shell: bash
-            run: |
-              set +e
-              pytest -q --junitxml=pytest-junit.xml
-              status=$?
-              echo "$status" > .pytest.exitcode
-              exit 0
-
-          - name: Convert Ruff JSON to rdjson
-            shell: bash
-            run: |
-              python - <<'PY'
-              import json
-              from pathlib import Path
-
-              src = Path("ruff.json")
-              out = Path("ruff.rdjson")
-
-              if not src.exists():
-                  out.write_text(
-                      json.dumps({"source": {"name": "ruff"}, "diagnostics": []}, ensure_ascii=False),
-                      encoding="utf-8",
-                  )
-                  raise SystemExit(0)
-
-              try:
-                  data = json.loads(src.read_text(encoding="utf-8"))
-              except Exception:
-                  data = []
-
-              diagnostics = []
-              for item in data:
-                  path = item.get("filename") or "."
-                  loc = item.get("location") or {}
-                  end = item.get("end_location") or loc
-                  code = item.get("code") or "RUFF"
-                  message = (item.get("message") or "Ruff finding").strip()
-                  url = item.get("url")
-                  fix = item.get("fix") or {}
-                  fix_message = fix.get("message") if isinstance(fix, dict) else None
-
-                  body = f"[{code}] {message}"
-                  if fix_message:
-                      body += f"\n修正案: {fix_message}"
-                  else:
-                      body += "\n修正案: ルール内容に合わせて最小差分で修正する。"
-                  if url:
-                      body += f"\n参考: {url}"
-
-                  diagnostics.append(
-                      {
-                          "message": body,
-                          "severity": "WARNING",
-                          "code": {"value": code, **({"url": url} if url else {})},
-                          "location": {
-                              "path": path,
-                              "range": {
-                                  "start": {
-                                      "line": int(loc.get("row") or 1),
-                                      "column": int(loc.get("column") or 1),
-                                  },
-                                  "end": {
-                                      "line": int(end.get("row") or loc.get("row") or 1),
-                                      "column": int(end.get("column") or loc.get("column") or 1),
-                                  },
-                              },
-                          },
-                      }
-                  )
-
-              out.write_text(
-                  json.dumps({"source": {"name": "ruff"}, "diagnostics": diagnostics}, ensure_ascii=False),
-                  encoding="utf-8",
-              )
-              PY
-
-          - name: Convert Bandit JSON to rdjson
-            shell: bash
-            run: |
-              python - <<'PY'
-              import json
-              from pathlib import Path
-
-              def suggest(test_id: str) -> str:
-                  tips = {
-                      "B101": "assert を実行時検証に使わず、明示的な条件分岐と例外送出に置き換える。",
-                      "B110": "except: pass を避け、捕捉する例外を絞り、ログまたは再送出を行う。",
-                      "B303": "MD5/SHA1 などの弱いハッシュを避け、SHA-256 以上を使う。",
-                      "B324": "用途に応じて安全なハッシュAPIへ切り替える。",
-                      "B602": "subprocess で shell=True を避け、引数リスト + shell=False にする。",
-                      "B603": "subprocess に渡す引数を固定化し、ユーザー入力を直接渡さない。",
-                      "B605": "シェル起動関数を避け、直接コマンド実行へ置き換える。",
-                      "B607": "実行ファイルの探索パス依存を避け、絶対パスまたは許可済みコマンドに限定する。",
-                      "B608": "SQL は文字列連結ではなくプレースホルダ付きクエリを使う。",
-                      "B701": "jinja2 は autoescape を有効化し、HTML出力を明示的にエスケープする。",
-                  }
-                  return tips.get(test_id, "入力検証・権限最小化・安全な標準APIへの置換を検討する。")
-
-              src = Path("bandit.json")
-              out = Path("bandit.rdjson")
-
-              if not src.exists():
-                  out.write_text(
-                      json.dumps({"source": {"name": "bandit"}, "diagnostics": []}, ensure_ascii=False),
-                      encoding="utf-8",
-                  )
-                  raise SystemExit(0)
-
-              try:
-                  data = json.loads(src.read_text(encoding="utf-8"))
-              except Exception:
-                  data = {}
-
-              level_map = {"LOW": "INFO", "MEDIUM": "WARNING", "HIGH": "ERROR"}
-              diagnostics = []
-
-              for item in data.get("results", []):
-                  path = item.get("filename") or "."
-                  line = int(item.get("line_number") or 1)
-                  severity = (item.get("issue_severity") or "LOW").upper()
-                  confidence = (item.get("issue_confidence") or "LOW").upper()
-                  test_id = item.get("test_id") or "BANDIT"
-                  issue = (item.get("issue_text") or "").strip()
-                  more_info = (item.get("more_info") or "").strip()
-
-                  message = (
-                      f"[{test_id}] {issue}\n"
-                      f"severity={severity} / confidence={confidence}\n"
-                      f"修正案: {suggest(test_id)}"
-                  )
-                  if more_info:
-                      message += f"\n参考: {more_info}"
-
-                  diagnostics.append(
-                      {
-                          "message": message,
-                          "severity": level_map.get(severity, "WARNING"),
-                          "code": {"value": test_id},
-                          "location": {
-                              "path": path,
-                              "range": {
-                                  "start": {"line": line, "column": 1},
-                              },
-                          },
-                      }
-                  )
-
-              out.write_text(
-                  json.dumps({"source": {"name": "bandit"}, "diagnostics": diagnostics}, ensure_ascii=False),
-                  encoding="utf-8",
-              )
-              PY
-
-          - name: Convert pytest JUnit XML to rdjson
-            shell: bash
-            run: |
-              python - <<'PY'
-              import json
-              import re
-              import xml.etree.ElementTree as ET
-              from pathlib import Path
-
-              src = Path("pytest-junit.xml")
-              out = Path("pytest.rdjson")
-
-              if not src.exists():
-                  out.write_text(
-                      json.dumps({"source": {"name": "pytest"}, "diagnostics": []}, ensure_ascii=False),
-                      encoding="utf-8",
-                  )
-                  raise SystemExit(0)
-
-              def guess_path(classname: str) -> str:
-                  if not classname:
-                      return "."
-                  name = classname.split("[", 1)[0]
-                  if "/" in name and name.endswith(".py"):
-                      return name
-                  path = name.replace(".", "/")
-                  if not path.endswith(".py"):
-                      path += ".py"
-                  return path
-
-              def trim(text: str, limit: int = 1200) -> str:
-                  text = (text or "").strip()
-                  if len(text) <= limit:
-                      return text
-                  return text[:limit] + "\n...<truncated>..."
-
-              try:
-                  root = ET.parse(src).getroot()
-              except Exception:
-                  out.write_text(
-                      json.dumps({"source": {"name": "pytest"}, "diagnostics": []}, ensure_ascii=False),
-                      encoding="utf-8",
-                  )
-                  raise SystemExit(0)
-
-              diagnostics = []
-
-              for case in root.findall(".//testcase"):
-                  failure = case.find("failure")
-                  error = case.find("error")
-                  node = failure if failure is not None else error
-                  if node is None:
-                      continue
-
-                  classname = case.attrib.get("classname", "")
-                  name = case.attrib.get("name", "unknown_test")
-                  path = case.attrib.get("file") or guess_path(classname)
-
-                  raw_line = case.attrib.get("line")
-                  line = 1
-                  if raw_line and raw_line.isdigit():
-                      line = int(raw_line)
-                  else:
-                      text = (node.text or "")
-                      m = re.search(r'File "([^"]+)", line (\d+)', text)
-                      if m:
-                          maybe_path = m.group(1)
-                          maybe_line = m.group(2)
-                          if maybe_path:
-                              path = maybe_path
-                          if maybe_line.isdigit():
-                              line = int(maybe_line)
-
-                  msg = (node.attrib.get("message") or node.tag or "pytest failure").strip()
-                  details = trim(node.text or "")
-                  body = f"[pytest] {classname}::{name}\n{msg}\n修正案: 失敗した前提条件・期待値・実装差分を確認し、最小差分で修正する。"
-                  if details:
-                      body += f"\n\n{details}"
-
-                  diagnostics.append(
-                      {
-                          "message": body,
-                          "severity": "ERROR",
-                          "code": {"value": "PYTEST"},
-                          "location": {
-                              "path": path,
-                              "range": {
-                                  "start": {"line": max(1, line), "column": 1},
-                              },
-                          },
-                      }
-                  )
-
-              out.write_text(
-                  json.dumps({"source": {"name": "pytest"}, "diagnostics": diagnostics}, ensure_ascii=False),
-                  encoding="utf-8",
-              )
-              PY
-
-          - name: Leave Ruff PR review comments
-            if: github.event_name == 'pull_request'
-            env:
-              REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            shell: bash
-            run: |
-              reviewdog \
-                -f=rdjson \
-                -name="ruff" \
-                -reporter=github-pr-review \
-                -filter-mode=diff_context \
-                -level=warning \
-                < ruff.rdjson \
-                || true
-
-          - name: Leave Bandit PR review comments
-            if: github.event_name == 'pull_request'
-            env:
-              REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            shell: bash
-            run: |
-              reviewdog \
-                -f=rdjson \
-                -name="bandit" \
-                -reporter=github-pr-review \
-                -filter-mode=diff_context \
-                < bandit.rdjson \
-                || true
-
-          - name: Leave pytest PR review comments
-            if: github.event_name == 'pull_request'
-            env:
-              REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            shell: bash
-            run: |
-              reviewdog \
-                -f=rdjson \
-                -name="pytest" \
-                -reporter=github-pr-review \
-                -filter-mode=diff_context \
-                -level=error \
-                < pytest.rdjson \
-                || true
-
-          - name: Upload Bandit SARIF
-            uses: github/codeql-action/upload-sarif@v4
-            continue-on-error: true
-            with:
-              sarif_file: bandit.sarif
-              category: bandit
-
-          - name: Build summary and export counts
-            if: always()
-            shell: bash
-            run: |
-              python - <<'PY'
-              import json
-              import os
-              import xml.etree.ElementTree as ET
-              from pathlib import Path
-
-              def read_json(path, default):
-                  p = Path(path)
-                  if not p.exists():
-                      return default
-                  try:
-                      return json.loads(p.read_text(encoding="utf-8"))
-                  except Exception:
-                      return default
-
-              def read_exitcode(path):
-                  p = Path(path)
-                  if not p.exists():
-                      return 0
-                  try:
-                      return int(p.read_text(encoding="utf-8").strip())
-                  except Exception:
-                      return 99
-
-              def parse_pip_audit(data):
-                  deps = []
-                  if isinstance(data, dict):
-                      deps = data.get("dependencies") or data.get("items") or []
-                  elif isinstance(data, list):
-                      deps = data
-
-                  rows = []
-                  for dep in deps:
-                      name = dep.get("name", "?")
-                      version = dep.get("version", "?")
-                      vulns = dep.get("vulns") or dep.get("vulnerabilities") or []
-                      for vuln in vulns:
-                          rows.append(
-                              {
-                                  "name": name,
-                                  "version": version,
-                                  "id": vuln.get("id", "?"),
-                                  "fix_versions": vuln.get("fix_versions", []),
-                              }
-                          )
-                  return rows
-
-              def parse_pytest(path):
-                  result = {
-                      "tests": 0,
-                      "failures": 0,
-                      "errors": 0,
-                      "skipped": 0,
-                      "failed_cases": [],
-                  }
-                  p = Path(path)
-                  if not p.exists():
-                      return result
-
-                  try:
-                      root = ET.parse(p).getroot()
-                  except Exception:
-                      return result
-
-                  suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
-                  for suite in suites:
-                      attrs = suite.attrib
-                      result["tests"] += int(attrs.get("tests", 0) or 0)
-                      result["failures"] += int(attrs.get("failures", 0) or 0)
-                      result["errors"] += int(attrs.get("errors", 0) or 0)
-                      result["skipped"] += int(attrs.get("skipped", 0) or 0)
-
-                  for case in root.findall(".//testcase"):
-                      failure = case.find("failure")
-                      error = case.find("error")
-                      node = failure if failure is not None else error
-                      if node is None:
-                          continue
-                      result["failed_cases"].append(
-                          {
-                              "name": case.attrib.get("name", "unknown_test"),
-                              "classname": case.attrib.get("classname", ""),
-                              "message": (node.attrib.get("message") or node.tag or "").strip(),
-                          }
-                      )
-                  return result
-
-              ruff = read_json("ruff.json", [])
-              bandit = read_json("bandit.json", {})
-              pip_audit = read_json("pip-audit.json", {"dependencies": []})
-              pytest_summary = parse_pytest("pytest-junit.xml")
-
-              ruff_count = len(ruff) if isinstance(ruff, list) else 0
-              bandit_count = len(bandit.get("results", [])) if isinstance(bandit, dict) else 0
-              pip_vulns = parse_pip_audit(pip_audit)
-              pip_count = len(pip_vulns)
-
-              ruff_exit = read_exitcode(".ruff.exitcode")
-              bandit_exit = read_exitcode(".bandit.exitcode")
-              pip_exit = read_exitcode(".pip_audit.exitcode")
-              pytest_exit = read_exitcode(".pytest.exitcode")
-
-              summary_path = os.environ["GITHUB_STEP_SUMMARY"]
-              with open(summary_path, "a", encoding="utf-8") as f:
-                  f.write("## Tasukeru analysis summary\n\n")
-                  f.write(f"- Ruff findings: {ruff_count}\n")
-                  f.write(f"- Bandit findings: {bandit_count}\n")
-                  f.write(f"- pip-audit vulnerabilities: {pip_count}\n")
-                  f.write(f"- pytest tests: {pytest_summary['tests']}\n")
-                  f.write(f"- pytest failures: {pytest_summary['failures']}\n")
-                  f.write(f"- pytest errors: {pytest_summary['errors']}\n")
-                  f.write(f"- pytest skipped: {pytest_summary['skipped']}\n\n")
-
-                  if pip_vulns:
-                      f.write("### pip-audit findings\n\n")
-                      for row in pip_vulns[:20]:
-                          fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "なし"
-                          f.write(
-                              f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
-                          )
-                      if len(pip_vulns) > 20:
-                          f.write(f"- ... and {len(pip_vulns) - 20} more\n")
-                      f.write("\n")
-
-                  if pytest_summary["failed_cases"]:
-                      f.write("### pytest failed cases\n\n")
-                      for row in pytest_summary["failed_cases"][:20]:
-                          prefix = f"{row['classname']}::" if row["classname"] else ""
-                          f.write(f"- `{prefix}{row['name']}`: {row['message']}\n")
-                      if len(pytest_summary["failed_cases"]) > 20:
-                          f.write(f"- ... and {len(pytest_summary['failed_cases']) - 20} more\n")
-                      f.write("\n")
-
-                  if ruff_exit > 1:
-                      f.write("### Ruff execution error\n\n")
-                      f.write(f"- exit code: {ruff_exit}\n\n")
-
-                  if bandit_exit > 1:
-                      f.write("### Bandit execution error\n\n")
-                      f.write(f"- exit code: {bandit_exit}\n\n")
-
-                  if pip_exit > 1 and pip_count == 0:
-                      f.write("### pip-audit execution error\n\n")
-                      f.write(f"- exit code: {pip_exit}\n\n")
-
-                  if pytest_exit not in (0, 1):
-                      f.write("### pytest execution error\n\n")
-                      f.write(f"- exit code: {pytest_exit}\n\n")
-
-              env_path = os.environ["GITHUB_ENV"]
-              with open(env_path, "a", encoding="utf-8") as f:
-                  f.write(f"RUFF_COUNT={ruff_count}\n")
-                  f.write(f"BANDIT_COUNT={bandit_count}\n")
-                  f.write(f"PIP_AUDIT_COUNT={pip_count}\n")
-                  f.write(f"PYTEST_TESTS={pytest_summary['tests']}\n")
-                  f.write(f"PYTEST_FAILURES={pytest_summary['failures']}\n")
-                  f.write(f"PYTEST_ERRORS={pytest_summary['errors']}\n")
-                  f.write(f"PYTEST_SKIPPED={pytest_summary['skipped']}\n")
-                  f.write(f"RUFF_EXIT={ruff_exit}\n")
-                  f.write(f"BANDIT_EXIT={bandit_exit}\n")
-                  f.write(f"PIP_AUDIT_EXIT={pip_exit}\n")
-                  f.write(f"PYTEST_EXIT={pytest_exit}\n")
-              PY
-
-          - name: Fail on findings or tool errors
-            if: always()
-            shell: bash
-            run: |
-              set -euo pipefail
-
-              if [ "${RUFF_EXIT:-0}" -gt 1 ]; then
-                echo "Ruff execution error"
-                exit 1
-              fi
-
-              if [ "${BANDIT_EXIT:-0}" -gt 1 ]; then
-                echo "Bandit execution error"
-                exit 1
-              fi
-
-              if [ "${PIP_AUDIT_EXIT:-0}" -gt 1 ] && [ "${PIP_AUDIT_COUNT:-0}" -eq 0 ]; then
-                echo "pip-audit execution error"
-                exit 1
-              fi
-
-              if [ "${PYTEST_EXIT:-0}" != "0" ] && [ "${PYTEST_EXIT:-0}" != "1" ]; then
-                echo "pytest execution error"
-                exit 1
-              fi
-
-              if [ "${RUFF_COUNT:-0}" -gt 0 ] || [ "${BANDIT_COUNT:-0}" -gt 0 ] || [ "${PIP_AUDIT_COUNT:-0}" -gt 0 ]; then
-                echo "Static analysis findings detected"
-                exit 1
-              fi
-
-              if [ "${PYTEST_FAILURES:-0}" -gt 0 ] || [ "${PYTEST_ERRORS:-0}" -gt 0 ] || [ "${PYTEST_EXIT:-0}" = "1" ]; then
-                echo "pytest failures detected"
-                exit 1
-              fi
-
-              echo "No findings detected"
-    """
-).lstrip()
-
-out = Path(".github/workflows/tasukeru-analysis.yml")
-out.parent.mkdir(parents=True, exist_ok=True)
-out.write_text(workflow, encoding="utf-8")
-
-print(f"Wrote: {out}")
+name: Python App CI
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+  pull_request:
+    branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
+            pylock.*.toml
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          fi
+
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install pytest yamllint
+
+      - name: Yamllint workflows
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'extends: default' \
+            'rules:' \
+            '  brackets: disable' \
+            '  truthy: disable' \
+            '  document-start: disable' \
+            '  line-length:' \
+            '    max: 140' \
+            '    level: warning' \
+            > .yamllint-ci.yml
+          yamllint -c .yamllint-ci.yml .github/workflows/*.yml
+
+      - name: Run pytest
+        run: |
+          set -euo pipefail
+          pytest -q
