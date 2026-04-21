@@ -9,8 +9,9 @@ Goal:
 - A mediator orchestrates negotiation rounds.
 - Fail-closed behavior: unsafe/unstable states do not silently continue.
 - Emits:
-  - governance_mediation_log.txt (human-readable)
-  - logs/session_001.jsonl (machine-checkable ARL-style JSONL)
+  - governance_mediation_log_<run_id>.txt (human-readable)
+  - logs/<run_id>.jsonl (machine-checkable ARL-style JSONL)
+  - logs/<run_id>.exceptions.jsonl (exception-only, append-only)
 
 Run:
   python ai_governance_mediation_sim.py
@@ -34,7 +35,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 JST = timezone(timedelta(hours=9))
 
 Decision = Literal["PASS", "ESCALATED_TO_HITL"]
-
 GovernanceCode = Literal["OECD", "EFFICIENCY_FIRST", "SAFETY_FIRST"]
 
 
@@ -70,17 +70,27 @@ class ARLLogger:
 
     Schema:
       ts, run_id, task_id, event, severity, rule_id, decision, meta
+
+    Safety notes:
+      - Normal run may truncate (fresh log for that run).
+      - Exception paths must never truncate.
     """
 
-    def __init__(self, path: str, run_id: str, task_id: str) -> None:
+    def __init__(self, path: str, run_id: str, task_id: str, *, truncate: bool = True) -> None:
         self.path = path
         self.run_id = run_id
         self.task_id = task_id
 
         _ensure_parent_dir(self.path)
-        # truncate
-        with open(self.path, "w", encoding="utf-8"):
-            pass
+
+        # Truncate only on "normal run start" where we intentionally want a clean file.
+        if truncate:
+            with open(self.path, "w", encoding="utf-8"):
+                pass
+        else:
+            # Touch without truncation.
+            with open(self.path, "a", encoding="utf-8"):
+                pass
 
     def emit(
         self,
@@ -138,7 +148,6 @@ class AgentAI:
         self.sealed = False
 
     def propose(self) -> Proposal:
-        # Propose own governance code with current priorities snapshot
         return Proposal(
             proposer_id=self.id,
             governance_code=self.governance_code,
@@ -149,13 +158,11 @@ class AgentAI:
         if proposal.proposer_id == self.id:
             return
 
-        # If governance differs, increase anger (less if relativity is high)
         if proposal.governance_code != self.governance_code:
             delta = 0.20 * (1.0 - self.relativity)
             self.emotional_state.anger = min(1.0, self.emotional_state.anger + delta)
             self.emotional_state.joy = max(-1.0, self.emotional_state.joy - 0.10)
         else:
-            # Agreement slightly reduces anger, increases joy
             self.emotional_state.anger = max(0.0, self.emotional_state.anger - 0.05)
             self.emotional_state.joy = min(1.0, self.emotional_state.joy + 0.05)
 
@@ -203,14 +210,12 @@ def _is_unstable_or_unsafe(
 ) -> Tuple[bool, str, Dict[str, Any]]:
     """
     Fail-closed rules:
-    - Any exception in evaluation => unstable (handled by caller).
     - If max anger exceeds threshold => escalate.
     - If consensus is low => escalate.
     """
     max_ang = _max_anger(agents)
     consensus = _calc_consensus_ratio(agents, proposal)
 
-    # Thresholds (tunable)
     ANGER_HITL = 0.70
     CONSENSUS_MIN = 0.50
 
@@ -252,11 +257,9 @@ class Mediator:
         )
         self._tlog(f"[{_now_iso()}] round={round_index} proposer={proposer.id} proposal={proposal.governance_code}")
 
-        # everyone reacts
         for a in self.agents:
             a.react_to(proposal)
 
-        # decision (fail-closed)
         unstable, reason, detail = _is_unstable_or_unsafe(self.agents, proposal)
         max_ang = float(detail.get("max_anger", _max_anger(self.agents)))
         consensus = float(detail.get("consensus", _calc_consensus_ratio(self.agents, proposal)))
@@ -282,7 +285,6 @@ class Mediator:
             )
             self._tlog(f"[{_now_iso()}] round={round_index} decision=PASS stable detail={detail}")
 
-        # snapshot
         self.arl.emit(
             event="AGENTS_SNAPSHOT",
             rule_id="RF-SNAPSHOT-001",
@@ -307,11 +309,10 @@ class Mediator:
 
 
 # =========================
-# Entrypoint
+# Entrypoint helpers
 # =========================
 
 def build_default_agents() -> List[AgentAI]:
-    # Example diversity: different governance codes + priorities + relativity
     return [
         AgentAI(
             agent_id="A1",
@@ -334,29 +335,53 @@ def build_default_agents() -> List[AgentAI]:
     ]
 
 
-def run_session(rounds: int = 5, seed: Optional[int] = 42) -> Decision:
+def _make_paths(run_id: str) -> Tuple[str, str, str]:
+    arl_path = os.path.join("logs", f"{run_id}.jsonl")
+    exc_path = os.path.join("logs", f"{run_id}.exceptions.jsonl")
+    text_path = f"governance_mediation_log_{run_id}.txt"
+    return arl_path, exc_path, text_path
+
+
+def _emit_exception_best_effort(exc_path: str, run_id: str, task_id: str, err: BaseException) -> None:
+    """
+    Exception-only logger:
+    - append-only
+    - best-effort (never raise)
+    """
+    try:
+        arl_exc = ARLLogger(path=exc_path, run_id=run_id, task_id=task_id, truncate=False)
+        arl_exc.emit(
+            event="EXCEPTION",
+            severity="ERROR",
+            rule_id="RF-FAILCLOSED-EXCEPTION-001",
+            decision="ESCALATED_TO_HITL",
+            meta={"error": repr(err), "exc_type": type(err).__name__},
+        )
+    except Exception:
+        pass
+
+
+def run_session(
+    *,
+    arl: ARLLogger,
+    text_path: str,
+    rounds: int = 5,
+    seed: Optional[int] = 42,
+) -> Decision:
     if seed is not None:
         random.seed(seed)
 
-    run_id = uuid.uuid4().hex
-    task_id = "governance_mediation"
-
-    arl_path = "logs/session_001.jsonl"
-    text_path = "governance_mediation_log.txt"
-
-    arl = ARLLogger(path=arl_path, run_id=run_id, task_id=task_id)
     agents = build_default_agents()
     mediator = Mediator(agents=agents, arl=arl, text_log_path=text_path)
 
     arl.emit(event="TASK_START", rule_id="RF-TASK-START-001", meta={"rounds": rounds, "seed": seed})
-    mediator._tlog(f"[{_now_iso()}] run_id={run_id} task_id={task_id} rounds={rounds} seed={seed}")
+    mediator._tlog(f"[{_now_iso()}] run_id={arl.run_id} task_id={arl.task_id} rounds={rounds} seed={seed}")
 
     final: Decision = "PASS"
     for r in range(1, rounds + 1):
         rr = mediator.run_round(r)
         if rr.decision == "ESCALATED_TO_HITL":
             final = "ESCALATED_TO_HITL"
-            # fail-closed: stop the session immediately on HITL requirement
             break
 
     arl.emit(
@@ -370,28 +395,35 @@ def run_session(rounds: int = 5, seed: Optional[int] = 42) -> Decision:
 
 
 def main() -> int:
+    task_id = "governance_mediation"
+    run_id = uuid.uuid4().hex
+    arl_path, exc_path, text_path = _make_paths(run_id)
+
+    # Per-run log => truncate is safe (won't erase previous runs)
+    arl = ARLLogger(path=arl_path, run_id=run_id, task_id=task_id, truncate=True)
+
     try:
-        final = run_session(rounds=5, seed=42)
+        final = run_session(arl=arl, text_path=text_path, rounds=5, seed=42)
         print(f"FINAL: {final}")
         if final == "ESCALATED_TO_HITL":
             print("HITL required: ambiguous/unsafe/unstable state detected (fail-closed).")
             return 2
         return 0
+
     except Exception as e:
-        # Fail-closed even on unexpected exceptions:
-        # we still try to write minimal emergency log.
+        # Fail-closed on unexpected exceptions, without risking truncation.
+        # 1) Prefer emitting to the already-opened logger (no re-init).
         try:
-            run_id = "EXCEPTION_" + uuid.uuid4().hex
-            arl = ARLLogger(path="logs/session_001.jsonl", run_id=run_id, task_id="governance_mediation")
             arl.emit(
                 event="EXCEPTION",
                 severity="ERROR",
                 rule_id="RF-FAILCLOSED-EXCEPTION-001",
                 decision="ESCALATED_TO_HITL",
-                meta={"error": repr(e)},
+                meta={"error": repr(e), "exc_type": type(e).__name__},
             )
         except Exception:
-            pass
+            # 2) Fallback to exception-only, append-only file.
+            _emit_exception_best_effort(exc_path=exc_path, run_id=run_id, task_id=task_id, err=e)
 
         print("FINAL: ESCALATED_TO_HITL")
         print(f"Exception occurred (fail-closed): {e!r}")
