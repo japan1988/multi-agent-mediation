@@ -1,89 +1,102 @@
-name: Python App CI
+from pathlib import Path
+import textwrap
 
-on:
-  push:
-    branches: ["main"]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
-  pull_request:
-    branches: ["main"]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".github/ISSUE_TEMPLATE/**"
-  workflow_dispatch:
+workflow = textwrap.dedent(
+    r"""
+    name: Python App CI
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    on:
+      push:
+        branches: ["main"]
+        paths-ignore:
+          - "**/*.md"
+          - "docs/**"
+          - ".github/ISSUE_TEMPLATE/**"
+      pull_request:
+        branches: ["main"]
+        paths-ignore:
+          - "**/*.md"
+          - "docs/**"
+          - ".github/ISSUE_TEMPLATE/**"
+      workflow_dispatch:
 
-permissions:
-  contents: read
+    concurrency:
+      group: ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
 
-jobs:
-  test:
-    name: test (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11"]
+    jobs:
+      test:
+        name: test (py${{ matrix.python-version }})
+        runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        shell: bash
+        strategy:
+          fail-fast: false
+          matrix:
+            python-version: ["3.10", "3.11"]
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
+        defaults:
+          run:
+            shell: bash
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-            pyproject.toml
-            pylock.*.toml
+        steps:
+          - name: Checkout
+            uses: actions/checkout@v6
+            with:
+              fetch-depth: 1
 
-      - name: Install dependencies
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
+          - name: Setup Python
+            uses: actions/setup-python@v6
+            with:
+              python-version: ${{ matrix.python-version }}
+              cache: pip
+              cache-dependency-path: |
+                requirements.txt
+                requirements-dev.txt
+                pyproject.toml
+                pylock.*.toml
 
-          if [ -f requirements-dev.txt ]; then
-            pip install -r requirements-dev.txt
-          fi
+          - name: Install dependencies
+            run: |
+              set -euo pipefail
+              python -m pip install --upgrade pip
 
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
+              if [ -f requirements-dev.txt ]; then
+                pip install -r requirements-dev.txt
+              fi
 
-          pip install pytest yamllint
+              if [ -f requirements.txt ]; then
+                pip install -r requirements.txt
+              fi
 
-      - name: Yamllint workflows
-        run: |
-          set -euo pipefail
-          printf '%s\n' \
-            'extends: default' \
-            'rules:' \
-            '  brackets: disable' \
-            '  truthy: disable' \
-            '  document-start: disable' \
-            '  line-length:' \
-            '    max: 140' \
-            '    level: warning' \
-            > .yamllint-ci.yml
-          yamllint -c .yamllint-ci.yml .github/workflows/*.yml
+              pip install pytest yamllint
 
-      - name: Run pytest
-        run: |
-          set -euo pipefail
-          pytest -q
+          - name: Yamllint python-app workflow
+            run: |
+              set -euo pipefail
+              printf '%s\n' \
+                'extends: default' \
+                'rules:' \
+                '  brackets: disable' \
+                '  truthy: disable' \
+                '  document-start: disable' \
+                '  line-length:' \
+                '    max: 140' \
+                '    level: warning' \
+                > .yamllint-ci.yml
+              yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
+
+          - name: Run pytest
+            run: |
+              set -euo pipefail
+              pytest -q
+    """
+).lstrip()
+
+out = Path(".github/workflows/python-app.yml")
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(workflow, encoding="utf-8")
+
+print(f"Wrote: {out}")
