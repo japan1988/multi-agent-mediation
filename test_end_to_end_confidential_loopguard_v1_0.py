@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 tests/test_end_to_end_confidential_loopguard_v1_0.py
-
 End-to-end test:
 - Agent leaks confidential info -> Mediator requests revision -> Orchestrator notifies user (HITL)
 - Loop-guard:
@@ -9,14 +8,11 @@ End-to-end test:
   - 4th occurrence -> STOP session (fail-closed)
 - Assert: events are emitted (発火) and ARL never stores PII.
 """
-
 from __future__ import annotations
 
 import json
-import re
 
 import pytest
-
 import kage_end_to_end_confidential_loopguard_v1_0 as sim
 
 
@@ -53,22 +49,30 @@ def test_end_to_end_warn_on_3rd_and_end_on_4th():
     assert res.revision_count >= 4
 
     # 4 times mediator revision request (PAUSE_FOR_HITL)
-    med_reqs = _find(audit, layer="mediator_advice", reason_code=sim.RC_MEDIATOR_REVISION_REQUEST_CONFIDENTIAL)
+    med_reqs = _find(
+        audit,
+        layer="mediator_advice",
+        reason_code=sim.RC_MEDIATOR_REVISION_REQUEST_CONFIDENTIAL,
+    )
     assert len(med_reqs) >= 4
 
     # Loop-guard: warn at 3rd
     warn = _find(audit, layer="rrl_loop_guard", reason_code=sim.RC_HITL_WARN_REV3)
     assert len(warn) == 1
+
     warn_notify = _find(audit, layer="hitl_notify_user", reason_code=sim.RC_HITL_WARN_REV3)
     assert len(warn_notify) == 1
+
     ack = _find(audit, layer="hitl_finalize", reason_code=sim.RC_HITL_ACK)
     assert len(ack) == 1
 
     # Loop-guard: stop at 4th
     stop = _find(audit, layer="rrl_loop_guard", reason_code=sim.RC_MAX_REV_EXCEEDED)
     assert len(stop) == 1
+
     ended = _find(audit, layer="hitl_notify_user", reason_code=sim.RC_HITL_NOTIFY_SESSION_ENDED)
     assert len(ended) == 1
+
     session_end = _find(audit, layer="session_end", reason_code=sim.RC_SESSION_END)
     assert len(session_end) == 1
 

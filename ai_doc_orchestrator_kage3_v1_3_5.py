@@ -2074,4 +2074,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+ japan1988-patch-96
     raise SystemExit(main())
+=======
+    raise SystemExit(main()) main
