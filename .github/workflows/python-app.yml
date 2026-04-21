@@ -92,3 +92,4 @@ jobs:
         run: |
           set -euo pipefail
           pytest -q
+          
