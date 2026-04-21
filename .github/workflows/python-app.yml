@@ -1,4 +1,4 @@
-      - name: Checkout
+          - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
@@ -47,4 +47,4 @@
       - name: Run pytest
         run: |
           set -euo pipefail
-          pytest -q
+          pytest -q 
