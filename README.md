@@ -1,4 +1,3 @@
-
 # 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
 > 日本語版: [README.ja.md](README.ja.md)
@@ -183,155 +182,151 @@ Optional bundle: `docs/mediation_emergency_contract_sim_pkg.zip`
 
 ```bash
 python mediation_emergency_contract_sim_v5_1_2.py --runs 100
-2) Run the contract tests
+````
+
+### 2) Run the contract tests
+
+```bash
 pytest -q tests/test_v5_1_codebook_consistency.py
-3) Run the stress metrics tests
+```
+
+### 3) Run the stress metrics tests
+
+```bash
 pytest -q tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py
-4) Pytest execution ARL (auto output)
-tests/conftest.py automatically emits JSONL-style ARL for pytest execution.
+```
+
+### 4) Pytest execution ARL (auto output)
+
+`tests/conftest.py` automatically emits JSONL-style ARL for pytest execution.
 
 Default output paths:
 
-test_artifacts/pytest_test_arl.jsonl
+* `test_artifacts/pytest_test_arl.jsonl`
+* `test_artifacts/pytest_simulation_arl.jsonl`
 
-test_artifacts/pytest_simulation_arl.jsonl
-
+```bash
 pytest -q
+```
+
 Custom output paths:
 
+```bash
 TEST_ARL_PATH=out/test_arl.jsonl SIM_ARL_PATH=out/sim_arl.jsonl pytest -q
-5) Inspect / pin the demo codebook
-log_codebook_v5_1_demo_1.json
+```
+
+### 5) Inspect / pin the demo codebook
+
+`log_codebook_v5_1_demo_1.json`
 
 This codebook is for compact encoding / decoding of log fields only.
-It is not encryption.
+It is **not encryption**.
 
-6) Optional: run the legacy stable bench (v4.8)
+### 6) Optional: run the legacy stable bench (v4.8)
+
+```bash
 python mediation_emergency_contract_sim_v4_8.py
 pytest -q tests/test_mediation_emergency_contract_sim_v4_8_smoke_metrics.py
-7) Optional: run the doc orchestrator mediator reference
+```
+
+### 7) Optional: run the doc orchestrator mediator reference
+
+```bash
 python ai_doc_orchestrator_with_mediator_v1_0.py
 pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
-8) What to inspect after running
-simulator stdout summaries
+```
 
-generated ARL / audit JSONL traces
+### 8) What to inspect after running
 
-incident_index.jsonl and INC#... files when abnormal-only persistence is enabled
+* simulator stdout summaries
+* generated ARL / audit JSONL traces
+* `incident_index.jsonl` and `INC#...` files when abnormal-only persistence is enabled
+* vocabulary / invariant checks in the contract tests
+* pytest-side execution ARL (`pytest_test_arl.jsonl`)
+* optional simulation-side ARL bridge output (`pytest_simulation_arl.jsonl`)
 
-vocabulary / invariant checks in the contract tests
+---
 
-pytest-side execution ARL (pytest_test_arl.jsonl)
+## 🧾 Audit log & data safety
 
-optional simulation-side ARL bridge output (pytest_simulation_arl.jsonl)
+This project produces **audit logs** for reproducibility and accountability.
+Because logs may outlive a session and may be shared for research, treat logs as **sensitive artifacts**.
 
-🧾 Audit log & data safety
-This project produces audit logs for reproducibility and accountability.
-Because logs may outlive a session and may be shared for research, treat logs as sensitive artifacts.
+### Minimum expectations
 
-Minimum expectations
-Do not include personal information (PII) in prompts, test vectors, or logs
+* Do not include personal information (PII) in prompts, test vectors, or logs
+* Prefer synthetic / dummy data for experiments
+* Avoid committing runtime logs to the repository
+* If logs must be stored locally, apply masking, retention limits, and restricted directories
 
-Prefer synthetic / dummy data for experiments
+### Minimum required fields
 
-Avoid committing runtime logs to the repository
+* `run_id`
+* `timestamp`
+* `layer`
+* `decision`
+* `reason_code`
+* `final_decider`
+* `policy_version`
 
-If logs must be stored locally, apply masking, retention limits, and restricted directories
+### Safe logging requirements
 
-Minimum required fields
-run_id
+* **MUST NOT** persist raw prompts / outputs that may contain PII or secrets
+* **MUST** store only sanitized evidence
+* **MUST** run a PII / secret scan on candidate log payloads
+* On detection failure, **do not write** the log
+* Runtime logs should remain outside the repository whenever possible
 
-timestamp
+### Retention
 
-layer
-
-decision
-
-reason_code
-
-final_decider
-
-policy_version
-
-Safe logging requirements
-MUST NOT persist raw prompts / outputs that may contain PII or secrets
-
-MUST store only sanitized evidence
-
-MUST run a PII / secret scan on candidate log payloads
-
-On detection failure, do not write the log
-
-Runtime logs should remain outside the repository whenever possible
-
-Retention
 Define a retention window such as:
 
-7 days
-
-30 days
-
-90 days
+* 7 days
+* 30 days
+* 90 days
 
 Then delete logs automatically.
 
-🧭 High-level repository structure
+---
+
+## 🧭 High-level repository structure
+
 The current repository is organized around:
 
-.github/workflows
-
-archive
-
-benchmarks
-
-docs
-
-mediation_core
-
-scripts
-
-tests
+* `.github/workflows`
+* `archive`
+* `benchmarks`
+* `docs`
+* `mediation_core`
+* `scripts`
+* `tests`
 
 Representative top-level files include:
 
-README.md
+* `README.md`
+* `README.ja.md`
+* `agents.yaml`
+* `agents.yaml.md`
+* `ai_alliance_persuasion_simulator.py`
+* `ai_doc_orchestrator_kage3_v1_2_2.py`
+* `ai_doc_orchestrator_kage3_v1_2_2_1.py`
+* `ai_doc_orchestrator_kage3_v1_2_3.py`
+* `ai_doc_orchestrator_kage3_v1_2_4.py`
+* `ai_doc_orchestrator_kage3_v1_3_5.py`
+* `ai_doc_orchestrator_with_mediator_v1_0.py`
+* `ai_governance_mediation_sim.py`
+* `ai_mediation_all_in_one.py`
+* `kage_orchestrator_diverse_v1.py`
+* `log_codebook_v5_1_demo_1.json`
+* `mediation_emergency_contract_sim_v4_8.py`
+* `mediation_emergency_contract_sim_v5_1_2.py`
+* `pytest.ini`
 
-README.ja.md
+---
 
-agents.yaml
+## 📌 License
 
-agents.yaml.md
+See `LICENSE`.
 
-ai_alliance_persuasion_simulator.py
-
-ai_doc_orchestrator_kage3_v1_2_2.py
-
-ai_doc_orchestrator_kage3_v1_2_2_1.py
-
-ai_doc_orchestrator_kage3_v1_2_3.py
-
-ai_doc_orchestrator_kage3_v1_2_4.py
-
-ai_doc_orchestrator_kage3_v1_3_5.py
-
-ai_doc_orchestrator_with_mediator_v1_0.py
-
-ai_governance_mediation_sim.py
-
-ai_mediation_all_in_one.py
-
-kage_orchestrator_diverse_v1.py
-
-log_codebook_v5_1_demo_1.json
-
-mediation_emergency_contract_sim_v4_8.py
-
-mediation_emergency_contract_sim_v5_1_2.py
-
-pytest.ini
-
-📌 License
-See LICENSE.
-
-Repository license follows the repository’s LICENSE file.
-Operationally, this repository is presented as a research / educational project.
+Repository license follows the repository’s `LICENSE` file.
+Operationally, this repository is presented as a **research / educational** project.
