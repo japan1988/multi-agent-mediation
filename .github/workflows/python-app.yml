@@ -1,4 +1,4 @@
-   - name: Checkout
+       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
@@ -43,3 +43,8 @@
             '    level: warning' \
             > .yamllint-ci.yml
           yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
+
+      - name: Run pytest
+        run: |
+          set -euo pipefail
+          pytest -q
