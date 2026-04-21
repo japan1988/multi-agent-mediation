@@ -30,9 +30,7 @@ def _require_ge(actual: int, threshold: int, message: str) -> None:
 
 def _require_in_range(value: float, low: float, high: float, message: str) -> None:
     if not (low <= value <= high):
-        _fail(
-            f"{message} (actual={value!r}, low={low!r}, high={high!r})"
-        )
+        _fail(f"{message} (actual={value!r}, low={low!r}, high={high!r})")
 
 
 def _patch_store_paths(monkeypatch, tmp_path: Path) -> None:
@@ -172,7 +170,11 @@ def test_v512_mixed_mode_deterministic_under_reset(
 
     abnormal_1 = _abnormal(result_1)
     abnormal_2 = _abnormal(result_2)
-    _require_equal(abnormal_1, abnormal_2, "abnormal persistence summary must be deterministic")
+    _require_equal(
+        abnormal_1,
+        abnormal_2,
+        "abnormal persistence summary must be deterministic",
+    )
 
     trust_1 = dict(result_1.get("trust_after", {}))
     trust_2 = dict(result_2.get("trust_after", {}))
@@ -256,7 +258,10 @@ def test_v512_abnormal_arl_persistence_and_incident_index(
         arl_path = Path(row.get("arl_path", ""))
 
         _require(bool(incident_id), "incident_id should not be empty")
-        _require(incident_id not in incident_ids, f"duplicate incident_id: {incident_id!r}")
+        _require(
+            incident_id not in incident_ids,
+            f"duplicate incident_id: {incident_id!r}",
+        )
         _require(arl_path.exists(), f"arl_path should exist: {arl_path!s}")
 
         incident_ids.add(incident_id)
