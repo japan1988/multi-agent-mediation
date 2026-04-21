@@ -1,4 +1,43 @@
-       - name: Checkout
+name: Python App CI
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+  pull_request:
+    branches: ["main"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
@@ -42,7 +81,12 @@
             '    max: 140' \
             '    level: warning' \
             > .yamllint-ci.yml
-          yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
+
+          echo "===== python-app.yml ====="
+          nl -ba .github/workflows/python-app.yml
+
+          echo "===== yamllint ====="
+          yamllint -f parsable -c .yamllint-ci.yml .github/workflows/python-app.yml
 
       - name: Run pytest
         run: |
