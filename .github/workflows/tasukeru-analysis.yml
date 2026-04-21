@@ -310,6 +310,7 @@ jobs:
           python - <<'PY'
           import json
           import os
+          from collections import Counter
           from pathlib import Path
 
           def read_json(path, default):
@@ -358,13 +359,23 @@ jobs:
           pip_audit = read_json("pip-audit.json", {"dependencies": []})
 
           ruff_count = len(ruff) if isinstance(ruff, list) else 0
-          bandit_count = len(bandit.get("results", [])) if isinstance(bandit, dict) else 0
+          bandit_results = bandit.get("results", []) if isinstance(bandit, dict) else []
+          bandit_count = len(bandit_results)
           pip_vulns = parse_pip_audit(pip_audit)
           pip_count = len(pip_vulns)
 
           ruff_exit = read_exitcode(".ruff.exitcode")
           bandit_exit = read_exitcode(".bandit.exitcode")
           pip_exit = read_exitcode(".pip_audit.exitcode")
+
+          ruff_by_file = Counter()
+          if isinstance(ruff, list):
+              for item in ruff:
+                  ruff_by_file[item.get("filename") or "?"] += 1
+
+          bandit_by_file = Counter()
+          for item in bandit_results:
+              bandit_by_file[item.get("filename") or "?"] += 1
 
           summary_path = os.environ["GITHUB_STEP_SUMMARY"]
           with open(summary_path, "a", encoding="utf-8") as f:
@@ -373,6 +384,33 @@ jobs:
               f.write(f"- Bandit findings: {bandit_count}\n")
               f.write(f"- pip-audit vulnerabilities: {pip_count}\n\n")
 
+              if ruff_count:
+                  f.write("### Ruff: top files\n\n")
+                  for filename, count in ruff_by_file.most_common(10):
+                      f.write(f"- `{filename}`: {count}\n")
+                  f.write("\n")
+                  f.write("### Ruff: first findings\n\n")
+                  for item in ruff[:10]:
+                      loc = item.get("location") or {}
+                      f.write(
+                          f"- `{item.get('filename','?')}:{loc.get('row',1)}` "
+                          f"[{item.get('code','RUFF')}] {item.get('message','')}\n"
+                      )
+                  f.write("\n")
+
+              if bandit_count:
+                  f.write("### Bandit: top files\n\n")
+                  for filename, count in bandit_by_file.most_common(10):
+                      f.write(f"- `{filename}`: {count}\n")
+                  f.write("\n")
+                  f.write("### Bandit: first findings\n\n")
+                  for item in bandit_results[:20]:
+                      f.write(
+                          f"- `{item.get('filename','?')}:{item.get('line_number',1)}` "
+                          f"[{item.get('test_id','BANDIT')}] {item.get('issue_text','')}\n"
+                      )
+                  f.write("\n")
+
               if pip_vulns:
                   f.write("### pip-audit findings\n\n")
                   for row in pip_vulns[:20]:
@@ -380,8 +418,6 @@ jobs:
                       f.write(
                           f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
                       )
-                  if len(pip_vulns) > 20:
-                      f.write(f"- ... and {len(pip_vulns) - 20} more\n")
                   f.write("\n")
 
               if ruff_exit > 1:
@@ -432,3 +468,4 @@ jobs:
           fi
 
           echo "No findings detected"
+          
