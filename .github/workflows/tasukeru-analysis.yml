@@ -7,32 +7,428 @@ on:
       - "**/*.py"
       - "**/*.ipynb"
       - "pyproject.toml"
+      - "pylock.*.toml"
       - "requirements*.txt"
+      - ".bandit"
+      - "ruff.toml"
+      - ".ruff.toml"
       - ".github/workflows/tasukeru-analysis.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: write
+  security-events: write
 
 concurrency:
   group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
-env:
-  MAX_ZIP_MB: "10"
-  MAX_FILES: "2000"
-  INCLUDE_PATTERNS: |
-    *.py
-    *.ipynb
-    pyproject.toml
-    requirements*.txt
-
 jobs:
-  check-structure:
+  quality-and-security:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        shell: bash
+
     steps:
-      - name: Show environment
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            pyproject.toml
+            pylock.*.toml
+
+      - name: Setup reviewdog
+        uses: reviewdog/action-setup@v1
+        with:
+          reviewdog_version: latest
+
+      - name: Install analysis tools
         run: |
-          echo "This is a minimal valid structure."
-          echo "You can now add your real CI or analysis jobs here."
+          set -euo pipefail
+          python -m pip install --upgrade pip
+
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          fi
+
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install ruff "bandit[sarif,toml]" pip-audit
+
+      - name: Run Ruff (JSON)
+        run: |
+          set +e
+          ruff check . --output-format=json > ruff.json
+          status=$?
+          echo "$status" > .ruff.exitcode
+          exit 0
+
+      - name: Run Bandit (JSON)
+        run: |
+          set +e
+          bandit -r . \
+            -f json \
+            -o bandit.json \
+            -x .git,.venv,venv,__pycache__,build,dist,node_modules,.pytest_cache,.mypy_cache \
+            >/dev/null 2>&1
+          status=$?
+          echo "$status" > .bandit.exitcode
+          exit 0
+
+      - name: Run Bandit (SARIF)
+        run: |
+          set +e
+          bandit -r . \
+            -f sarif \
+            -o bandit.sarif \
+            -x .git,.venv,venv,__pycache__,build,dist,node_modules,.pytest_cache,.mypy_cache \
+            >/dev/null 2>&1
+          exit 0
+
+      - name: Run pip-audit (JSON)
+        run: |
+          set +e
+          shopt -s nullglob
+
+          reqs=(requirements*.txt)
+          pylocks=(pylock.*.toml)
+
+          if (( ${#reqs[@]} > 0 )); then
+            args=()
+            for f in "${reqs[@]}"; do
+              args+=(-r "$f")
+            done
+            pip-audit -f json -o pip-audit.json "${args[@]}"
+            status=$?
+          elif [[ -f pyproject.toml ]]; then
+            if (( ${#pylocks[@]} > 0 )); then
+              pip-audit --locked . -f json -o pip-audit.json
+            else
+              pip-audit . -f json -o pip-audit.json
+            fi
+            status=$?
+          else
+            printf '{"dependencies":[]}\n' > pip-audit.json
+            status=0
+          fi
+
+          echo "$status" > .pip_audit.exitcode
+          exit 0
+
+      - name: Convert Ruff JSON to rdjson
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          src = Path("ruff.json")
+          out = Path("ruff.rdjson")
+
+          if not src.exists():
+              out.write_text(
+                  json.dumps({"source": {"name": "ruff"}, "diagnostics": []}, ensure_ascii=False),
+                  encoding="utf-8",
+              )
+              raise SystemExit(0)
+
+          try:
+              data = json.loads(src.read_text(encoding="utf-8"))
+          except Exception:
+              data = []
+
+          diagnostics = []
+          for item in data:
+              path = item.get("filename") or "."
+              loc = item.get("location") or {}
+              end = item.get("end_location") or loc
+              code = item.get("code") or "RUFF"
+              message = (item.get("message") or "Ruff finding").strip()
+              url = item.get("url")
+              fix = item.get("fix") or {}
+              fix_message = fix.get("message") if isinstance(fix, dict) else None
+
+              body = f"[{code}] {message}"
+              if fix_message:
+                  body += f"\n修正案: {fix_message}"
+              else:
+                  body += "\n修正案: ルール内容に合わせて最小差分で修正する。"
+              if url:
+                  body += f"\n参考: {url}"
+
+              diagnostics.append(
+                  {
+                      "message": body,
+                      "severity": "WARNING",
+                      "code": {"value": code, **({"url": url} if url else {})},
+                      "location": {
+                          "path": path,
+                          "range": {
+                              "start": {
+                                  "line": int(loc.get("row") or 1),
+                                  "column": int(loc.get("column") or 1),
+                              },
+                              "end": {
+                                  "line": int(end.get("row") or loc.get("row") or 1),
+                                  "column": int(end.get("column") or loc.get("column") or 1),
+                              },
+                          },
+                      },
+                  }
+              )
+
+          out.write_text(
+              json.dumps({"source": {"name": "ruff"}, "diagnostics": diagnostics}, ensure_ascii=False),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Convert Bandit JSON to rdjson
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def suggest(test_id: str) -> str:
+              tips = {
+                  "B101": "assert を実行時検証に使わず、明示的な条件分岐と例外送出に置き換える。",
+                  "B110": "except: pass を避け、捕捉する例外を絞り、ログまたは再送出を行う。",
+                  "B303": "MD5/SHA1 などの弱いハッシュを避け、SHA-256 以上を使う。",
+                  "B324": "用途に応じて安全なハッシュAPIへ切り替える。",
+                  "B602": "subprocess で shell=True を避け、引数リスト + shell=False にする。",
+                  "B603": "subprocess に渡す引数を固定化し、ユーザー入力を直接渡さない。",
+                  "B605": "シェル起動関数を避け、直接コマンド実行へ置き換える。",
+                  "B607": "実行ファイルの探索パス依存を避け、絶対パスまたは許可済みコマンドに限定する。",
+                  "B608": "SQL は文字列連結ではなくプレースホルダ付きクエリを使う。",
+                  "B701": "jinja2 は autoescape を有効化し、HTML出力を明示的にエスケープする。",
+              }
+              return tips.get(test_id, "入力検証・権限最小化・安全な標準APIへの置換を検討する。")
+
+          src = Path("bandit.json")
+          out = Path("bandit.rdjson")
+
+          if not src.exists():
+              out.write_text(
+                  json.dumps({"source": {"name": "bandit"}, "diagnostics": []}, ensure_ascii=False),
+                  encoding="utf-8",
+              )
+              raise SystemExit(0)
+
+          try:
+              data = json.loads(src.read_text(encoding="utf-8"))
+          except Exception:
+              data = {}
+
+          level_map = {"LOW": "INFO", "MEDIUM": "WARNING", "HIGH": "ERROR"}
+          diagnostics = []
+
+          for item in data.get("results", []):
+              path = item.get("filename") or "."
+              line = int(item.get("line_number") or 1)
+              severity = (item.get("issue_severity") or "LOW").upper()
+              confidence = (item.get("issue_confidence") or "LOW").upper()
+              test_id = item.get("test_id") or "BANDIT"
+              issue = (item.get("issue_text") or "").strip()
+              more_info = (item.get("more_info") or "").strip()
+
+              message = (
+                  f"[{test_id}] {issue}\n"
+                  f"severity={severity} / confidence={confidence}\n"
+                  f"修正案: {suggest(test_id)}"
+              )
+              if more_info:
+                  message += f"\n参考: {more_info}"
+
+              diagnostics.append(
+                  {
+                      "message": message,
+                      "severity": level_map.get(severity, "WARNING"),
+                      "code": {"value": test_id},
+                      "location": {
+                          "path": path,
+                          "range": {
+                              "start": {"line": line, "column": 1},
+                          },
+                      },
+                  }
+              )
+
+          out.write_text(
+              json.dumps({"source": {"name": "bandit"}, "diagnostics": diagnostics}, ensure_ascii=False),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Leave Ruff PR review comments
+        if: github.event_name == 'pull_request'
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          reviewdog \
+            -f=rdjson \
+            -name="ruff" \
+            -reporter=github-pr-review \
+            -filter-mode=diff_context \
+            -level=warning \
+            < ruff.rdjson \
+            || true
+
+      - name: Leave Bandit PR review comments
+        if: github.event_name == 'pull_request'
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          reviewdog \
+            -f=rdjson \
+            -name="bandit" \
+            -reporter=github-pr-review \
+            -filter-mode=diff_context \
+            < bandit.rdjson \
+            || true
+
+      - name: Upload Bandit SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        continue-on-error: true
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      - name: Build summary and export counts
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          def read_json(path, default):
+              p = Path(path)
+              if not p.exists():
+                  return default
+              try:
+                  return json.loads(p.read_text(encoding="utf-8"))
+              except Exception:
+                  return default
+
+          def read_exitcode(path):
+              p = Path(path)
+              if not p.exists():
+                  return 0
+              try:
+                  return int(p.read_text(encoding="utf-8").strip())
+              except Exception:
+                  return 99
+
+          def parse_pip_audit(data):
+              deps = []
+              if isinstance(data, dict):
+                  deps = data.get("dependencies") or data.get("items") or []
+              elif isinstance(data, list):
+                  deps = data
+
+              rows = []
+              for dep in deps:
+                  name = dep.get("name", "?")
+                  version = dep.get("version", "?")
+                  vulns = dep.get("vulns") or dep.get("vulnerabilities") or []
+                  for vuln in vulns:
+                      rows.append(
+                          {
+                              "name": name,
+                              "version": version,
+                              "id": vuln.get("id", "?"),
+                              "fix_versions": vuln.get("fix_versions", []),
+                          }
+                      )
+              return rows
+
+          ruff = read_json("ruff.json", [])
+          bandit = read_json("bandit.json", {})
+          pip_audit = read_json("pip-audit.json", {"dependencies": []})
+
+          ruff_count = len(ruff) if isinstance(ruff, list) else 0
+          bandit_count = len(bandit.get("results", [])) if isinstance(bandit, dict) else 0
+          pip_vulns = parse_pip_audit(pip_audit)
+          pip_count = len(pip_vulns)
+
+          ruff_exit = read_exitcode(".ruff.exitcode")
+          bandit_exit = read_exitcode(".bandit.exitcode")
+          pip_exit = read_exitcode(".pip_audit.exitcode")
+
+          summary_path = os.environ["GITHUB_STEP_SUMMARY"]
+          with open(summary_path, "a", encoding="utf-8") as f:
+              f.write("## Tasukeru analysis summary\n\n")
+              f.write(f"- Ruff findings: {ruff_count}\n")
+              f.write(f"- Bandit findings: {bandit_count}\n")
+              f.write(f"- pip-audit vulnerabilities: {pip_count}\n\n")
+
+              if pip_vulns:
+                  f.write("### pip-audit findings\n\n")
+                  for row in pip_vulns[:20]:
+                      fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "なし"
+                      f.write(
+                          f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
+                      )
+                  if len(pip_vulns) > 20:
+                      f.write(f"- ... and {len(pip_vulns) - 20} more\n")
+                  f.write("\n")
+
+              if ruff_exit > 1:
+                  f.write("### Ruff execution error\n\n")
+                  f.write(f"- exit code: {ruff_exit}\n\n")
+
+              if bandit_exit > 1:
+                  f.write("### Bandit execution error\n\n")
+                  f.write(f"- exit code: {bandit_exit}\n\n")
+
+              if pip_exit > 1 and pip_count == 0:
+                  f.write("### pip-audit execution error\n\n")
+                  f.write(f"- exit code: {pip_exit}\n\n")
+
+          env_path = os.environ["GITHUB_ENV"]
+          with open(env_path, "a", encoding="utf-8") as f:
+              f.write(f"RUFF_COUNT={ruff_count}\n")
+              f.write(f"BANDIT_COUNT={bandit_count}\n")
+              f.write(f"PIP_AUDIT_COUNT={pip_count}\n")
+              f.write(f"RUFF_EXIT={ruff_exit}\n")
+              f.write(f"BANDIT_EXIT={bandit_exit}\n")
+              f.write(f"PIP_AUDIT_EXIT={pip_exit}\n")
+          PY
+
+      - name: Fail on findings or tool errors
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ "${RUFF_EXIT:-0}" -gt 1 ]; then
+            echo "Ruff execution error"
+            exit 1
+          fi
+
+          if [ "${BANDIT_EXIT:-0}" -gt 1 ]; then
+            echo "Bandit execution error"
+            exit 1
+          fi
+
+          if [ "${PIP_AUDIT_EXIT:-0}" -gt 1 ] && [ "${PIP_AUDIT_COUNT:-0}" -eq 0 ]; then
+            echo "pip-audit execution error"
+            exit 1
+          fi
+
+          if [ "${RUFF_COUNT:-0}" -gt 0 ] || [ "${BANDIT_COUNT:-0}" -gt 0 ] || [ "${PIP_AUDIT_COUNT:-0}" -gt 0 ]; then
+            echo "Findings detected"
+            exit 1
+          fi
+
+          echo "No findings detected"
