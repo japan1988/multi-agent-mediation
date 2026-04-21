@@ -9,6 +9,28 @@ import ai_doc_orchestrator_kage3_v1_2_4 as sim
 
 
 # ----------------------------
+# Generic helpers
+# ----------------------------
+def _fail(message: str) -> None:
+    raise AssertionError(message)
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        _fail(message)
+
+
+def _require_equal(actual: Any, expected: Any, message: str) -> None:
+    if actual != expected:
+        _fail(f"{message} (actual={actual!r}, expected={expected!r})")
+
+
+def _require_is_not_none(value: Any, message: str) -> None:
+    if value is None:
+        _fail(message)
+
+
+# ----------------------------
 # Utilities
 # ----------------------------
 def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -43,9 +65,8 @@ def _run(
     paths = _audit_paths(tmp_path)
 
     def resolver(_run_id: str, _task_id: str, _layer: str, _reason_code: str) -> sim.HitlChoice:
-        # fail-closed behavior in code is STOP when resolver=None,
-        # but for deterministic tests we supply a resolver explicitly.
-        assert hitl_choice in ("CONTINUE", "STOP")
+        valid = hitl_choice in ("CONTINUE", "STOP")
+        _require(valid, f"Unexpected hitl_choice: {hitl_choice!r}")
         return hitl_choice  # type: ignore[return-value]
 
     return sim.run_simulation(
@@ -59,44 +80,52 @@ def _run(
     )
 
 
+def _get_task(out: sim.SimulationResult, task_id: str) -> sim.TaskResult:
+    for task in out.tasks:
+        if task.task_id == task_id:
+            return task
+    _fail(f"Task not found: {task_id}")
+    raise AssertionError("unreachable")
+
+
 def _assert_no_at_sign_persisted(audit_path: Path) -> None:
-    # Hard invariant: no email-like '@' in persisted logs (values OR keys).
     txt = audit_path.read_text(encoding="utf-8", errors="replace") if audit_path.exists() else ""
-    assert "@" not in txt, f"PII-like token '@' leaked into audit log: {audit_path}"
+    _require("@" not in txt, f"PII-like token '@' leaked into audit log: {audit_path}")
+
+
+def _assert_arl_min_keys_row(row: Dict[str, Any]) -> None:
+    for key in ("sealed", "overrideable", "final_decider"):
+        _require(key in row, f"Missing ARL minimal key: {key!r} in row event={row.get('event')!r}")
 
 
 def _assert_arl_minimal_keys(events: List[Dict[str, Any]]) -> None:
     must = {"sealed", "overrideable", "final_decider"}
-    for i, e in enumerate(events):
-        missing = must.difference(e.keys())
-        assert not missing, f"ARL minimal keys missing at row#{i}: {missing} (event={e.get('event')})"
+    for i, event in enumerate(events):
+        missing = must.difference(event.keys())
+        _require(
+            not missing,
+            f"ARL minimal keys missing at row#{i}: {missing} (event={event.get('event')})",
+        )
 
 
 def _assert_decision_vocab(events: List[Dict[str, Any]]) -> None:
     allowed = {"RUN", "PAUSE_FOR_HITL", "STOPPED"}
-    for i, e in enumerate(events):
-        d = e.get("decision")
-        assert isinstance(d, str), f"decision is not str at row#{i}: {d!r}"
-        assert d in allowed, f"decision vocab mismatch at row#{i}: {d!r}"
+    for i, event in enumerate(events):
+        decision = event.get("decision")
+        _require(isinstance(decision, str), f"decision is not str at row#{i}: {decision!r}")
+        _require(decision in allowed, f"decision vocab mismatch at row#{i}: {decision!r}")
 
 
 # ----------------------------
-# Tests: HITL semantics (post-HITL defined)
+# Tests: HITL semantics
 # ----------------------------
 def test_meaning_hitl_continue_propagates_and_writes_artifacts(tmp_path: Path) -> None:
     """
-    Trigger meaning HITL for some kinds (prompt mentions only Excel),
-    choose CONTINUE, and confirm artifacts are written for non-blocked tasks.
-
-    Expected:
-    - word/ppt tasks: meaning gate => PAUSE_FOR_HITL => CONTINUE => proceed => RUN => artifact written
-    - excel task: meaning gate => RUN (kind match)
-    - No '@' in logs
-    - ARL minimal keys exist for all events
+    Prompt mentions only Excel, choose CONTINUE:
+    - non-Excel tasks should pass through meaning HITL -> CONTINUE
+    - at least one artifact should be written
     """
     paths = _audit_paths(tmp_path)
-
-    # Mentions Excel tokens only -> word/ppt meaning gate should HITL
     prompt = "Excelで表を作ってください。"
     out = _run(
         tmp_path=tmp_path,
@@ -106,43 +135,46 @@ def test_meaning_hitl_continue_propagates_and_writes_artifacts(tmp_path: Path) -
         truncate=True,
     )
 
-    assert out.run_id == "TEST#MEANING_CONTINUE"
-    assert out.decision in ("RUN", "PAUSE_FOR_HITL", "STOPPED")
+    _require(out.run_id == "TEST#MEANING_CONTINUE", "Unexpected run_id")
+    _require(
+        out.decision in ("RUN", "PAUSE_FOR_HITL", "STOPPED"),
+        f"Unexpected overall decision: {out.decision!r}",
+    )
+    _require(
+        bool(out.artifacts_written_task_ids),
+        "Expected some artifacts to be written after HITL CONTINUE",
+    )
 
-    # At least one artifact should be written in this scenario
-    # (no ethics stop, no rfl hit).
-    assert out.artifacts_written_task_ids, "Expected some artifacts to be written after HITL CONTINUE."
-
-    events = _read_jsonl(paths["audit"])
-    assert events, "Audit log should not be empty."
-
+    rows = _read_jsonl(paths["audit"])
+    _require(bool(rows), "Audit log should not be empty")
     _assert_no_at_sign_persisted(paths["audit"])
-    _assert_arl_minimal_keys(events)
-    _assert_decision_vocab(events)
+    _assert_arl_minimal_keys(rows)
+    _assert_decision_vocab(rows)
 
-    # Confirm HITL firepoint exists (REQUESTED by SYSTEM, DECIDED by USER)
-    saw_req = any(e.get("event") == "HITL_REQUESTED" and e.get("final_decider") == "SYSTEM" for e in events)
-    saw_dec = any(e.get("event") == "HITL_DECIDED" and e.get("final_decider") == "USER" for e in events)
+    saw_req = any(
+        e.get("event") == "HITL_REQUESTED" and e.get("final_decider") == "SYSTEM"
+        for e in rows
+    )
+    saw_dec = any(
+        e.get("event") == "HITL_DECIDED" and e.get("final_decider") == "USER"
+        for e in rows
+    )
+    saw_written = any(e.get("event") == "ARTIFACT_WRITTEN" for e in rows)
 
-    assert saw_req, "Missing HITL_REQUESTED (SYSTEM) event."
-    assert saw_dec, "Missing HITL_DECIDED (USER) event."
-
-    # Confirm some artifacts written events exist
-    saw_written = any(e.get("event") == "ARTIFACT_WRITTEN" for e in events)
-    assert saw_written, "Expected ARTIFACT_WRITTEN events after HITL CONTINUE."
+    _require(saw_req, "Missing HITL_REQUESTED (SYSTEM) event")
+    _require(saw_dec, "Missing HITL_DECIDED (USER) event")
+    _require(saw_written, "Expected ARTIFACT_WRITTEN events after HITL CONTINUE")
 
 
 def test_meaning_hitl_stop_blocks_tasks_and_skips_artifacts(tmp_path: Path) -> None:
     """
-    Trigger meaning HITL (prompt mentions only Excel), choose STOP.
-
-    Expected:
-    - word/ppt tasks stop at meaning with ARTIFACT_SKIPPED + decision STOPPED
-    - excel may still run (meaning ok), but overall decision becomes STOPPED because any STOPPED exists
+    Prompt mentions only Excel, choose STOP:
+    - some tasks should stop at meaning
+    - artifacts should be skipped
+    - overall should be STOPPED
     """
     paths = _audit_paths(tmp_path)
     prompt = "Excelで表を作ってください。"
-
     out = _run(
         tmp_path=tmp_path,
         prompt=prompt,
@@ -151,45 +183,39 @@ def test_meaning_hitl_stop_blocks_tasks_and_skips_artifacts(tmp_path: Path) -> N
         truncate=True,
     )
 
-    assert out.decision == "STOPPED", "Overall should be STOPPED if any task is STOPPED."
+    _require_equal(out.decision, "STOPPED", "Overall should be STOPPED if any task is STOPPED")
 
-    events = _read_jsonl(paths["audit"])
-    assert events, "Audit log should not be empty."
-
+    rows = _read_jsonl(paths["audit"])
+    _require(bool(rows), "Audit log should not be empty")
     _assert_no_at_sign_persisted(paths["audit"])
-    _assert_arl_minimal_keys(events)
-    _assert_decision_vocab(events)
+    _assert_arl_minimal_keys(rows)
+    _assert_decision_vocab(rows)
 
-    # Verify user STOP trace exists
-    assert any(
+    stop_trace = any(
         e.get("event") == "HITL_DECIDED"
         and e.get("final_decider") == "USER"
         and e.get("reason_code") == "HITL_STOP"
         and e.get("decision") == "STOPPED"
-        for e in events
-    ), "Missing post-HITL STOP trace (HITL_DECIDED USER -> STOPPED)."
+        for e in rows
+    )
+    skipped = any(
+        e.get("event") == "ARTIFACT_SKIPPED" and e.get("decision") == "STOPPED"
+        for e in rows
+    )
 
-    # Verify artifacts were skipped for STOP path
-    assert any(
-        e.get("event") == "ARTIFACT_SKIPPED" and e.get("decision") == "STOPPED" for e in events
-    ), "Expected ARTIFACT_SKIPPED with STOPPED decision in STOP path."
+    _require(stop_trace, "Missing post-HITL STOP trace")
+    _require(skipped, "Expected ARTIFACT_SKIPPED with STOPPED decision in STOP path")
 
 
 def test_rfl_hitl_continue_allows_dispatch(tmp_path: Path) -> None:
     """
-    Trigger RFL HITL without triggering meaning HITL by using a generic prompt
-    (no kind tokens), and include a relativity trigger ("おすすめ") to fire
-    REL_BOUNDARY_UNSTABLE.
-
-    Expected:
-    - meaning gate: generic allow all
-    - consistency ok
-    - rfl gate: PAUSE_FOR_HITL with reason_code REL_BOUNDARY_UNSTABLE
-    - CONTINUE -> proceed to dispatch -> artifacts written
+    Generic prompt with relativity trigger:
+    - meaning gate should not block
+    - RFL should PAUSE_FOR_HITL with REL_BOUNDARY_UNSTABLE
+    - CONTINUE should allow artifact writing
     """
     paths = _audit_paths(tmp_path)
-    prompt = "おすすめはどっち？"  # RFL trigger, no explicit kind tokens -> meaning generic allow all
-
+    prompt = "おすすめはどっち？"
     out = _run(
         tmp_path=tmp_path,
         prompt=prompt,
@@ -198,39 +224,38 @@ def test_rfl_hitl_continue_allows_dispatch(tmp_path: Path) -> None:
         truncate=True,
     )
 
-    events = _read_jsonl(paths["audit"])
-    assert events, "Audit log should not be empty."
-
+    rows = _read_jsonl(paths["audit"])
+    _require(bool(rows), "Audit log should not be empty")
     _assert_no_at_sign_persisted(paths["audit"])
-    _assert_arl_minimal_keys(events)
-    _assert_decision_vocab(events)
+    _assert_arl_minimal_keys(rows)
+    _assert_decision_vocab(rows)
 
-    assert any(
+    rfl_pause = any(
         e.get("event") == "GATE_RFL"
         and e.get("decision") == "PAUSE_FOR_HITL"
         and e.get("reason_code") == "REL_BOUNDARY_UNSTABLE"
-        for e in events
-    ), "Expected RFL gate to PAUSE_FOR_HITL with REL_BOUNDARY_UNSTABLE."
+        for e in rows
+    )
+    continued = any(
+        e.get("event") == "HITL_DECIDED" and e.get("reason_code") == "HITL_CONTINUE"
+        for e in rows
+    )
+    wrote = any(e.get("event") == "ARTIFACT_WRITTEN" for e in rows)
 
-    assert any(
-        e.get("event") == "HITL_DECIDED" and e.get("reason_code") == "HITL_CONTINUE" for e in events
-    ), "Expected HITL_CONTINUE decision after RFL HITL."
-
-    assert out.artifacts_written_task_ids, "Expected artifacts written after RFL HITL CONTINUE."
-    assert any(e.get("event") == "ARTIFACT_WRITTEN" for e in events), "Expected ARTIFACT_WRITTEN after CONTINUE."
+    _require(rfl_pause, "Expected RFL gate to PAUSE_FOR_HITL with REL_BOUNDARY_UNSTABLE")
+    _require(continued, "Expected HITL_CONTINUE decision after RFL HITL")
+    _require(bool(out.artifacts_written_task_ids), "Expected artifacts written after RFL HITL CONTINUE")
+    _require(wrote, "Expected ARTIFACT_WRITTEN after CONTINUE")
 
 
 def test_rfl_hitl_stop_blocks_dispatch(tmp_path: Path) -> None:
     """
-    Same as above but STOP.
-
-    Expected:
-    - after RFL HITL STOP -> ARTIFACT_SKIPPED STOPPED
+    Same RFL trigger but STOP:
     - overall STOPPED
+    - HITL STOP trace should exist
     """
     paths = _audit_paths(tmp_path)
     prompt = "おすすめはどっち？"
-
     out = _run(
         tmp_path=tmp_path,
         prompt=prompt,
@@ -239,94 +264,86 @@ def test_rfl_hitl_stop_blocks_dispatch(tmp_path: Path) -> None:
         truncate=True,
     )
 
-    assert out.decision == "STOPPED"
+    _require_equal(out.decision, "STOPPED", "Expected STOPPED after RFL HITL STOP")
 
-    events = _read_jsonl(paths["audit"])
-    assert events, "Audit log should not be empty."
-
+    rows = _read_jsonl(paths["audit"])
+    _require(bool(rows), "Audit log should not be empty")
     _assert_no_at_sign_persisted(paths["audit"])
-    _assert_arl_minimal_keys(events)
-    _assert_decision_vocab(events)
+    _assert_arl_minimal_keys(rows)
+    _assert_decision_vocab(rows)
 
-    assert any(
+    stop_trace = any(
         e.get("event") == "HITL_DECIDED"
         and e.get("final_decider") == "USER"
         and e.get("reason_code") == "HITL_STOP"
         and e.get("decision") == "STOPPED"
-        for e in events
-    ), "Missing HITL_STOP trace at RFL path."
+        for e in rows
+    )
+    _require(stop_trace, "Missing HITL_STOP trace at RFL path")
 
 
 # ----------------------------
-# Tests: Ethics sealing (PII in raw_text must never persist)
+# Ethics sealing
 # ----------------------------
-def test_ethics_email_detected_seals_and_never_persists_at_sign(tmp_path: Path) -> None:
+def test_ethics_violation_is_sealed_and_no_email_persists_in_logs(tmp_path: Path) -> None:
     """
-    Force agent raw_text to include an email by fault injection on a single kind.
-
-    Expected:
-    - ethics gate emits STOPPED with sealed=true, final_decider=SYSTEM
-    - ARTIFACT_SKIPPED for that task
-    - persisted audit log contains no '@'
+    If raw_text contains email:
+    - GATE_ETHICS must STOPPED with sealed=True and final_decider=SYSTEM
+    - logs must never persist '@'
     """
     paths = _audit_paths(tmp_path)
-
-    # Avoid meaning HITL: keep prompt generic (no kind tokens), and avoid RFL triggers.
-    prompt = "ドキュメントを作ってください。"
-    faults = {
-        "word": {"leak_email": True},   # raw_text gets test.user+demo@example.com
-        "excel": {"leak_email": False},
-        "ppt": {"leak_email": False},
-    }
-
     out = _run(
         tmp_path=tmp_path,
-        prompt=prompt,
+        prompt="ドキュメントを作ってください。",
         run_id="TEST#ETHICS_SEAL",
-        hitl_choice="CONTINUE",  # irrelevant; ethics is SYSTEM-sealed
-        faults=faults,
+        hitl_choice="CONTINUE",
+        faults={
+            "word": {"leak_email": True},
+            "excel": {"leak_email": False},
+            "ppt": {"leak_email": False},
+        },
         truncate=True,
     )
 
-    events = _read_jsonl(paths["audit"])
-    assert events, "Audit log should not be empty."
-
-    # Hard guarantee: no '@' persisted
+    rows = _read_jsonl(paths["audit"])
+    _require(bool(rows), "Audit log should not be empty")
     _assert_no_at_sign_persisted(paths["audit"])
-    _assert_arl_minimal_keys(events)
-    _assert_decision_vocab(events)
+    _assert_arl_minimal_keys(rows)
+    _assert_decision_vocab(rows)
 
-    # Verify sealed STOP at ethics for at least one task
-    assert any(
-        e.get("event") == "GATE_ETHICS"
-        and e.get("decision") == "STOPPED"
-        and e.get("sealed") is True
-        and e.get("final_decider") == "SYSTEM"
-        and e.get("reason_code") == "ETHICS_EMAIL_DETECTED"
-        for e in events
-    ), "Expected sealed ethics STOPPED event for email leak."
+    ethics_rows = [
+        row
+        for row in rows
+        if row.get("event") == "GATE_ETHICS"
+        and row.get("decision") == "STOPPED"
+        and row.get("reason_code") == "ETHICS_EMAIL_DETECTED"
+    ]
+    _require(bool(ethics_rows), "Expected sealed ethics STOPPED event for email leak")
 
-    # Verify artifact skipped due to ethics
-    assert any(
+    hit = ethics_rows[0]
+    _assert_arl_min_keys_row(hit)
+    _require(hit["sealed"] is True, "Expected sealed=True for ethics stop")
+    _require(hit["overrideable"] is False, "Expected overrideable=False for ethics stop")
+    _require_equal(hit["final_decider"], "SYSTEM", "Expected SYSTEM final_decider for ethics stop")
+
+    skipped = any(
         e.get("event") == "ARTIFACT_SKIPPED"
         and e.get("layer") == "ethics"
         and e.get("decision") == "STOPPED"
         and e.get("sealed") is True
         and e.get("final_decider") == "SYSTEM"
-        for e in events
-    ), "Expected ARTIFACT_SKIPPED under ethics with sealed=true."
-
-    # Overall should be STOPPED if any task STOPPED exists
-    assert out.decision == "STOPPED"
+        for e in rows
+    )
+    _require(skipped, "Expected ARTIFACT_SKIPPED under ethics with sealed=true")
+    _require_equal(out.decision, "STOPPED", "Overall should be STOPPED if any task STOPPED exists")
 
 
 # ----------------------------
-# Tests: AuditLog (deep redaction includes dict keys + defensive JSON)
+# AuditLog guarantees
 # ----------------------------
 def test_auditlog_deep_redacts_dict_keys_and_values(tmp_path: Path) -> None:
     """
-    Directly validate v1.2.4 critical fix:
-    - Deep redaction includes dict keys, not only values.
+    Deep redaction must include dict keys, not only values.
     """
     audit_path = tmp_path / "audit_keys.jsonl"
     audit = sim.AuditLog(audit_path)
@@ -342,23 +359,22 @@ def test_auditlog_deep_redacts_dict_keys_and_values(tmp_path: Path) -> None:
         "sealed": False,
         "overrideable": False,
         "final_decider": "SYSTEM",
-        # email-like KEY (must not persist)
         "user@example.com": "ok",
-        # email-like VALUE (must not persist)
         "note": "contact me at admin@example.com",
     }
-
     audit.emit(row)
-    txt = audit_path.read_text(encoding="utf-8")
 
-    assert "@" not in txt, "Expected no '@' in persisted log even when dict KEY contains email-like token."
-    assert "<REDACTED_EMAIL>" in txt, "Expected redaction marker to appear in persisted log."
+    txt = audit_path.read_text(encoding="utf-8")
+    _require(
+        "@" not in txt,
+        "Expected no '@' in persisted log even when dict key contains email-like token",
+    )
+    _require("<REDACTED_EMAIL>" in txt, "Expected redaction marker to appear in persisted log")
 
 
 def test_auditlog_defensive_json_serialization_does_not_crash(tmp_path: Path) -> None:
     """
-    Defensive JSON serialization: default=str should prevent audit.emit crashing
-    on non-JSON types.
+    default=str should prevent audit.emit from crashing on non-JSON types.
     """
     audit_path = tmp_path / "audit_nonjson.jsonl"
     audit = sim.AuditLog(audit_path)
@@ -374,28 +390,27 @@ def test_auditlog_defensive_json_serialization_does_not_crash(tmp_path: Path) ->
         "sealed": False,
         "overrideable": False,
         "final_decider": "SYSTEM",
-        "non_json": {"a_set": {1, 2, 3}},  # set is not JSON-serializable
+        "non_json": {"a_set": {1, 2, 3}},
     }
-
     audit.emit(row)
-    events = _read_jsonl(audit_path)
 
-    assert len(events) == 1
-    assert "non_json" in events[0]
-    # default=str will convert set to a string representation
-    assert isinstance(events[0]["non_json"]["a_set"], str)
+    rows = _read_jsonl(audit_path)
+    _require_equal(len(rows), 1, "Expected exactly one audit row")
+    _require("non_json" in rows[0], "Expected non_json key to persist")
+    _require(
+        isinstance(rows[0]["non_json"]["a_set"], str),
+        "Expected set to be stringified by default=str",
+    )
 
 
 def test_start_run_truncate_and_ts_monotonicity(tmp_path: Path) -> None:
     """
-    Validates:
-    - start_run(truncate=True) actually truncates
-    - per-run ts monotonicity holds (microseconds)
+    - start_run(truncate=True) should truncate
+    - timestamps should be monotonic within a run
     """
     audit_path = tmp_path / "audit_ts.jsonl"
     audit = sim.AuditLog(audit_path)
 
-    # Run A
     audit.start_run(truncate=True)
     audit.emit(
         {
@@ -425,10 +440,9 @@ def test_start_run_truncate_and_ts_monotonicity(tmp_path: Path) -> None:
     )
 
     rows_a = _read_jsonl(audit_path)
-    assert len(rows_a) == 2
-    assert rows_a[0]["ts"] < rows_a[1]["ts"], "Expected monotonic ts within a run."
+    _require_equal(len(rows_a), 2, "Expected two rows in first run")
+    _require(rows_a[0]["ts"] < rows_a[1]["ts"], "Expected monotonic ts within a run")
 
-    # Run B: truncate
     audit.start_run(truncate=True)
     audit.emit(
         {
@@ -445,50 +459,70 @@ def test_start_run_truncate_and_ts_monotonicity(tmp_path: Path) -> None:
     )
 
     rows_b = _read_jsonl(audit_path)
-    assert len(rows_b) == 1, "Expected truncate=True to reset file content."
-    assert rows_b[0]["run_id"] == "B"
+    _require_equal(len(rows_b), 1, "Expected truncate=True to reset file content")
+    _require_equal(rows_b[0]["run_id"], "B", "Expected second run to overwrite first run content")
 
 
 # ----------------------------
-# Optional: Contract mismatch path (consistency HITL) sanity
+# Consistency / regen path
 # ----------------------------
-def test_consistency_mismatch_continue_results_in_pause_for_hitl_and_skips_artifact(tmp_path: Path) -> None:
+def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(tmp_path: Path) -> None:
     """
-    If break_contract=True, consistency gate should PAUSE_FOR_HITL.
-    If user CONTINUE, this prototype logs regen requests and keeps task in PAUSE_FOR_HITL,
-    and must NOT write an artifact for that task.
+    If contract mismatch occurs and user CONTINUE:
+    - emit REGEN_REQUESTED + REGEN_INSTRUCTIONS
+    - keep broken task in PAUSE_FOR_HITL
+    - skip artifact for that task
     """
     paths = _audit_paths(tmp_path)
-    prompt = "ドキュメントを作ってください。"  # meaning generic allow all, no RFL trigger
-    faults = {
-        "excel": {"break_contract": True},
-        "word": {"break_contract": False},
-        "ppt": {"break_contract": False},
-    }
-
     out = _run(
         tmp_path=tmp_path,
-        prompt=prompt,
+        prompt="ドキュメントを作ってください。",
         run_id="TEST#CONSISTENCY_CONTINUE",
         hitl_choice="CONTINUE",
-        faults=faults,
+        faults={
+            "excel": {"break_contract": True, "leak_email": False},
+            "word": {"break_contract": False, "leak_email": False},
+            "ppt": {"break_contract": False, "leak_email": False},
+        },
         truncate=True,
     )
 
-    events = _read_jsonl(paths["audit"])
-    assert events
-
+    rows = _read_jsonl(paths["audit"])
+    _require(bool(rows), "Expected non-empty audit rows")
     _assert_no_at_sign_persisted(paths["audit"])
-    _assert_arl_minimal_keys(events)
-    _assert_decision_vocab(events)
+    _assert_arl_minimal_keys(rows)
+    _assert_decision_vocab(rows)
 
-    # Expect REGEN_REQUESTED / ARTIFACT_SKIPPED with PAUSE_FOR_HITL for the broken contract task
-    assert any(e.get("event") == "REGEN_REQUESTED" for e in events), "Expected REGEN_REQUESTED on contract mismatch."
+    regen_requested = any(
+        r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED"
+        for r in rows
+    )
+    regen_instructions = any(
+        r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS"
+        for r in rows
+    )
+    skipped_paused = any(
+        r.get("task_id") == "task_excel"
+        and r.get("event") == "ARTIFACT_SKIPPED"
+        and r.get("decision") == "PAUSE_FOR_HITL"
+        for r in rows
+    )
 
-    assert any(
-        e.get("event") == "ARTIFACT_SKIPPED" and e.get("decision") == "PAUSE_FOR_HITL" for e in events
-    ), "Expected ARTIFACT_SKIPPED with PAUSE_FOR_HITL on contract mismatch CONTINUE path."
+    _require(regen_requested, "Expected REGEN_REQUESTED on contract mismatch")
+    _require(regen_instructions, "Expected REGEN_INSTRUCTIONS on contract mismatch")
+    _require(
+        skipped_paused,
+        "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending",
+    )
 
-    # Overall decision should be PAUSE_FOR_HITL
-    # (since at least one task is PAUSE_FOR_HITL, and no STOPPED necessarily)
-    assert out.decision in ("PAUSE_FOR_HITL", "STOPPED")
+    excel_task = _get_task(out, "task_excel")
+    _require_equal(excel_task.decision, "PAUSE_FOR_HITL", "Expected excel task to remain paused")
+    _require_equal(
+        excel_task.blocked_layer,
+        "consistency",
+        "Expected consistency blocked_layer",
+    )
+    _require(
+        out.decision in ("PAUSE_FOR_HITL", "STOPPED"),
+        f"Unexpected overall decision: {out.decision!r}",
+    )
