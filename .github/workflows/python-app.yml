@@ -1,4 +1,4 @@
-     name: Python App CI
+name: Python App CI
 
 on:
   push:
@@ -81,6 +81,11 @@ jobs:
             '    max: 140' \
             '    level: warning' \
             > .yamllint-ci.yml
+
+          echo "===== python-app.yml ====="
+          nl -ba .github/workflows/python-app.yml
+
+          echo "===== yamllint ====="
           yamllint -f parsable -c .yamllint-ci.yml .github/workflows/python-app.yml
 
       - name: Run pytest
