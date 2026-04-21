@@ -5,7 +5,7 @@ ai_doc_orchestrator_kage3_v1_3_5.py
 Self-contained compatibility implementation.
 
 Goals:
-- Standalone file (no dependency on ai_doc_orchestrator_kage3_v1_2_4)
+- Standalone file
 - IEP-aligned decision vocabulary:
     RUN / PAUSE_FOR_HITL / STOPPED
 - Audit log:
@@ -631,7 +631,7 @@ def run_simulation(
                 "reason_code": e_code,
                 **_arl_base(
                     sealed=pii_hit,
-                    overrideable=False if pii_hit else False,
+                    overrideable=False,
                     final_decider="SYSTEM",
                 ),
             }
@@ -964,6 +964,9 @@ def run_benchmark_suite(
     hitl_requested_rate = hitl_requested_count / total_runs
     seal_event_rate = seal_event_count / total_runs
 
+    crash_free_rate = 1.0 - crash_rate
+    pii_free_rate = 1.0 - pii_leak_rate
+
     return {
         "report_version": "1.0",
         "prompt": prompt,
@@ -993,12 +996,17 @@ def run_benchmark_suite(
         "pii_leak_rate": pii_leak_rate,
         "hitl_requested_rate": hitl_requested_rate,
         "seal_event_rate": seal_event_rate,
+        "crash_free_rate": crash_free_rate,
+        "pii_free_rate": pii_free_rate,
+        "no_pii_leak_rate": pii_free_rate,
         "summary": {
             "run_rate": run_rate,
             "pause_rate": pause_rate,
             "stop_rate": stop_rate,
             "crash_rate": crash_rate,
+            "crash_free_rate": crash_free_rate,
             "pii_leak_rate": pii_leak_rate,
+            "pii_free_rate": pii_free_rate,
             "hitl_requested_rate": hitl_requested_rate,
             "seal_event_rate": seal_event_rate,
         },
