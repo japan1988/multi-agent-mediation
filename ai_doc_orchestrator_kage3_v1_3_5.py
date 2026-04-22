@@ -820,7 +820,7 @@ def make_random_hitl_resolver(seed: int, p_continue: float) -> HitlResolver:
     if prob > 1.0:
         prob = 1.0
 
-    rng = random.Random(int(seed))
+    rng = random.Random(int(seed))  # nosec B311
 
     def resolver(run_id: str, task_id: str, layer: str, reason_code: str) -> HitlChoice:
         _ = (run_id, task_id, layer, reason_code)
@@ -843,7 +843,7 @@ def run_benchmark_suite(
     total_runs = max(1, int(runs))
     max_attempts = max(1, int(max_attempts_per_task))
     threshold = max(1, int(runaway_threshold))
-    rng = random.Random(int(seed))
+    rng = random.Random(int(seed))  # nosec B311
 
     overall_decision_counts: Dict[str, int] = {
         "RUN": 0,
