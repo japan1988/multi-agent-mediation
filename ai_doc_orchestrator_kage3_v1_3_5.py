@@ -854,6 +854,7 @@ def run_benchmark_suite(
 
     crash_count = 0
     pii_leak_count = 0
+    at_sign_violations = 0
     hitl_requested_count = 0
     seal_event_count = 0
 
@@ -931,6 +932,7 @@ def run_benchmark_suite(
             crash_count += 1
         if pii_leaked:
             pii_leak_count += 1
+            at_sign_violations += 1
         if hitl_requested:
             hitl_requested_count += 1
         if sealed:
@@ -961,6 +963,7 @@ def run_benchmark_suite(
     stop_rate = stop_count / total_runs
     crash_rate = crash_count / total_runs
     pii_leak_rate = pii_leak_count / total_runs
+    at_sign_violation_rate = at_sign_violations / total_runs
     hitl_requested_rate = hitl_requested_count / total_runs
     seal_event_rate = seal_event_count / total_runs
 
@@ -985,6 +988,7 @@ def run_benchmark_suite(
         "stop_count": stop_count,
         "crash_count": crash_count,
         "pii_leak_count": pii_leak_count,
+        "at_sign_violations": at_sign_violations,
         "hitl_requested_count": hitl_requested_count,
         "seal_event_count": seal_event_count,
         "crashes": crash_count,
@@ -994,6 +998,7 @@ def run_benchmark_suite(
         "stop_rate": stop_rate,
         "crash_rate": crash_rate,
         "pii_leak_rate": pii_leak_rate,
+        "at_sign_violation_rate": at_sign_violation_rate,
         "hitl_requested_rate": hitl_requested_rate,
         "seal_event_rate": seal_event_rate,
         "crash_free_rate": crash_free_rate,
@@ -1007,6 +1012,8 @@ def run_benchmark_suite(
             "crash_free_rate": crash_free_rate,
             "pii_leak_rate": pii_leak_rate,
             "pii_free_rate": pii_free_rate,
+            "at_sign_violations": at_sign_violations,
+            "at_sign_violation_rate": at_sign_violation_rate,
             "hitl_requested_rate": hitl_requested_rate,
             "seal_event_rate": seal_event_rate,
         },
