@@ -250,15 +250,10 @@ class AuditLog:
         sealed: bool,
         reason_code: str,
     ) -> bool:
-        # Sealed/STOPPED are always incidents.
         if sealed or decision == DECISION_STOP:
             return True
-
-        # PAUSE is NOT always an incident.
-        # To achieve "success run => ARL zero", only treat "dangerous PAUSE" as incidents.
         if decision == DECISION_PAUSE:
             return reason_code in INCIDENT_PAUSE_REASON_CODES
-
         if layer == LAYER_CONSISTENCY and reason_code != RC_OK:
             return True
         if reason_code in (RC_CONSISTENCY_BREAK, RC_CRIT_MISSING_REQUIRED_KEYS, RC_INVALID_EVENT):
@@ -1101,9 +1096,8 @@ def apply_trust_update(
 
     if reset_streak:
         trust.approval_streak = 0
-    else:
-        if applied > 0:
-            trust.approval_streak += 1
+    elif applied > 0:
+        trust.approval_streak += 1
 
     if set_cooldown:
         until = (datetime.now(JST) + timedelta(seconds=COOLDOWN_SECONDS)).isoformat(timespec="seconds")
@@ -1588,7 +1582,6 @@ class HitlQueueBuilder:
     def add_run(self, *, run_id: str, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> None:
         self.by_state[final_state] = self.by_state.get(final_state, 0) + 1
 
-        # abnormal states or sealed are candidates for HITL queue
         if final_state not in ("STOPPED", "PAUSE_FOR_HITL_AUTH", "PAUSE_FOR_HITL_FINALIZE") and not sealed:
             return
 
@@ -1985,7 +1978,6 @@ def run_simulation(
             if sample_runs and len(results["runs_sample"]) < int(sample_runs):
                 results["runs_sample"].append(run_record)
 
-    # persist end-of-run stores once
     save_trust_state(trust)
     save_eval_state(eval_state)
 
@@ -2005,6 +1997,7 @@ def run_simulation(
     )
     return results
 
+ main
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
