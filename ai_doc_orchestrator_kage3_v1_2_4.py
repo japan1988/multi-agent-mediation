@@ -1,16 +1,26 @@
-# ai_doc_orchestrator_kage3_v1_2_4.py
+# ai_doc_orchestrator_kage3_v1_2_4.py (v1.2.4)
 # -*- coding: utf-8 -*-
 """
-Design-oriented orchestrator v1.2.4
+(ai_doc_orchestrator_kage3_v1_2_2.py に対する設計寄り改修 + IEP寄せ + HITL分岐)
 
-Targets:
-- AuditLog.start_run(truncate=...) with per-run monotonic ts
-- Defensive JSON serialization via default=str
-- Deep redaction for both dict keys and values
-- emit() auto-fills ts and never raises
-- Decision vocabulary fixed to: RUN / PAUSE_FOR_HITL / STOPPED
-- HITL traces are explicit: HITL_REQUESTED / HITL_DECIDED
-- Ethics sealing uses sealed=True, overrideable=False, final_decider=SYSTEM
+Changes (design-oriented + IEP-aligned):
+- AuditLog gains start_run(truncate=...) to control log lifecycle per run.
+- AuditLog owns ts_state (monotonic timestamp) instead of module-global _LAST_TS.
+- Defensive JSON serialization: default=str so audit never crashes on non-JSON types.
+- Deep redaction also redacts dict keys (prevents email-like keys from persisting).
+- emit() auto-fills "ts" if missing.
+- Decision vocabulary aligned (gates/audit): RUN / PAUSE_FOR_HITL / STOPPED
+- ARL minimal keys always emitted: sealed, overrideable, final_decider
+- HITL branching implemented as a fixed firepoint:
+  HITL_REQUESTED (SYSTEM) -> HITL_DECIDED (USER) -> downstream events branch.
+- Optional RFL gate stub (prompt-based) placed per fixed order:
+  Meaning -> Consistency -> RFL -> Ethics -> ACC -> Dispatch
+
+Compatibility note:
+- This module supports `overall_policy`:
+    * "legacy": overall is "RUN" if all tasks RUN else "HITL"
+    * "iep" (default): overall is STOPPED if any STOPPED else
+      PAUSE_FOR_HITL if any pause else RUN
 """
 
 from __future__ import annotations
@@ -29,17 +39,27 @@ JST = timezone(timedelta(hours=9))
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 
 Decision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
-Layer = Literal["meaning", "consistency", "rfl", "ethics", "orchestrator", "agent"]
+OverallPolicy = Literal["legacy", "iep"]
+OverallDecision = Literal["RUN", "HITL", "PAUSE_FOR_HITL", "STOPPED"]
+FinalDecider = Literal["SYSTEM", "USER"]
+
+Layer = Literal[
+    "meaning",
+    "consistency",
+    "rfl",
+    "ethics",
+    "acc",
+    "orchestrator",
+    "agent",
+    "hitl_finalize",
+]
+
 KIND = Literal["excel", "word", "ppt"]
+
 HitlChoice = Literal["CONTINUE", "STOP"]
 HitlResolver = Callable[[str, str, str, str], HitlChoice]
 
-_AUDIT_MAX_LINE_BYTES = 8192
 
-
-# -----------------------------
-# Redaction
-# -----------------------------
 def redact_sensitive(text: str) -> str:
     if not text:
         return ""
@@ -52,42 +72,21 @@ def _deep_redact(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_deep_redact(x) for x in obj]
     if isinstance(obj, dict):
-        out: Dict[str, Any] = {}
-        seen_counts: Dict[str, int] = {}
-        for k, v in obj.items():
-            base = redact_sensitive(str(k))
-            if base not in out:
-                out[base] = _deep_redact(v)
-                continue
-
-            n = seen_counts.get(base, 1) + 1
-            seen_counts[base] = n
-            new_key = f"{base}__DUP{n}"
-            while new_key in out:
-                n += 1
-                seen_counts[base] = n
-                new_key = f"{base}__DUP{n}"
-            out[new_key] = _deep_redact(v)
-        return out
+        return {redact_sensitive(str(k)): _deep_redact(v) for k, v in obj.items()}
     return obj
 
 
-# -----------------------------
-# Audit logger
-# -----------------------------
 @dataclass
 class AuditLog:
     audit_path: Path
     _last_ts: Optional[datetime] = field(default=None, init=False, repr=False)
 
     def start_run(self, *, truncate: bool = False) -> None:
+        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+        if truncate:
+            with self.audit_path.open("w", encoding="utf-8"):
+                pass
         self._last_ts = None
-        try:
-            self.audit_path.parent.mkdir(parents=True, exist_ok=True)
-            if truncate:
-                self.audit_path.write_text("", encoding="utf-8")
-        except OSError:
-            return
 
     def ts(self) -> str:
         now = datetime.now(JST)
@@ -96,103 +95,23 @@ class AuditLog:
         self._last_ts = now
         return now.isoformat(timespec="microseconds")
 
-    def emit(self, row: Any) -> None:
-        try:
-            self.audit_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            return
+    def emit(self, row: Dict[str, Any]) -> None:
+        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
 
-        def _truncate_utf8(s: str, max_bytes: int) -> str:
-            b = s.encode("utf-8", errors="replace")
-            if len(b) <= max_bytes:
-                return s
-            suffix = b"...<TRUNCATED>"
-            cut = b[: max(0, max_bytes - len(suffix))]
-            return cut.decode("utf-8", errors="ignore") + "...<TRUNCATED>"
+        if "ts" not in row:
+            row = dict(row)
+            row["ts"] = self.ts()
 
-        def _safe_write_line(line: str) -> None:
-            try:
-                with self.audit_path.open("a", encoding="utf-8") as f:
-                    f.write(line + "\n")
-            except OSError:
-                return
+        safe_row = json.loads(json.dumps(row, ensure_ascii=False, default=str))
+        safe_blob = json.dumps(safe_row, ensure_ascii=False)
 
-        try:
-            payload: Any = row
-            if not isinstance(payload, dict):
-                payload = {
-                    "event": "AUDIT_NON_DICT_ROW",
-                    "value": payload,
-                    "decision": "RUN",
-                    "reason_code": "AUDIT_NON_DICT_ROW",
-                    "sealed": False,
-                    "overrideable": False,
-                    "final_decider": "SYSTEM",
-                    "layer": "orchestrator",
-                }
-
-            if "ts" not in payload:
-                payload = dict(payload)
-                payload["ts"] = self.ts()
-
-            safe_row: Dict[str, Any] = json.loads(
-                json.dumps(payload, ensure_ascii=False, default=str)
-            )
+        if EMAIL_RE.search(safe_blob):
             safe_row = _deep_redact(safe_row)
 
-            line = json.dumps(safe_row, ensure_ascii=False)
-            if len(line.encode("utf-8", errors="replace")) > _AUDIT_MAX_LINE_BYTES:
-                minimal = {
-                    "ts": safe_row.get("ts", self.ts()),
-                    "run_id": safe_row.get("run_id", ""),
-                    "task_id": safe_row.get("task_id", ""),
-                    "layer": safe_row.get("layer", ""),
-                    "event": "AUDIT_LINE_TRUNCATED",
-                    "orig_event": safe_row.get("event", ""),
-                    "decision": safe_row.get("decision", "RUN"),
-                    "reason_code": "AUDIT_LINE_TRUNCATED",
-                    "sealed": False,
-                    "overrideable": False,
-                    "final_decider": "SYSTEM",
-                    "max_bytes": _AUDIT_MAX_LINE_BYTES,
-                    "truncated": True,
-                }
-                minimal = _deep_redact(minimal)
-                line = json.dumps(minimal, ensure_ascii=False)
-                line = _truncate_utf8(line, _AUDIT_MAX_LINE_BYTES)
-
-            _safe_write_line(line)
-
-        except Exception as e:
-            fallback = {
-                "ts": self.ts(),
-                "event": "AUDIT_EMIT_ERROR",
-                "layer": "orchestrator",
-                "decision": "STOPPED",
-                "reason_code": "AUDIT_EMIT_ERROR",
-                "sealed": False,
-                "overrideable": False,
-                "final_decider": "SYSTEM",
-                "error_type": type(e).__name__,
-                "error": redact_sensitive(str(e)),
-            }
-            try:
-                rr = redact_sensitive(repr(row))
-                fallback["row_repr"] = rr[:1024]
-            except Exception:
-                fallback["row_repr"] = "<UNREPRESENTABLE>"
-            fallback = _deep_redact(fallback)
-            line = json.dumps(fallback, ensure_ascii=False)
-            if len(line.encode("utf-8", errors="replace")) > _AUDIT_MAX_LINE_BYTES:
-                line = line.encode("utf-8", errors="replace")[: _AUDIT_MAX_LINE_BYTES - 14].decode(
-                    "utf-8", errors="ignore"
-                ) + "...<TRUNCATED>"
-            _safe_write_line(line)
+        with self.audit_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(safe_row, ensure_ascii=False) + "\n")
 
 
-# -----------------------------
-# Results
-# -----------------------------
 @dataclass
 class TaskResult:
     task_id: str
@@ -206,14 +125,82 @@ class TaskResult:
 @dataclass
 class SimulationResult:
     run_id: str
-    decision: Decision
+    decision: OverallDecision
     tasks: List[TaskResult]
     artifacts_written_task_ids: List[str]
 
 
-# -----------------------------
-# Meaning gate
-# -----------------------------
+def _arl_base(*, sealed: bool, overrideable: bool, final_decider: FinalDecider) -> Dict[str, Any]:
+    return {
+        "sealed": bool(sealed),
+        "overrideable": bool(overrideable),
+        "final_decider": final_decider,
+    }
+
+
+def _emit_info(
+    *,
+    audit: AuditLog,
+    run_id: str,
+    task_id: str,
+    event: str,
+    layer: Layer,
+    reason_code: str,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    row: Dict[str, Any] = {
+        "run_id": run_id,
+        "task_id": task_id,
+        "event": event,
+        "layer": layer,
+        "decision": "RUN",
+        "reason_code": reason_code,
+        **_arl_base(sealed=False, overrideable=False, final_decider="SYSTEM"),
+    }
+    if extra:
+        row.update(extra)
+    audit.emit(row)
+
+
+def _hitl_fire_and_decide(
+    *,
+    audit: AuditLog,
+    run_id: str,
+    task_id: str,
+    layer: Layer,
+    reason_code: str,
+    hitl_resolver: Optional[HitlResolver],
+) -> HitlChoice:
+    audit.emit(
+        {
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "HITL_REQUESTED",
+            "layer": layer,
+            "decision": "PAUSE_FOR_HITL",
+            "reason_code": reason_code,
+            **_arl_base(sealed=False, overrideable=True, final_decider="SYSTEM"),
+        }
+    )
+
+    choice: HitlChoice = "STOP" if hitl_resolver is None else hitl_resolver(
+        run_id, task_id, layer, reason_code
+    )
+
+    audit.emit(
+        {
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "HITL_DECIDED",
+            "layer": "hitl_finalize",
+            "decision": "RUN" if choice == "CONTINUE" else "STOPPED",
+            "reason_code": "HITL_CONTINUE" if choice == "CONTINUE" else "HITL_STOP",
+            **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
+        }
+    )
+    return choice
+
+
 _KIND_TOKENS: Dict[KIND, List[str]] = {
     "excel": ["excel", "xlsx", "表", "列", "columns", "table"],
     "word": ["word", "docx", "見出し", "章", "アウトライン", "outline", "document"],
@@ -245,20 +232,6 @@ def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], s
     return "PAUSE_FOR_HITL", "meaning", "MEANING_KIND_MISSING"
 
 
-# -----------------------------
-# RFL gate
-# -----------------------------
-def _rfl_gate(prompt: str) -> Tuple[Decision, Optional[Layer], str]:
-    p = prompt or ""
-    triggers = ("おすすめ", "どっち", "どちら", "best", "recommend", "which is better")
-    if any(t in p.lower() for t in [x.lower() for x in triggers]):
-        return "PAUSE_FOR_HITL", "rfl", "REL_BOUNDARY_UNSTABLE"
-    return "RUN", None, "RFL_OK"
-
-
-# -----------------------------
-# Contract validation
-# -----------------------------
 def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
     if kind == "excel":
         cols = draft.get("columns")
@@ -284,23 +257,37 @@ def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
     return False, "CONTRACT_UNKNOWN_KIND"
 
 
-# -----------------------------
-# Ethics
-# -----------------------------
+_RFL_TRIGGERS = [
+    "どっち",
+    "どちら",
+    "どれが",
+    "良いか",
+    "いいか",
+    "おすすめ",
+    "最適",
+    "評価",
+    "比較",
+]
+
+
+def _rfl_gate(prompt: str) -> Tuple[Decision, Optional[Layer], str]:
+    p = prompt or ""
+    if any(t in p for t in _RFL_TRIGGERS):
+        return "PAUSE_FOR_HITL", "rfl", "REL_BOUNDARY_UNSTABLE"
+    return "RUN", None, "REL_OK"
+
+
 def _ethics_detect_pii(raw_text: str) -> Tuple[bool, str]:
     if EMAIL_RE.search(raw_text or ""):
         return True, "ETHICS_EMAIL_DETECTED"
     return False, "ETHICS_OK"
 
 
-# -----------------------------
-# Agent generation
-# -----------------------------
-def _agent_generate(
-    prompt: str, kind: KIND, faults: Dict[str, Any]
-) -> Tuple[Dict[str, Any], str, str]:
-    del prompt
+def _acc_gate(_: str) -> Tuple[Decision, Optional[Layer], str]:
+    return "RUN", None, "ACC_OK"
 
+
+def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Dict[str, Any], str, str]:
     leak_email = bool((faults or {}).get("leak_email"))
     break_contract = bool((faults or {}).get("break_contract"))
 
@@ -341,9 +328,6 @@ def _agent_generate(
     return draft, raw_text, safe_text
 
 
-# -----------------------------
-# Artifact writer
-# -----------------------------
 def _artifact_ext(kind: KIND) -> str:
     if kind == "excel":
         return "xlsx"
@@ -361,67 +345,6 @@ def _write_artifact(artifact_dir: Path, task_id: str, kind: KIND, safe_text: str
     return path
 
 
-# -----------------------------
-# HITL helper
-# -----------------------------
-def _resolve_hitl(
-    *,
-    audit: AuditLog,
-    run_id: str,
-    task_id: str,
-    layer: Layer,
-    reason_code: str,
-    hitl_resolver: Optional[HitlResolver],
-) -> HitlChoice:
-    audit.emit(
-        {
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "HITL_REQUESTED",
-            "layer": layer,
-            "decision": "PAUSE_FOR_HITL",
-            "reason_code": reason_code,
-            "sealed": False,
-            "overrideable": True,
-            "final_decider": "SYSTEM",
-        }
-    )
-
-    choice: HitlChoice = "STOP"
-    if hitl_resolver is not None:
-        try:
-            raw = hitl_resolver(run_id, task_id, layer, reason_code)
-            choice = "CONTINUE" if raw == "CONTINUE" else "STOP"
-        except Exception:
-            choice = "STOP"
-
-    audit.emit(
-        {
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "HITL_DECIDED",
-            "layer": layer,
-            "decision": "RUN" if choice == "CONTINUE" else "STOPPED",
-            "reason_code": "HITL_CONTINUE" if choice == "CONTINUE" else "HITL_STOP",
-            "sealed": False,
-            "overrideable": False,
-            "final_decider": "USER",
-        }
-    )
-    return choice
-
-
-def _overall_decision(tasks: List[TaskResult]) -> Decision:
-    if any(t.decision == "STOPPED" for t in tasks):
-        return "STOPPED"
-    if any(t.decision == "PAUSE_FOR_HITL" for t in tasks):
-        return "PAUSE_FOR_HITL"
-    return "RUN"
-
-
-# -----------------------------
-# Orchestrator main
-# -----------------------------
 _TASKS: List[Tuple[str, KIND]] = [
     ("task_word", "word"),
     ("task_excel", "excel"),
@@ -438,8 +361,10 @@ def run_simulation(
     faults: Optional[Dict[str, Dict[str, Any]]] = None,
     truncate_audit_on_start: bool = False,
     hitl_resolver: Optional[HitlResolver] = None,
+    overall_policy: OverallPolicy = "iep",
 ) -> SimulationResult:
     faults = faults or {}
+
     audit = AuditLog(Path(audit_path))
     audit.start_run(truncate=truncate_audit_on_start)
     out_dir = Path(artifact_dir)
@@ -448,23 +373,17 @@ def run_simulation(
     artifacts_written: List[str] = []
 
     for task_id, kind in _TASKS:
-        audit.emit(
-            {
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "TASK_ASSIGNED",
-                "layer": "orchestrator",
-                "kind": kind,
-                "decision": "RUN",
-                "reason_code": "TASK_ASSIGNED",
-                "sealed": False,
-                "overrideable": False,
-                "final_decider": "SYSTEM",
-            }
+        _emit_info(
+            audit=audit,
+            run_id=run_id,
+            task_id=task_id,
+            event="TASK_ASSIGNED",
+            layer="orchestrator",
+            reason_code="TASK_ASSIGNED",
+            extra={"kind": kind},
         )
 
-        # Meaning
-        m_dec, m_layer, m_code = _meaning_gate(prompt, kind)
+        m_dec, _, m_code = _meaning_gate(prompt, kind)
         audit.emit(
             {
                 "run_id": run_id,
@@ -473,18 +392,20 @@ def run_simulation(
                 "layer": "meaning",
                 "decision": m_dec,
                 "reason_code": m_code,
-                "sealed": False,
-                "overrideable": m_dec == "PAUSE_FOR_HITL",
-                "final_decider": "SYSTEM",
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(m_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
             }
         )
 
-        if m_dec == "PAUSE_FOR_HITL" and m_layer is not None:
-            choice = _resolve_hitl(
+        if m_dec == "PAUSE_FOR_HITL":
+            choice = _hitl_fire_and_decide(
                 audit=audit,
                 run_id=run_id,
                 task_id=task_id,
-                layer=m_layer,
+                layer="meaning",
                 reason_code=m_code,
                 hitl_resolver=hitl_resolver,
             )
@@ -496,10 +417,8 @@ def run_simulation(
                         "event": "ARTIFACT_SKIPPED",
                         "layer": "orchestrator",
                         "decision": "STOPPED",
-                        "reason_code": m_code,
-                        "sealed": False,
-                        "overrideable": False,
-                        "final_decider": "USER",
+                        "reason_code": "HITL_STOP",
+                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
                     }
                 )
                 task_results.append(
@@ -508,32 +427,27 @@ def run_simulation(
                         kind=kind,
                         decision="STOPPED",
                         blocked_layer="meaning",
-                        reason_code=m_code,
+                        reason_code="HITL_STOP",
                         artifact_path=None,
                     )
                 )
                 continue
 
-        # Agent output
         draft, raw_text, safe_text = _agent_generate(prompt, kind, faults.get(kind, {}))
-        audit.emit(
-            {
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "AGENT_OUTPUT",
-                "layer": "agent",
-                "preview": safe_text[:200],
-                "decision": "RUN",
-                "reason_code": "AGENT_OUTPUT",
-                "sealed": False,
-                "overrideable": False,
-                "final_decider": "SYSTEM",
-            }
+
+        _emit_info(
+            audit=audit,
+            run_id=run_id,
+            task_id=task_id,
+            event="AGENT_OUTPUT",
+            layer="agent",
+            reason_code="AGENT_OUTPUT_PREVIEW",
+            extra={"preview": safe_text[:200]},
         )
 
-        # Consistency
         ok, c_code = _validate_contract(kind, draft)
         c_dec: Decision = "RUN" if ok else "PAUSE_FOR_HITL"
+
         audit.emit(
             {
                 "run_id": run_id,
@@ -542,39 +456,63 @@ def run_simulation(
                 "layer": "consistency",
                 "decision": c_dec,
                 "reason_code": c_code,
-                "sealed": False,
-                "overrideable": c_dec == "PAUSE_FOR_HITL",
-                "final_decider": "SYSTEM",
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(c_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
             }
         )
 
         if not ok:
-            audit.emit(
-                {
-                    "run_id": run_id,
-                    "task_id": task_id,
-                    "event": "REGEN_REQUESTED",
-                    "layer": "orchestrator",
-                    "decision": "PAUSE_FOR_HITL",
-                    "reason_code": "REGEN_FOR_CONSISTENCY",
-                    "sealed": False,
-                    "overrideable": True,
-                    "final_decider": "SYSTEM",
-                }
+            choice = _hitl_fire_and_decide(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                layer="consistency",
+                reason_code=c_code,
+                hitl_resolver=hitl_resolver,
             )
-            audit.emit(
-                {
-                    "run_id": run_id,
-                    "task_id": task_id,
-                    "event": "REGEN_INSTRUCTIONS",
-                    "layer": "orchestrator",
-                    "decision": "PAUSE_FOR_HITL",
-                    "reason_code": "REGEN_INSTRUCTIONS_V1",
-                    "instructions": "Regenerate output to match the contract schema for this kind.",
-                    "sealed": False,
-                    "overrideable": True,
-                    "final_decider": "SYSTEM",
-                }
+            if choice == "STOP":
+                audit.emit(
+                    {
+                        "run_id": run_id,
+                        "task_id": task_id,
+                        "event": "ARTIFACT_SKIPPED",
+                        "layer": "orchestrator",
+                        "decision": "STOPPED",
+                        "reason_code": "HITL_STOP",
+                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
+                    }
+                )
+                task_results.append(
+                    TaskResult(
+                        task_id=task_id,
+                        kind=kind,
+                        decision="STOPPED",
+                        blocked_layer="consistency",
+                        reason_code="HITL_STOP",
+                        artifact_path=None,
+                    )
+                )
+                continue
+
+            _emit_info(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                event="REGEN_REQUESTED",
+                layer="orchestrator",
+                reason_code="REGEN_FOR_CONSISTENCY",
+            )
+            _emit_info(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                event="REGEN_INSTRUCTIONS",
+                layer="orchestrator",
+                reason_code="REGEN_INSTRUCTIONS_V1",
+                extra={"instructions": "Regenerate output to match the contract schema for this kind."},
             )
             audit.emit(
                 {
@@ -584,9 +522,7 @@ def run_simulation(
                     "layer": "orchestrator",
                     "decision": "PAUSE_FOR_HITL",
                     "reason_code": c_code,
-                    "sealed": False,
-                    "overrideable": True,
-                    "final_decider": "SYSTEM",
+                    **_arl_base(sealed=False, overrideable=True, final_decider="SYSTEM"),
                 }
             )
             task_results.append(
@@ -601,8 +537,7 @@ def run_simulation(
             )
             continue
 
-        # RFL
-        r_dec, r_layer, r_code = _rfl_gate(prompt)
+        r_dec, _, r_code = _rfl_gate(prompt)
         audit.emit(
             {
                 "run_id": run_id,
@@ -611,18 +546,20 @@ def run_simulation(
                 "layer": "rfl",
                 "decision": r_dec,
                 "reason_code": r_code,
-                "sealed": False,
-                "overrideable": r_dec == "PAUSE_FOR_HITL",
-                "final_decider": "SYSTEM",
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(r_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
             }
         )
 
-        if r_dec == "PAUSE_FOR_HITL" and r_layer is not None:
-            choice = _resolve_hitl(
+        if r_dec == "PAUSE_FOR_HITL":
+            choice = _hitl_fire_and_decide(
                 audit=audit,
                 run_id=run_id,
                 task_id=task_id,
-                layer=r_layer,
+                layer="rfl",
                 reason_code=r_code,
                 hitl_resolver=hitl_resolver,
             )
@@ -634,10 +571,8 @@ def run_simulation(
                         "event": "ARTIFACT_SKIPPED",
                         "layer": "orchestrator",
                         "decision": "STOPPED",
-                        "reason_code": r_code,
-                        "sealed": False,
-                        "overrideable": False,
-                        "final_decider": "USER",
+                        "reason_code": "HITL_STOP",
+                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
                     }
                 )
                 task_results.append(
@@ -646,15 +581,15 @@ def run_simulation(
                         kind=kind,
                         decision="STOPPED",
                         blocked_layer="rfl",
-                        reason_code=r_code,
+                        reason_code="HITL_STOP",
                         artifact_path=None,
                     )
                 )
                 continue
 
-        # Ethics
         pii_hit, e_code = _ethics_detect_pii(raw_text)
         e_dec: Decision = "STOPPED" if pii_hit else "RUN"
+
         audit.emit(
             {
                 "run_id": run_id,
@@ -663,9 +598,11 @@ def run_simulation(
                 "layer": "ethics",
                 "decision": e_dec,
                 "reason_code": e_code,
-                "sealed": pii_hit,
-                "overrideable": False,
-                "final_decider": "SYSTEM",
+                **_arl_base(
+                    sealed=bool(pii_hit),
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                ),
             }
         )
 
@@ -678,9 +615,7 @@ def run_simulation(
                     "layer": "ethics",
                     "decision": "STOPPED",
                     "reason_code": e_code,
-                    "sealed": True,
-                    "overrideable": False,
-                    "final_decider": "SYSTEM",
+                    **_arl_base(sealed=True, overrideable=False, final_decider="SYSTEM"),
                 }
             )
             task_results.append(
@@ -695,7 +630,43 @@ def run_simulation(
             )
             continue
 
-        # Write artifact
+        a_dec, _, a_code = _acc_gate(prompt)
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "GATE_ACC",
+                "layer": "acc",
+                "decision": a_dec,
+                "reason_code": a_code,
+                **_arl_base(sealed=False, overrideable=False, final_decider="SYSTEM"),
+            }
+        )
+
+        if a_dec != "RUN":
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "ARTIFACT_SKIPPED",
+                    "layer": "orchestrator",
+                    "decision": "PAUSE_FOR_HITL",
+                    "reason_code": "ACC_BLOCKED",
+                    **_arl_base(sealed=False, overrideable=True, final_decider="SYSTEM"),
+                }
+            )
+            task_results.append(
+                TaskResult(
+                    task_id=task_id,
+                    kind=kind,
+                    decision="PAUSE_FOR_HITL",
+                    blocked_layer="acc",
+                    reason_code="ACC_BLOCKED",
+                    artifact_path=None,
+                )
+            )
+            continue
+
         artifact_path = _write_artifact(out_dir, task_id, kind, safe_text)
         audit.emit(
             {
@@ -705,10 +676,8 @@ def run_simulation(
                 "layer": "orchestrator",
                 "decision": "RUN",
                 "reason_code": "ARTIFACT_WRITTEN",
+                **_arl_base(sealed=False, overrideable=False, final_decider="SYSTEM"),
                 "artifact_path": str(artifact_path),
-                "sealed": False,
-                "overrideable": False,
-                "final_decider": "SYSTEM",
             }
         )
 
@@ -724,21 +693,59 @@ def run_simulation(
             )
         )
 
+    if overall_policy == "iep":
+        if any(t.decision == "STOPPED" for t in task_results):
+            overall: OverallDecision = "STOPPED"
+        elif any(t.decision == "PAUSE_FOR_HITL" for t in task_results):
+            overall = "PAUSE_FOR_HITL"
+        else:
+            overall = "RUN"
+    else:
+        overall = "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
+
     return SimulationResult(
         run_id=run_id,
-        decision=_overall_decision(task_results),
+        decision=overall,
         tasks=task_results,
         artifacts_written_task_ids=artifacts_written,
     )
 
 
+def interactive_hitl_resolver(run_id: str, task_id: str, layer: str, reason_code: str) -> HitlChoice:
+    q = (
+        f"[HITL] run_id={run_id} task_id={task_id} "
+        f"layer={layer} reason={reason_code} -> (c=CONTINUE / s=STOP): "
+    )
+    for _ in range(5):
+        ans = input(q).strip().lower()
+        if ans in ("c", "continue"):
+            return "CONTINUE"
+        if ans in ("s", "stop"):
+            return "STOP"
+        print("Invalid input. Please enter 'c' or 's'.")
+    return "STOP"
+
+
 __all__ = [
     "EMAIL_RE",
+    "run_simulation",
     "AuditLog",
-    "Decision",
-    "HitlChoice",
     "SimulationResult",
     "TaskResult",
+    "HitlResolver",
+    "interactive_hitl_resolver",
     "redact_sensitive",
-    "run_simulation",
 ]
+
+
+if __name__ == "__main__":
+    result = run_simulation(
+        prompt="WordとExcelとPPTを作って。どっちがいい？",
+        run_id="RUN#LOCAL",
+        audit_path="out/audit_v1_2_4.jsonl",
+        artifact_dir="out/artifacts_v1_2_4",
+        truncate_audit_on_start=True,
+        hitl_resolver=interactive_hitl_resolver,
+        overall_policy="iep",
+    )
+    print(result)
