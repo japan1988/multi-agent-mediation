@@ -1,4 +1,4 @@
-    assert counter_value == saved + 1
+ assert counter_value == saved + 1
 
     incident_ids = set()
     for row in index_rows:
