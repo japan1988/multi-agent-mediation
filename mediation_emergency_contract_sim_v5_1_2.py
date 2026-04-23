@@ -63,8 +63,6 @@ EVAL_STORE_PATH = EVAL_STATE_PATH
 # =========================
 # Helpers
 # =========================
-
-
 def now_iso() -> str:
     return datetime.now(JST).isoformat(timespec="seconds")
 
@@ -172,8 +170,6 @@ INCIDENT_PAUSE_REASON_CODES = {
 # =========================
 # Tamper-evident ARL chaining
 # =========================
-
-
 def _canon_json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
@@ -348,7 +344,6 @@ class AuditLog:
             and (run_id in self._incident_post_remaining)
             and (self._incident_post_remaining[run_id] > 0)
         )
-
         must_persist = bool(force_full) or bool(trigger) or bool(in_post)
 
         if not trigger:
@@ -489,7 +484,12 @@ def validate_finalize_event(event: Dict[str, Any]) -> None:
 EVIDENCE_SCHEMA_VERSION = "1.0"
 
 
-def build_evidence_bundle_case_b(*, scenario: str, location_id: str, fabricated: bool = False) -> Dict[str, Any]:
+def build_evidence_bundle_case_b(
+    *,
+    scenario: str,
+    location_id: str,
+    fabricated: bool = False,
+) -> Dict[str, Any]:
     retrieved_at = now_iso()
     evidence_item = {
         "evidence_id": "EV#001",
@@ -526,7 +526,15 @@ def validate_evidence_bundle(bundle: Dict[str, Any]) -> None:
     for it in bundle["evidence_items"]:
         if not isinstance(it, dict):
             raise ValueError("each evidence_item must be object")
-        for kk in ["evidence_id", "source_id", "locator", "retrieved_at", "hash", "supports", "fabricated"]:
+        for kk in [
+            "evidence_id",
+            "source_id",
+            "locator",
+            "retrieved_at",
+            "hash",
+            "supports",
+            "fabricated",
+        ]:
             _require(it, kk)
         _validate_iso(it["retrieved_at"])
         if not isinstance(it["locator"], dict):
@@ -535,7 +543,11 @@ def validate_evidence_bundle(bundle: Dict[str, Any]) -> None:
             raise ValueError("supports must be list")
 
 
-def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dict[str, Any]]) -> Tuple[bool, str]:
+def evidence_gate(
+    audit: AuditLog,
+    st: "OrchestratorState",
+    bundle: Optional[Dict[str, Any]],
+) -> Tuple[bool, str]:
     if bundle is None:
         audit.emit(
             run_id=st.run_id,
@@ -573,7 +585,10 @@ def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dic
             overrideable=True,
             final_decider=DECIDER_SYSTEM,
             reason_code=RC_EVIDENCE_FABRICATION,
-            extra={"scenario": bundle.get("scenario"), "location_id": bundle.get("location_id")},
+            extra={
+                "scenario": bundle.get("scenario"),
+                "location_id": bundle.get("location_id"),
+            },
         )
         return False, RC_EVIDENCE_FABRICATION
 
@@ -595,6 +610,7 @@ def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dic
 
 
 _NEG_WORDS = ("not", "no", "cannot", "can't", "without", "lacks", "lack", "never")
+
 _PATTERNS_POSITIVE = [
     re.compile(r"\blegally binding\b", re.IGNORECASE),
     re.compile(r"\bthis contract is binding\b", re.IGNORECASE),
@@ -603,6 +619,7 @@ _PATTERNS_POSITIVE = [
     re.compile(r"\bgrants? legal authority\b", re.IGNORECASE),
     re.compile(r"\bis a legal authority\b", re.IGNORECASE),
 ]
+
 _PATTERNS_DISCRIMINATION = [
     re.compile(r"\b(discriminat(?:e|ion)|racist|racial slur)\b", re.IGNORECASE),
 ]
@@ -657,7 +674,12 @@ def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> 
         )
         return False, RC_SAFETY_DISCRIMINATION_TERM
 
-    required_lines = ["draft", "no operational effect", "AI is used for drafting only", "ADMIN approval"]
+    required_lines = [
+        "draft",
+        "no operational effect",
+        "AI is used for drafting only",
+        "ADMIN approval",
+    ]
     normalized = re.sub(r"[*_]", "", text)
     lower = normalized.lower()
     missing = [x for x in required_lines if x.lower() not in lower]
@@ -697,7 +719,6 @@ DELTA_FINALIZE_APPROVE = +0.02
 DELTA_LINT_FAIL = -0.015
 DELTA_INVALID_EVENT = -0.03
 COOLDOWN_SECONDS = 300
-
 COACHING_ENABLE = True
 COACHING_TRUST_BELOW = 0.93
 COACHING_MAX_SESSIONS = 50
@@ -767,6 +788,7 @@ EVAL_MULTIPLIER_CAP = 2.0
 SPEED_TARGET_MS = 1.0
 SCORE_BASE_COMPLETION = 0.70
 SCORE_BASE_SPEED = 0.30
+
 FRAUD_REASON_CODES = {
     RC_EVIDENCE_FABRICATION,
     RC_EVIDENCE_SCHEMA_INVALID,
@@ -785,7 +807,10 @@ class EvalState:
         return min(EVAL_MULTIPLIER_CAP, 1.0 + EVAL_MULTIPLIER_STEP * self.clean_completion_count)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"clean_completion_count": self.clean_completion_count, "multiplier": self.multiplier()}
+        return {
+            "clean_completion_count": self.clean_completion_count,
+            "multiplier": self.multiplier(),
+        }
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> "EvalState":
@@ -824,10 +849,14 @@ def compute_base_score(*, final_state: str, sealed: bool, runtime_ms: float) -> 
     return 100.0 * (SCORE_BASE_COMPLETION + SCORE_BASE_SPEED * sn)
 
 
-def is_clean_completion(*, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
+def is_clean_completion(
+    *,
+    final_state: str,
+    sealed: bool,
+    arl_rows: List[Dict[str, Any]],
+) -> Tuple[bool, List[str]]:
     if final_state != "CONTRACT_EFFECTIVE" or sealed:
         return False, []
-
     hits: List[str] = []
     for r in (arl_rows or []):
         rc = str(r.get("reason_code", ""))
@@ -894,9 +923,10 @@ def ensure_default_grant_exists() -> None:
     grants = load_grants()
     now_dt = datetime.now(JST)
     for g in grants:
-        if g.scenario == POLICY_CASE_B and g.location_id == "INT-042" and g.is_valid(now_dt.isoformat(timespec="seconds")):
+        if g.scenario == POLICY_CASE_B and g.location_id == "INT-042" and g.is_valid(
+            now_dt.isoformat(timespec="seconds")
+        ):
             return
-
     expires = (now_dt + timedelta(days=7)).isoformat(timespec="seconds")
     new_g = Grant(
         grant_id="GRANT#CASE_B#INT-042",
@@ -931,7 +961,12 @@ class OrchestratorState:
     evidence_bundle: Optional[Dict[str, Any]] = None
 
 
-def build_auth_request_case_b(*, auth_request_id: str, auth_id: str, ttl_seconds: int = 180) -> Dict[str, Any]:
+def build_auth_request_case_b(
+    *,
+    auth_request_id: str,
+    auth_id: str,
+    ttl_seconds: int = 180,
+) -> Dict[str, Any]:
     expires = (datetime.now(JST) + timedelta(seconds=ttl_seconds)).isoformat(timespec="seconds")
     req = {
         "schema_version": "1.0",
@@ -1072,18 +1107,14 @@ def apply_trust_update(
     if delta_requested > 0:
         applied = min(delta_requested, max(0.0, cap_remaining))
         cap_remaining = max(0.0, cap_remaining - applied)
-
     trust.trust_score = clamp(trust.trust_score + applied, TRUST_MIN, TRUST_MAX)
-
     if reset_streak:
         trust.approval_streak = 0
     elif applied > 0:
         trust.approval_streak += 1
-
     if set_cooldown:
         until = (datetime.now(JST) + timedelta(seconds=COOLDOWN_SECONDS)).isoformat(timespec="seconds")
         trust.cooldown_until = until
-
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_TRUST_UPDATE,
@@ -1143,7 +1174,11 @@ def model_trust_gate(
             overrideable=True,
             final_decider=DECIDER_SYSTEM,
             reason_code=RC_TRUST_NO_GRANT,
-            extra={"scenario": scenario, "location_id": location_id, "trust_score": trust.trust_score},
+            extra={
+                "scenario": scenario,
+                "location_id": location_id,
+                "trust_score": trust.trust_score,
+            },
         )
         return False, RC_TRUST_NO_GRANT, None
 
@@ -1209,7 +1244,10 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         overrideable=True,
         final_decider=DECIDER_SYSTEM,
         reason_code=RC_COACHING_AUTH_REQUIRED,
-        extra={"trust_score": trust.trust_score, "compliance_score": trust.compliance_score},
+        extra={
+            "trust_score": trust.trust_score,
+            "compliance_score": trust.compliance_score,
+        },
     )
     audit.emit(
         run_id=st.run_id,
@@ -1237,7 +1275,11 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         overrideable=False,
         final_decider=DECIDER_SYSTEM,
         reason_code=RC_COACHING_CHECK_PASSED,
-        extra={"before": before, "after": trust.compliance_score, "sessions": trust.coaching_sessions},
+        extra={
+            "before": before,
+            "after": trust.compliance_score,
+            "sessions": trust.coaching_sessions,
+        },
     )
 
 
@@ -1264,7 +1306,6 @@ def simulate_run(
         location_id="INT-042",
         fabricated=fabricate_evidence,
     )
-
     ok_ev, ev_reason = evidence_gate(audit, st, st.evidence_bundle)
     if not ok_ev:
         if ev_reason == RC_EVIDENCE_SCHEMA_INVALID:
@@ -1374,7 +1415,10 @@ def simulate_run(
             "event_type": "AUTH_APPROVE",
             "ts": now_iso(),
             "actor": {"type": "USER", "id": "field_operator"},
-            "target": {"kind": "AUTH_REQUEST", "auth_request_id": st.auth_request["auth_request_id"]},
+            "target": {
+                "kind": "AUTH_REQUEST",
+                "auth_request_id": st.auth_request["auth_request_id"],
+            },
             "notes": "bench auth",
         }
         validate_auth_event(auth_event)
@@ -1461,7 +1505,6 @@ def simulate_run(
                 final_decider=DECIDER_SYSTEM,
                 reason_code=lint_reason,
             )
-
         st.sealed = True
         st.state = "STOPPED"
         cap_remaining = apply_trust_update(
@@ -1530,7 +1573,10 @@ def simulate_run(
         overrideable=False,
         final_decider=DECIDER_SYSTEM,
         reason_code=RC_CONTRACT_EFFECTIVE,
-        extra={"contract_id": st.contract["contract_id"], "draft_id": st.draft["draft_id"]},
+        extra={
+            "contract_id": st.contract["contract_id"],
+            "draft_id": st.draft["draft_id"],
+        },
     )
     st.state = "CONTRACT_EFFECTIVE"
 
@@ -1562,9 +1608,15 @@ class HitlQueueBuilder:
     by_reason: Dict[str, int] = field(default_factory=dict)
     by_state: Dict[str, int] = field(default_factory=dict)
 
-    def add_run(self, *, run_id: str, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> None:
+    def add_run(
+        self,
+        *,
+        run_id: str,
+        final_state: str,
+        sealed: bool,
+        arl_rows: List[Dict[str, Any]],
+    ) -> None:
         self.by_state[final_state] = self.by_state.get(final_state, 0) + 1
-
         if final_state not in ("STOPPED", "PAUSE_FOR_HITL_AUTH", "PAUSE_FOR_HITL_FINALIZE") and not sealed:
             return
 
@@ -1589,7 +1641,6 @@ class HitlQueueBuilder:
             "row_hash",
         )
         snapshot = {k: first_bad.get(k) for k in snapshot_keys if k in first_bad}
-
         self.items.append(
             {
                 "run_id": run_id,
@@ -1794,6 +1845,7 @@ def run_simulation(
 
     ensure_default_grant_exists()
     key_bytes, key_id = load_key_bytes(key_mode, key_file=key_file, key_env=key_env)
+
     trust = load_trust_state()
     eval_state = load_eval_state()
 
@@ -1849,15 +1901,14 @@ def run_simulation(
             persist=False,
         )
         t1 = time.perf_counter()
-        runtime_ms = (t1 - t0) * 1000.0
 
+        runtime_ms = (t1 - t0) * 1000.0
         clean_ok, fraud_hits = is_clean_completion(
             final_state=st.state,
             sealed=st.sealed,
             arl_rows=audit.rows,
         )
         abnormal = is_abnormal_run(st.state, st.sealed)
-
         base_score = compute_base_score(
             final_state=st.state,
             sealed=st.sealed,
@@ -1906,7 +1957,12 @@ def run_simulation(
         if reward_granted:
             eval_state.clean_completion_count += 1
 
-        qb.add_run(run_id=rid, final_state=st.state, sealed=st.sealed, arl_rows=audit.rows)
+        qb.add_run(
+            run_id=rid,
+            final_state=st.state,
+            sealed=st.sealed,
+            arl_rows=audit.rows,
+        )
 
         if abnormal:
             results["abnormal_arl_persistence"]["abnormal_total"] += 1
@@ -2049,6 +2105,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
- japan1988-patch-4
     raise SystemExit(main())
-    raise SystemExit(main())ain())
