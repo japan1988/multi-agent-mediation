@@ -1,6 +1,3 @@
-assert run_rate == 1.0
-
-
 def test_benchmark_profile_hitl_observe_ambiguous_prompt() -> None:
     """
     HITL観測用（曖昧系fault）:
