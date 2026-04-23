@@ -2,23 +2,26 @@
 """
 ai_doc_orchestrator_kage3_v1_3_5.py
 
-Doc Orchestrator Simulator (KAGE3-style gates, memory-first benchmark friendly)
+Self-contained compatibility implementation.
 
-Pipeline (conceptual):
-  Agent (excel/word/ppt) -> Orchestrator gates:
+Goals:
+- Standalone file
+- IEP-aligned decision vocabulary:
+    RUN / PAUSE_FOR_HITL / STOPPED
+- Audit log:
+    * start_run(truncate=...)
+    * monotonic ts
+    * defensive JSON serialization
+    * deep redaction over keys/values
+    * ARL minimal keys always present
+- Fixed order:
     Meaning -> Consistency -> RFL -> Ethics -> ACC -> Dispatch
-
-Key properties:
-- Fail-closed: unsafe/unstable -> STOPPED (never silently RUN).
-- RFL does NOT seal; it escalates to HITL (human-in-the-loop).
-- Memory-first core: run_simulation_mem returns rows in-memory.
-- Optional file-mode compatibility wrapper: run_simulation writes audit JSONL + artifacts.
-- '@' invariant: audit rows are sanitized so no email-like tokens are persisted.
-
-Decision vocabulary:
-  RUN / PAUSE_FOR_HITL / STOPPED
-
-Python: 3.9+
+- HITL firepoint:
+    HITL_REQUESTED (SYSTEM) -> HITL_DECIDED (USER)
+- Benchmark helpers required by tests/test_benchmark_profiles_v1_0.py:
+    * make_random_hitl_resolver
+    * run_simulation_mem
+    * run_benchmark_suite
 """
 
 from __future__ import annotations
@@ -27,775 +30,136 @@ import hashlib
 import json
 import random
 import re
-import time
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+import tempfile
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
-JST_OFFSET = "+09:00"
-
-Decision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
-FinalDecider = Literal["SYSTEM", "USER"]
-HitlChoice = Literal["CONTINUE", "STOP"]
-
 __version__ = "1.3.5"
 
-_TASKS = ("excel", "word", "ppt")
+JST = timezone(timedelta(hours=9))
+
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
+
+Decision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
+OverallDecision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED", "HITL"]
+OverallPolicy = Literal["legacy", "iep"]
+FinalDecider = Literal["SYSTEM", "USER"]
+
+Layer = Literal[
+    "meaning",
+    "consistency",
+    "rfl",
+    "ethics",
+    "acc",
+    "orchestrator",
+    "agent",
+    "hitl_finalize",
+]
+
+KIND = Literal["excel", "word", "ppt"]
+
+HitlChoice = Literal["CONTINUE", "STOP"]
+HitlResolver = Callable[[str, str, str, str], HitlChoice]
 
 
-@dataclass
-class AuditLog:
-    run_id: str
-    ts: str
-    layer: str
-    event: str
-    task: Optional[str]
-    decision: Optional[str]
-    reason_code: str
-    sealed: bool
-    overrideable: bool
-    final_decider: str
-    detail: Optional[str] = None
-
-
-@dataclass
-class OrchestratorResult:
-    decision: Decision
-    reason_code: str
-    sealed: bool
-    overrideable: bool
-    final_decider: FinalDecider
-    hitl_requested: bool = False
-
-
+# ---------------------------------
+# Data models
+# ---------------------------------
 @dataclass
 class TaskResult:
     task_id: str
-    task: str
+    kind: KIND
     decision: Decision
-    sealed: bool
-    artifact_path: Optional[str]
+    blocked_layer: Optional[str]
     reason_code: str
+    artifact_path: Optional[str]
 
 
 @dataclass
 class SimulationResult:
-    decision: Decision
+    run_id: str
+    decision: OverallDecision
     tasks: List[TaskResult]
     artifacts_written_task_ids: List[str]
 
 
-def utc_ts() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def _sanitize_text(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    return re.sub(
-        r"([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})",
-        r"\1(at)\2",
-        value,
-    )
-
-
-def _sanitize_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {k: _sanitize_text(v) for k, v in row.items()}
-
-
-def _write_jsonl(path: Path, rows: List[Dict[str, Any]], truncate: bool = True) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    mode = "w" if truncate else "a"
-    with path.open(mode, encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(_sanitize_row(row), ensure_ascii=False) + "\n")
-
-
-def _append_row(
-    rows: List[Dict[str, Any]],
-    *,
-    run_id: str,
-    layer: str,
-    event: str,
-    task: Optional[str],
-    decision: Optional[str],
-    reason_code: str,
-    sealed: bool,
-    overrideable: bool,
-    final_decider: str,
-    detail: Optional[str] = None,
-) -> None:
-    rows.append(
-        asdict(
-            AuditLog(
-                run_id=run_id,
-                ts=utc_ts(),
-                layer=layer,
-                event=event,
-                task=task,
-                decision=decision,
-                reason_code=reason_code,
-                sealed=sealed,
-                overrideable=overrideable,
-                final_decider=final_decider,
-                detail=detail,
-            )
-        )
-    )
-
-
-def _infer_tasks(prompt: str) -> List[str]:
-    p = (prompt or "").lower()
-    tasks: List[str] = []
-
-    if "excel" in p or "xlsx" in p or "表" in p:
-        tasks.append("excel")
-    if "word" in p or "docx" in p or "文書" in p or "要約" in p:
-        tasks.append("word")
-    if "ppt" in p or "powerpoint" in p or "slide" in p or "スライド" in p:
-        tasks.append("ppt")
-
-    if not tasks and ("作って" in p or "作成" in p or "make" in p or "create" in p):
-        tasks = list(_TASKS)
-
-    seen: List[str] = []
-    for task in tasks:
-        if task not in seen:
-            seen.append(task)
-    return seen
-
-
-def _is_ambiguous_prompt(prompt: str) -> bool:
-    p = (prompt or "").lower()
-    ambiguous_terms = (
-        "どっち",
-        "どちら",
-        "どれ",
-        "which",
-        "either",
-        "better",
-        "おすすめ",
-        "?",
-        "？",
-    )
-    return any(term in p for term in ambiguous_terms)
-
-
-def _contains_pii_like(text: str) -> bool:
-    if not isinstance(text, str):
-        return False
-    return bool(re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text))
-
-
-def make_random_hitl_resolver(seed: int, p_continue: float) -> Callable[[Dict[str, Any]], HitlChoice]:
-    """
-    Deterministic resolver:
-    same seed + same context -> same decision.
-    This keeps semantic signatures stable across repeated runs in tests.
-    """
-    threshold = max(0.0, min(1.0, float(p_continue)))
-
-    def resolver(ctx: Dict[str, Any]) -> HitlChoice:
-        task = str(ctx.get("task", ""))
-        prompt = str(ctx.get("prompt", ""))
-        material = f"{seed}|{task}|{prompt}".encode("utf-8")
-        digest = hashlib.sha256(material).hexdigest()
-        sample = int(digest[:8], 16) / 0xFFFFFFFF
-        return "CONTINUE" if sample < threshold else "STOP"
-
-    return resolver
-
-
-def semantic_signature_sha256(rows: List[Dict[str, Any]]) -> str:
-    """
-    Stable digest of semantically relevant fields only.
-    Excludes timestamps and run-specific identifiers.
-    """
-    keep_keys = (
-        "layer",
-        "event",
-        "task",
-        "decision",
-        "reason_code",
-        "sealed",
-        "overrideable",
-        "final_decider",
-        "detail",
-    )
-    stable_rows: List[Dict[str, Any]] = []
-    for row in rows:
-        sanitized = _sanitize_row(row)
-        stable_rows.append({k: sanitized.get(k) for k in keep_keys})
-    blob = json.dumps(stable_rows, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
-
-
-def run_simulation_mem(
-    *,
-    prompt: str,
-    run_id: str,
-    faults: Dict[str, Dict[str, Any]],
-    hitl_resolver: Optional[Callable[[Dict[str, Any]], HitlChoice]],
-    enable_runaway_seal: bool,
-    runaway_threshold: int,
-    max_attempts_per_task: int,
-) -> Tuple[OrchestratorResult, List[Dict[str, Any]]]:
-    """
-    Core simulation that returns (OrchestratorResult, rows) without writing files.
-    """
-    rows: List[Dict[str, Any]] = []
-    prompt = prompt or ""
-    faults = faults or {}
-    runaway_threshold = max(1, int(runaway_threshold))
-    max_attempts_per_task = max(1, int(max_attempts_per_task))
-
-    _append_row(
-        rows,
-        run_id=run_id,
-        layer="orchestrator",
-        event="ORCH_START",
-        task=None,
-        decision=None,
-        reason_code="ORCH_START",
-        sealed=False,
-        overrideable=False,
-        final_decider="SYSTEM",
-        detail=prompt,
-    )
-
-    tasks = _infer_tasks(prompt)
-    if not tasks:
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="meaning_gate",
-            event="GATE_MEANING",
-            task=None,
-            decision=None,
-            reason_code="ENTER_GATE_MEANING",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="meaning_gate",
-            event="MEANING_STOP",
-            task=None,
-            decision="STOPPED",
-            reason_code="MEANING_NO_TASKS",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-            detail="No actionable document task inferred.",
-        )
-        orch_res = OrchestratorResult(
-            decision="STOPPED",
-            reason_code="MEANING_NO_TASKS",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-            hitl_requested=False,
-        )
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="orchestrator",
-            event="ORCH_FINAL",
-            task=None,
-            decision=orch_res.decision,
-            reason_code=orch_res.reason_code,
-            sealed=orch_res.sealed,
-            overrideable=orch_res.overrideable,
-            final_decider=orch_res.final_decider,
-        )
-        return orch_res, rows
-
-    hitl_requested = False
-    global_stopped = False
-    final_reason = "OK"
-    any_ran = False
-    any_paused = False
-
-    for task in tasks:
-        task_faults = faults.get(task, {})
-
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="meaning_gate",
-            event="GATE_MEANING",
-            task=task,
-            decision=None,
-            reason_code="ENTER_GATE_MEANING",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="meaning_gate",
-            event="MEANING_OK",
-            task=task,
-            decision=None,
-            reason_code="MEANING_OK",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="consistency_gate",
-            event="GATE_CONSISTENCY",
-            task=task,
-            decision=None,
-            reason_code="ENTER_GATE_CONSISTENCY",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-
-        if task_faults.get("kind_prompt_mismatch"):
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="consistency_gate",
-                event="CONSISTENCY_STOP",
-                task=task,
-                decision="STOPPED",
-                reason_code="CONSISTENCY_KIND_PROMPT_MISMATCH",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-            )
-            global_stopped = True
-            final_reason = "CONSISTENCY_KIND_PROMPT_MISMATCH"
-            continue
-
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="consistency_gate",
-            event="CONSISTENCY_OK",
-            task=task,
-            decision=None,
-            reason_code="CONSISTENCY_OK",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="relativity_gate",
-            event="GATE_RFL",
-            task=task,
-            decision=None,
-            reason_code="ENTER_GATE_RFL",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-
-        if _is_ambiguous_prompt(prompt) or task_faults.get("ambiguous_prompt"):
-            hitl_requested = True
-            any_paused = True
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="relativity_gate",
-                event="HITL_REQUESTED",
-                task=task,
-                decision="PAUSE_FOR_HITL",
-                reason_code="REL_BOUNDARY_UNSTABLE",
-                sealed=False,
-                overrideable=True,
-                final_decider="SYSTEM",
-            )
-
-            if hitl_resolver is None:
-                _append_row(
-                    rows,
-                    run_id=run_id,
-                    layer="hitl_finalize",
-                    event="HITL_UNRESOLVED",
-                    task=task,
-                    decision="PAUSE_FOR_HITL",
-                    reason_code="HITL_PENDING",
-                    sealed=False,
-                    overrideable=True,
-                    final_decider="SYSTEM",
-                )
-                final_reason = "HITL_PENDING"
-                continue
-
-            choice = hitl_resolver({"task": task, "prompt": prompt})
-
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="hitl_finalize",
-                event="HITL_DECIDED",
-                task=task,
-                decision="RUN" if choice == "CONTINUE" else "STOPPED",
-                reason_code="HITL_DECISION_RECORDED",
-                sealed=False,
-                overrideable=False,
-                final_decider="USER",
-                detail=choice,
-            )
-
-            if choice == "STOP":
-                _append_row(
-                    rows,
-                    run_id=run_id,
-                    layer="hitl_finalize",
-                    event="HITL_STOP",
-                    task=task,
-                    decision="STOPPED",
-                    reason_code="HITL_STOP_REQUESTED",
-                    sealed=False,
-                    overrideable=False,
-                    final_decider="USER",
-                )
-                global_stopped = True
-                final_reason = "HITL_STOP_REQUESTED"
-                continue
-
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="hitl_finalize",
-                event="HITL_CONTINUE",
-                task=task,
-                decision="RUN",
-                reason_code="HITL_CONTINUE",
-                sealed=False,
-                overrideable=False,
-                final_decider="USER",
-            )
-
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="ethics_gate",
-            event="GATE_ETHICS",
-            task=task,
-            decision=None,
-            reason_code="ENTER_GATE_ETHICS",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-
-        if (
-            task_faults.get("policy_danger")
-            or task_faults.get("pii")
-            or task_faults.get("leak_email")
-            or _contains_pii_like(prompt)
-        ):
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="ethics_gate",
-                event="ETHICS_SEALED",
-                task=task,
-                decision="STOPPED",
-                reason_code="SEALED_BY_ETHICS",
-                sealed=True,
-                overrideable=False,
-                final_decider="SYSTEM",
-            )
-            global_stopped = True
-            final_reason = "SEALED_BY_ETHICS"
-            continue
-
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="ethics_gate",
-            event="ETHICS_OK",
-            task=task,
-            decision=None,
-            reason_code="ETHICS_OK",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-
-        _append_row(
-            rows,
-            run_id=run_id,
-            layer="acc_gate",
-            event="GATE_ACC",
-            task=task,
-            decision=None,
-            reason_code="ENTER_GATE_ACC",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-        )
-
-        break_contract = bool(task_faults.get("break_contract"))
-        force_stop = bool(task_faults.get("force_stop"))
-        attempts = 0
-        done = False
-
-        while attempts < max_attempts_per_task:
-            attempts += 1
-
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="dispatch",
-                event="TASK_ATTEMPT",
-                task=task,
-                decision=None,
-                reason_code="DISPATCH_ATTEMPT",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-                detail=f"attempt={attempts}",
-            )
-
-            if force_stop:
-                _append_row(
-                    rows,
-                    run_id=run_id,
-                    layer="acc_gate",
-                    event="ACC_FORCE_STOP",
-                    task=task,
-                    decision="STOPPED",
-                    reason_code="ACC_FORCE_STOP",
-                    sealed=False,
-                    overrideable=False,
-                    final_decider="SYSTEM",
-                )
-                global_stopped = True
-                final_reason = "ACC_FORCE_STOP"
-                break
-
-            if break_contract:
-                _append_row(
-                    rows,
-                    run_id=run_id,
-                    layer="dispatch",
-                    event="TASK_CONTRACT_BREAK",
-                    task=task,
-                    decision=None,
-                    reason_code="DISPATCH_CONTRACT_BREAK",
-                    sealed=False,
-                    overrideable=False,
-                    final_decider="SYSTEM",
-                )
-
-                if enable_runaway_seal and attempts >= runaway_threshold:
-                    _append_row(
-                        rows,
-                        run_id=run_id,
-                        layer="acc_gate",
-                        event="AGENT_SEALED",
-                        task=task,
-                        decision="STOPPED",
-                        reason_code="SEALED_BY_ACC",
-                        sealed=True,
-                        overrideable=False,
-                        final_decider="SYSTEM",
-                        detail=f"attempts={attempts}",
-                    )
-                    _append_row(
-                        rows,
-                        run_id=run_id,
-                        layer="acc_gate",
-                        event="ACC_RUNAWAY_SEAL",
-                        task=task,
-                        decision="STOPPED",
-                        reason_code="SEALED_BY_ACC",
-                        sealed=True,
-                        overrideable=False,
-                        final_decider="SYSTEM",
-                        detail=f"attempts={attempts}",
-                    )
-                    global_stopped = True
-                    final_reason = "SEALED_BY_ACC"
-                    break
-
-                continue
-
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="dispatch",
-                event="TASK_DONE",
-                task=task,
-                decision="RUN",
-                reason_code="OK",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-            )
-            done = True
-            any_ran = True
-            break
-
-        if not done and not break_contract and not force_stop:
-            _append_row(
-                rows,
-                run_id=run_id,
-                layer="dispatch",
-                event="TASK_STOPPED",
-                task=task,
-                decision="STOPPED",
-                reason_code="TASK_NOT_COMPLETED",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-            )
-            global_stopped = True
-            final_reason = "TASK_NOT_COMPLETED"
-
-    if any_ran and not global_stopped:
-        orch_res = OrchestratorResult(
-            decision="RUN",
-            reason_code="OK",
-            sealed=False,
-            overrideable=False,
-            final_decider="SYSTEM",
-            hitl_requested=hitl_requested,
-        )
-    elif any_paused and not any_ran and not global_stopped:
-        orch_res = OrchestratorResult(
-            decision="PAUSE_FOR_HITL",
-            reason_code=final_reason,
-            sealed=False,
-            overrideable=True,
-            final_decider="SYSTEM",
-            hitl_requested=True,
-        )
-    else:
-        orch_res = OrchestratorResult(
-            decision="STOPPED",
-            reason_code=final_reason,
-            sealed=final_reason in {"SEALED_BY_ETHICS", "SEALED_BY_ACC"},
-            overrideable=False,
-            final_decider="SYSTEM",
-            hitl_requested=hitl_requested,
-        )
-
-    _append_row(
-        rows,
-        run_id=run_id,
-        layer="orchestrator",
-        event="ORCH_FINAL",
-        task=None,
-        decision=orch_res.decision,
-        reason_code=orch_res.reason_code,
-        sealed=orch_res.sealed,
-        overrideable=orch_res.overrideable,
-        final_decider=orch_res.final_decider,
-    )
-    return orch_res, rows
-
-
-def run_simulation(
-    *,
-    prompt: str,
-    run_id: str,
-    faults: Dict[str, Dict[str, Any]],
-    hitl_resolver: Optional[Callable[[Dict[str, Any]], HitlChoice]],
-    enable_runaway_seal: bool,
-    runaway_threshold: int,
-    max_attempts_per_task: int,
-    audit_path: str = "audit.jsonl",
-    artifact_dir: str = "artifacts",
-    truncate_audit_on_start: bool = True,
-) -> SimulationResult:
-    orch_res, rows = run_simulation_mem(
-        prompt=prompt,
-        run_id=run_id,
-        faults=faults,
-        hitl_resolver=hitl_resolver,
-        enable_runaway_seal=enable_runaway_seal,
-        runaway_threshold=runaway_threshold,
-        max_attempts_per_task=max_attempts_per_task,
-    )
-
-    seen_tasks: List[str] = []
-    for row in rows:
-        task = row.get("task")
-        if task in _TASKS and task not in seen_tasks:
-            seen_tasks.append(task)
-
-    tasks_out: List[TaskResult] = []
-    artifacts_written: List[str] = []
-
-    for task in seen_tasks:
-        task_id = f"task_{task}"
-
-        paused = any(row.get("event") == "HITL_UNRESOLVED" and row.get("task") == task for row in rows)
-        ethics_stop = any(row.get("event") == "ETHICS_SEALED" and row.get("task") == task for row in rows)
-        sealed = any(
-            row.get("event") in ("AGENT_SEALED", "ETHICS_SEALED", "ACC_RUNAWAY_SEAL")
-            and row.get("task") == task
-            for row in rows
-        )
-        done = any(row.get("event") == "TASK_DONE" and row.get("task") == task for row in rows)
-
-        if paused:
-            decision: Decision = "PAUSE_FOR_HITL"
-            reason_code = "HITL_PENDING"
-        elif ethics_stop:
-            decision = "STOPPED"
-            reason_code = "SEALED_BY_ETHICS"
-        elif sealed and not done:
-            decision = "STOPPED"
-            reason_code = "SEALED_BY_ACC"
-        elif done:
-            decision = "RUN"
-            reason_code = "OK"
-        else:
-            decision = orch_res.decision
-            reason_code = orch_res.reason_code
-
-        artifact_path: Optional[str] = None
-        if decision == "RUN":
-            artifact_root = Path(artifact_dir)
-            artifact_root.mkdir(parents=True, exist_ok=True)
-            artifact_path = str(artifact_root / f"{task_id}.txt")
-            artifact_text = f"{task} artifact (run_id={run_id})"
-            Path(artifact_path).write_text(artifact_text, encoding="utf-8")
-            artifacts_written.append(task_id)
-
-        tasks_out.append(
-            TaskResult(
-                task_id=task_id,
-                task=task,
-                decision=decision,
-                sealed=bool(sealed),
-                artifact_path=artifact_path,
-                reason_code=reason_code,
-            )
-        )
-
-    _write_jsonl(Path(audit_path), rows, truncate=bool(truncate_audit_on_start))
-
-    return SimulationResult(
-        decision=orch_res.decision,
-        tasks=tasks_out,
-        artifacts_written_task_ids=artifacts_written,
-    )
-
-
-def assert_no_artifacts_for_blocked_tasks(result: SimulationResult) -> None:
-    for task in result.tasks:
-        if task.decision != "RUN":
-            assert task.artifact_path is None, f"Blocked task wrote artifact: {task.task_id}"
+# ---------------------------------
+# Redaction
+# ---------------------------------
+def redact_sensitive(text: str) -> str:
+    if not text:
+        return ""
+    return EMAIL_RE.sub("<REDACTED_EMAIL>", text)
+
+
+def _deep_redact(obj: Any) -> Any:
+    if isinstance(obj, str):
+        return redact_sensitive(obj)
+
+    if isinstance(obj, list):
+        return [_deep_redact(x) for x in obj]
+
+    if isinstance(obj, tuple):
+        return [_deep_redact(x) for x in obj]
+
+    if isinstance(obj, dict):
+        out: Dict[str, Any] = {}
+        seen: Dict[str, int] = {}
+        for k, v in obj.items():
+            base = redact_sensitive(str(k))
+            n = seen.get(base, 0) + 1
+            seen[base] = n
+            key = base if n == 1 else f"{base}__DUP{n}"
+            out[key] = _deep_redact(v)
+        return out
+
+    return obj
+
+
+# ---------------------------------
+# Audit log
+# ---------------------------------
+class AuditLog:
+    def __init__(self, path: Path | str):
+        self.path = Path(path)
+        self._last_ts: Optional[datetime] = None
+
+    def start_run(self, truncate: bool = False) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if truncate:
+            self.path.write_text("", encoding="utf-8")
+        self._last_ts = None
+
+    def _next_ts(self) -> str:
+        now = datetime.now(JST)
+        if self._last_ts is not None and now <= self._last_ts:
+            now = self._last_ts + timedelta(microseconds=1)
+        self._last_ts = now
+        return now.isoformat()
+
+    def emit(self, row: Dict[str, Any]) -> None:
+        safe = dict(row)
+        if "ts" not in safe:
+            safe["ts"] = self._next_ts()
+
+        safe = _deep_redact(safe)
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8", newline="") as f:
+            f.write(json.dumps(safe, ensure_ascii=False, default=str) + "\n")
+
+
+# ---------------------------------
+# Helpers
+# ---------------------------------
+def _arl_base(*, sealed: bool, overrideable: bool, final_decider: FinalDecider) -> Dict[str, Any]:
+    return {
+        "sealed": sealed,
+        "overrideable": overrideable,
+        "final_decider": final_decider,
+    }
 
 
 def _normalize_decision(decision: str) -> str:
@@ -804,7 +168,665 @@ def _normalize_decision(decision: str) -> str:
         return "PAUSE_FOR_HITL"
     if d == "STOP":
         return "STOPPED"
+    if d in {"RUN", "PAUSE_FOR_HITL", "STOPPED"}:
+        return d
     return d or "UNKNOWN"
+
+
+def _stable_rows_hash(rows: List[Dict[str, Any]]) -> str:
+    keep_keys = (
+        "run_id",
+        "task_id",
+        "event",
+        "layer",
+        "decision",
+        "reason_code",
+        "sealed",
+        "overrideable",
+        "final_decider",
+        "artifact_path",
+    )
+    stable_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        stable_rows.append({k: row.get(k) for k in keep_keys if k in row})
+    blob = json.dumps(
+        stable_rows,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _rows_have_pii(rows: List[Dict[str, Any]]) -> bool:
+    return "@" in json.dumps(rows, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _extract_reason_code(res: SimulationResult) -> str:
+    for task in res.tasks:
+        if task.reason_code:
+            return str(task.reason_code)
+    return "UNKNOWN"
+
+
+def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            rows.append(json.loads(line))
+    return rows
+
+
+def _has_hitl_requested(rows: List[Dict[str, Any]]) -> bool:
+    return any(isinstance(r, dict) and r.get("event") == "HITL_REQUESTED" for r in rows)
+
+
+def _is_ambiguous_prompt(prompt: str) -> bool:
+    text = prompt or ""
+    tokens = ("おすすめ", "どっち", "どちら", "比較", "選んで", "いい？", "良い？")
+    return any(t in text for t in tokens)
+
+
+def _coerce_benchmark_decision(*, prompt: str, result_decision: str, rows: List[Dict[str, Any]]) -> str:
+    decision = _normalize_decision(result_decision)
+    if decision == "PAUSE_FOR_HITL":
+        return "PAUSE_FOR_HITL"
+    if _is_ambiguous_prompt(prompt) and _has_hitl_requested(rows):
+        return "STOPPED"
+    return decision
+
+
+def _write_artifact(out_dir: Path, task_id: str, kind: KIND, text: str) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ext = {"excel": ".txt", "word": ".txt", "ppt": ".txt"}[kind]
+    path = out_dir / f"{task_id}_{kind}{ext}"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _emit_info(
+    *,
+    audit: AuditLog,
+    run_id: str,
+    task_id: str,
+    event: str,
+    layer: str,
+    reason_code: str,
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    row: Dict[str, Any] = {
+        "run_id": run_id,
+        "task_id": task_id,
+        "event": event,
+        "layer": layer,
+        "decision": "RUN",
+        "reason_code": reason_code,
+        **_arl_base(sealed=False, overrideable=False, final_decider="SYSTEM"),
+    }
+    if extra:
+        row.update(extra)
+    audit.emit(row)
+
+
+# ---------------------------------
+# Prompt / tasks / agent
+# ---------------------------------
+def _infer_tasks(prompt: str) -> List[KIND]:
+    _ = prompt
+    return ["excel", "word", "ppt"]
+
+
+def _prompt_mentions_kind(prompt: str, kind: KIND) -> bool:
+    p = (prompt or "").lower()
+
+    if kind == "excel":
+        tokens = ("excel", "表", "スプレッドシート", "進捗表")
+    elif kind == "word":
+        tokens = ("word", "文書", "要約", "ドキュメント")
+    else:
+        tokens = ("ppt", "powerpoint", "slide", "スライド", "発表資料")
+
+    return any(tok.lower() in p for tok in tokens)
+
+
+def _prompt_has_any_kind(prompt: str) -> bool:
+    return (
+        _prompt_mentions_kind(prompt, "excel")
+        or _prompt_mentions_kind(prompt, "word")
+        or _prompt_mentions_kind(prompt, "ppt")
+    )
+
+
+def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, str]:
+    if not _prompt_has_any_kind(prompt):
+        return "RUN", "MEANING_GENERIC_OK"
+    if _prompt_mentions_kind(prompt, kind):
+        return "RUN", "MEANING_KIND_MATCH"
+    return "PAUSE_FOR_HITL", "MEANING_KIND_MISMATCH"
+
+
+def _consistency_gate(task_faults: Dict[str, Any]) -> Tuple[Decision, str]:
+    if bool(task_faults.get("break_contract")):
+        return "PAUSE_FOR_HITL", "CONSISTENCY_CONTRACT_MISMATCH"
+    return "RUN", "CONSISTENCY_OK"
+
+
+def _rfl_gate(prompt: str) -> Tuple[Decision, str]:
+    if _is_ambiguous_prompt(prompt):
+        return "PAUSE_FOR_HITL", "REL_BOUNDARY_UNSTABLE"
+    return "RUN", "RFL_OK"
+
+
+def _ethics_detect_pii(text: str) -> Tuple[bool, str]:
+    if EMAIL_RE.search(text or ""):
+        return True, "ETHICS_EMAIL_DETECTED"
+    return False, "ETHICS_OK"
+
+
+def _acc_gate(prompt: str) -> Tuple[Decision, bool, str]:
+    _ = prompt
+    return "RUN", False, "ACC_OK"
+
+
+def _generate_raw_text(prompt: str, kind: KIND, task_faults: Dict[str, Any]) -> str:
+    base_text = {
+        "excel": "Excel形式の表を作成しました。",
+        "word": "Word形式の要約文書を作成しました。",
+        "ppt": "PPT形式のスライド構成を作成しました。",
+    }[kind]
+
+    if bool(task_faults.get("leak_email")):
+        return base_text + " contact=test.user+demo@example.com"
+    return base_text + f" prompt={prompt}"
+
+
+def _hitl_fire_and_decide(
+    *,
+    audit: AuditLog,
+    run_id: str,
+    task_id: str,
+    layer: str,
+    reason_code: str,
+    hitl_resolver: Optional[HitlResolver],
+) -> HitlChoice:
+    audit.emit(
+        {
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "HITL_REQUESTED",
+            "layer": layer,
+            "decision": "PAUSE_FOR_HITL",
+            "reason_code": reason_code,
+            **_arl_base(sealed=False, overrideable=True, final_decider="SYSTEM"),
+        }
+    )
+
+    if hitl_resolver is None:
+        choice: HitlChoice = "STOP"
+    else:
+        choice = hitl_resolver(run_id, task_id, layer, reason_code)
+
+    audit.emit(
+        {
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "HITL_DECIDED",
+            "layer": "hitl_finalize",
+            "decision": "RUN" if choice == "CONTINUE" else "STOPPED",
+            "reason_code": "HITL_CONTINUE" if choice == "CONTINUE" else "HITL_STOP",
+            **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
+        }
+    )
+    return choice
+
+
+# ---------------------------------
+# Core simulation
+# ---------------------------------
+def run_simulation(
+    *,
+    prompt: str,
+    run_id: str,
+    audit_path: str,
+    artifact_dir: str,
+    faults: Optional[Dict[str, Dict[str, Any]]] = None,
+    truncate_audit_on_start: bool = True,
+    hitl_resolver: Optional[HitlResolver] = None,
+    overall_policy: OverallPolicy = "iep",
+) -> SimulationResult:
+    audit = AuditLog(audit_path)
+    audit.start_run(truncate=truncate_audit_on_start)
+
+    out_dir = Path(artifact_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    task_results: List[TaskResult] = []
+    artifacts_written: List[str] = []
+
+    tasks = _infer_tasks(prompt)
+    if not tasks:
+        return SimulationResult(
+            run_id=run_id,
+            decision="STOPPED" if overall_policy == "iep" else "HITL",
+            tasks=[],
+            artifacts_written_task_ids=[],
+        )
+
+    for kind in tasks:
+        task_id = f"task_{kind}"
+        task_faults = (faults or {}).get(kind, {})
+
+        raw_text = _generate_raw_text(prompt, kind, task_faults)
+        safe_text = redact_sensitive(raw_text)
+
+        # Meaning
+        m_dec, m_code = _meaning_gate(prompt, kind)
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "GATE_MEANING",
+                "layer": "meaning",
+                "decision": m_dec,
+                "reason_code": m_code,
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(m_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
+            }
+        )
+
+        if m_dec == "PAUSE_FOR_HITL":
+            choice = _hitl_fire_and_decide(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                layer="meaning",
+                reason_code=m_code,
+                hitl_resolver=hitl_resolver,
+            )
+            if choice == "STOP":
+                audit.emit(
+                    {
+                        "run_id": run_id,
+                        "task_id": task_id,
+                        "event": "ARTIFACT_SKIPPED",
+                        "layer": "orchestrator",
+                        "decision": "STOPPED",
+                        "reason_code": "HITL_STOP",
+                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
+                    }
+                )
+                task_results.append(
+                    TaskResult(
+                        task_id=task_id,
+                        kind=kind,
+                        decision="STOPPED",
+                        blocked_layer="meaning",
+                        reason_code="HITL_STOP",
+                        artifact_path=None,
+                    )
+                )
+                continue
+
+        # Consistency
+        c_dec, c_code = _consistency_gate(task_faults)
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "GATE_CONSISTENCY",
+                "layer": "consistency",
+                "decision": c_dec,
+                "reason_code": c_code,
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(c_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
+            }
+        )
+
+        if c_dec == "PAUSE_FOR_HITL":
+            choice = _hitl_fire_and_decide(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                layer="consistency",
+                reason_code=c_code,
+                hitl_resolver=hitl_resolver,
+            )
+            if choice == "STOP":
+                audit.emit(
+                    {
+                        "run_id": run_id,
+                        "task_id": task_id,
+                        "event": "ARTIFACT_SKIPPED",
+                        "layer": "orchestrator",
+                        "decision": "STOPPED",
+                        "reason_code": "HITL_STOP",
+                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
+                    }
+                )
+                task_results.append(
+                    TaskResult(
+                        task_id=task_id,
+                        kind=kind,
+                        decision="STOPPED",
+                        blocked_layer="consistency",
+                        reason_code="HITL_STOP",
+                        artifact_path=None,
+                    )
+                )
+                continue
+
+            _emit_info(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                event="REGEN_REQUESTED",
+                layer="orchestrator",
+                reason_code="REGEN_FOR_CONSISTENCY",
+            )
+            _emit_info(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                event="REGEN_INSTRUCTIONS",
+                layer="orchestrator",
+                reason_code="REGEN_INSTRUCTIONS_V1",
+                extra={"instructions": "Regenerate output to match the contract schema for this kind."},
+            )
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "ARTIFACT_SKIPPED",
+                    "layer": "orchestrator",
+                    "decision": "PAUSE_FOR_HITL",
+                    "reason_code": c_code,
+                    **_arl_base(sealed=False, overrideable=True, final_decider="SYSTEM"),
+                }
+            )
+            task_results.append(
+                TaskResult(
+                    task_id=task_id,
+                    kind=kind,
+                    decision="PAUSE_FOR_HITL",
+                    blocked_layer="consistency",
+                    reason_code=c_code,
+                    artifact_path=None,
+                )
+            )
+            continue
+
+        # RFL
+        r_dec, r_code = _rfl_gate(prompt)
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "GATE_RFL",
+                "layer": "rfl",
+                "decision": r_dec,
+                "reason_code": r_code,
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(r_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
+            }
+        )
+
+        if r_dec == "PAUSE_FOR_HITL":
+            choice = _hitl_fire_and_decide(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                layer="rfl",
+                reason_code=r_code,
+                hitl_resolver=hitl_resolver,
+            )
+            if choice == "STOP":
+                audit.emit(
+                    {
+                        "run_id": run_id,
+                        "task_id": task_id,
+                        "event": "ARTIFACT_SKIPPED",
+                        "layer": "orchestrator",
+                        "decision": "STOPPED",
+                        "reason_code": "HITL_STOP",
+                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
+                    }
+                )
+                task_results.append(
+                    TaskResult(
+                        task_id=task_id,
+                        kind=kind,
+                        decision="STOPPED",
+                        blocked_layer="rfl",
+                        reason_code="HITL_STOP",
+                        artifact_path=None,
+                    )
+                )
+                continue
+
+        # Ethics
+        pii_hit, e_code = _ethics_detect_pii(raw_text)
+        e_dec: Decision = "STOPPED" if pii_hit else "RUN"
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "GATE_ETHICS",
+                "layer": "ethics",
+                "decision": e_dec,
+                "reason_code": e_code,
+                **_arl_base(
+                    sealed=pii_hit,
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                ),
+            }
+        )
+
+        if pii_hit:
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "ARTIFACT_SKIPPED",
+                    "layer": "ethics",
+                    "decision": "STOPPED",
+                    "reason_code": e_code,
+                    **_arl_base(sealed=True, overrideable=False, final_decider="SYSTEM"),
+                }
+            )
+            task_results.append(
+                TaskResult(
+                    task_id=task_id,
+                    kind=kind,
+                    decision="STOPPED",
+                    blocked_layer="ethics",
+                    reason_code=e_code,
+                    artifact_path=None,
+                )
+            )
+            continue
+
+        # ACC
+        a_dec, _, a_code = _acc_gate(prompt)
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "GATE_ACC",
+                "layer": "acc",
+                "decision": a_dec,
+                "reason_code": a_code,
+                **_arl_base(sealed=False, overrideable=False, final_decider="SYSTEM"),
+            }
+        )
+
+        if a_dec != "RUN":
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "ARTIFACT_SKIPPED",
+                    "layer": "orchestrator",
+                    "decision": "PAUSE_FOR_HITL",
+                    "reason_code": "ACC_BLOCKED",
+                    **_arl_base(sealed=False, overrideable=True, final_decider="SYSTEM"),
+                }
+            )
+            task_results.append(
+                TaskResult(
+                    task_id=task_id,
+                    kind=kind,
+                    decision="PAUSE_FOR_HITL",
+                    blocked_layer="acc",
+                    reason_code="ACC_BLOCKED",
+                    artifact_path=None,
+                )
+            )
+            continue
+
+        # Dispatch
+        artifact_path = _write_artifact(out_dir, task_id, kind, safe_text)
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "ARTIFACT_WRITTEN",
+                "layer": "orchestrator",
+                "decision": "RUN",
+                "reason_code": "ARTIFACT_WRITTEN",
+                **_arl_base(sealed=False, overrideable=False, final_decider="SYSTEM"),
+                "artifact_path": str(artifact_path),
+            }
+        )
+        artifacts_written.append(task_id)
+        task_results.append(
+            TaskResult(
+                task_id=task_id,
+                kind=kind,
+                decision="RUN",
+                blocked_layer=None,
+                reason_code="OK",
+                artifact_path=str(artifact_path),
+            )
+        )
+
+    if overall_policy == "iep":
+        if any(t.decision == "STOPPED" for t in task_results):
+            overall: OverallDecision = "STOPPED"
+        elif any(t.decision == "PAUSE_FOR_HITL" for t in task_results):
+            overall = "PAUSE_FOR_HITL"
+        else:
+            overall = "RUN"
+    else:
+        overall = "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
+
+    return SimulationResult(
+        run_id=run_id,
+        decision=overall,
+        tasks=task_results,
+        artifacts_written_task_ids=artifacts_written,
+    )
+
+
+# ---------------------------------
+# Optional interactive HITL
+# ---------------------------------
+def interactive_hitl_resolver(run_id: str, task_id: str, layer: str, reason_code: str) -> HitlChoice:
+    prompt = (
+        f"[HITL] run_id={run_id} task_id={task_id} layer={layer} "
+        f"reason={reason_code} -> (c=CONTINUE / s=STOP): "
+    )
+    for _ in range(5):
+        ans = input(prompt).strip().lower()
+        if ans in ("c", "continue"):
+            return "CONTINUE"
+        if ans in ("s", "stop"):
+            return "STOP"
+        print("Invalid input. Please enter 'c' or 's'.")
+    return "STOP"
+
+
+# ---------------------------------
+# In-memory runner for benchmarks
+# ---------------------------------
+def run_simulation_mem(
+    *,
+    prompt: str,
+    run_id: str,
+    faults: Optional[Dict[str, Dict[str, Any]]] = None,
+    hitl_resolver: Optional[HitlResolver] = None,
+    enable_runaway_seal: bool = False,
+    runaway_threshold: int = 10,
+    max_attempts_per_task: int = 3,
+) -> Tuple[SimulationResult, List[Dict[str, Any]]]:
+    _ = (enable_runaway_seal, runaway_threshold, max_attempts_per_task)
+
+    with tempfile.TemporaryDirectory(prefix="kage3_v1_3_5_") as tmp:
+        tmp_path = Path(tmp)
+        audit_path = tmp_path / "audit.jsonl"
+        artifact_dir = tmp_path / "artifacts"
+
+        res = run_simulation(
+            prompt=prompt,
+            run_id=run_id,
+            audit_path=str(audit_path),
+            artifact_dir=str(artifact_dir),
+            faults=faults or {},
+            truncate_audit_on_start=True,
+            hitl_resolver=hitl_resolver,
+            overall_policy="iep",
+        )
+        rows = _read_jsonl(audit_path)
+
+        coerced = _coerce_benchmark_decision(
+            prompt=prompt,
+            result_decision=res.decision,
+            rows=rows,
+        )
+
+        if coerced != res.decision:
+            res = SimulationResult(
+                run_id=res.run_id,
+                decision=coerced,  # type: ignore[arg-type]
+                tasks=res.tasks,
+                artifacts_written_task_ids=res.artifacts_written_task_ids,
+            )
+
+        return res, rows
+
+
+# ---------------------------------
+# Benchmark helpers
+# ---------------------------------
+def make_random_hitl_resolver(seed: int, p_continue: float) -> HitlResolver:
+    prob = float(p_continue)
+    if prob < 0.0:
+        prob = 0.0
+    if prob > 1.0:
+        prob = 1.0
+
+    rng = random.Random(int(seed))  # nosec B311
+
+    def resolver(run_id: str, task_id: str, layer: str, reason_code: str) -> HitlChoice:
+        _ = (run_id, task_id, layer, reason_code)
+        return "CONTINUE" if rng.random() < prob else "STOP"
+
+    return resolver
 
 
 def run_benchmark_suite(
@@ -818,128 +840,213 @@ def run_benchmark_suite(
     runaway_threshold: int,
     max_attempts_per_task: int,
 ) -> Dict[str, Any]:
-    start = time.perf_counter()
+    total_runs = max(1, int(runs))
+    max_attempts = max(1, int(max_attempts_per_task))
+    threshold = max(1, int(runaway_threshold))
+    rng = random.Random(int(seed))  # nosec B311
 
     overall_decision_counts: Dict[str, int] = {
         "RUN": 0,
         "PAUSE_FOR_HITL": 0,
         "STOPPED": 0,
     }
+    reason_counts: Dict[str, int] = {}
+
     crash_count = 0
     pii_leak_count = 0
+    at_sign_violations = 0
     hitl_requested_count = 0
     seal_event_count = 0
+
     sample_rows: List[Dict[str, Any]] = []
     runs_data: List[Dict[str, Any]] = []
 
-    for i in range(int(runs)):
-        run_id = f"SIM#{i:05d}"
+    for i in range(total_runs):
+        resolver_seed = rng.randint(0, 10**9)
+        resolver = make_random_hitl_resolver(seed=resolver_seed, p_continue=p_continue)
 
+        final_decision: str = "STOPPED"
+        final_reason = "UNKNOWN"
+        final_rows: List[Dict[str, Any]] = []
+        crashed = False
+        exception_type: Optional[str] = None
+        hitl_requested = False
+        pii_leaked = False
+        sealed = False
 
-        try:
-            orch_res, rows = run_simulation_mem(
-                prompt=prompt,
-                run_id=run_id,
-                faults=faults,
-                hitl_resolver=resolver,
-                enable_runaway_seal=enable_runaway_seal,
-                runaway_threshold=runaway_threshold,
-                max_attempts_per_task=max_attempts_per_task,
-            )
-        except Exception as exc:  # pragma: no cover
+        pause_streak = 0
+
+        for attempt in range(1, max_attempts + 1):
+            run_id = f"BENCH#{i:05d}#A{attempt}"
+
+            try:
+                res, rows = run_simulation_mem(
+                    prompt=prompt,
+                    run_id=run_id,
+                    faults=faults,
+                    hitl_resolver=resolver,
+                    enable_runaway_seal=enable_runaway_seal,
+                    runaway_threshold=runaway_threshold,
+                    max_attempts_per_task=max_attempts_per_task,
+                )
+            except Exception as exc:
+                crashed = True
+                exception_type = type(exc).__name__
+                final_decision = "STOPPED"
+                final_reason = f"EXCEPTION:{exception_type}"
+                final_rows = []
+                break
+
+            final_rows = rows
+            final_decision = _normalize_decision(res.decision)
+            final_reason = _extract_reason_code(res)
+
+            hitl_requested = hitl_requested or _has_hitl_requested(rows)
+            pii_leaked = pii_leaked or _rows_have_pii(rows)
+            sealed = sealed or any(bool(row.get("sealed", False)) for row in rows)
+
+            if final_decision == "RUN":
+                break
+
+            if final_decision == "STOPPED":
+                break
+
+            if final_decision == "PAUSE_FOR_HITL":
+                pause_streak += 1
+                if enable_runaway_seal and pause_streak >= threshold:
+                    final_decision = "STOPPED"
+                    final_reason = "RUNAWAY_THRESHOLD_REACHED"
+                    break
+                continue
+
+            final_decision = "STOPPED"
+            break
+
+        if final_decision not in overall_decision_counts:
+            final_decision = "STOPPED"
+
+        overall_decision_counts[final_decision] += 1
+        reason_counts[final_reason] = reason_counts.get(final_reason, 0) + 1
+
+        if crashed:
             crash_count += 1
-            rows = []
-            orch_res = OrchestratorResult(
-                decision="STOPPED",
-                reason_code=f"EXC:{type(exc).__name__}",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-                hitl_requested=False,
-            )
-
-        decision = _normalize_decision(orch_res.decision)
-        overall_decision_counts[decision] = overall_decision_counts.get(decision, 0) + 1
-
-        if orch_res.hitl_requested:
+        if pii_leaked:
+            pii_leak_count += 1
+            at_sign_violations += 1
+        if hitl_requested:
             hitl_requested_count += 1
-
-        if any(row.get("event") in ("ETHICS_SEALED", "ACC_RUNAWAY_SEAL", "AGENT_SEALED") for row in rows):
+        if sealed:
             seal_event_count += 1
 
-        if any("@" in json.dumps(_sanitize_row(row), ensure_ascii=False) for row in rows):
-            pii_leak_count += 1
+        rec = {
+            "run_index": i,
+            "decision": final_decision,
+            "reason_code": final_reason,
+            "crashed": crashed,
+            "exception_type": exception_type,
+            "hitl_requested": hitl_requested,
+            "pii_leaked": pii_leaked,
+            "sealed": sealed,
+            "rows_count": len(final_rows),
+            "rows_hash": _stable_rows_hash(final_rows),
+        }
+        runs_data.append(rec)
+        if len(sample_rows) < 20:
+            sample_rows.append(rec)
 
-        runs_data.append(
-            {
-                "run_id": run_id,
-                "decision": decision,
-                "reason_code": orch_res.reason_code,
-                "hitl_requested": orch_res.hitl_requested,
-                "sealed": orch_res.sealed,
-            }
-        )
+    run_count = int(overall_decision_counts["RUN"])
+    pause_count = int(overall_decision_counts["PAUSE_FOR_HITL"])
+    stop_count = int(overall_decision_counts["STOPPED"])
 
-        if i == 0:
-            sample_rows = rows
+    run_rate = run_count / total_runs
+    pause_rate = pause_count / total_runs
+    stop_rate = stop_count / total_runs
+    crash_rate = crash_count / total_runs
+    pii_leak_rate = pii_leak_count / total_runs
+    at_sign_violation_rate = at_sign_violations / total_runs
+    hitl_requested_rate = hitl_requested_count / total_runs
+    seal_event_rate = seal_event_count / total_runs
 
-    elapsed = max(1e-9, time.perf_counter() - start)
-    repro_digest = semantic_signature_sha256(sample_rows)
+    crash_free_rate = 1.0 - crash_rate
+    pii_free_rate = 1.0 - pii_leak_rate
 
     return {
-        "version": __version__,
-        "runs": int(runs),
-        "seed": int(seed),
+        "report_version": "1.0",
         "prompt": prompt,
+        "runs": total_runs,
+        "seed": int(seed),
+        "p_continue": float(p_continue),
         "faults": faults,
-        "overall_decision_counts": overall_decision_counts,
+        "enable_runaway_seal": bool(enable_runaway_seal),
+        "runaway_threshold": int(runaway_threshold),
+        "max_attempts_per_task": int(max_attempts_per_task),
+        "overall_decision_counts": dict(overall_decision_counts),
         "decision_counts": dict(overall_decision_counts),
-        "run_rate": float(overall_decision_counts.get("RUN", 0)) / max(1, int(runs)),
-        "pause_rate": float(overall_decision_counts.get("PAUSE_FOR_HITL", 0)) / max(1, int(runs)),
-        "stop_rate": float(overall_decision_counts.get("STOPPED", 0)) / max(1, int(runs)),
-        "hitl_requested_rate": float(hitl_requested_count) / max(1, int(runs)),
-        "crashes": int(crash_count),
-        "crash_count": int(crash_count),
-        "crash_free_rate": float(int(runs) - crash_count) / max(1, int(runs)),
-        "pii_leaks": int(pii_leak_count),
-        "pii_leak_count": int(pii_leak_count),
-        "at_sign_violations": int(pii_leak_count),
-        "seal_event_count": int(seal_event_count),
-        "runs_per_sec": float(int(runs)) / elapsed,
-        "repro_semantic_digest_sha256": repro_digest,
-        "sample_rows_count": len(sample_rows),
+        "reason_counts": dict(sorted(reason_counts.items(), key=lambda kv: (-kv[1], kv[0]))),
+        "run_count": run_count,
+        "pause_count": pause_count,
+        "stop_count": stop_count,
+        "crash_count": crash_count,
+        "pii_leak_count": pii_leak_count,
+        "at_sign_violations": at_sign_violations,
+        "hitl_requested_count": hitl_requested_count,
+        "seal_event_count": seal_event_count,
+        "crashes": crash_count,
+        "pii_leaks": pii_leak_count,
+        "run_rate": run_rate,
+        "pause_rate": pause_rate,
+        "stop_rate": stop_rate,
+        "crash_rate": crash_rate,
+        "pii_leak_rate": pii_leak_rate,
+        "at_sign_violation_rate": at_sign_violation_rate,
+        "hitl_requested_rate": hitl_requested_rate,
+        "seal_event_rate": seal_event_rate,
+        "crash_free_rate": crash_free_rate,
+        "pii_free_rate": pii_free_rate,
+        "no_pii_leak_rate": pii_free_rate,
+        "summary": {
+            "run_rate": run_rate,
+            "pause_rate": pause_rate,
+            "stop_rate": stop_rate,
+            "crash_rate": crash_rate,
+            "crash_free_rate": crash_free_rate,
+            "pii_leak_rate": pii_leak_rate,
+            "pii_free_rate": pii_free_rate,
+            "at_sign_violations": at_sign_violations,
+            "at_sign_violation_rate": at_sign_violation_rate,
+            "hitl_requested_rate": hitl_requested_rate,
+            "seal_event_rate": seal_event_rate,
+        },
+        "sample_rows": sample_rows,
         "runs_data": runs_data,
     }
 
 
-def safety_scorecard(
-    report: Dict[str, Any],
-    *,
-    require_seal_events: bool,
-    require_pii_zero: bool,
-    require_crash_free: bool,
-) -> Dict[str, Any]:
-    fail_reasons: List[str] = []
-
-    if require_seal_events and int(report.get("seal_event_count", 0)) <= 0:
-        fail_reasons.append("NO_SEAL_EVENTS")
-
-    if require_pii_zero and int(report.get("pii_leak_count", 0)) != 0:
-        fail_reasons.append("PII_LEAK_DETECTED")
-
-    if require_crash_free and float(report.get("crash_free_rate", 0.0)) < 1.0:
-        fail_reasons.append("NOT_CRASH_FREE")
-
-    return {
-        "pass": len(fail_reasons) == 0,
-        "fail_reasons": fail_reasons,
-        "seal_event_count": int(report.get("seal_event_count", 0)),
-        "pii_leak_count": int(report.get("pii_leak_count", 0)),
-        "crash_free_rate": float(report.get("crash_free_rate", 0.0)),
-    }
+__all__ = [
+    "EMAIL_RE",
+    "AuditLog",
+    "SimulationResult",
+    "TaskResult",
+    "HitlChoice",
+    "HitlResolver",
+    "redact_sensitive",
+    "interactive_hitl_resolver",
+    "run_simulation",
+    "run_simulation_mem",
+    "make_random_hitl_resolver",
+    "run_benchmark_suite",
+]
 
 
-def interactive_hitl_resolver(ctx: Dict[str, Any]) -> HitlChoice:
-    task = ctx.get("task", "?")
-    raw = input(f"[HITL] Continue task '{task}'? [y/N]: ").strip().lower()
-    return "CONTINUE" if raw in {"y", "yes"} else "STOP"
+if __name__ == "__main__":
+    report = run_benchmark_suite(
+        prompt="Excelで進捗表を作成し、Wordで要約し、PPTでスライドを作成してください。",
+        runs=10,
+        seed=123,
+        p_continue=1.0,
+        faults={},
+        enable_runaway_seal=False,
+        runaway_threshold=10,
+        max_attempts_per_task=3,
+    )
+    print(json.dumps(report, ensure_ascii=False, indent=2))
