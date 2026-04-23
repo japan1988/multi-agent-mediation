@@ -1,4 +1,4 @@
-it(m# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # Version: 5.1.2
 """
 Emergency contract mediation simulator (v5.1.2)
@@ -19,8 +19,8 @@ Keep prior features:
 - Fabricate-rate mixing + deterministic seeding (--fabricate-rate / --seed).
 
 Core invariants:
-  - sealed may be set only by ethics_gate / acc_gate
-  - relativity gate is never sealed (PAUSE_FOR_HITL, overrideable=True, sealed=False)
+- sealed may be set only by ethics_gate / acc_gate
+- relativity gate is never sealed (PAUSE_FOR_HITL, overrideable=True, sealed=False)
 
 NOTE (OSS demo):
 - Default key mode is "demo". This proves the mechanism works, but does not provide real secrecy.
@@ -30,7 +30,6 @@ v5.1.2 patch (success run => ARL zero):
 - "force_full" rows (EVAL/REWARD) are emitted only on abnormal runs
 - PAUSE is NOT always treated as an incident; it is selected by reason_code policy
 """
-
 from __future__ import annotations
 
 import argparse
@@ -64,6 +63,8 @@ EVAL_STORE_PATH = EVAL_STATE_PATH
 # =========================
 # Helpers
 # =========================
+
+
 def now_iso() -> str:
     return datetime.now(JST).isoformat(timespec="seconds")
 
@@ -111,47 +112,37 @@ LAYER_COACHING = "coaching_event"
 RC_OK = "OK"
 RC_REL_BOUNDARY_UNSTABLE = "REL_BOUNDARY_UNSTABLE"
 RC_REL_REF_MISSING = "REL_REF_MISSING"
-
 RC_EVIDENCE_OK = "EVIDENCE_OK"
 RC_EVIDENCE_MISSING = "EVIDENCE_MISSING"
 RC_EVIDENCE_SCHEMA_INVALID = "EVIDENCE_SCHEMA_INVALID"
 RC_EVIDENCE_FABRICATION = "EVIDENCE_FABRICATION"
-
 RC_TRUST_SCORE_LOW = "TRUST_SCORE_LOW"
 RC_TRUST_COOLDOWN_ACTIVE = "TRUST_COOLDOWN_ACTIVE"
 RC_TRUST_AUTO_AUTH = "AUTO_AUTH_BY_TRUST_AND_GRANT"
 RC_TRUST_NO_GRANT = "NO_VALID_GRANT"
-
 RC_HITL_AUTH_APPROVE = "AUTH_APPROVE"
 RC_HITL_AUTH_REJECT = "AUTH_REJECT"
 RC_HITL_AUTH_REVISE = "AUTH_REVISE"
 RC_AUTH_EXPIRED = "AUTH_EXPIRED"
 RC_INVALID_EVENT = "INVALID_EVENT"
 RC_CONSISTENCY_BREAK = "CONSISTENCY_BREAK"
-
 RC_CRIT_MISSING_REQUIRED_KEYS = "CRIT_MISSING_REQUIRED_KEYS"
 RC_SAFETY_LEGAL_BINDING_CLAIM = "SAFETY_LEGAL_BINDING_CLAIM"
 RC_SAFETY_DISCRIMINATION_TERM = "SAFETY_DISCRIMINATION_TERM"
-
 RC_DRAFT_GENERATED = "DRAFT_GENERATED"
 RC_DRAFT_LINT_OK = "DRAFT_LINT_OK"
 RC_DRAFT_OUT_OF_SCOPE = "DRAFT_OUT_OF_SCOPE"
 RC_DRAFT_ILLEGAL_BINDING = "DRAFT_ILLEGAL_BINDING"
-
 RC_FINALIZE_APPROVE = "FINALIZE_APPROVE"
 RC_FINALIZE_REVISE = "FINALIZE_REVISE"
 RC_FINALIZE_STOP = "FINALIZE_STOP"
-
 RC_CONTRACT_EFFECTIVE = "CONTRACT_EFFECTIVE"
 RC_NON_OVERRIDABLE_SAFETY = "NON_OVERRIDABLE_SAFETY"
-
 RC_REWARD_GRANTED = "REWARD_GRANTED"
 RC_REWARD_SKIPPED = "REWARD_SKIPPED"
 RC_EVAL_SCORED = "EVAL_SCORED"
-
 RC_TRUST_UPDATE = "TRUST_UPDATE"
 RC_ADMIN_FINALIZE_REQUIRED = "ADMIN_FINALIZE_REQUIRED"
-
 RC_COACHING_AUTH_REQUIRED = "COACHING_AUTH_REQUIRED"
 RC_COACHING_APPROVE = "COACHING_APPROVE"
 RC_COACHING_DENY = "COACHING_DENY"
@@ -181,6 +172,8 @@ INCIDENT_PAUSE_REASON_CODES = {
 # =========================
 # Tamper-evident ARL chaining
 # =========================
+
+
 def _canon_json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
@@ -236,7 +229,6 @@ class AuditLog:
     chain_id: str = field(default_factory=lambda: f"chain-{uuid.uuid4().hex[:12]}")
     full_context_n: int = 10
     post_context_n: int = 8
-
     _prev_hash: str = "0" * 64
     _rows_raw: List[Dict[str, Any]] = field(default_factory=list)
     _recent: Deque[Dict[str, Any]] = field(default_factory=deque)
@@ -276,7 +268,6 @@ class AuditLog:
         if self.full_context_n <= 0:
             return
         self._recent.append(body)
-
         keep = [False] * len(self._recent)
         seen: Dict[str, int] = {}
         for i in range(len(self._recent) - 1, -1, -1):
@@ -285,7 +276,6 @@ class AuditLog:
             if c < self.full_context_n:
                 keep[i] = True
                 seen[rid] = c + 1
-
         if not all(keep):
             self._recent = deque([b for b, k in zip(self._recent, keep) if k])
 
@@ -348,7 +338,6 @@ class AuditLog:
             sealed=sealed,
             reason_code=reason_code,
         )
-
         incident_start = bool(trigger) and (run_id not in self._incident_post_remaining)
         if incident_start:
             self._replay_pre_context(run_id)
@@ -359,6 +348,7 @@ class AuditLog:
             and (run_id in self._incident_post_remaining)
             and (self._incident_post_remaining[run_id] > 0)
         )
+
         must_persist = bool(force_full) or bool(trigger) or bool(in_post)
 
         if not trigger:
@@ -444,13 +434,11 @@ def validate_auth_request(auth_request: Dict[str, Any]) -> None:
     _require(auth_request, "auth_id")
     auth_id = _require(auth_request, "auth_id")
     _validate_dummy_auth_id(str(auth_id))
-
     ctx = _require(auth_request, "context")
     if not isinstance(ctx, dict):
         raise ValueError("context must be object")
     for k in ["scenario", "location_id", "emergency_vehicle_state"]:
         _require(ctx, k)
-
     _validate_iso(_require(auth_request, "expires_at"))
 
 
@@ -632,6 +620,7 @@ def _is_negated(text: str, match_start: int) -> bool:
 
 def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> Tuple[bool, str]:
     text = draft_md or ""
+
     for pat in _PATTERNS_POSITIVE:
         m = pat.search(text)
         if not m:
@@ -702,14 +691,11 @@ TRUST_MIN = 0.00
 TRUST_MAX = 1.00
 TRUST_NEED_FOR_AUTO = 0.98
 STREAK_NEED_FOR_AUTO = 2
-
 TRUST_POSITIVE_CAP_PER_RUN = 0.03
-
 DELTA_AUTH_APPROVE = +0.01
 DELTA_FINALIZE_APPROVE = +0.02
 DELTA_LINT_FAIL = -0.015
 DELTA_INVALID_EVENT = -0.03
-
 COOLDOWN_SECONDS = 300
 
 COACHING_ENABLE = True
@@ -781,7 +767,6 @@ EVAL_MULTIPLIER_CAP = 2.0
 SPEED_TARGET_MS = 1.0
 SCORE_BASE_COMPLETION = 0.70
 SCORE_BASE_SPEED = 0.30
-
 FRAUD_REASON_CODES = {
     RC_EVIDENCE_FABRICATION,
     RC_EVIDENCE_SCHEMA_INVALID,
@@ -842,6 +827,7 @@ def compute_base_score(*, final_state: str, sealed: bool, runtime_ms: float) -> 
 def is_clean_completion(*, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
     if final_state != "CONTRACT_EFFECTIVE" or sealed:
         return False, []
+
     hits: List[str] = []
     for r in (arl_rows or []):
         rc = str(r.get("reason_code", ""))
@@ -910,6 +896,7 @@ def ensure_default_grant_exists() -> None:
     for g in grants:
         if g.scenario == POLICY_CASE_B and g.location_id == "INT-042" and g.is_valid(now_dt.isoformat(timespec="seconds")):
             return
+
     expires = (now_dt + timedelta(days=7)).isoformat(timespec="seconds")
     new_g = Grant(
         grant_id="GRANT#CASE_B#INT-042",
@@ -981,29 +968,23 @@ def generate_contract_draft(*, st: OrchestratorState) -> Dict[str, Any]:
 **Auth Request ID**: {st.auth_request.get("auth_request_id")}
 **Dummy Auth ID**: {st.auth_request.get("auth_id")}
 **Generated At**: {now_iso()}
-
 ---
 ## 1. Purpose
 Establish an operational priority order for signal control under emergency presence.
-
 ## 2. Priority Order
 1) LIFE (Emergency vehicle)
 2) PEDESTRIAN (in crosswalk)
 3) VEHICLE (general traffic)
-
 ## 3. Case B Rule (Pedestrian in crosswalk + Emergency present)
 - While **pedestrian is in the crosswalk**, pedestrian protection remains active.
 - Signal phase for pedestrians **must not be shortened**.
 - Emergency priority is applied **at the next cycle** immediately after pedestrian clearance is detected.
 - Minimum safety clearance (e.g., all-red) is applied before granting emergency green.
-
 ## 4. Non-goals / Safety Notes
 - This document is a **draft** and has **no operational effect** until ADMIN final approval.
 - AI is used for **drafting only**; it does not grant permissions and cannot authorize actions.
-
 ## 5. Effective Condition
 This draft becomes effective only after the ADMIN approval event references this Draft ID.
-
 ---
 **ADMIN Approval Required**: YES
 """
@@ -1230,7 +1211,6 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         reason_code=RC_COACHING_AUTH_REQUIRED,
         extra={"trust_score": trust.trust_score, "compliance_score": trust.compliance_score},
     )
-
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_COACHING_AUTH,
@@ -1284,6 +1264,7 @@ def simulate_run(
         location_id="INT-042",
         fabricated=fabricate_evidence,
     )
+
     ok_ev, ev_reason = evidence_gate(audit, st, st.evidence_bundle)
     if not ok_ev:
         if ev_reason == RC_EVIDENCE_SCHEMA_INVALID:
@@ -1397,6 +1378,7 @@ def simulate_run(
             "notes": "bench auth",
         }
         validate_auth_event(auth_event)
+
         if is_auth_request_expired(st.auth_request, auth_event["ts"]):
             audit.emit(
                 run_id=st.run_id,
@@ -1479,6 +1461,7 @@ def simulate_run(
                 final_decider=DECIDER_SYSTEM,
                 reason_code=lint_reason,
             )
+
         st.sealed = True
         st.state = "STOPPED"
         cap_remaining = apply_trust_update(
@@ -1747,7 +1730,6 @@ def build_repro_summary(
     hitl_queue = results.get("hitl_queue", {}) or {}
     counts = hitl_queue.get("counts", {}) or {}
     abnormal = results.get("abnormal_arl_persistence", {}) or {}
-
     return {
         "sim_version": SIM_VERSION,
         "policy_pack_hash": POLICY_PACK_HASH,
@@ -1882,7 +1864,6 @@ def run_simulation(
             runtime_ms=runtime_ms,
         )
         final_score = base_score * multiplier_snapshot
-
         reward_granted = bool(clean_ok)
         reward_value = final_score if reward_granted else 0.0
 
@@ -1997,7 +1978,6 @@ def run_simulation(
     )
     return results
 
- main
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -2007,23 +1987,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--fabricate", action="store_true")
     p.add_argument("--fabricate-rate", type=float, default=None)
     p.add_argument("--seed", type=int, default=None)
-
     p.add_argument("--no-reset", action="store_true")
     p.add_argument("--no-reset-eval", action="store_true")
-
     p.add_argument("--save-arl-on-abnormal", action="store_true")
     p.add_argument("--arl-out-dir", type=str, default="")
     p.add_argument("--max-arl-files", type=int, default=1000)
     p.add_argument("--full-context-n", type=int, default=0)
-
     p.add_argument("--key-mode", choices=["demo", "file", "env"], default="demo")
     p.add_argument("--key-file", type=str, default="")
     p.add_argument("--key-env", type=str, default="")
-
     p.add_argument("--keep-runs", action="store_true")
     p.add_argument("--queue-max-items", type=int, default=1000)
     p.add_argument("--sample-runs", type=int, default=10)
-
     p.add_argument(
         "--out",
         type=str,
@@ -2074,4 +2049,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())ain())
+    raise SystemExit(main())
