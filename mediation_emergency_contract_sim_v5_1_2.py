@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+it(m# -*- coding: utf-8 -*-
 # Version: 5.1.2
 """
 Emergency contract mediation simulator (v5.1.2)
@@ -2074,4 +2074,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main())ain())
