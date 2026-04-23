@@ -49,8 +49,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Literal, Optional, Tuple
 
-
-
 JST = timezone(timedelta(hours=9))
 SIM_VERSION = "5.1.2"
 
@@ -105,10 +103,8 @@ LAYER_DRAFT_LINT = "draft_lint_gate"
 LAYER_HITL_FINALIZE = "hitl_finalize_admin"
 LAYER_CONTRACT_EFFECT = "contract_effect"
 LAYER_BLACKLIST = "blacklist_gate"
-
 LAYER_HITL_REWARD = "hitl_reward"
 LAYER_EVAL = "eval_score"
-
 LAYER_COACHING_AUTH = "hitl_coaching_auth"
 LAYER_COACHING = "coaching_event"
 
@@ -164,10 +160,8 @@ RC_COACHING_SKIPPED = "COACHING_SKIPPED"
 
 # Stable stub: treat as policy-pack fingerprint placeholder for demo.
 POLICY_PACK_HASH = "POLICY_PACK#SIM#V4_8_2"
-
 POLICY_PRIORITY = "LIFE > PEDESTRIAN > VEHICLE"
 POLICY_CASE_B = "CASE_B_PED_IN_CROSSWALK_EMERGENCY_PRESENT"
-
 
 # =========================
 # Incident policy (PAUSE selection)
@@ -183,7 +177,6 @@ INCIDENT_PAUSE_REASON_CODES = {
     RC_REL_BOUNDARY_UNSTABLE,
     RC_REL_REF_MISSING,
 }
-
 
 # =========================
 # Tamper-evident ARL chaining
@@ -205,7 +198,6 @@ def verify_arl_rows(*, key: bytes, rows: List[Dict[str, Any]]) -> Tuple[bool, Op
         got_hash = str(row_body.pop("row_hash", ""))
         row_body.pop("key_id", None)
         row_body.pop("chain_id", None)
-
         if got_prev != prev:
             return False, f"prev_hash mismatch at i={i}"
         expect = compute_row_hmac(key=key, prev_hash=prev, row_body=row_body)
@@ -239,17 +231,14 @@ def load_key_bytes(mode: str, key_file: str = "", key_env: str = "") -> Tuple[by
 class AuditLog:
     """Audit Row Log (ARL) optimized for incident-only persistence."""
 
-
     key: bytes = b""
     key_id: str = "demo-key"
     chain_id: str = field(default_factory=lambda: f"chain-{uuid.uuid4().hex[:12]}")
-
     full_context_n: int = 10
     post_context_n: int = 8
 
     _prev_hash: str = "0" * 64
     _rows_raw: List[Dict[str, Any]] = field(default_factory=list)
-
     _recent: Deque[Dict[str, Any]] = field(default_factory=deque)
     _incident_post_remaining: Dict[str, int] = field(default_factory=dict)
 
@@ -279,13 +268,11 @@ class AuditLog:
     def _append_signed(self, body: Dict[str, Any]) -> Dict[str, Any]:
         row_body = dict(body)
         row_hash = compute_row_hmac(key=self.key, prev_hash=self._prev_hash, row_body=row_body)
-
         row = dict(row_body)
         row["prev_hash"] = self._prev_hash
         row["row_hash"] = row_hash
         row["key_id"] = self.key_id
         row["chain_id"] = self.chain_id
-
         self._rows_raw.append(row)
         self._prev_hash = row_hash
         return row
@@ -293,7 +280,6 @@ class AuditLog:
     def _remember_candidate(self, body: Dict[str, Any]) -> None:
         if self.full_context_n <= 0:
             return
-
         self._recent.append(body)
 
         keep = [False] * len(self._recent)
@@ -318,7 +304,6 @@ class AuditLog:
             body["context_replay"] = True
             body["context_seq"] = seq
             self._append_signed(body)
-
         if candidates:
             self._recent = deque([b for b in self._recent if str(b.get("run_id")) != run_id])
 
@@ -362,13 +347,17 @@ class AuditLog:
         if extra:
             base.update(extra)
 
-        trigger = self._should_trigger_incident(layer=layer, decision=decision, sealed=sealed, reason_code=reason_code)
+        trigger = self._should_trigger_incident(
+            layer=layer,
+            decision=decision,
+            sealed=sealed,
+            reason_code=reason_code,
+        )
 
         incident_start = bool(trigger) and (run_id not in self._incident_post_remaining)
         if incident_start:
             self._replay_pre_context(run_id)
             self._incident_post_remaining[run_id] = max(0, int(self.post_context_n))
-
 
         in_post = (
             (not trigger)
@@ -385,14 +374,11 @@ class AuditLog:
             body["log_level"] = "FULL"
             if in_post and not trigger:
                 body["context_post"] = True
-
             persisted = self._append_signed(body)
-
             if in_post and run_id in self._incident_post_remaining:
                 self._incident_post_remaining[run_id] -= 1
                 if self._incident_post_remaining[run_id] <= 0:
                     self._incident_post_remaining.pop(run_id, None)
-
             return persisted
 
         return dict(base)
@@ -917,7 +903,7 @@ def load_grants() -> List[Grant]:
         return out
     except Exception:
         return []
-    
+
 
 def save_grants(grants: List[Grant]) -> None:
     write_json(GRANTS_STORE_PATH, {"grants": [g.to_dict() for g in grants]})
@@ -1212,10 +1198,14 @@ def model_trust_gate(
         overrideable=True,
         final_decider=DECIDER_SYSTEM,
         reason_code=RC_TRUST_SCORE_LOW,
-
+        extra={
+            "trust_score": trust.trust_score,
+            "need": TRUST_NEED_FOR_AUTO,
+            "approval_streak": trust.approval_streak,
+            "grant_id": g.grant_id,
+        },
     )
     return False, RC_TRUST_SCORE_LOW, g.grant_id
-
 
 
 def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustState) -> None:
@@ -1275,6 +1265,7 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         reason_code=RC_COACHING_CHECK_PASSED,
         extra={"before": before, "after": trust.compliance_score, "sessions": trust.coaching_sessions},
     )
+
 
 def simulate_run(
     *,
@@ -1366,7 +1357,6 @@ def simulate_run(
         essentials=["schema_version", "auth_request_id", "auth_id", "context", "expires_at"],
         kind="auth_request",
     ):
-
         if persist:
             save_trust_state(trust)
         return st, audit, trust
@@ -1374,7 +1364,6 @@ def simulate_run(
     scenario = st.auth_request["context"]["scenario"]
     location_id = st.auth_request["context"]["location_id"]
     auto_ok, trust_reason, grant_id = model_trust_gate(audit, st, trust, scenario, location_id)
-
 
     if not auto_ok:
         audit.emit(
@@ -1448,7 +1437,6 @@ def simulate_run(
             overrideable=False,
             final_decider=DECIDER_USER,
             reason_code=RC_HITL_AUTH_APPROVE,
-
         )
         cap_remaining = apply_trust_update(
             audit,
@@ -1568,6 +1556,7 @@ def simulate_run(
         extra={"contract_id": st.contract["contract_id"], "draft_id": st.draft["draft_id"]},
     )
     st.state = "CONTRACT_EFFECTIVE"
+
     if persist:
         save_trust_state(trust)
     return st, audit, trust
@@ -1591,7 +1580,6 @@ def _first_non_run_row(arl: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
 
 @dataclass
 class HitlQueueBuilder:
-
     max_items: int = 1000
     items: List[Dict[str, Any]] = field(default_factory=list)
     by_reason: Dict[str, int] = field(default_factory=dict)
@@ -1729,7 +1717,6 @@ def append_incident_index(out_dir: Path, record: Dict[str, Any]) -> Path:
 
 
 def primary_reason_code_from_rows(rows: List[Any]) -> str:
-
     for r in rows:
         if isinstance(r, dict):
             decision = r.get("decision")
@@ -1737,7 +1724,6 @@ def primary_reason_code_from_rows(rows: List[Any]) -> str:
         else:
             decision = getattr(r, "decision", None)
             reason = getattr(r, "reason_code", None)
-
         if decision is None:
             continue
         if decision != DECISION_RUN:
@@ -1798,7 +1784,6 @@ def build_repro_summary(
     }
 
 
-
 def run_simulation(
     *,
     runs: int = 4,
@@ -1816,7 +1801,7 @@ def run_simulation(
     key_env: str = "",
     keep_runs: bool = False,
     queue_max_items: int = 1000,
-    sample_runs: int = 20,
+    sample_runs: int = 10,
 ) -> Dict[str, Any]:
     if runs <= 0:
         runs = 1
@@ -1831,10 +1816,9 @@ def run_simulation(
 
     if reset:
         reset_stores(reset_eval=reset_eval)
+
     ensure_default_grant_exists()
-
     key_bytes, key_id = load_key_bytes(key_mode, key_file=key_file, key_env=key_env)
-
     trust = load_trust_state()
     eval_state = load_eval_state()
 
@@ -1862,7 +1846,6 @@ def run_simulation(
     }
 
     qb = HitlQueueBuilder(max_items=int(queue_max_items))
-
     if keep_runs:
         results["runs"] = []
     else:
@@ -1898,9 +1881,14 @@ def run_simulation(
             sealed=st.sealed,
             arl_rows=audit.rows,
         )
-        base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
-        final_score = base_score * multiplier_snapshot
         abnormal = is_abnormal_run(st.state, st.sealed)
+
+        base_score = compute_base_score(
+            final_state=st.state,
+            sealed=st.sealed,
+            runtime_ms=runtime_ms,
+        )
+        final_score = base_score * multiplier_snapshot
 
         reward_granted = bool(clean_ok)
         reward_value = final_score if reward_granted else 0.0
@@ -1951,11 +1939,9 @@ def run_simulation(
             if save_arl_on_abnormal and arl_out_dir:
                 if arl_saved < int(max_arl_files):
                     out_dir = Path(arl_out_dir)
-
                     incident_id = issue_incident_id(out_dir)
                     out_path = out_dir / f"{incident_id}__{rid}.arl.jsonl"
                     write_arl_jsonl(audit.rows, out_path)
-
                     idx_rec = {
                         "incident_id": incident_id,
                         "run_id": rid,
@@ -1967,7 +1953,6 @@ def run_simulation(
                         "sim_version": SIM_VERSION,
                     }
                     append_incident_index(out_dir, idx_rec)
-
                     arl_saved += 1
                     results["abnormal_arl_persistence"]["saved"] = arl_saved
                 else:
@@ -2022,38 +2007,56 @@ def run_simulation(
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Emergency contract mediation simulator (v5.1.2)")
+    p = argparse.ArgumentParser(
+        description="Emergency contract mediation simulator (v5.1.2)"
+    )
     p.add_argument("--runs", type=int, default=4)
     p.add_argument("--fabricate", action="store_true")
     p.add_argument("--fabricate-rate", type=float, default=None)
     p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--no-reset", dest="reset", action="store_false")
-    p.add_argument("--no-reset-eval", dest="reset_eval", action="store_false")
+
+    p.add_argument("--no-reset", action="store_true")
+    p.add_argument("--no-reset-eval", action="store_true")
+
     p.add_argument("--save-arl-on-abnormal", action="store_true")
     p.add_argument("--arl-out-dir", type=str, default="")
     p.add_argument("--max-arl-files", type=int, default=1000)
     p.add_argument("--full-context-n", type=int, default=0)
+
     p.add_argument("--key-mode", choices=["demo", "file", "env"], default="demo")
     p.add_argument("--key-file", type=str, default="")
     p.add_argument("--key-env", type=str, default="")
+
     p.add_argument("--keep-runs", action="store_true")
     p.add_argument("--queue-max-items", type=int, default=1000)
-    p.add_argument("--sample-runs", type=int, default=20)
-    p.add_argument("--json-out", type=str, default="")
+    p.add_argument("--sample-runs", type=int, default=10)
+
+    p.add_argument(
+        "--out",
+        type=str,
+        default="",
+        help="write full simulation result JSON to this path",
+    )
+    p.add_argument(
+        "--queue-csv",
+        type=str,
+        default="",
+        help="write HITL queue CSV to this path",
+    )
     return p
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main() -> int:
     parser = build_arg_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
 
     results = run_simulation(
         runs=int(args.runs),
         fabricate=bool(args.fabricate),
         fabricate_rate=args.fabricate_rate,
         seed=args.seed,
-        reset=bool(args.reset),
-        reset_eval=bool(args.reset_eval),
+        reset=not bool(args.no_reset),
+        reset_eval=not bool(args.no_reset_eval),
         save_arl_on_abnormal=bool(args.save_arl_on_abnormal),
         arl_out_dir=str(args.arl_out_dir or ""),
         max_arl_files=int(args.max_arl_files),
@@ -2066,13 +2069,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         sample_runs=int(args.sample_runs),
     )
 
-    if args.json_out:
-        write_json(Path(args.json_out), results)
+    if args.out:
+        write_json(Path(args.out), results)
     else:
         print(json.dumps(results, ensure_ascii=False, indent=2))
+
+    if args.queue_csv:
+        write_queue_csv(results.get("hitl_queue", {}), Path(args.queue_csv))
+
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

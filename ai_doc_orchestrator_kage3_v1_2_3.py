@@ -107,7 +107,7 @@ class AuditLog:
                 with self.audit_path.open("w", encoding="utf-8"):
                     pass
         except Exception:
-            pass
+            return
         finally:
             self._last_ts = None
 
