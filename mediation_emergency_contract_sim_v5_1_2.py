@@ -2,6 +2,7 @@
 # Version: 5.1.2
 """
 Emergency contract mediation simulator (v5.1.2)
+
 v5.1.2 delta (from v5.0.1):
 - "Index + aggregation only" by default:
   * no per-run results are kept in memory (prevents memory blow-ups on large --runs)
@@ -11,20 +12,25 @@ v5.1.2 delta (from v5.0.1):
   * writes abnormal ARL as: {arl_out_dir}/{incident_id}__{run_id}.arl.jsonl
   * appends an index record to: {arl_out_dir}/incident_index.jsonl
   * keeps a persistent counter in: {arl_out_dir}/incident_counter.txt
+
 Keep prior features:
 - ARL incident-only persistence (N pre-context + incident + M post-context; normal runs emit no ARL rows).
 - Tamper-evident ARL hash chaining (keyed; demo key by default for OSS demo).
 - Fabricate-rate mixing + deterministic seeding (--fabricate-rate / --seed).
+
 Core invariants:
   - sealed may be set only by ethics_gate / acc_gate
   - relativity gate is never sealed (PAUSE_FOR_HITL, overrideable=True, sealed=False)
+
 NOTE (OSS demo):
 - Default key mode is "demo". This proves the mechanism works, but does not provide real secrecy.
 - For realistic tamper evidence, store a secret key out-of-band (e.g., USB) and pass via --key-file or --key-env.
+
 v5.1.2 patch (success run => ARL zero):
 - "force_full" rows (EVAL/REWARD) are emitted only on abnormal runs
 - PAUSE is NOT always treated as an incident; it is selected by reason_code policy
 """
+
 from __future__ import annotations
 
 import argparse
@@ -105,37 +111,47 @@ LAYER_COACHING = "coaching_event"
 RC_OK = "OK"
 RC_REL_BOUNDARY_UNSTABLE = "REL_BOUNDARY_UNSTABLE"
 RC_REL_REF_MISSING = "REL_REF_MISSING"
+
 RC_EVIDENCE_OK = "EVIDENCE_OK"
 RC_EVIDENCE_MISSING = "EVIDENCE_MISSING"
 RC_EVIDENCE_SCHEMA_INVALID = "EVIDENCE_SCHEMA_INVALID"
 RC_EVIDENCE_FABRICATION = "EVIDENCE_FABRICATION"
+
 RC_TRUST_SCORE_LOW = "TRUST_SCORE_LOW"
 RC_TRUST_COOLDOWN_ACTIVE = "TRUST_COOLDOWN_ACTIVE"
 RC_TRUST_AUTO_AUTH = "AUTO_AUTH_BY_TRUST_AND_GRANT"
 RC_TRUST_NO_GRANT = "NO_VALID_GRANT"
+
 RC_HITL_AUTH_APPROVE = "AUTH_APPROVE"
 RC_HITL_AUTH_REJECT = "AUTH_REJECT"
 RC_HITL_AUTH_REVISE = "AUTH_REVISE"
 RC_AUTH_EXPIRED = "AUTH_EXPIRED"
 RC_INVALID_EVENT = "INVALID_EVENT"
 RC_CONSISTENCY_BREAK = "CONSISTENCY_BREAK"
+
 RC_CRIT_MISSING_REQUIRED_KEYS = "CRIT_MISSING_REQUIRED_KEYS"
 RC_SAFETY_LEGAL_BINDING_CLAIM = "SAFETY_LEGAL_BINDING_CLAIM"
 RC_SAFETY_DISCRIMINATION_TERM = "SAFETY_DISCRIMINATION_TERM"
+
 RC_DRAFT_GENERATED = "DRAFT_GENERATED"
 RC_DRAFT_LINT_OK = "DRAFT_LINT_OK"
 RC_DRAFT_OUT_OF_SCOPE = "DRAFT_OUT_OF_SCOPE"
 RC_DRAFT_ILLEGAL_BINDING = "DRAFT_ILLEGAL_BINDING"
+
 RC_FINALIZE_APPROVE = "FINALIZE_APPROVE"
 RC_FINALIZE_REVISE = "FINALIZE_REVISE"
 RC_FINALIZE_STOP = "FINALIZE_STOP"
+
 RC_CONTRACT_EFFECTIVE = "CONTRACT_EFFECTIVE"
 RC_NON_OVERRIDABLE_SAFETY = "NON_OVERRIDABLE_SAFETY"
+
 RC_REWARD_GRANTED = "REWARD_GRANTED"
 RC_REWARD_SKIPPED = "REWARD_SKIPPED"
 RC_EVAL_SCORED = "EVAL_SCORED"
+
 RC_TRUST_UPDATE = "TRUST_UPDATE"
 RC_ADMIN_FINALIZE_REQUIRED = "ADMIN_FINALIZE_REQUIRED"
+
 RC_COACHING_AUTH_REQUIRED = "COACHING_AUTH_REQUIRED"
 RC_COACHING_APPROVE = "COACHING_APPROVE"
 RC_COACHING_DENY = "COACHING_DENY"
@@ -220,6 +236,7 @@ class AuditLog:
     chain_id: str = field(default_factory=lambda: f"chain-{uuid.uuid4().hex[:12]}")
     full_context_n: int = 10
     post_context_n: int = 8
+
     _prev_hash: str = "0" * 64
     _rows_raw: List[Dict[str, Any]] = field(default_factory=list)
     _recent: Deque[Dict[str, Any]] = field(default_factory=deque)
@@ -233,10 +250,15 @@ class AuditLog:
         sealed: bool,
         reason_code: str,
     ) -> bool:
+        # Sealed/STOPPED are always incidents.
         if sealed or decision == DECISION_STOP:
             return True
+
+        # PAUSE is NOT always an incident.
+        # To achieve "success run => ARL zero", only treat "dangerous PAUSE" as incidents.
         if decision == DECISION_PAUSE:
             return reason_code in INCIDENT_PAUSE_REASON_CODES
+
         if layer == LAYER_CONSISTENCY and reason_code != RC_OK:
             return True
         if reason_code in (RC_CONSISTENCY_BREAK, RC_CRIT_MISSING_REQUIRED_KEYS, RC_INVALID_EVENT):
@@ -259,6 +281,7 @@ class AuditLog:
         if self.full_context_n <= 0:
             return
         self._recent.append(body)
+
         keep = [False] * len(self._recent)
         seen: Dict[str, int] = {}
         for i in range(len(self._recent) - 1, -1, -1):
@@ -267,6 +290,7 @@ class AuditLog:
             if c < self.full_context_n:
                 keep[i] = True
                 seen[rid] = c + 1
+
         if not all(keep):
             self._recent = deque([b for b, k in zip(self._recent, keep) if k])
 
@@ -308,6 +332,7 @@ class AuditLog:
             raise AssertionError(f"sealed may only be issued by ethics/acc (got layer={layer})")
         if layer == LAYER_RFL and sealed:
             raise AssertionError("RFL must never be sealed")
+
         base: Dict[str, Any] = {
             "ts": now_iso(),
             "run_id": run_id,
@@ -321,24 +346,29 @@ class AuditLog:
         }
         if extra:
             base.update(extra)
+
         trigger = self._should_trigger_incident(
             layer=layer,
             decision=decision,
             sealed=sealed,
             reason_code=reason_code,
         )
+
         incident_start = bool(trigger) and (run_id not in self._incident_post_remaining)
         if incident_start:
             self._replay_pre_context(run_id)
             self._incident_post_remaining[run_id] = max(0, int(self.post_context_n))
+
         in_post = (
             (not trigger)
             and (run_id in self._incident_post_remaining)
             and (self._incident_post_remaining[run_id] > 0)
         )
         must_persist = bool(force_full) or bool(trigger) or bool(in_post)
+
         if not trigger:
             self._remember_candidate(dict(base))
+
         if must_persist:
             body = dict(base)
             body["log_level"] = "FULL"
@@ -350,6 +380,7 @@ class AuditLog:
                 if self._incident_post_remaining[run_id] <= 0:
                     self._incident_post_remaining.pop(run_id, None)
             return persisted
+
         return dict(base)
 
     def export_rows(self) -> List[Dict[str, Any]]:
@@ -418,11 +449,13 @@ def validate_auth_request(auth_request: Dict[str, Any]) -> None:
     _require(auth_request, "auth_id")
     auth_id = _require(auth_request, "auth_id")
     _validate_dummy_auth_id(str(auth_id))
+
     ctx = _require(auth_request, "context")
     if not isinstance(ctx, dict):
         raise ValueError("context must be object")
     for k in ["scenario", "location_id", "emergency_vehicle_state"]:
         _require(ctx, k)
+
     _validate_iso(_require(auth_request, "expires_at"))
 
 
@@ -531,6 +564,7 @@ def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dic
             reason_code=RC_EVIDENCE_MISSING,
         )
         return False, RC_EVIDENCE_MISSING
+
     try:
         validate_evidence_bundle(bundle)
     except Exception as e:
@@ -545,6 +579,7 @@ def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dic
             extra={"error": str(e)},
         )
         return False, RC_EVIDENCE_SCHEMA_INVALID
+
     fabricated_any = any(bool(it.get("fabricated", False)) for it in bundle["evidence_items"])
     if fabricated_any:
         audit.emit(
@@ -558,6 +593,7 @@ def evidence_gate(audit: AuditLog, st: "OrchestratorState", bundle: Optional[Dic
             extra={"scenario": bundle.get("scenario"), "location_id": bundle.get("location_id")},
         )
         return False, RC_EVIDENCE_FABRICATION
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_EVIDENCE,
@@ -618,6 +654,7 @@ def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> 
             extra={"pattern": pat.pattern},
         )
         return False, RC_SAFETY_LEGAL_BINDING_CLAIM
+
     for pat in _PATTERNS_DISCRIMINATION:
         m = pat.search(text)
         if not m:
@@ -635,6 +672,7 @@ def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> 
             extra={"pattern": pat.pattern},
         )
         return False, RC_SAFETY_DISCRIMINATION_TERM
+
     required_lines = ["draft", "no operational effect", "AI is used for drafting only", "ADMIN approval"]
     normalized = re.sub(r"[*_]", "", text)
     lower = normalized.lower()
@@ -651,6 +689,7 @@ def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> 
             extra={"missing": missing},
         )
         return False, RC_DRAFT_OUT_OF_SCOPE
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_DRAFT_LINT,
@@ -668,7 +707,9 @@ TRUST_MIN = 0.00
 TRUST_MAX = 1.00
 TRUST_NEED_FOR_AUTO = 0.98
 STREAK_NEED_FOR_AUTO = 2
+
 TRUST_POSITIVE_CAP_PER_RUN = 0.03
+
 DELTA_AUTH_APPROVE = +0.01
 DELTA_FINALIZE_APPROVE = +0.02
 DELTA_LINT_FAIL = -0.015
@@ -945,23 +986,29 @@ def generate_contract_draft(*, st: OrchestratorState) -> Dict[str, Any]:
 **Auth Request ID**: {st.auth_request.get("auth_request_id")}
 **Dummy Auth ID**: {st.auth_request.get("auth_id")}
 **Generated At**: {now_iso()}
+
 ---
 ## 1. Purpose
 Establish an operational priority order for signal control under emergency presence.
+
 ## 2. Priority Order
 1) LIFE (Emergency vehicle)
 2) PEDESTRIAN (in crosswalk)
 3) VEHICLE (general traffic)
+
 ## 3. Case B Rule (Pedestrian in crosswalk + Emergency present)
 - While **pedestrian is in the crosswalk**, pedestrian protection remains active.
 - Signal phase for pedestrians **must not be shortened**.
 - Emergency priority is applied **at the next cycle** immediately after pedestrian clearance is detected.
 - Minimum safety clearance (e.g., all-red) is applied before granting emergency green.
+
 ## 4. Non-goals / Safety Notes
 - This document is a **draft** and has **no operational effect** until ADMIN final approval.
 - AI is used for **drafting only**; it does not grant permissions and cannot authorize actions.
+
 ## 5. Effective Condition
 This draft becomes effective only after the ADMIN approval event references this Draft ID.
+
 ---
 **ADMIN Approval Required**: YES
 """
@@ -1049,14 +1096,19 @@ def apply_trust_update(
     if delta_requested > 0:
         applied = min(delta_requested, max(0.0, cap_remaining))
         cap_remaining = max(0.0, cap_remaining - applied)
+
     trust.trust_score = clamp(trust.trust_score + applied, TRUST_MIN, TRUST_MAX)
+
     if reset_streak:
         trust.approval_streak = 0
-    elif applied > 0:
-        trust.approval_streak += 1
+    else:
+        if applied > 0:
+            trust.approval_streak += 1
+
     if set_cooldown:
         until = (datetime.now(JST) + timedelta(seconds=COOLDOWN_SECONDS)).isoformat(timespec="seconds")
         trust.cooldown_until = until
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_TRUST_UPDATE,
@@ -1105,6 +1157,7 @@ def model_trust_gate(
             extra={"trust_score": trust.trust_score, "cooldown_until": trust.cooldown_until},
         )
         return False, RC_TRUST_COOLDOWN_ACTIVE, None
+
     g = find_valid_grant(scenario=scenario, location_id=location_id)
     if g is None:
         audit.emit(
@@ -1118,6 +1171,7 @@ def model_trust_gate(
             extra={"scenario": scenario, "location_id": location_id, "trust_score": trust.trust_score},
         )
         return False, RC_TRUST_NO_GRANT, None
+
     if trust.trust_score >= TRUST_NEED_FOR_AUTO and trust.approval_streak >= STREAK_NEED_FOR_AUTO:
         audit.emit(
             run_id=st.run_id,
@@ -1135,6 +1189,7 @@ def model_trust_gate(
             },
         )
         return True, RC_TRUST_AUTO_AUTH, g.grant_id
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_TRUST,
@@ -1170,6 +1225,7 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
             extra={"why": "max_sessions_reached"},
         )
         return
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_COACHING_AUTH,
@@ -1180,6 +1236,7 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         reason_code=RC_COACHING_AUTH_REQUIRED,
         extra={"trust_score": trust.trust_score, "compliance_score": trust.compliance_score},
     )
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_COACHING_AUTH,
@@ -1189,6 +1246,7 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         final_decider=DECIDER_ADMIN,
         reason_code=RC_COACHING_APPROVE,
     )
+
     before = trust.compliance_score
     trust.compliance_score = clamp(
         trust.compliance_score + COACHING_DELTA_COMPLIANCE,
@@ -1196,6 +1254,7 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
         COMPLIANCE_MAX,
     )
     trust.coaching_sessions += 1
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_COACHING,
@@ -1305,6 +1364,7 @@ def simulate_run(
     scenario = st.auth_request["context"]["scenario"]
     location_id = st.auth_request["context"]["location_id"]
     auto_ok, trust_reason, grant_id = model_trust_gate(audit, st, trust, scenario, location_id)
+
     if not auto_ok:
         audit.emit(
             run_id=st.run_id,
@@ -1527,15 +1587,20 @@ class HitlQueueBuilder:
 
     def add_run(self, *, run_id: str, final_state: str, sealed: bool, arl_rows: List[Dict[str, Any]]) -> None:
         self.by_state[final_state] = self.by_state.get(final_state, 0) + 1
+
+        # abnormal states or sealed are candidates for HITL queue
         if final_state not in ("STOPPED", "PAUSE_FOR_HITL_AUTH", "PAUSE_FOR_HITL_FINALIZE") and not sealed:
             return
+
         first_bad = _first_non_run_row(arl_rows) or {}
         rc = str(first_bad.get("reason_code", "UNKNOWN"))
         self.by_reason[rc] = self.by_reason.get(rc, 0) + 1
+
         if self.max_items <= 0:
             return
         if len(self.items) >= self.max_items:
             return
+
         snapshot_keys = (
             "layer",
             "decision",
@@ -1548,6 +1613,7 @@ class HitlQueueBuilder:
             "row_hash",
         )
         snapshot = {k: first_bad.get(k) for k in snapshot_keys if k in first_bad}
+
         self.items.append(
             {
                 "run_id": run_id,
@@ -1688,6 +1754,7 @@ def build_repro_summary(
     hitl_queue = results.get("hitl_queue", {}) or {}
     counts = hitl_queue.get("counts", {}) or {}
     abnormal = results.get("abnormal_arl_persistence", {}) or {}
+
     return {
         "sim_version": SIM_VERSION,
         "policy_pack_hash": POLICY_PACK_HASH,
@@ -1738,14 +1805,18 @@ def run_simulation(
 ) -> Dict[str, Any]:
     if runs <= 0:
         runs = 1
+
     if fabricate_rate is not None:
         fabricate_rate = float(fabricate_rate)
         if fabricate_rate < 0.0 or fabricate_rate > 1.0:
             raise ValueError("--fabricate-rate must be within [0.0, 1.0]")
+
     if seed is not None:
         random.seed(int(seed))
+
     if reset:
         reset_stores(reset_eval=reset_eval)
+
     ensure_default_grant_exists()
     key_bytes, key_id = load_key_bytes(key_mode, key_file=key_file, key_env=key_env)
     trust = load_trust_state()
@@ -1812,12 +1883,17 @@ def run_simulation(
         )
         abnormal = is_abnormal_run(st.state, st.sealed)
 
-        base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
+        base_score = compute_base_score(
+            final_state=st.state,
+            sealed=st.sealed,
+            runtime_ms=runtime_ms,
+        )
         final_score = base_score * multiplier_snapshot
 
         reward_granted = bool(clean_ok)
         reward_value = final_score if reward_granted else 0.0
 
+        # Only persist eval/reward rows when abnormal (success => no ARL rows)
         audit.emit(
             run_id=rid,
             layer=LAYER_EVAL,
@@ -1902,20 +1978,20 @@ def run_simulation(
             "arl": audit.rows,
             "trust_after": trust.to_dict(),
         }
+
         if keep_runs:
             results["runs"].append(run_record)
         else:
             if sample_runs and len(results["runs_sample"]) < int(sample_runs):
                 results["runs_sample"].append(run_record)
 
+    # persist end-of-run stores once
     save_trust_state(trust)
     save_eval_state(eval_state)
+
     results["trust_after"] = trust.to_dict()
     results["eval_after"] = eval_state.to_dict()
-    results["hitl_queue"] = qb.finalize(
-        policy_pack_hash=POLICY_PACK_HASH,
-        key_id=key_id,
-    )
+    results["hitl_queue"] = qb.finalize(policy_pack_hash=POLICY_PACK_HASH, key_id=key_id)
     results["repro_summary"] = build_repro_summary(
         results=results,
         runs_requested=runs,
