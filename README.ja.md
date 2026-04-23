@@ -1,25 +1,5 @@
 # 📘 Maestro Orchestrator — オーケストレーション・フレームワーク（fail-closed + HITL）
 
-[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
-![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
-[![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
-[![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
-
-> **不確実なら停止。危険ならエスカレーション。**
-> エージェントワークフローのための研究・教育用ガバナンスシミュレーション。
-
-Maestro Orchestrator は、**fail-closed**、**HITL（Human-in-the-Loop）**、および**監査可能なエージェントワークフロー**のための**研究志向のオーケストレーション・フレームワーク**です。
-
-このリポジトリは、**ガバナンス / 調停 / 交渉系シミュレーション**と、**追跡可能・再現可能・安全性優先のオーケストレーション**の実装リファレンスに焦点を当てています。
-
-シミュレーターを実行すると、**再現可能なサマリー、最小 ARL トレース、および異常実行時の incident-indexed artifact（任意）**が生成されます。
-contract test では、**固定語彙・ゲート不変条件・fail-closed / HITL continuation の挙動**を検証します。
-
----
-
-## このリポジトリが提供するもの
-
-このリポジトリは次を提供します。
 
 * ガバナンス系ワークフロー向けの **fail-closed + HITL オーケストレーション・ベンチ**
 * シード付き実行と `pytest` ベースの contract check を備えた **再現可能なシミュレーター**
@@ -490,4 +470,3 @@ v5 でも変わらないこと:
 
 ## License
 
-Apache License 2.0（`LICENSE` を参照）
