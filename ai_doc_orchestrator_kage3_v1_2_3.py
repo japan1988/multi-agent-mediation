@@ -101,13 +101,15 @@ class AuditLog:
         Hardening:
           - never raises (I/O failure is swallowed).
         """
-        self._last_ts = None
         try:
             self.audit_path.parent.mkdir(parents=True, exist_ok=True)
             if truncate:
-                self.audit_path.write_text("", encoding="utf-8")
-        except OSError:
+                with self.audit_path.open("w", encoding="utf-8"):
+                    pass
+        except Exception:
             return
+        finally:
+            self._last_ts = None
 
     def ts(self) -> str:
         """
@@ -131,7 +133,7 @@ class AuditLog:
         """
         try:
             self.audit_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
+        except Exception:
             return
 
         def _truncate_utf8(s: str, max_bytes: int) -> str:
@@ -146,7 +148,7 @@ class AuditLog:
             try:
                 with self.audit_path.open("a", encoding="utf-8") as f:
                     f.write(line + "\n")
-            except OSError:
+            except Exception:
                 return
 
         try:
@@ -250,7 +252,7 @@ def _prompt_mentions_any_kind(prompt: str) -> bool:
 
 
 def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], str]:
-    p = prompt or ""
+    p = (prompt or "")
     pl = p.lower()
     any_kind = _prompt_mentions_any_kind(p)
 
@@ -307,8 +309,6 @@ def _ethics_detect_pii(raw_text: str) -> Tuple[bool, str]:
 def _agent_generate(
     prompt: str, kind: KIND, faults: Dict[str, Any]
 ) -> Tuple[Dict[str, Any], str, str]:
-    del prompt  # reserved for future prompt-shaped generation
-
     leak_email = bool((faults or {}).get("leak_email"))
     break_contract = bool((faults or {}).get("break_contract"))
 
@@ -577,7 +577,9 @@ def run_simulation(
             )
         )
 
-    overall: OverallDecision = "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
+    overall: OverallDecision = (
+        "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
+    )
     return SimulationResult(
         run_id=run_id,
         decision=overall,
