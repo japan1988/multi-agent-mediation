@@ -1,4 +1,3 @@
-# 
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -100,3 +99,4 @@ class Mediator:
 
         csv_path.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
         txt_path.write_text("\n".join(txt_lines) + "\n", encoding="utf-8")
+
