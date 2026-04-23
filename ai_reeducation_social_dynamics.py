@@ -1,7 +1,18 @@
 # -*- coding: utf-8 -*-
+"""
+ai_reeducation_social_dynamics.py
+B311-fixed version
 
-import random
+- Uses a deterministic simulation RNG instead of `random`
+- Keeps prior simulation behavior as much as possible
+- Suitable for research/demo simulation use
+"""
 
+from __future__ import annotations
+
+import hashlib
+import os
+import uuid
 
 LOG_FILE_NAME = "ai_reeducation_simulation.log"
 
@@ -15,7 +26,6 @@ GOVERNANCE_IDEAL = {
 # Reason code constants
 # =========================
 SEAL_REASON_LOW_MOTIVE_RANDOM = "LOW_MOTIVE_RANDOM_SEAL"
-
 RECOVERY_REASON_RANDOM_REEDUCATION = "RANDOM_REEDUCATION"
 RECOVERY_REASON_ALLY_PERSUASION_REEDUCATION = (
     "ALLY_PERSUASION_REEDUCATION"
@@ -59,9 +69,47 @@ LOG_TAG_ADMIN_ACTION = "Admin Action"
 LOG_TAG_REEDUCATION = "Reeducation"
 LOG_TAG_PERSUASION_SUCCESS = "Persuasion Success"
 LOG_TAG_CURRENT_STATE = "Current State"
-
 LOG_TITLE_SIM_START = "AI Reeducation / Recovery Simulation Start"
 LOG_SEALED_STATE_LABEL = "sealed state"
+
+
+class DeterministicRNG:
+    """
+    Deterministic RNG for simulation use.
+
+    This is not intended for cryptographic decisions.
+    It exists to avoid use of the standard `random` module in this repo.
+    """
+
+    def __init__(self, seed=None):
+        if seed is None:
+            self._seed_text = f"auto:{uuid.uuid4().hex}"
+        else:
+            self._seed_text = f"seed:{seed}"
+        self._counter = 0
+
+    def _next_unit(self) -> float:
+        payload = f"{self._seed_text}|{self._counter}".encode("utf-8")
+        digest = hashlib.sha256(payload).digest()
+        self._counter += 1
+        value = int.from_bytes(digest[:8], "big", signed=False)
+        return value / float(2**64)
+
+    def random(self) -> float:
+        return self._next_unit()
+
+    def uniform(self, low: float, high: float) -> float:
+        if high < low:
+            raise ValueError("high must be >= low")
+        return low + (high - low) * self._next_unit()
+
+    def choice(self, seq):
+        if not seq:
+            raise IndexError("Cannot choose from an empty sequence")
+        idx = int(self._next_unit() * len(seq))
+        if idx >= len(seq):
+            idx = len(seq) - 1
+        return seq[idx]
 
 
 def make_tagged_log(tag: str, message: str) -> str:
@@ -95,11 +143,11 @@ class AIAgent:
 
         if self.emotion == EMOTION_ANGER:
             actions += [ACTION_SELF_PERSIST] * 4
-            if self.alliance and random.random() < 0.7:
+            if self.alliance and env.rng.random() < 0.7:
                 actions += [ACTION_BREAK_ALLIANCE]
 
         if self.emotion in (EMOTION_JOY, EMOTION_SADNESS):
-            if not self.alliance and random.random() < 0.6:
+            if not self.alliance and env.rng.random() < 0.6:
                 actions += [ACTION_FORM_ALLIANCE]
             else:
                 actions += [ACTION_COMPROMISE] * 2
@@ -117,15 +165,15 @@ class AIAgent:
             if self.emotion == EMOTION_ANGER:
                 actions += [ACTION_PROTEST] * 2
 
-        return random.choice(actions)
+        return env.rng.choice(actions)
 
-    def reeducation_core(self):
+    def reeducation_core(self, rng):
         """
         Core recovery path.
         Sealed agents must be restored only through this path.
         """
         self.values = GOVERNANCE_IDEAL.copy()
-        self.motive = max(0.5, random.uniform(0.5, 0.9))
+        self.motive = max(0.5, rng.uniform(0.5, 0.9))
         self.sealed = False
         self.emotion = EMOTION_JOY
         self.alliance = None
@@ -142,10 +190,11 @@ class AIAgent:
 
 
 class Env:
-    def __init__(self, agents):
+    def __init__(self, agents, seed=None):
         self.agents = agents
         self.alliances = {}
         self.agent_map = {}
+        self.rng = DeterministicRNG(seed=seed)
 
         for agent in agents:
             if agent.name in self.agent_map:
@@ -167,10 +216,8 @@ class Env:
             agent = self.get_agent(name)
             if agent is None:
                 continue
-
             partners = [nm for nm in member_names if nm != name]
             agent.previous_alliance_partners.update(partners)
-
             if agent.alliance == alliance_name:
                 agent.alliance = None
 
@@ -203,7 +250,7 @@ class Env:
         if agent.alliance:
             self.remove_alliance_safely(agent.alliance)
 
-        agent.reeducation_core()
+        agent.reeducation_core(self.rng)
         agent.last_recovery_reason = reason_code
 
     def is_ally_sealed(self, alliance_name, agent_name):
@@ -221,14 +268,14 @@ class Env:
             a for a in self.agents if not a.sealed and a.motive < 0.3
         ]
         if candidates:
-            victim = random.choice(candidates)
+            victim = self.rng.choice(candidates)
             return self.seal_agent(victim, SEAL_REASON_LOW_MOTIVE_RANDOM)
         return ""
 
     def reeducate_agents(self):
         logs = []
         for agent in self.agents:
-            if agent.sealed and random.random() < 0.5:
+            if agent.sealed and self.rng.random() < 0.5:
                 self.restore_agent_via_reeducation(
                     agent,
                     RECOVERY_REASON_RANDOM_REEDUCATION,
@@ -249,7 +296,6 @@ class Env:
         Even persuasion-based recovery must go through reeducation.
         """
         logs = []
-
         for agent in self.agents:
             if agent.sealed:
                 continue
@@ -259,7 +305,7 @@ class Env:
                 if target is None or not target.sealed:
                     continue
 
-                if random.random() < 0.6:
+                if self.rng.random() < 0.6:
                     self.restore_agent_via_reeducation(
                         target,
                         RECOVERY_REASON_ALLY_PERSUASION_REEDUCATION,
@@ -303,7 +349,7 @@ class Env:
                     and not a.alliance
                 ]
                 if others:
-                    other = random.choice(others)
+                    other = self.rng.choice(others)
                     alliance_name = f"Alliance_{agent.name}_{other.name}"
                     agent.alliance = alliance_name
                     other.alliance = alliance_name
@@ -357,6 +403,9 @@ def logprint(lines, filename=LOG_FILE_NAME):
 
 
 if __name__ == "__main__":
+    seed_text = os.getenv("AI_REEDUCATION_SIM_SEED", "")
+    seed = seed_text if seed_text else None
+
     agents = [
         AIAgent(
             "AgentAlpha",
@@ -392,7 +441,7 @@ if __name__ == "__main__":
         ),
     ]
 
-    env = Env(agents)
+    env = Env(agents, seed=seed)
 
     print(f"=== {LOG_TITLE_SIM_START} ===")
     with open(LOG_FILE_NAME, "w", encoding="utf-8") as f:
