@@ -2052,4 +2052,3 @@ if __name__ == "__main__":
  japan1988-patch-4
     raise SystemExit(main())
     raise SystemExit(main())ain())
-    main
