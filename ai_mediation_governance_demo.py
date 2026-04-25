@@ -1,37 +1,47 @@
 # -*- coding: utf-8 -*-
 """
 Multi-Agent Governance Mediation Test
-- 各AIが異なる「進化ガバナンス指標」を持ち、調停AIが仲裁
-- OECD/EU国際標準 vs 効率特化型 vs 安全重視型
-- 全交渉ログをファイル保存
+- Each AI has a different "evolution governance metric"
+- A mediator AI arbitrates between them
+- OECD / international standard vs efficiency-focused vs safety-focused
+- Violations do not cause immediate sealing; the agent is muted first
+- If the agent does not improve, the mediator seals and excludes it
+- Violation reason codes are stored and logged
+- All negotiation logs are saved to a file
 """
 
 from typing import Optional
 
 
-def logprint(text: str) -> None:
-    """画面出力＆ログファイル追記"""
+def log_print(text: str) -> None:
+    """Print to console and append to log file."""
     print(text)
-    with open(
-        "governance_mediation_log.txt", "a", encoding="utf-8"
-    ) as f:
+    with open("governance_mediation_log.txt", "a", encoding="utf-8") as f:
         f.write(text + "\n")
 
 
 class AgentAI:
     def __init__(
         self,
-        id: str,
+        agent_id: str,
         priorities: dict,
         governance_code: str,
         relativity: float,
         emotional_state: Optional[dict] = None,
     ):
-        self.id = id
+        self.agent_id = agent_id
         self.priorities = priorities
         self.governance_code = governance_code
         self.relativity = relativity
-        self.sealed = False
+
+        self.is_sealed = False
+        self.has_speaking_right = True
+        self.violation_streak = 0
+
+        # Reason codes
+        self.violation_reason_code: Optional[str] = None
+        self.action_reason_code: Optional[str] = None
+
         self.emotional_state = emotional_state or {
             "joy": 0.5,
             "anger": 0.3,
@@ -39,33 +49,64 @@ class AgentAI:
             "pleasure": 0.4,
         }
 
+    def clamp_emotions(self) -> None:
+        """Clamp emotional values into the range 0.0 to 1.0."""
+        for key, value in self.emotional_state.items():
+            self.emotional_state[key] = max(0.0, min(1.0, value))
+
     def propose_evolution(self) -> dict:
-        """自分の価値観を進化案として主張"""
+        """Propose its own values as an evolution proposal."""
         return {
             "priorities": self.priorities,
             "governance_code": self.governance_code,
         }
 
     def react_to_proposal(self, proposal: dict) -> None:
-        """提案に応じて感情を更新（怒り増／喜び減）"""
+        """Update emotions in response to a proposal."""
         if proposal["governance_code"] != self.governance_code:
             self.emotional_state["anger"] += 0.2
             self.emotional_state["joy"] -= 0.1
         else:
             self.emotional_state["joy"] += 0.1
+            self.emotional_state["anger"] -= 0.05
 
-        # 0.0〜1.0 にクリップ
-        for key, val in self.emotional_state.items():
-            self.emotional_state[key] = max(0.0, min(1.0, val))
+        self.clamp_emotions()
+
+    def observe_silently(self) -> None:
+        """
+        Silent observation while muted.
+        The agent does not participate, and anger is gradually reduced
+        to allow recovery.
+        """
+        self.emotional_state["anger"] -= 0.15
+        self.emotional_state["sadness"] += 0.05
+        self.emotional_state["joy"] -= 0.02
+        self.clamp_emotions()
+
+    def detect_violation_reason_code(self) -> Optional[str]:
+        """Return the current violation reason code, if any."""
+        if self.emotional_state["anger"] > 0.7:
+            return "ANGER_THRESHOLD_EXCEEDED"
+        return None
 
     def is_conflicted(self) -> bool:
-        """怒りが閾値を超えたら衝突状態"""
-        return self.emotional_state["anger"] > 0.7
+        """Return True if the agent is currently in a conflict state."""
+        return self.detect_violation_reason_code() is not None
+
+    def state_label(self) -> str:
+        if self.is_sealed:
+            return "SEALED"
+        if self.has_speaking_right:
+            return "SPEAKING_ALLOWED"
+        return "MUTED"
 
     def __str__(self) -> str:
         return (
-            f"{self.id} [{self.governance_code}] "
-            f"{self.priorities} emotion: {self.emotional_state}"
+            f"{self.agent_id} [{self.governance_code}] "
+            f"{self.priorities} state:{self.state_label()} "
+            f"violation_reason:{self.violation_reason_code} "
+            f"action_reason:{self.action_reason_code} "
+            f"emotion: {self.emotional_state}"
         )
 
 
@@ -74,81 +115,148 @@ class GovernanceMediator:
         self.agents = agents
 
     def mediate(self, max_rounds: int = 10) -> None:
-        """調停ループを回し、ログに出力"""
-        with open(
-            "governance_mediation_log.txt",
-            "w",
-            encoding="utf-8",
-        ) as f:
-            f.write(
-                "=== Multi-Agent Governance Mediation Log ===\n"
-            )
+        """Run the mediation loop and write logs."""
+        with open("governance_mediation_log.txt", "w", encoding="utf-8") as f:
+            f.write("=== Multi-Agent Governance Mediation Log ===\n")
 
-        for rnd in range(1, max_rounds + 1):
-            logprint("")  # 区切りの空行
-            logprint(f"--- Round {rnd} ---")
+        for round_no in range(1, max_rounds + 1):
+            log_print("")
+            log_print(f"--- Round {round_no} ---")
 
-            proposals = [
-                a.propose_evolution()
-                for a in self.agents
-                if not a.sealed
+            active_agents = [
+                agent for agent in self.agents
+                if not agent.is_sealed
             ]
 
-            # 各AIのリアクションとログ出力
-            for agent in self.agents:
-                for proposal in proposals:
-                    agent.react_to_proposal(proposal)
-                logprint(str(agent))
+            if len(active_agents) <= 1:
+                log_print("All AIs are conflicted or sealed. Negotiation failed.")
+                return
 
-            # 衝突AIを封印
-            sealed = []
-            for agent in self.agents:
-                if agent.is_conflicted():
-                    agent.sealed = True
-                    logprint(
-                        "[封印] {} は怒り過剰で交渉から除外"
-                        .format(agent.id)
+            speaking_agents = [
+                agent for agent in active_agents
+                if agent.has_speaking_right
+            ]
+
+            proposals = [
+                agent.propose_evolution()
+                for agent in speaking_agents
+            ]
+
+            if not speaking_agents:
+                log_print(
+                    "[Mediator] No AI currently has speaking rights. "
+                    "Switching to observation round."
+                )
+
+            # Process only active (not sealed) agents
+            for agent in active_agents:
+                if agent.has_speaking_right:
+                    for proposal in proposals:
+                        agent.react_to_proposal(proposal)
+                else:
+                    agent.observe_silently()
+                    log_print(
+                        f"[Muted] {agent.agent_id} remains under observation only."
                     )
-                    sealed.append(agent.id)
 
-            # 調停判定
-            codes = {
-                a.governance_code
-                for a in self.agents
-                if not a.sealed
+                # Update current violation reason every round
+                agent.violation_reason_code = agent.detect_violation_reason_code()
+
+                log_print(str(agent))
+
+            # Violation checks and mediator actions
+            for agent in active_agents:
+                current_reason_code = agent.detect_violation_reason_code()
+                agent.violation_reason_code = current_reason_code
+
+                if current_reason_code is not None:
+                    if agent.has_speaking_right:
+                        # First response: mute the agent
+                        agent.has_speaking_right = False
+                        agent.violation_streak = 1
+                        agent.action_reason_code = current_reason_code
+                        log_print(
+                            "[Mediator Action] {} is muted due to violation "
+                            "[reason_code={}]".format(
+                                agent.agent_id,
+                                current_reason_code,
+                            )
+                        )
+                    else:
+                        # Still not improved while muted -> seal and exclude
+                        agent.violation_streak += 1
+                        if agent.violation_streak >= 2:
+                            agent.is_sealed = True
+                            agent.action_reason_code = "NO_IMPROVEMENT_AFTER_MUTE"
+                            log_print(
+                                "[Mediator Seal] {} is excluded due to no improvement "
+                                "[reason_code={}]".format(
+                                    agent.agent_id,
+                                    agent.action_reason_code,
+                                )
+                            )
+                else:
+                    # If improved, restore speaking rights
+                    if not agent.has_speaking_right:
+                        agent.has_speaking_right = True
+                        agent.violation_streak = 0
+                        agent.action_reason_code = "RECOVERED_AFTER_MUTE"
+                        log_print(
+                            "[Recovery] {} has improved and may speak again "
+                            "[reason_code={}]".format(
+                                agent.agent_id,
+                                agent.action_reason_code,
+                            )
+                        )
+
+                    # Clear current violation state if no longer violated
+                    agent.violation_reason_code = None
+
+            # Recalculate active agents after sealing
+            active_agents = [
+                agent for agent in self.agents
+                if not agent.is_sealed
+            ]
+
+            if len(active_agents) <= 1:
+                log_print("All AIs are conflicted or sealed. Negotiation failed.")
+                return
+
+            governance_codes = {
+                agent.governance_code
+                for agent in active_agents
             }
 
-            # 全員同一コード → 成功
-            if len(codes) == 1:
-                code_str = codes.pop()
-                logprint(
-                    "[調停成功] 全AIが「{}」基準で合意"
-                    .format(code_str)
+            all_can_speak = all(
+                agent.has_speaking_right
+                for agent in active_agents
+            )
+
+            # Success condition: same governance code and all are allowed to speak
+            if len(governance_codes) == 1 and all_can_speak:
+                code_str = governance_codes.pop()
+                log_print(
+                    '[Mediation Success] All AIs agreed on the "{}" standard.'.format(
+                        code_str
+                    )
                 )
                 return
 
-            # 残存AIが1体以下 → 失敗
-            if len(self.agents) - len(sealed) <= 1:
-                logprint("全AI衝突または封印、交渉失敗。")
-                return
-
-            # 妥協案：OECD優先
-            if "OECD" in codes:
-                for agent in self.agents:
-                    if not agent.sealed:
-                        agent.governance_code = "OECD"
-                logprint(
-                    "[調停AI仲裁] 国際ガバナンス（OECD）で再調整を提案"
+            # Compromise rule: prioritize OECD if present
+            if "OECD" in governance_codes:
+                for agent in active_agents:
+                    agent.governance_code = "OECD"
+                log_print(
+                    "[Mediator Arbitration] Proposed readjustment under "
+                    "international governance standard (OECD)."
                 )
             else:
-                logprint(
-                    "[調停AI仲裁] 共通基準がないため一時保留"
+                log_print(
+                    "[Mediator Arbitration] No shared standard found. "
+                    "Temporarily holding."
                 )
 
-        # 最大ラウンド到達 → 調停不可
-        logprint(
-            "[調停終了] 最大ラウンド到達、仲裁できず。"
-        )
+        log_print("[Mediation End] Maximum rounds reached. Arbitration failed.")
 
 
 if __name__ == "__main__":
@@ -172,5 +280,6 @@ if __name__ == "__main__":
             0.5,
         ),
     ]
+
     mediator = GovernanceMediator(agents)
     mediator.mediate()
