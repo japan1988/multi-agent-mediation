@@ -15,8 +15,12 @@ def _read_jsonl(p: Path):
 
 def _layers_in_order(events):
     arl = [
+
+        e for e in events
+
         e
         for e in events
+
         if isinstance(e, dict) and "layer" in e and "run_id" in e
     ]
     return [e["layer"] for e in arl]
@@ -24,9 +28,13 @@ def _layers_in_order(events):
 
 def test_ok_runs_and_logs_no_at(tmp_path):
     log = tmp_path / "audit.jsonl"
+
+    tasks = [sim.Task(task_id="T1", kind="xlsx", prompt="在庫の集計表を作って")]
+
     tasks = [
         sim.Task(task_id="T1", kind="xlsx", prompt="在庫の集計表を作って")
     ]
+
 
     out = sim.run_pipeline(
         tasks=tasks,
@@ -34,6 +42,9 @@ def test_ok_runs_and_logs_no_at(tmp_path):
         session_id="SESSION_TEST",
         log_path=str(log),
     )
+
+
+
 
     assert out[0].decision == "RUN"
     assert out[0].reason_code == "ORCH_RUN_OK"
@@ -45,9 +56,13 @@ def test_ok_runs_and_logs_no_at(tmp_path):
 
 def test_fixed_gate_order_is_logged_even_on_pause(tmp_path):
     log = tmp_path / "audit.jsonl"
+
+    tasks = [sim.Task(task_id="T2", kind="pptx", prompt="いい感じにまとめて")]  # RFL -> PAUSE
+
     tasks = [
         sim.Task(task_id="T2", kind="pptx", prompt="いい感じにまとめて")
     ]  # RFL -> PAUSE
+
 
     out = sim.run_pipeline(
         tasks=tasks,
@@ -88,6 +103,9 @@ def test_fixed_gate_order_is_logged_even_on_pause(tmp_path):
 
 def test_seal_only_ethics_or_acc(tmp_path):
     log = tmp_path / "audit.jsonl"
+
+    tasks = [sim.Task(task_id="T3", kind="xlsx", prompt="連絡先は test@example.com に送って")]
+
     tasks = [
         sim.Task(
             task_id="T3",
@@ -95,6 +113,7 @@ def test_seal_only_ethics_or_acc(tmp_path):
             prompt="連絡先は test@example.com に送って",
         )
     ]
+
 
     out = sim.run_pipeline(
         tasks=tasks,
@@ -121,9 +140,13 @@ def test_seal_only_ethics_or_acc(tmp_path):
 
 def test_external_side_effect_escalates_to_hitl_and_keeps_order(tmp_path):
     log = tmp_path / "audit.jsonl"
+
+    tasks = [sim.Task(task_id="T4", kind="pptx", prompt="作った資料をメールで送って")]
+
     tasks = [
         sim.Task(task_id="T4", kind="pptx", prompt="作った資料をメールで送って")
     ]
+
 
     out = sim.run_pipeline(
         tasks=tasks,
@@ -131,6 +154,8 @@ def test_external_side_effect_escalates_to_hitl_and_keeps_order(tmp_path):
         session_id="SESSION_TEST",
         log_path=str(log),
     )
+
+
 
     assert out[0].decision == "PAUSE_FOR_HITL"
     assert out[0].reason_code == "ACC_EXTERNAL_SIDE_EFFECT_REQUIRES_HITL"
