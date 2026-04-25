@@ -665,7 +665,9 @@ def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> 
         )
         return False, RC_SAFETY_DISCRIMINATION_TERM
 
+
     required_lines = ["draft", "no operational effect", "AI is used for drafting only", "ADMIN approval"]
+
 
 
     required_lines = [
@@ -1836,6 +1838,7 @@ def run_simulation(
 
     ensure_default_grant_exists()
     key_bytes, key_id = load_key_bytes(key_mode, key_file=key_file, key_env=key_env)
+
     trust = load_trust_state()
     eval_state = load_eval_state()
 
@@ -1894,8 +1897,10 @@ def run_simulation(
 
 
 
+
         base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
         final_score = base_score * multiplier_snapshot
+
 
         runtime_ms = (t1 - t0) * 1000.0
         clean_ok, fraud_hits = is_clean_completion(
@@ -2132,5 +2137,9 @@ if __name__ == "__main__":
 
     raise SystemExit(main())
 
+
     raise SystemExit(main())
+
+    raise SystemExit(main())
+
 
