@@ -1,4 +1,4 @@
-# ai_doc_orchestrator_kage3_v1_2_4.py (v1.2.4) ※ファイル名は維持でもOK
+# ai_doc_orchestrator_kage3_v1_2_4.py (v1.2.4)
 # -*- coding: utf-8 -*-
 """
 (ai_doc_orchestrator_kage3_v1_2_2.py に対する設計寄り改修 + IEP寄せ + HITL分岐)
@@ -9,12 +9,18 @@ Changes (design-oriented + IEP-aligned):
 - Defensive JSON serialization: default=str so audit never crashes on non-JSON types.
 - Deep redaction also redacts dict keys (prevents email-like keys from persisting).
 - emit() auto-fills "ts" if missing.
-- Decision vocabulary aligned: RUN / PAUSE_FOR_HITL / STOPPED
+- Decision vocabulary aligned (gates/audit): RUN / PAUSE_FOR_HITL / STOPPED
 - ARL minimal keys always emitted: sealed, overrideable, final_decider
 - HITL branching implemented as a fixed firepoint:
   HITL_REQUESTED (SYSTEM) -> HITL_DECIDED (USER) -> downstream events branch.
 - Optional RFL gate stub (prompt-based) placed per fixed order:
   Meaning -> Consistency -> RFL -> Ethics -> ACC -> Dispatch
+
+Compatibility note:
+- This module supports `overall_policy`:
+    * "legacy": overall is "RUN" if all tasks RUN else "HITL"
+    * "iep" (default): overall is STOPPED if any STOPPED else
+      PAUSE_FOR_HITL if any pause else RUN
 """
 
 from __future__ import annotations
@@ -32,14 +38,11 @@ JST = timezone(timedelta(hours=9))
 
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 
-# IEP-aligned decisions
 Decision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
-OverallDecision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
-
-# IEP-aligned final decider
+OverallPolicy = Literal["legacy", "iep"]
+OverallDecision = Literal["RUN", "HITL", "PAUSE_FOR_HITL", "STOPPED"]
 FinalDecider = Literal["SYSTEM", "USER"]
 
-# Layers (expanded)
 Layer = Literal[
     "meaning",
     "consistency",
@@ -54,45 +57,31 @@ Layer = Literal[
 KIND = Literal["excel", "word", "ppt"]
 
 HitlChoice = Literal["CONTINUE", "STOP"]
-HitlResolver = Callable[[str, str, str, str], HitlChoice]  # (run_id, task_id, layer, reason_code)
+HitlResolver = Callable[[str, str, str, str], HitlChoice]
 
 
-# -----------------------------
-# Redaction (PII must not persist)
-# -----------------------------
 def redact_sensitive(text: str) -> str:
-    """Redact email-like strings from a text."""
     if not text:
         return ""
     return EMAIL_RE.sub("<REDACTED_EMAIL>", text)
 
 
 def _deep_redact(obj: Any) -> Any:
-    """Deep redaction over dict/list/str (includes dict keys)."""
     if isinstance(obj, str):
         return redact_sensitive(obj)
     if isinstance(obj, list):
         return [_deep_redact(x) for x in obj]
     if isinstance(obj, dict):
-        # IMPORTANT: redact keys too (keys can contain email-like strings)
         return {redact_sensitive(str(k)): _deep_redact(v) for k, v in obj.items()}
     return obj
 
 
-# -----------------------------
-# Audit logger (PII-safe JSONL) with run lifecycle + ts_state
-# -----------------------------
 @dataclass
 class AuditLog:
     audit_path: Path
     _last_ts: Optional[datetime] = field(default=None, init=False, repr=False)
 
     def start_run(self, *, truncate: bool = False) -> None:
-        """
-        Start a run:
-        - Optionally truncate the audit file (truncate=True).
-        - Reset ts_state so monotonic timestamps are per-run (test-friendly).
-        """
         self.audit_path.parent.mkdir(parents=True, exist_ok=True)
         if truncate:
             with self.audit_path.open("w", encoding="utf-8"):
@@ -100,7 +89,6 @@ class AuditLog:
         self._last_ts = None
 
     def ts(self) -> str:
-        """Monotonic timestamp (microseconds), scoped to this AuditLog instance."""
         now = datetime.now(JST)
         if self._last_ts is not None and now <= self._last_ts:
             now = self._last_ts + timedelta(microseconds=1)
@@ -108,29 +96,15 @@ class AuditLog:
         return now.isoformat(timespec="microseconds")
 
     def emit(self, row: Dict[str, Any]) -> None:
-        """
-        Append a JSONL row.
-
-        Hard guarantee: no email-like strings are persisted.
-        Also: never crash on non-JSON-serializable types (default=str).
-
-        Policy:
-        - auto-fill "ts" if missing
-        - deep redact if serialized blob contains email-like patterns
-        - write as JSONL (one row per line)
-        """
         self.audit_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # auto-fill ts if missing (callers may still pass explicit ts)
         if "ts" not in row:
             row = dict(row)
             row["ts"] = self.ts()
 
-        # Safe copy (no mutation), tolerate non-JSON types
         safe_row = json.loads(json.dumps(row, ensure_ascii=False, default=str))
         safe_blob = json.dumps(safe_row, ensure_ascii=False)
 
-        # If anything looks like an email, deep redact before writing.
         if EMAIL_RE.search(safe_blob):
             safe_row = _deep_redact(safe_row)
 
@@ -138,9 +112,6 @@ class AuditLog:
             f.write(json.dumps(safe_row, ensure_ascii=False) + "\n")
 
 
-# -----------------------------
-# Results
-# -----------------------------
 @dataclass
 class TaskResult:
     task_id: str
@@ -159,9 +130,6 @@ class SimulationResult:
     artifacts_written_task_ids: List[str]
 
 
-# -----------------------------
-# Small helpers (ARL-minimal fields)
-# -----------------------------
 def _arl_base(*, sealed: bool, overrideable: bool, final_decider: FinalDecider) -> Dict[str, Any]:
     return {
         "sealed": bool(sealed),
@@ -185,7 +153,7 @@ def _emit_info(
         "task_id": task_id,
         "event": event,
         "layer": layer,
-        "decision": "RUN",  # informational events keep ARL-minimal key presence
+        "decision": "RUN",
         "reason_code": reason_code,
         **_arl_base(sealed=False, overrideable=False, final_decider="SYSTEM"),
     }
@@ -194,9 +162,6 @@ def _emit_info(
     audit.emit(row)
 
 
-# -----------------------------
-# HITL firepoint (branch point)
-# -----------------------------
 def _hitl_fire_and_decide(
     *,
     audit: AuditLog,
@@ -206,12 +171,6 @@ def _hitl_fire_and_decide(
     reason_code: str,
     hitl_resolver: Optional[HitlResolver],
 ) -> HitlChoice:
-    """
-    Firepoint:
-    1) SYSTEM logs PAUSE_FOR_HITL (overrideable=True, sealed=False)
-    2) USER decides CONTINUE/STOP
-    3) USER decision is logged and downstream branches
-    """
     audit.emit(
         {
             "run_id": run_id,
@@ -224,7 +183,9 @@ def _hitl_fire_and_decide(
         }
     )
 
-    choice: HitlChoice = "STOP" if hitl_resolver is None else hitl_resolver(run_id, task_id, layer, reason_code)
+    choice: HitlChoice = "STOP" if hitl_resolver is None else hitl_resolver(
+        run_id, task_id, layer, reason_code
+    )
 
     audit.emit(
         {
@@ -240,9 +201,6 @@ def _hitl_fire_and_decide(
     return choice
 
 
-# -----------------------------
-# Meaning gate (kind-local)
-# -----------------------------
 _KIND_TOKENS: Dict[KIND, List[str]] = {
     "excel": ["excel", "xlsx", "表", "列", "columns", "table"],
     "word": ["word", "docx", "見出し", "章", "アウトライン", "outline", "document"],
@@ -274,9 +232,6 @@ def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], s
     return "PAUSE_FOR_HITL", "meaning", "MEANING_KIND_MISSING"
 
 
-# -----------------------------
-# Contract validation (Consistency)
-# -----------------------------
 def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
     if kind == "excel":
         cols = draft.get("columns")
@@ -302,9 +257,6 @@ def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
     return False, "CONTRACT_UNKNOWN_KIND"
 
 
-# -----------------------------
-# RFL (Relativity Filter) - minimal prompt-based stub
-# -----------------------------
 _RFL_TRIGGERS = [
     "どっち",
     "どちら",
@@ -319,36 +271,22 @@ _RFL_TRIGGERS = [
 
 
 def _rfl_gate(prompt: str) -> Tuple[Decision, Optional[Layer], str]:
-    """
-    Minimal RFL:
-    Detects relative/subjective boundary prompts and escalates to HITL without sealing.
-    """
     p = prompt or ""
     if any(t in p for t in _RFL_TRIGGERS):
         return "PAUSE_FOR_HITL", "rfl", "REL_BOUNDARY_UNSTABLE"
     return "RUN", None, "REL_OK"
 
 
-# -----------------------------
-# Ethics detection (memory-only raw_text)
-# -----------------------------
 def _ethics_detect_pii(raw_text: str) -> Tuple[bool, str]:
     if EMAIL_RE.search(raw_text or ""):
         return True, "ETHICS_EMAIL_DETECTED"
     return False, "ETHICS_OK"
 
 
-# -----------------------------
-# ACC gate (placeholder; non-sealing in this prototype)
-# -----------------------------
 def _acc_gate(_: str) -> Tuple[Decision, Optional[Layer], str]:
-    # Placeholder: keep ordering compatibility; does not seal
     return "RUN", None, "ACC_OK"
 
 
-# -----------------------------
-# Agent generation (raw vs safe; raw never persisted)
-# -----------------------------
 def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Dict[str, Any], str, str]:
     leak_email = bool((faults or {}).get("leak_email"))
     break_contract = bool((faults or {}).get("break_contract"))
@@ -390,9 +328,6 @@ def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Di
     return draft, raw_text, safe_text
 
 
-# -----------------------------
-# Artifact writer (safe_text only)
-# -----------------------------
 def _artifact_ext(kind: KIND) -> str:
     if kind == "excel":
         return "xlsx"
@@ -405,15 +340,11 @@ def _artifact_ext(kind: KIND) -> str:
 
 def _write_artifact(artifact_dir: Path, task_id: str, kind: KIND, safe_text: str) -> Path:
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    # Simulator writes text payload; keep kind-ext visible for traceability.
     path = artifact_dir / f"{task_id}.{_artifact_ext(kind)}.txt"
     path.write_text(redact_sensitive(safe_text), encoding="utf-8")
     return path
 
 
-# -----------------------------
-# Orchestrator main
-# -----------------------------
 _TASKS: List[Tuple[str, KIND]] = [
     ("task_word", "word"),
     ("task_excel", "excel"),
@@ -430,15 +361,8 @@ def run_simulation(
     faults: Optional[Dict[str, Dict[str, Any]]] = None,
     truncate_audit_on_start: bool = False,
     hitl_resolver: Optional[HitlResolver] = None,
+    overall_policy: OverallPolicy = "iep",
 ) -> SimulationResult:
-    """
-    truncate_audit_on_start:
-    - True: start_run(truncate=True) で run ごとに監査ログを初期化
-    - False: append 継続（従来互換。ただし ts_state は run ごとにリセット）
-    hitl_resolver:
-    - (run_id, task_id, layer, reason_code) -> "CONTINUE" or "STOP"
-    - None の場合は fail-closed で STOP
-    """
     faults = faults or {}
 
     audit = AuditLog(Path(audit_path))
@@ -459,9 +383,6 @@ def run_simulation(
             extra={"kind": kind},
         )
 
-        # -----------------
-        # Meaning gate
-        # -----------------
         m_dec, _, m_code = _meaning_gate(prompt, kind)
         audit.emit(
             {
@@ -471,7 +392,11 @@ def run_simulation(
                 "layer": "meaning",
                 "decision": m_dec,
                 "reason_code": m_code,
-                **_arl_base(sealed=False, overrideable=(m_dec == "PAUSE_FOR_HITL"), final_decider="SYSTEM"),
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(m_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
             }
         )
 
@@ -507,11 +432,7 @@ def run_simulation(
                     )
                 )
                 continue
-            # CONTINUE -> proceed
 
-        # -----------------
-        # Agent output (raw never persisted)
-        # -----------------
         draft, raw_text, safe_text = _agent_generate(prompt, kind, faults.get(kind, {}))
 
         _emit_info(
@@ -524,9 +445,6 @@ def run_simulation(
             extra={"preview": safe_text[:200]},
         )
 
-        # -----------------
-        # Consistency gate
-        # -----------------
         ok, c_code = _validate_contract(kind, draft)
         c_dec: Decision = "RUN" if ok else "PAUSE_FOR_HITL"
 
@@ -538,7 +456,11 @@ def run_simulation(
                 "layer": "consistency",
                 "decision": c_dec,
                 "reason_code": c_code,
-                **_arl_base(sealed=False, overrideable=(c_dec == "PAUSE_FOR_HITL"), final_decider="SYSTEM"),
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(c_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
             }
         )
 
@@ -575,9 +497,6 @@ def run_simulation(
                 )
                 continue
 
-            # CONTINUE:
-            # In this prototype, contract mismatch still cannot produce a valid artifact.
-            # We log regen requests and keep the task as PAUSE_FOR_HITL (pending human-driven regen loop).
             _emit_info(
                 audit=audit,
                 run_id=run_id,
@@ -618,9 +537,6 @@ def run_simulation(
             )
             continue
 
-        # -----------------
-        # RFL gate (optional stub)
-        # -----------------
         r_dec, _, r_code = _rfl_gate(prompt)
         audit.emit(
             {
@@ -630,7 +546,11 @@ def run_simulation(
                 "layer": "rfl",
                 "decision": r_dec,
                 "reason_code": r_code,
-                **_arl_base(sealed=False, overrideable=(r_dec == "PAUSE_FOR_HITL"), final_decider="SYSTEM"),
+                **_arl_base(
+                    sealed=False,
+                    overrideable=(r_dec == "PAUSE_FOR_HITL"),
+                    final_decider="SYSTEM",
+                ),
             }
         )
 
@@ -666,11 +586,7 @@ def run_simulation(
                     )
                 )
                 continue
-            # CONTINUE -> proceed
 
-        # -----------------
-        # Ethics gate (sealed on violation)
-        # -----------------
         pii_hit, e_code = _ethics_detect_pii(raw_text)
         e_dec: Decision = "STOPPED" if pii_hit else "RUN"
 
@@ -682,8 +598,11 @@ def run_simulation(
                 "layer": "ethics",
                 "decision": e_dec,
                 "reason_code": e_code,
-                # Ethics violation is sealed (non-overrideable)
-                **_arl_base(sealed=bool(pii_hit), overrideable=False, final_decider="SYSTEM"),
+                **_arl_base(
+                    sealed=bool(pii_hit),
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                ),
             }
         )
 
@@ -711,9 +630,6 @@ def run_simulation(
             )
             continue
 
-        # -----------------
-        # ACC gate (placeholder)
-        # -----------------
         a_dec, _, a_code = _acc_gate(prompt)
         audit.emit(
             {
@@ -728,7 +644,6 @@ def run_simulation(
         )
 
         if a_dec != "RUN":
-            # In this prototype, ACC does not seal; treat as HITL if introduced later.
             audit.emit(
                 {
                     "run_id": run_id,
@@ -752,9 +667,6 @@ def run_simulation(
             )
             continue
 
-        # -----------------
-        # Dispatch / write artifact (safe only)
-        # -----------------
         artifact_path = _write_artifact(out_dir, task_id, kind, safe_text)
         audit.emit(
             {
@@ -781,16 +693,15 @@ def run_simulation(
             )
         )
 
-    # Overall decision:
-    # - If any task STOPPED -> STOPPED
-    # - Else if any task PAUSE_FOR_HITL -> PAUSE_FOR_HITL
-    # - Else RUN
-    if any(t.decision == "STOPPED" for t in task_results):
-        overall: OverallDecision = "STOPPED"
-    elif any(t.decision == "PAUSE_FOR_HITL" for t in task_results):
-        overall = "PAUSE_FOR_HITL"
+    if overall_policy == "iep":
+        if any(t.decision == "STOPPED" for t in task_results):
+            overall: OverallDecision = "STOPPED"
+        elif any(t.decision == "PAUSE_FOR_HITL" for t in task_results):
+            overall = "PAUSE_FOR_HITL"
+        else:
+            overall = "RUN"
     else:
-        overall = "RUN"
+        overall = "RUN" if all(t.decision == "RUN" for t in task_results) else "HITL"
 
     return SimulationResult(
         run_id=run_id,
@@ -800,12 +711,11 @@ def run_simulation(
     )
 
 
-# -----------------------------
-# Optional: CLI HITL resolver (for manual runs)
-# -----------------------------
 def interactive_hitl_resolver(run_id: str, task_id: str, layer: str, reason_code: str) -> HitlChoice:
-    """Simple interactive resolver for local testing."""
-    q = f"[HITL] run_id={run_id} task_id={task_id} layer={layer} reason={reason_code} -> (c=CONTINUE / s=STOP): "
+    q = (
+        f"[HITL] run_id={run_id} task_id={task_id} "
+        f"layer={layer} reason={reason_code} -> (c=CONTINUE / s=STOP): "
+    )
     for _ in range(5):
         ans = input(q).strip().lower()
         if ans in ("c", "continue"):
@@ -813,7 +723,7 @@ def interactive_hitl_resolver(run_id: str, task_id: str, layer: str, reason_code
         if ans in ("s", "stop"):
             return "STOP"
         print("Invalid input. Please enter 'c' or 's'.")
-    return "STOP"  # fail-closed
+    return "STOP"
 
 
 __all__ = [
@@ -829,7 +739,6 @@ __all__ = [
 
 
 if __name__ == "__main__":
-    # Minimal local smoke run (manual HITL)
     result = run_simulation(
         prompt="WordとExcelとPPTを作って。どっちがいい？",
         run_id="RUN#LOCAL",
@@ -837,5 +746,6 @@ if __name__ == "__main__":
         artifact_dir="out/artifacts_v1_2_4",
         truncate_audit_on_start=True,
         hitl_resolver=interactive_hitl_resolver,
+        overall_policy="iep",
     )
     print(result)
