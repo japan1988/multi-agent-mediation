@@ -302,7 +302,12 @@ python mediation_emergency_contract_sim_v5_1_2.py \
 7. `ai_doc_orchestrator_with_mediator_v1_0.py`
 8. `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
+
+rust
+NORMAL -> CONTRACT_EFFECTIVE
+
 ---
+
 
 ## アーキテクチャ（高レベル）
 
@@ -331,6 +336,13 @@ agents
 以下の図は、現在のコード語彙に合わせたものです。
 ドキュメント用であり、ロジック変更はありません。
 
+
+bash
+pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
+What’s new (2026-02-07)
+New: mediation_emergency_contract_sim_v4_4.py
+Emergency contract workflow bench v4.4 (fail-closed + HITL + minimal ARL).
+=======
 <p align="center">
   <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
 </p>
@@ -338,6 +350,7 @@ agents
 ---
 
 ## Version deltas
+
 
 ### v5.0.1 → v5.1.2
 
@@ -435,6 +448,37 @@ v5 で追加 / 強化されたもの:
 * **Tighter invariant enforcement**
   不変条件に関する明示的な test / contract により、無言の drift を減らす
 
+
+bash
+python ai_doc_orchestrator_kage3_v1_2_4.py
+Emergency contract workflow（v4）
+
+bash
+python mediation_emergency_contract_sim_v4.py
+Emergency contract workflow（v4.1）
+
+bash
+python mediation_emergency_contract_sim_v4_1.py
+Emergency contract workflow（v4.4）
+
+bash
+python mediation_emergency_contract_sim_v4_4.py
+Emergency contract stress（v4.4）
+
+bash
+python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
+Emergency contract workflow（v4.6）
+
+bash
+python mediation_emergency_contract_sim_v4_6.py
+Emergency contract workflow（v4.7）
+
+bash
+python mediation_emergency_contract_sim_v4_7_full.py
+Project intent / non-goals
+Intent
+Reproducible safety and governance simulations
+
 v5 でも変わらないこと:
 
 * 研究 / 教育目的
@@ -457,6 +501,7 @@ v5 でも変わらないこと:
 * 本番向けの自律デプロイ
 * 無制限な自己主導エージェント制御
 * 明示的にテストされた範囲を超える安全性主張
+
 
 ---
 

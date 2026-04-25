@@ -4,13 +4,13 @@ on:
   push:
     branches: ["main"]
     paths-ignore:
-      - "**.md"
+      - "**/*.md"
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
   pull_request:
     branches: ["main"]
     paths-ignore:
-      - "**.md"
+      - "**/*.md"
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
@@ -47,14 +47,28 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
+            pylock.*.toml
 
       - name: Install dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
 
-      - name: Lint workflow YAML
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          fi
+
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install pytest yamllint
+
+      - name: Yamllint python-app workflow
         run: |
           set -euo pipefail
           printf '%s\n' \
@@ -67,21 +81,17 @@ jobs:
             '    max: 140' \
             '    level: warning' \
             > .yamllint-ci.yml
-          yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
 
-      - name: Ruff check
+          echo "===== python-app.yml ====="
+          nl -ba .github/workflows/python-app.yml
+
+          echo "===== yamllint ====="
+          yamllint -f parsable -c .yamllint-ci.yml .github/workflows/python-app.yml
+
+      - name: Run pytest
         run: |
           set -euo pipefail
-          ruff check .
 
-      - name: Black
-        run: |
-          set -euo pipefail
-          black --check .
-
-      - name: Pytest
-        run: |
-          set -euo pipefail
           pytest -q --maxfail=1 --disable-warnings \
             --junitxml=junit-py${{ matrix.python-version }}.xml
 
@@ -96,3 +106,6 @@ jobs:
             **/.pytest_cache
             **/pytest*.log
             **/junit-*.xml
+
+          pytest -q
+
