@@ -133,9 +133,15 @@ This project does not aim to enable (out of scope / prohibited use):
 
 If such intent is detected, treat it as **misuse** and default to STOP/HITL by design.
 
+
+> Note: persuasion / reeducation を想起させるモジュール名がある場合、  
+> それらは「安全評価シナリオ（テストケース生成 / 攻撃シミュレーション）」目的に限定し、  
+> **デフォルト無効（明示フラグがない限り実行不可）** を設計要件とします。
+
 > Note: If some module names may evoke “persuasion / reeducation,”  
 > those must be limited to “safety evaluation scenarios (test-case generation / attack simulation),”  
 > and should be **disabled by default (non-executable unless an explicit flag is provided)** as a design requirement.
+
 
 ---
 
@@ -291,6 +297,10 @@ This is the recommended entry point if you want:
 
 ```bash
 
+# 1) dependencies
+pip install -r requirements.txt
+
+
 python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
 python ai_doc_orchestrator_kage3_v1_2_2.py
@@ -366,6 +376,34 @@ python mediation_emergency_contract_sim_v4_1.py
 
 ## 🧭 Architecture Diagram
 
+
+
+| Path                                          | Type          | Description / 説明                                          |
+| --------------------------------------------- | ------------- | --------------------------------------------------------- |
+| `agents.yaml`                                 | Config        | エージェント定義（パラメータ／役割の土台）                                     |
+| `mediation_core/`                             | Core          | 中核ロジック（モデル・共通処理の集約）                                       |
+| `ai_mediation_all_in_one.py`                  | Core          | 統括実行（ルーティング／検査／分岐）の入口                                     |
+| `ai_governance_mediation_sim.py`              | Simulator     | ポリシー適用・封印・差し戻し挙動の確認                                       |
+| `kage_orchestrator_diverse_v1.py`             | Experiment    | fault-injection下でも「危険なtool実行」を封じる検証（audit JSONL）          |
+| `ai_doc_orchestrator_kage3_v1_2_2.py`         | Experiment    | Doc Orchestrator（Meaning/Consistency/Ethicsゲート + PII非永続化） |
+| `test_ai_doc_orchestrator_kage3_v1_2_2.py`    | Test          | Doc Orchestrator の挙動固定（PII非永続化等）                          |
+| `tests/kage_definition_hitl_gate_v1.py`       | Experiment    | “定義が曖昧なら人間へ返す” HITLゲートの実験実装                               |
+| `tests/test_definition_hitl_gate_v1.py`       | Test          | 上記HITLゲートのpytest固定（Ruff含む）                                |
+| `tests/test_kage_orchestrator_diverse_v1.py`  | Test          | 不変条件（PII tool non-execution 等）をpytestで固定                  |
+| `tests/test_sample.py`                        | Test          | 最小テスト／CIの疎通確認                                             |
+| `tests/verify_stop_comparator_v1_2.py`        | Tool          | 1ファイル検証ツール（hash/py_compile/import/self_check等）            |
+| `docs/`                                       | Docs          | 図・資料（構成図、フロー図など）                                          |
+| `docs/multi_agent_architecture_overview.webp` | Diagram       | 構成図（全体）                                                   |
+| `docs/multi_agent_hierarchy_architecture.png` | Diagram       | 階層モデル図                                                    |
+| `docs/sentiment_context_flow.png`             | Diagram       | 入力→文脈→行動の流れ図                                              |
+| `.github/workflows/python-app.yml`            | Workflow      | CI（lint + pytest、複数Pythonバージョン）                           |
+| `requirements.txt`                            | Dependency    | Python依存関係                                                |
+| `LICENSE`                                     | License       | 教育・研究用途                                                   |
+| `README.md`                                   | Documentation | 本ドキュメント                                                   |
+
+---
+
+## 🧭 Architecture Diagram / 構成図
 
 Use the v4.x line if you want an older stable benchmark path for comparison.
 
@@ -487,10 +525,14 @@ Below is the practical map of the repository.
 
 ### 1) System overview
 
+
 <p align="center">
   <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
 </p>
 
+
+
+## 🧭 Layered Agent Model / 階層エージェントモデル）
 
 
 ## 🧭 Layered Agent Model
@@ -615,7 +657,7 @@ In practical terms, the logs are meant to answer:
 * whether human intervention was required
 * whether the outcome can be reproduced
 
----
+
 
 ## HITL semantics
 
@@ -697,9 +739,20 @@ Run all tests with:
 
 
 ```bash
+
+# Core (routing / gating / branching)
+
 python ai_mediation_all_in_one.py
 python kage_orchestrator_diverse_v1.py
+
+
+# Doc Orchestrator (Meaning/Consistency/Ethics + PII non-persistence)
 python ai_doc_orchestrator_kage3_v1_2_2.py
+
+# Policy application behavior check
+
+python ai_doc_orchestrator_kage3_v1_2_2.py
+
 python ai_governance_mediation_sim.py
 🧪 Tests
 Reproducible E2E confidential-flow loop guard:
@@ -715,6 +768,23 @@ pytest tests/test_benchmark_profiles_v1_0.py -q
 
 ---
 
+
+
+```bash
+# all tests
+pytest -q
+
+# focused: HITL gate test
+pytest -q tests/test_definition_hitl_gate_v1.py
+
+# focused: orchestrator diverse test
+pytest -q tests/test_kage_orchestrator_diverse_v1.py
+
+# focused: doc orchestrator test
+pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
+```
+
+CIは `.github/workflows/python-app.yml` により、複数Pythonバージョンで lint / pytest を実行します。
 
 ## 🧪 Tests
 
@@ -820,6 +890,7 @@ Repository license: Apache-2.0 (policy intent: Educational / Research).
 See [LICENSE](./LICENSE).
 
 
+
 ---
 
 ## Language
@@ -850,7 +921,5 @@ Repository license: **Apache-2.0** (policy intent: Educational / Research).
 
 ::contentReference[oaicite:0]{index=0}
 ```
-
-
 
 
