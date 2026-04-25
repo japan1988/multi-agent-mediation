@@ -138,6 +138,19 @@ This is the recommended entry point if you want:
 ### 2) Run the test suite
 
 ```bash
+
+python ai_mediation_all_in_one.py
+python kage_orchestrator_diverse_v1.py
+python ai_doc_orchestrator_kage3_v1_2_2.py
+python ai_governance_mediation_sim.py
+🧪 Tests
+Reproducible E2E confidential-flow loop guard: kage_end_to_end_confidential_loopguard_v1_0.py
+Test: test_end_to_end_confidential_loopguard_v1_0.py (CI green on Python 3.9–3.11)
+
+bash
+
+
+
 pytest -q
 ```
 
