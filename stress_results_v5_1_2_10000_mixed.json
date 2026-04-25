@@ -1,0 +1,59 @@
+{
+  "run_id": "STRESS#e03c5a12ed40",
+  "sim_version": "5.1.2",
+  "runtime_sec": 6.190045,
+  "parameters": {
+    "runs": 10000,
+    "fabricate": false,
+    "fabricate_rate": 0.1,
+    "seed": 42,
+    "save_arl_on_abnormal": true,
+    "max_arl_files": 1000,
+    "full_context_n": 0,
+    "keep_runs": false
+  },
+  "summary": {
+    "total_runs": 10000,
+    "by_state": {
+      "CONTRACT_EFFECTIVE": 9014,
+      "STOPPED": 986
+    },
+    "by_reason_code_top20": {
+      "EVIDENCE_FABRICATION": 986
+    },
+    "queue_size": 986,
+    "items_kept": 0,
+    "abnormal_total": 986,
+    "saved": 986,
+    "skipped_by_cap": 0
+  },
+  "trust_after": {
+    "trust_score": 0.97,
+    "approval_streak": 0,
+    "cooldown_until": "2026-03-21T12:01:59+09:00",
+    "compliance_score": 0.33000000000000007,
+    "coaching_sessions": 11
+  },
+  "eval_after": {
+    "clean_completion_count": 9014,
+    "multiplier": 2.0
+  },
+  "incident_index_lines": 986,
+  "incident_file_count": 986,
+  "incident_counter_next": 987,
+  "invariants": {
+    "total_runs_matches": true,
+    "state_sum_matches_runs": true,
+    "abnormal_total_matches_non_effective": true,
+    "abnormal_present": true,
+    "incident_index_matches_saved": true,
+    "incident_files_match_saved": true,
+    "saved_plus_skipped_matches_abnormal": true,
+    "counter_is_next_id": true,
+    "eval_multiplier_capped": true,
+    "trust_in_range": true,
+    "clean_completion_not_exceed_effective": true
+  },
+  "arl_path": "/mnt/data/stress_test_v512_10000_mixed/stress_test_10000_mixed.arl.jsonl",
+  "incident_dir": "/mnt/data/stress_test_v512_10000_mixed/incident_arls"
+}
