@@ -1,13 +1,5 @@
 
-# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
-
-
-
-![python](https://img.shields.io/badge/python-3.9_|_3.10_|_3.11-blue)
-![ci](https://img.shields.io/badge/CI-passing-success)
-![release](https://img.shields.io/badge/release-v1.0.1-blue)
-![license](https://img.shields.io/badge/license-Apache--2.0-green)
 
 # 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
@@ -1386,15 +1378,5 @@ Its core stance is simple:
 See `LICENSE`.
 Repository license: **Apache-2.0** (policy intent: Educational / Research).
 
-```
-
-```
-
-
 ::contentReference[oaicite:0]{index=0}
 ```
-
-
-
-
-
