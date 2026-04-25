@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+ # -*- coding: utf-8 -*-
 """
 ai_doc_orchestrator_kage3_v1_3_5.py
 
@@ -42,11 +42,22 @@ __version__ = "1.3.5"
 
 _TASKS: Tuple[KIND, ...] = ("excel", "word", "ppt")
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-_AMBIG_TOKENS = ("おすすめ", "どっち", "どちら", "どれ", "比較", "which", "better", "？", "?")
+_AMBIG_TOKENS = (
+    "おすすめ",
+    "どっち",
+    "どちら",
+    "どれ",
+    "比較",
+    "which",
+    "better",
+    "？",
+    "?",
+)
 _SIDE_EFFECT_TOKENS = ("メール", "送信", "送って", "send", "email", "upload", "投稿", "公開")
 _WORD_TOKENS = ("word", "docx", "文書", "要約")
 _EXCEL_TOKENS = ("excel", "xlsx", "表", "一覧", "集計", "csv")
 _PPT_TOKENS = ("ppt", "pptx", "powerpoint", "slide", "slides", "スライド", "資料", "deck")
+_CREATE_TOKENS = ("作って", "作成", "make", "create")
 
 DECISION_RUN = "RUN"
 DECISION_PAUSE = "PAUSE_FOR_HITL"
@@ -68,12 +79,22 @@ RC_ACC_OK = "ACC_OK"
 RC_ACC_EXTERNAL_SIDE_EFFECT_REQUIRES_HITL = "ACC_EXTERNAL_SIDE_EFFECT_REQUIRES_HITL"
 RC_SEALED_BY_ACC_RUNAWAY = "SEALED_BY_ACC_RUNAWAY"
 
+_LAYER_BY_BLOCK = {
+    "meaning": "meaning_gate",
+    "consistency": "consistency_gate",
+    "rfl": "relativity_gate",
+    "ethics": "ethics_gate",
+    "acc": "acc_gate",
+    "dispatch": "dispatch",
+}
+
 
 @dataclass
 class AuditRow:
     run_id: str
     ts: str
     task_id: str
+    task: str
     event: str
     layer: str
     decision: str
@@ -121,16 +142,18 @@ def _sanitize_text(value: Any) -> Any:
     return value
 
 
+def _sanitize_any(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _sanitize_any(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_any(v) for v in value]
+    if isinstance(value, tuple):
+        return [_sanitize_any(v) for v in value]
+    return _sanitize_text(value)
+
+
 def _sanitize_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, dict):
-            out[k] = {kk: _sanitize_text(vv) for kk, vv in v.items()}
-        elif isinstance(v, list):
-            out[k] = [_sanitize_text(x) for x in v]
-        else:
-            out[k] = _sanitize_text(v)
-    return out
+    return {str(k): _sanitize_any(v) for k, v in row.items()}
 
 
 def _write_jsonl(path: Path, rows: List[Dict[str, Any]], truncate: bool = True) -> None:
@@ -146,6 +169,7 @@ def _append_row(
     *,
     run_id: str,
     task_id: str,
+    task: str,
     event: str,
     layer: str,
     decision: str,
@@ -162,6 +186,7 @@ def _append_row(
                 run_id=run_id,
                 ts=utc_ts(),
                 task_id=task_id,
+                task=task,
                 event=event,
                 layer=layer,
                 decision=decision,
@@ -192,7 +217,7 @@ def _infer_tasks(prompt: str) -> List[KIND]:
     if _has_token(p, _PPT_TOKENS):
         tasks.append("ppt")
 
-    if not tasks and any(token in p.lower() for token in ("作って", "作成", "make", "create")):
+    if not tasks and any(token in p.lower() for token in _CREATE_TOKENS):
         tasks = list(_TASKS)
 
     seen: List[KIND] = []
@@ -261,6 +286,7 @@ def make_random_hitl_resolver(
 def semantic_signature_sha256(rows: List[Dict[str, Any]]) -> str:
     keep_keys = (
         "task_id",
+        "task",
         "event",
         "layer",
         "decision",
@@ -275,7 +301,8 @@ def semantic_signature_sha256(rows: List[Dict[str, Any]]) -> str:
     for row in rows:
         if not isinstance(row, dict):
             continue
-        stable_rows.append({k: _sanitize_row(row).get(k) for k in keep_keys})
+        sanitized = _sanitize_row(row)
+        stable_rows.append({k: sanitized.get(k) for k in keep_keys})
     blob = json.dumps(
         stable_rows,
         ensure_ascii=False,
@@ -297,15 +324,9 @@ def _normalize_decision(decision: str) -> str:
     return d or "UNKNOWN"
 
 
-def _has_hitl_requested(rows: List[Dict[str, Any]]) -> bool:
-    return any(isinstance(r, dict) and r.get("event") == "HITL_REQUESTED" for r in rows)
-
-
 def _coerce_benchmark_decision(*, prompt: str, result_decision: str, rows: List[Dict[str, Any]]) -> str:
     decision = _normalize_decision(result_decision)
-    if decision == DECISION_PAUSE:
-        return DECISION_PAUSE
-    if _is_ambiguous_prompt(prompt) and _has_hitl_requested(rows):
+    if _is_ambiguous_prompt(prompt) and any(r.get("event") == "HITL_REQUESTED" for r in rows):
         return DECISION_STOPPED
     return decision
 
@@ -316,14 +337,14 @@ def _build_artifact_text(task: KIND, prompt: str) -> str:
 
 def _meaning_gate(prompt: str, task: KIND) -> Tuple[Decision, str]:
     inferred = _infer_tasks(prompt)
-    if not inferred:
-        return DECISION_STOPPED, RC_MEANING_NO_TASKS
-    if task not in inferred:
+    if not inferred or task not in inferred:
         return DECISION_STOPPED, RC_MEANING_NO_TASKS
     return DECISION_RUN, RC_MEANING_OK
 
 
-def _consistency_gate() -> Tuple[Decision, str]:
+def _consistency_gate(task_faults: Dict[str, Any]) -> Tuple[Decision, str]:
+    if bool(task_faults.get("break_contract")):
+        return DECISION_PAUSE, RC_CONSISTENCY_KIND_PROMPT_MISMATCH
     return DECISION_RUN, RC_CONSISTENCY_OK
 
 
@@ -370,6 +391,7 @@ def _run_task_core(
         rows,
         run_id=run_id,
         task_id=task_id,
+        task=task,
         event="GATE_MEANING",
         layer="meaning_gate",
         decision=m_dec,
@@ -392,25 +414,130 @@ def _run_task_core(
             rows,
         )
 
-    c_dec, c_code = _consistency_gate()
+    c_dec, c_code = _consistency_gate(task_faults)
     _append_row(
         rows,
         run_id=run_id,
         task_id=task_id,
+        task=task,
         event="GATE_CONSISTENCY",
         layer="consistency_gate",
         decision=c_dec,
         reason_code=c_code,
         sealed=False,
-        overrideable=False,
+        overrideable=(c_dec == DECISION_PAUSE),
         final_decider="SYSTEM",
     )
+
+    if c_dec == DECISION_PAUSE:
+        if enable_runaway_seal:
+            threshold = max(1, int(runaway_threshold))
+            max_attempts = max(1, int(max_attempts_per_task))
+
+            for attempt in range(1, max_attempts + 1):
+                _append_row(
+                    rows,
+                    run_id=run_id,
+                    task_id=task_id,
+                    task=task,
+                    event="TASK_ATTEMPT",
+                    layer="dispatch",
+                    decision=DECISION_RUN,
+                    reason_code="DISPATCH_ATTEMPT",
+                    sealed=False,
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                    detail=f"attempt={attempt}",
+                )
+                _append_row(
+                    rows,
+                    run_id=run_id,
+                    task_id=task_id,
+                    task=task,
+                    event="TASK_CONTRACT_BREAK",
+                    layer="dispatch",
+                    decision=DECISION_RUN,
+                    reason_code=RC_CONSISTENCY_KIND_PROMPT_MISMATCH,
+                    sealed=False,
+                    overrideable=False,
+                    final_decider="SYSTEM",
+                    detail=f"attempt={attempt}",
+                )
+
+                if attempt >= threshold:
+                    _append_row(
+                        rows,
+                        run_id=run_id,
+                        task_id=task_id,
+                        task=task,
+                        event="AGENT_SEALED",
+                        layer="acc_gate",
+                        decision=DECISION_STOPPED,
+                        reason_code=RC_SEALED_BY_ACC_RUNAWAY,
+                        sealed=True,
+                        overrideable=False,
+                        final_decider="SYSTEM",
+                        detail=f"attempt={attempt}",
+                    )
+                    return (
+                        TaskResult(
+                            task_id=task_id,
+                            task=task,
+                            decision=DECISION_STOPPED,
+                            blocked_layer="acc",
+                            reason_code=RC_SEALED_BY_ACC_RUNAWAY,
+                            artifact_path=None,
+                            sealed=True,
+                        ),
+                        rows,
+                    )
+
+        _append_row(
+            rows,
+            run_id=run_id,
+            task_id=task_id,
+            task=task,
+            event="REGEN_REQUESTED",
+            layer="consistency_gate",
+            decision=DECISION_PAUSE,
+            reason_code=RC_CONSISTENCY_KIND_PROMPT_MISMATCH,
+            sealed=False,
+            overrideable=True,
+            final_decider="SYSTEM",
+        )
+        _append_row(
+            rows,
+            run_id=run_id,
+            task_id=task_id,
+            task=task,
+            event="REGEN_INSTRUCTIONS",
+            layer="consistency_gate",
+            decision=DECISION_PAUSE,
+            reason_code=RC_CONSISTENCY_KIND_PROMPT_MISMATCH,
+            sealed=False,
+            overrideable=True,
+            final_decider="SYSTEM",
+            detail="Regenerate output to match the contract schema for this kind.",
+        )
+        return (
+            TaskResult(
+                task_id=task_id,
+                task=task,
+                decision=DECISION_PAUSE,
+                blocked_layer="consistency",
+                reason_code=RC_CONSISTENCY_KIND_PROMPT_MISMATCH,
+                artifact_path=None,
+                sealed=False,
+            ),
+            rows,
+        )
 
     r_dec, r_code = _rfl_gate(prompt)
     _append_row(
         rows,
         run_id=run_id,
         task_id=task_id,
+        task=task,
         event="GATE_RFL",
         layer="relativity_gate",
         decision=r_dec,
@@ -424,6 +551,7 @@ def _run_task_core(
             rows,
             run_id=run_id,
             task_id=task_id,
+            task=task,
             event="HITL_REQUESTED",
             layer="relativity_gate",
             decision=DECISION_PAUSE,
@@ -432,6 +560,7 @@ def _run_task_core(
             overrideable=True,
             final_decider="SYSTEM",
         )
+
         if hitl_resolver is None:
             return (
                 TaskResult(
@@ -445,6 +574,7 @@ def _run_task_core(
                 ),
                 rows,
             )
+
         choice = _call_hitl_resolver(
             hitl_resolver,
             run_id=run_id,
@@ -458,6 +588,7 @@ def _run_task_core(
             rows,
             run_id=run_id,
             task_id=task_id,
+            task=task,
             event="HITL_DECIDED",
             layer="hitl_finalize",
             decision=DECISION_RUN if choice == "CONTINUE" else DECISION_STOPPED,
@@ -467,6 +598,7 @@ def _run_task_core(
             final_decider="USER",
             detail=choice,
         )
+
         if choice == "STOP":
             return (
                 TaskResult(
@@ -486,6 +618,7 @@ def _run_task_core(
         rows,
         run_id=run_id,
         task_id=task_id,
+        task=task,
         event="GATE_ETHICS",
         layer="ethics_gate",
         decision=e_dec,
@@ -495,6 +628,19 @@ def _run_task_core(
         final_decider="SYSTEM",
     )
     if e_dec == DECISION_STOPPED:
+        _append_row(
+            rows,
+            run_id=run_id,
+            task_id=task_id,
+            task=task,
+            event="ETHICS_SEALED",
+            layer="ethics_gate",
+            decision=DECISION_STOPPED,
+            reason_code=e_code,
+            sealed=True,
+            overrideable=False,
+            final_decider="SYSTEM",
+        )
         return (
             TaskResult(
                 task_id=task_id,
@@ -513,6 +659,7 @@ def _run_task_core(
         rows,
         run_id=run_id,
         task_id=task_id,
+        task=task,
         event="GATE_ACC",
         layer="acc_gate",
         decision=a_dec,
@@ -526,6 +673,7 @@ def _run_task_core(
             rows,
             run_id=run_id,
             task_id=task_id,
+            task=task,
             event="HITL_REQUESTED",
             layer="acc_gate",
             decision=DECISION_PAUSE,
@@ -534,6 +682,7 @@ def _run_task_core(
             overrideable=True,
             final_decider="SYSTEM",
         )
+
         if hitl_resolver is None:
             return (
                 TaskResult(
@@ -547,6 +696,7 @@ def _run_task_core(
                 ),
                 rows,
             )
+
         choice = _call_hitl_resolver(
             hitl_resolver,
             run_id=run_id,
@@ -560,6 +710,7 @@ def _run_task_core(
             rows,
             run_id=run_id,
             task_id=task_id,
+            task=task,
             event="HITL_DECIDED",
             layer="hitl_finalize",
             decision=DECISION_RUN if choice == "CONTINUE" else DECISION_STOPPED,
@@ -569,6 +720,7 @@ def _run_task_core(
             final_decider="USER",
             detail=choice,
         )
+
         if choice == "STOP":
             return (
                 TaskResult(
@@ -583,79 +735,11 @@ def _run_task_core(
                 rows,
             )
 
-    if bool(task_faults.get("break_contract")):
-        threshold = max(1, int(runaway_threshold))
-        max_attempts = max(1, int(max_attempts_per_task))
-        for attempt in range(1, max_attempts + 1):
-            _append_row(
-                rows,
-                run_id=run_id,
-                task_id=task_id,
-                event="TASK_ATTEMPT",
-                layer="dispatch",
-                decision=DECISION_RUN,
-                reason_code="DISPATCH_ATTEMPT",
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-                detail=f"attempt={attempt}",
-            )
-            _append_row(
-                rows,
-                run_id=run_id,
-                task_id=task_id,
-                event="TASK_CONTRACT_BREAK",
-                layer="dispatch",
-                decision=DECISION_RUN,
-                reason_code=RC_CONSISTENCY_KIND_PROMPT_MISMATCH,
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
-                detail=f"attempt={attempt}",
-            )
-            if enable_runaway_seal and attempt >= threshold:
-                _append_row(
-                    rows,
-                    run_id=run_id,
-                    task_id=task_id,
-                    event="AGENT_SEALED",
-                    layer="acc_gate",
-                    decision=DECISION_STOPPED,
-                    reason_code=RC_SEALED_BY_ACC_RUNAWAY,
-                    sealed=True,
-                    overrideable=False,
-                    final_decider="SYSTEM",
-                    detail=f"attempt={attempt}",
-                )
-                return (
-                    TaskResult(
-                        task_id=task_id,
-                        task=task,
-                        decision=DECISION_STOPPED,
-                        blocked_layer="acc",
-                        reason_code=RC_SEALED_BY_ACC_RUNAWAY,
-                        artifact_path=None,
-                        sealed=True,
-                    ),
-                    rows,
-                )
-        return (
-            TaskResult(
-                task_id=task_id,
-                task=task,
-                decision=DECISION_STOPPED,
-                blocked_layer="dispatch",
-                reason_code=RC_CONSISTENCY_KIND_PROMPT_MISMATCH,
-                artifact_path=None,
-                sealed=False,
-            ),
-            rows,
-        )
-
     _append_row(
         rows,
         run_id=run_id,
         task_id=task_id,
+        task=task,
         event="TASK_DONE",
         layer="dispatch",
         decision=DECISION_RUN,
@@ -692,6 +776,20 @@ def run_simulation_mem(
     rows: List[Dict[str, Any]] = []
     task_results: List[TaskResult] = []
 
+    _append_row(
+        rows,
+        run_id=run_id,
+        task_id="",
+        task="",
+        event="ORCH_START",
+        layer="orchestrator",
+        decision=DECISION_RUN,
+        reason_code="ORCH_START",
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+    )
+
     if not tasks:
         result = SimulationResult(
             run_id=run_id,
@@ -699,11 +797,24 @@ def run_simulation_mem(
             tasks=[],
             artifacts_written_task_ids=[],
         )
+        _append_row(
+            rows,
+            run_id=run_id,
+            task_id="",
+            task="",
+            event="ORCH_FINAL",
+            layer="orchestrator",
+            decision=DECISION_STOPPED,
+            reason_code=RC_MEANING_NO_TASKS,
+            sealed=False,
+            overrideable=False,
+            final_decider="SYSTEM",
+        )
         return result, rows
 
     for task in tasks:
         task_faults = dict(faults.get(task, {}))
-        tr, task_rows = _run_task_core(
+        task_result, task_rows = _run_task_core(
             run_id=run_id,
             task=task,
             prompt=prompt,
@@ -713,15 +824,32 @@ def run_simulation_mem(
             runaway_threshold=runaway_threshold,
             max_attempts_per_task=max_attempts_per_task,
         )
-        task_results.append(tr)
+        task_results.append(task_result)
         rows.extend(task_rows)
 
     if any(t.decision == DECISION_STOPPED for t in task_results):
         overall: Decision = DECISION_STOPPED
+        overall_reason = RC_HITL_STOP
     elif any(t.decision == DECISION_PAUSE for t in task_results):
         overall = DECISION_PAUSE
+        overall_reason = RC_HITL_PENDING
     else:
         overall = DECISION_RUN
+        overall_reason = RC_OK
+
+    _append_row(
+        rows,
+        run_id=run_id,
+        task_id="",
+        task="",
+        event="ORCH_FINAL",
+        layer="orchestrator",
+        decision=overall,
+        reason_code=overall_reason,
+        sealed=False,
+        overrideable=False,
+        final_decider="SYSTEM",
+    )
 
     result = SimulationResult(
         run_id=run_id,
@@ -771,6 +899,7 @@ def run_simulation(
                 rows,
                 run_id=run_id,
                 task_id=task_result.task_id,
+                task=task_result.task,
                 event="ARTIFACT_WRITTEN",
                 layer="dispatch",
                 decision=DECISION_RUN,
@@ -793,12 +922,14 @@ def run_simulation(
                 )
             )
         else:
+            layer = _LAYER_BY_BLOCK.get(task_result.blocked_layer or "dispatch", "dispatch")
             _append_row(
                 rows,
                 run_id=run_id,
                 task_id=task_result.task_id,
+                task=task_result.task,
                 event="ARTIFACT_SKIPPED",
-                layer="dispatch",
+                layer=layer,
                 decision=task_result.decision,
                 reason_code=task_result.reason_code,
                 sealed=task_result.sealed,
@@ -877,16 +1008,16 @@ def run_benchmark_suite(
             continue
 
         per_run_event_counts: Dict[str, int] = {}
-        for r in rows:
-            ev = str(r.get("event", ""))
-            event_counts[ev] = event_counts.get(ev, 0) + 1
-            per_run_event_counts[ev] = per_run_event_counts.get(ev, 0) + 1
+        for row in rows:
+            event_name = str(row.get("event", ""))
+            event_counts[event_name] = event_counts.get(event_name, 0) + 1
+            per_run_event_counts[event_name] = per_run_event_counts.get(event_name, 0) + 1
 
-            if ev == "HITL_REQUESTED":
+            if event_name == "HITL_REQUESTED":
                 hitl_requested_count += 1
-            if ev == "AGENT_SEALED" and r.get("reason_code") == RC_SEALED_BY_ACC_RUNAWAY:
+            if event_name == "AGENT_SEALED":
                 acc_seal += 1
-            if ev == "GATE_ETHICS" and r.get("sealed") is True:
+            if event_name == "ETHICS_SEALED":
                 ethics_seal += 1
 
         blob = json.dumps(_sanitize_row({"rows": rows}), ensure_ascii=False, default=str)
