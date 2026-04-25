@@ -82,6 +82,7 @@ def test_v512_operational_resilience_clean_runs_large(
     assert counts.get("total_runs") == 1000
     assert counts.get("by_state", {}).get("CONTRACT_EFFECTIVE", 0) == 1000
     assert counts.get("queue_size", 0) == 0
+
     assert abnormal.get("abnormal_total", 0) == 0
     assert abnormal.get("saved", 0) == 0
     assert abnormal.get("skipped_by_cap", 0) == 0
