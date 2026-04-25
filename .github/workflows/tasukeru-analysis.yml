@@ -1,4 +1,8 @@
+2
+name: Auto-Tasukeru CI
+
 name: tasukeru-analysis
+
 
 on:
 
@@ -889,11 +893,14 @@ jobs:
     name: advisory-analysis
 
     runs-on: ubuntu-latest
+
+
     timeout-minutes: 20
 
     defaults:
       run:
         shell: bash
+
 
     steps:
       - name: Checkout
@@ -931,6 +938,20 @@ jobs:
 
           pip install ruff "bandit[sarif,toml]" pip-audit
 
+
+
+      # 以下はAPIが未設定のため一時的にコメントアウト
+      # - name: Send to Tasukeru API
+      #   run: |
+      #     curl -X POST https://your-api-domain.com/analyze \
+      #          -F "file=@source.zip" \
+      #          -o report.md
+
+      # - name: Post report as PR comment
+      #   uses: peter-evans/create-or-update-comment@v4
+      #   with:
+      #     issue-number: ${{ github.event.pull_request.number }}
+      #     body-path: report.md
 
           if [ -f requirements-dev.txt ]; then
             pip install -r requirements-dev.txt
@@ -1578,5 +1599,6 @@ jobs:
         run: |
           set -euo pipefail
           echo "workflow syntax block is present"
+
 
 
