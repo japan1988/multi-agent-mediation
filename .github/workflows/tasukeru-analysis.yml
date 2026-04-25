@@ -676,10 +676,3 @@
         run: |
           set -euo pipefail
           echo "workflow syntax block is present"
-
-
-
-
-
-
-      
