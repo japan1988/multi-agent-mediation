@@ -1,3 +1,4 @@
+
       - name: Lint workflow YAML
         run: |
           set -euo pipefail
@@ -40,3 +41,245 @@
             **/.pytest_cache
             **/pytest*.log
             **/junit-*.xml
+
+
+---
+name: Python App CI
+
+"on":
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**.md"
+
+
+ japan1988-patch-76
+ name: Python App CI
+
+name: Python App CI
+
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore:
+
+      - "**.md"
+
+      - "**/*.md"
+
+
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+  pull_request:
+    branches: ["main"]
+    paths-ignore:
+
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/python-app.yml"
+
+
+      - "**.md"
+
+      - "**/*.md"
+
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11"]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+
+      - na=======
+      - name: Setup Python
+
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+          cache-dependency-path: requirements.txt
+
+
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
+            pylock.*.toml
+
+
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+
+          pip install -r requirements.txt
+
+      - name: Show GitHub context
+        run: |
+          set -euo pipefail
+          echo "ref=${GITHUB_REF}"
+          echo "ref_name=${GITHUB_REF_NAME}"
+          echo "head_ref=${GITHUB_HEAD_REF:-}"
+          echo "base_ref=${GITHUB_BASE_REF:-}"
+
+      - name: Lint workflow YAML
+        run: |
+          set -euo pipefail
+          yamllint -f parsable .github/workflows/python-app.yml
+
+      - name: Ruff
+
+
+          pip install -r requirements.txt
+
+      - name: Lint workflow YAML
+
+
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          fi
+
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install pytest yamllint
+
+      - name: Yamllint python-app workflow
+
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'extends: default' \
+            'rules:' \
+            '  brackets: disable' \
+            '  truthy: disable' \
+            '  document-start: disable' \
+            '  line-length:' \
+            '    max: 140' \
+            '    level: warning' \
+            > .yamllint-ci.yml
+
+          yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
+
+      - name: Ruff check
+
+        run: |
+          set -euo pipefail
+          ruff check .
+
+      - name: Black
+        run: |
+          set -euo pipefail
+          black --check .
+
+      - name: Pytest
+        run: |
+          set -euo pipefail
+          pytest -q --maxfail=1 --disable-warnings \
+
+
+            --junitxml=junit-py${{ matrix.python-version 
+
+     - name: Lint workflow YAML
+ run: |
+ set -euo pipefail
+ printf '%s\n' \
+ 'extends: default' \
+ 'rules:' \
+ ' brackets: disable' \
+ ' truthy: disable' \
+ ' document-start: disable' \
+ ' line-length:' \
+ ' max: 140' \
+ ' level: warning' \
+ > .yamllint-ci.yml
+ yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
+- name: Ruff check
+ run: |
+ set -euo pipefail
+ ruff check .
+- name: Black
+ run: |
+ set -euo pipefail
+ black --check .
+- name: Pytest
+ run: |
+ set -euo pipefail
+ pytest -q --maxfail=1 --disable-warnings \
+ --junitxml=junit-py${{ matrix.python-version }}.xml
+- name: Upload test artifacts
+ if: always()
+ uses: actions/upload-artifact@v4
+ with:
+ name: ci-artifacts-py${{ matrix.python-version }}
+ if-no-files-found: ignore
+ path: |
+ .pytest_cache
+ **/.pytest_cache
+ **/pytest*.log
+ **/junit-*.xml
+
+
+          echo "===== python-app.yml ====="
+          nl -ba .github/workflows/python-app.yml
+
+          echo "===== yamllint ====="
+          yamllint -f parsable -c .yamllint-ci.yml .github/workflows/python-app.yml
+
+      - name: Run pytest
+        run: |
+          set -euo pipefail
+
+          pytest -q --maxfail=1 --disable-warnings \
+
+            --junitxml=junit-py${{ matrix.python-version }}.xml
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts-py${{ matrix.python-version }}
+          if-no-files-found: ignore
+          path: |
+            .pytest_cache
+            **/.pytest_cache
+            **/pytest*.log
+            **/junit-*.xml
+
+
+
+          pytest -q
+
+
+
+

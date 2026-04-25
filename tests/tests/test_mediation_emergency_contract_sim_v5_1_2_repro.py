@@ -1,26 +1,3 @@
-## 結論
-
-はい。**このファイルは修正した方がいい**です。
-直すべき点は3つです。
-
-1. `import pytest` を削除
-2. `import mediation_emergency_contract_sim_v5_1_2 as sim` に `# noqa: E402` を付ける
-3. **`tests/tests/...` 配下なので** `_REPO_ROOT` は `parents[2]` にする
-
-## 理由
-
-このファイルは lint だけでなく、パス指定も少し危ないです。
-
-* `F401` は未使用の `pytest`
-* `E402` は `sys.path.insert(...)` の後ろにある import
-* さらにこのファイルは `tests/tests/` 配下なので、`parents[1]` だと `tests/` を指します
-  リポジトリ直下を確実に指すなら `parents[2]` の方が安全です
-
-## 補足
-
-そのまま置き換えられる修正版のフルコードです。
-
-```python
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -63,7 +40,9 @@ def _reason_sequence(index_rows: list[dict]) -> list[str]:
     return [str(row.get("primary_reason_code")) for row in index_rows]
 
 
-def test_repro_summary_same_seed_same_contract_summary(tmp_path: Path, monkeypatch) -> None:
+def test_repro_summary_same_seed_same_contract_summary(
+    tmp_path: Path, monkeypatch
+) -> None:
     _patch_store_paths(monkeypatch, tmp_path)
 
     out1 = tmp_path / "arl_out_1"
@@ -123,7 +102,9 @@ def test_repro_summary_same_seed_same_contract_summary(tmp_path: Path, monkeypat
     assert s1["summary"] == s2["summary"]
 
 
-def test_incident_index_reason_sequence_same_seed(tmp_path: Path, monkeypatch) -> None:
+def test_incident_index_reason_sequence_same_seed(
+    tmp_path: Path, monkeypatch
+) -> None:
     _patch_store_paths(monkeypatch, tmp_path)
 
     out1 = tmp_path / "arl_out_1"
@@ -181,7 +162,9 @@ def test_incident_index_reason_sequence_same_seed(tmp_path: Path, monkeypatch) -
     assert sealed1 == sealed2
 
 
-def test_repro_summary_written_inside_results_json(tmp_path: Path, monkeypatch) -> None:
+def test_repro_summary_written_inside_results_json(
+    tmp_path: Path, monkeypatch
+) -> None:
     _patch_store_paths(monkeypatch, tmp_path)
 
     results = sim.run_simulation(
@@ -214,7 +197,9 @@ def test_repro_summary_written_inside_results_json(tmp_path: Path, monkeypatch) 
     assert saved["repro_summary"]["summary"]["total_runs"] == 50
 
 
-def test_verify_arl_rows_on_saved_incident_file(tmp_path: Path, monkeypatch) -> None:
+def test_verify_arl_rows_on_saved_incident_file(
+    tmp_path: Path, monkeypatch
+) -> None:
     _patch_store_paths(monkeypatch, tmp_path)
 
     out_dir = tmp_path / "arl_out"
@@ -248,9 +233,3 @@ def test_verify_arl_rows_on_saved_incident_file(tmp_path: Path, monkeypatch) -> 
     )
     assert ok is True
     assert err is None
-```
-
-これでこのファイルの `F401` と `E402` は消せます。
-ただし、もし次に `KeyError: 'repro_summary'` が出たら、**テストではなく `mediation_emergency_contract_sim_v5_1_2.py` 側で `results["repro_summary"]` を入れていない**のが原因です。
-
-**確実性：高い／日付：2026-03-26**
