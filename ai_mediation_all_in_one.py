@@ -147,7 +147,12 @@ class AI:
         self.risk_evaluation = risk_evaluation
         self.priority_values = priority_values
 
+        # 0〜1: 他の価値観をどれだけ受け入れるか
+        self.relativity_level = relativity_level
+
+
         self.relativity_level = relativity_level  # 0〜1: 他の価値観をどれだけ受け入れるか
+
 
     def generate_compromise_offer(self, others_priorities):
         new_priority = {}
@@ -156,9 +161,9 @@ class AI:
             return dict(self.priority_values)
 
         for k in self.priority_values:
-            avg_others = sum(
-                o[k] for o in others_priorities
-            ) / len(others_priorities)
+            avg_others = sum(o[k] for o in others_priorities) / len(
+                others_priorities
+            )
             # 相対性度合いに応じて自分と他者の価値観をブレンド
             new_priority[k] = (
                 (1 - self.relativity_level) * self.priority_values[k]
@@ -281,6 +286,13 @@ class AIEMediator:
         self.sealed_ids: List[str] = []
 
 
+            combined = {
+                "safety": 0,
+                "efficiency": 0,
+                "transparency": 0,
+            }
+
+
     def _active_agents(self) -> List[AI]:
         return [a for a in self.all_agents if a.id not in self.sealed_ids]
 
@@ -341,8 +353,13 @@ class AIEMediator:
 
 
             avg_relativity = (
+
+                sum(a.relativity_level for a in self.agents)
+                / len(self.agents)
+
                 sum(a.relativity_level for a in self.agents) / len(self.agents)
                 if self.agents else 0
+
             )
 
             harmony_score = (1.0 - max_ratio) * avg_relativity
@@ -603,6 +620,7 @@ def run_demo() -> None:
 
 if __name__ == "__main__":
     run_demo()
+
 
 
 
