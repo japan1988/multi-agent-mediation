@@ -1,4 +1,19 @@
 
+ japan1988-patch-24
+
+# 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
+
+[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
+
+Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
+![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)
+ main
+![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
+![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)
+![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)
+> **If uncertain, stop. If risky, escalate.**  
+
+
 <h1 align="center">📘 <b>Multi-Agent Mediation Framework</b></h1>
 
 <table>
@@ -162,6 +177,7 @@ When adding tools, declare the tool type (e.g., benign / pii_source) and side-ef
 
 > **If uncertain, stop. If risky, escalate.**
 >
+
 > Research / educational governance simulations for agentic workflows.
 
 
