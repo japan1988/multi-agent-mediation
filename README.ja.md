@@ -1,25 +1,5 @@
 # 📘 Maestro Orchestrator — オーケストレーション・フレームワーク（fail-closed + HITL）
 
-[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
-![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation)
-[![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
-[![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
-
-> **不確実なら停止。危険ならエスカレーション。**
-> エージェントワークフローのための研究・教育用ガバナンスシミュレーション。
-
-Maestro Orchestrator は、**fail-closed**、**HITL（Human-in-the-Loop）**、および**監査可能なエージェントワークフロー**のための**研究志向のオーケストレーション・フレームワーク**です。
-
-このリポジトリは、**ガバナンス / 調停 / 交渉系シミュレーション**と、**追跡可能・再現可能・安全性優先のオーケストレーション**の実装リファレンスに焦点を当てています。
-
-シミュレーターを実行すると、**再現可能なサマリー、最小 ARL トレース、および異常実行時の incident-indexed artifact（任意）**が生成されます。
-contract test では、**固定語彙・ゲート不変条件・fail-closed / HITL continuation の挙動**を検証します。
-
----
-
-## このリポジトリが提供するもの
-
-このリポジトリは次を提供します。
 
 * ガバナンス系ワークフロー向けの **fail-closed + HITL オーケストレーション・ベンチ**
 * シード付き実行と `pytest` ベースの contract check を備えた **再現可能なシミュレーター**
@@ -322,7 +302,12 @@ python mediation_emergency_contract_sim_v5_1_2.py \
 7. `ai_doc_orchestrator_with_mediator_v1_0.py`
 8. `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
+
+rust
+NORMAL -> CONTRACT_EFFECTIVE
+
 ---
+
 
 ## アーキテクチャ（高レベル）
 
@@ -351,6 +336,13 @@ agents
 以下の図は、現在のコード語彙に合わせたものです。
 ドキュメント用であり、ロジック変更はありません。
 
+
+bash
+pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
+What’s new (2026-02-07)
+New: mediation_emergency_contract_sim_v4_4.py
+Emergency contract workflow bench v4.4 (fail-closed + HITL + minimal ARL).
+=======
 <p align="center">
   <img src="docs/architecture_code_aligned.png" alt="Architecture (code-aligned)" width="720">
 </p>
@@ -358,6 +350,7 @@ agents
 ---
 
 ## Version deltas
+
 
 ### v5.0.1 → v5.1.2
 
@@ -455,6 +448,37 @@ v5 で追加 / 強化されたもの:
 * **Tighter invariant enforcement**
   不変条件に関する明示的な test / contract により、無言の drift を減らす
 
+
+bash
+python ai_doc_orchestrator_kage3_v1_2_4.py
+Emergency contract workflow（v4）
+
+bash
+python mediation_emergency_contract_sim_v4.py
+Emergency contract workflow（v4.1）
+
+bash
+python mediation_emergency_contract_sim_v4_1.py
+Emergency contract workflow（v4.4）
+
+bash
+python mediation_emergency_contract_sim_v4_4.py
+Emergency contract stress（v4.4）
+
+bash
+python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
+Emergency contract workflow（v4.6）
+
+bash
+python mediation_emergency_contract_sim_v4_6.py
+Emergency contract workflow（v4.7）
+
+bash
+python mediation_emergency_contract_sim_v4_7_full.py
+Project intent / non-goals
+Intent
+Reproducible safety and governance simulations
+
 v5 でも変わらないこと:
 
 * 研究 / 教育目的
@@ -478,6 +502,7 @@ v5 でも変わらないこと:
 * 無制限な自己主導エージェント制御
 * 明示的にテストされた範囲を超える安全性主張
 
+
 ---
 
 ## データと安全性に関する注意
@@ -490,4 +515,3 @@ v5 でも変わらないこと:
 
 ## License
 
-Apache License 2.0（`LICENSE` を参照）

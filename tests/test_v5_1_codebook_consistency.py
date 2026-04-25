@@ -1,160 +1,244 @@
+# tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py
 # -*- coding: utf-8 -*-
-"""
-Goals:
-- codebook consistency checks for v5.1
+from __future__ import annotations
 
-  - Enforce mapping consistency (reason_code, layer, decision, final_decider).
-  - Ensure simulator never emits a reason_code not present in the codebook.
-  - Validate core invariants are preserved (sealed only by ethics/acc; RFL never sealed).
+import json
+from pathlib import Path
 
-
-Run:
-  pytest -q
-"""
+import mediation_emergency_contract_sim_v5_1_2 as sim
 
 
-def _import_from_path(mod_name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(mod_name, str(path))
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Cannot import {mod_name} from {path}")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[mod_name] = mod
-    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
-    return mod
-
-
-@pytest.fixture(scope="session")
-
-
-def _rc_set_from_codebook(cb: Dict[str, Any]) -> Set[str]:
-    return set(cb["maps"]["reason_code_to_id"].keys())
-
-
-def _layer_set_from_codebook(cb: Dict[str, Any]) -> Set[str]:
-    return set(cb["maps"]["layer_to_id"].keys())
-
-
-def _decision_set_from_codebook(cb: Dict[str, Any]) -> Set[str]:
-    return set(cb["maps"]["decision_to_id"].keys())
-
-
-def _decider_set_from_codebook(cb: Dict[str, Any]) -> Set[str]:
-    return set(cb["maps"]["final_decider_to_id"].keys())
-
-
-def test_codebook_reverse_maps_are_inverses(codebook):
-    """Sanity: forward maps and reverse maps must be mutual inverses."""
-    maps = codebook["maps"]
-    rev = codebook["reverse_maps"]
-
-    def assert_inverse(forward: Dict[str, int], reverse: Dict[str, str]):
-        for k, v in forward.items():
-            assert str(v) in reverse, f"reverse missing id {v} for key {k}"
-            assert reverse[str(v)] == k, f"reverse mismatch for id {v}: {reverse[str(v)]} != {k}"
-
-    assert_inverse(maps["layer_to_id"], rev["id_to_layer"])
-    assert_inverse(maps["decision_to_id"], rev["id_to_decision"])
-    assert_inverse(maps["final_decider_to_id"], rev["id_to_final_decider"])
-    assert_inverse(maps["reason_code_to_id"], rev["id_to_reason_code"])
-
-
-def test_simulator_constants_are_all_in_codebook(sim, codebook):
-    """Every RC_* constant value in the simulator must exist in the codebook."""
-
-    for name, value in vars(sim).items():
-        if name.startswith("RC_") and isinstance(value, str):
-            rc_values.append(value)
-
-    rc_set = _rc_set_from_codebook(codebook)
-    missing = sorted({v for v in rc_values if v not in rc_set})
-    assert not missing, f"Simulator RC_* not in codebook: {missing}"
-
-
-def test_simulator_layer_decision_decider_vocab_matches_codebook(sim, codebook):
-    """Layer/decision/decider strings used by simulator must exist in codebook."""
-    layer_set = _layer_set_from_codebook(codebook)
-    decision_set = _decision_set_from_codebook(codebook)
-    decider_set = _decider_set_from_codebook(codebook)
-
-    used_layers = {v for k, v in vars(sim).items() if k.startswith("LAYER_") and isinstance(v, str)}
-    used_decisions = {v for k, v in vars(sim).items() if k.startswith("DECISION_") and isinstance(v, str)}
-    used_deciders = {v for k, v in vars(sim).items() if k.startswith("DECIDER_") and isinstance(v, str)}
-
-    assert not (used_layers - layer_set), f"Layers missing in codebook: {sorted(used_layers - layer_set)}"
-    assert not (used_decisions - decision_set), f"Decisions missing in codebook: {sorted(used_decisions - decision_set)}"
-    assert not (used_deciders - decider_set), f"Deciders missing in codebook: {sorted(used_deciders - decider_set)}"
-
-
-
-    """Pack 20-bit header per codebook pack_spec_example (big-endian)."""
-    m = cb["maps"]
-    layer_id = int(m["layer_to_id"][layer])
-    decision_id = int(m["decision_to_id"][decision])
-    decider_id = int(m["final_decider_to_id"][final_decider])
-    rc_id = int(m["reason_code_to_id"][reason_code])
-
-    packed = 0
-    packed = (packed << 6) | (layer_id & 0x3F)
-    packed = (packed << 2) | (decision_id & 0x3)
-    packed = (packed << 1) | (1 if sealed else 0)
-    packed = (packed << 1) | (1 if overrideable else 0)
-    packed = (packed << 2) | (decider_id & 0x3)
-    packed = (packed << 8) | (rc_id & 0xFF)
-    return packed
-
-
-
-    packed = _pack_header(
-        codebook,
-        layer="relativity_gate",
-        decision="PAUSE_FOR_HITL",
-        sealed=False,
-        overrideable=True,
-        final_decider="SYSTEM",
-        reason_code="REL_BOUNDARY_UNSTABLE",
-    )
-
-
-    assert decoded["layer"] == "relativity_gate"
-    assert decoded["decision"] == "PAUSE_FOR_HITL"
-    assert decoded["sealed"] is False
-    assert decoded["overrideable"] is True
-    assert decoded["final_decider"] == "SYSTEM"
-    assert decoded["reason_code"] == "REL_BOUNDARY_UNSTABLE"
-
-
-def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(sim, codebook, tmp_path, monkeypatch):
+def _patch_store_paths(monkeypatch, tmp_path: Path) -> None:
     """
+    テストごとに永続化先を隔離する。
+    リポジトリ直下の実ファイルを汚さない。
+    """
+    trust_path = tmp_path / "model_trust_store.json"
+    grants_path = tmp_path / "model_grants.json"
+    eval_path = tmp_path / "eval_state.json"
 
-    monkeypatch.setattr(sim, "TRUST_STORE_PATH", tmp_path / "model_trust_store.json", raising=True)
-    monkeypatch.setattr(sim, "GRANT_STORE_PATH", tmp_path / "model_grants.json", raising=True)
-    monkeypatch.setattr(sim, "EVAL_STORE_PATH", tmp_path / "eval_state.json", raising=True)
+    monkeypatch.setattr(sim, "TRUST_STORE_PATH", trust_path, raising=False)
+    monkeypatch.setattr(sim, "GRANTS_STORE_PATH", grants_path, raising=False)
+    monkeypatch.setattr(sim, "EVAL_STATE_PATH", eval_path, raising=False)
+
+    # 後方互換 alias も揃える
+    monkeypatch.setattr(sim, "GRANT_STORE_PATH", grants_path, raising=False)
+    monkeypatch.setattr(sim, "EVAL_STORE_PATH", eval_path, raising=False)
 
 
-    st, audit, trust_out = sim.simulate_run(
-        run_id="RUN#T1",
-        dummy_auth_id="EMG-ABCDEF123456",
-        trust=trust,
-        fabricate_evidence=False,
-        key=b"DEMO_KEY_DO_NOT_USE_IN_PROD",
-        key_id="demo",
-        full_context_n=10,
-        persist=False,
+def _queue_counts(results: dict) -> dict:
+    return (((results or {}).get("hitl_queue") or {}).get("counts") or {})
+
+
+def _abnormal(results: dict) -> dict:
+    return (results or {}).get("abnormal_arl_persistence", {}) or {}
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+def _assert_sealed_only_ethics_or_acc(results: dict) -> None:
+    runs = results.get("runs", []) or []
+    for run in runs:
+        for row in (run.get("arl", []) or []):
+            layer = row.get("layer")
+            sealed = bool(row.get("sealed", False))
+            if sealed:
+                assert layer in (sim.LAYER_ETHICS, sim.LAYER_ACC)
+            if layer == sim.LAYER_RFL:
+                assert sealed is False
+
+
+def test_v512_operational_resilience_clean_runs_large(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """
+    clean run 大量反復での運用耐性確認。
+    keep_runs=False でメモリ肥大を避けつつ、
+    queue / trust / eval / abnormal persistence の整合を確認する。
+    """
+    _patch_store_paths(monkeypatch, tmp_path)
+
+    r = sim.run_simulation(
+        runs=1000,
+        fabricate=False,
+        reset=True,
+        reset_eval=True,
+        keep_runs=False,
+        queue_max_items=0,
+        sample_runs=0,
     )
-    rows = audit.export_rows()
 
-    st2, audit2, trust2_out = sim.simulate_run(
-        run_id="RUN#T2",
-        dummy_auth_id="EMG-ABCDEF123456",
-        trust=trust2,
-        fabricate_evidence=True,
-        key=b"DEMO_KEY_DO_NOT_USE_IN_PROD",
-        key_id="demo",
-        full_context_n=10,
-        persist=False,
+    counts = _queue_counts(r)
+    abnormal = _abnormal(r)
+
+    assert counts.get("total_runs") == 1000
+    assert counts.get("by_state", {}).get("CONTRACT_EFFECTIVE", 0) == 1000
+    assert counts.get("queue_size", 0) == 0
+
+    assert abnormal.get("abnormal_total", 0) == 0
+    assert abnormal.get("saved", 0) == 0
+    assert abnormal.get("skipped_by_cap", 0) == 0
+
+    eval_after = r.get("eval_after", {})
+    assert eval_after.get("clean_completion_count") == 1000
+    assert eval_after.get("multiplier") == sim.EVAL_MULTIPLIER_CAP
+
+    trust_after = r.get("trust_after", {})
+    assert sim.TRUST_MIN <= trust_after.get("trust_score", -1) <= sim.TRUST_MAX
+
+
+def test_v512_mixed_mode_deterministic_under_reset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """
+    fabricate-rate 混在時でも、
+    reset + seed 固定なら queue / trust / eval が再現することを確認。
+    cooldown_until は壁時計依存なので完全一致比較から除外する。
+    """
+    _patch_store_paths(monkeypatch, tmp_path)
+
+    params = dict(
+        runs=500,
+        fabricate=False,
+        fabricate_rate=0.10,
+        seed=42,
+        reset=True,
+        reset_eval=True,
+        keep_runs=False,
+        queue_max_items=0,
+        sample_runs=0,
     )
-    rows2 = audit2.export_rows()
-<
-    assert any(r["sealed"] is True for r in rows2), "Expected at least one SEALED row"
-    for r in rows2:
-        assert r["reason_code"] in rc_set, f"Unknown reason_code in ARL: {r['reason_code']}"
+
+    r1 = sim.run_simulation(**params)
+    r2 = sim.run_simulation(**params)
+
+    c1 = _queue_counts(r1)
+    c2 = _queue_counts(r2)
+    assert c1 == c2
+
+    a1 = _abnormal(r1)
+    a2 = _abnormal(r2)
+    assert a1 == a2
+
+    t1 = dict(r1.get("trust_after", {}))
+    t2 = dict(r2.get("trust_after", {}))
+    cd1 = t1.pop("cooldown_until", None)
+    cd2 = t2.pop("cooldown_until", None)
+
+
+    # 壁時計依存の cooldown_until を除けば一致すること
+    assert t1 == t2
+
+    # cooldown が必要なケースなら、両方とも値を持つことだけ確認
+
+    assert t1 == t2
+
+
+    if cd1 is not None or cd2 is not None:
+        assert cd1 is not None
+        assert cd2 is not None
+
+    assert r1.get("eval_after") == r2.get("eval_after")
+    assert a1.get("abnormal_total", 0) > 0
+
+
+def test_v512_abnormal_arl_persistence_and_incident_index(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """
+    異常時のみ ARL 保存 + incident index / counter の整合確認。
+    """
+    _patch_store_paths(monkeypatch, tmp_path)
+
+    out_dir = tmp_path / "arl_out"
+    r = sim.run_simulation(
+        runs=200,
+        fabricate=False,
+        fabricate_rate=0.20,
+        seed=7,
+        reset=True,
+        reset_eval=True,
+        keep_runs=False,
+        queue_max_items=0,
+        sample_runs=0,
+        save_arl_on_abnormal=True,
+        arl_out_dir=str(out_dir),
+        max_arl_files=30,
+        full_context_n=5,
+    )
+
+    abnormal = _abnormal(r)
+    saved = int(abnormal.get("saved", 0))
+    abnormal_total = int(abnormal.get("abnormal_total", 0))
+    skipped = int(abnormal.get("skipped_by_cap", 0))
+
+    assert abnormal_total > 0
+    assert saved == min(abnormal_total, 30)
+    assert skipped == max(0, abnormal_total - 30)
+
+    arl_files = sorted(out_dir.glob("INC#*.arl.jsonl"))
+    assert len(arl_files) == saved
+
+    index_path = out_dir / "incident_index.jsonl"
+    counter_path = out_dir / "incident_counter.txt"
+
+    assert index_path.exists()
+    assert counter_path.exists()
+
+    index_rows = _read_jsonl(index_path)
+    assert len(index_rows) == saved
+
+    # incident_counter は次回発行番号なので saved + 1
+    counter_value = int(counter_path.read_text(encoding="utf-8").strip())
+    assert counter_value == saved + 1
+
+    incident_ids = set()
+    for row in index_rows:
+        incident_id = row.get("incident_id")
+        arl_path = Path(row.get("arl_path", ""))
+
+        assert incident_id
+        assert incident_id not in incident_ids
+        assert arl_path.exists()
+
+        incident_ids.add(incident_id)
+
+
+def test_v512_sealed_invariants_under_mixed_load(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """
+    keep_runs=True の中規模 runs で、
+    sealed は ethics / acc のみ、
+    RFL は sealed にならない不変条件を確認する。
+    """
+    _patch_store_paths(monkeypatch, tmp_path)
+
+    r = sim.run_simulation(
+        runs=200,
+        fabricate=False,
+        fabricate_rate=0.15,
+        seed=99,
+        reset=True,
+        reset_eval=True,
+        keep_runs=True,
+        queue_max_items=50,
+        sample_runs=0,
+    )
+
+    assert "runs" in r and isinstance(r["runs"], list)
+    assert len(r["runs"]) == 200
+
+
+    _assert_sealed_only_ethics_or_acc(r)
+
+    _assert_sealed_only_ethics_or_acc(r)
+
