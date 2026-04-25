@@ -1,12 +1,4 @@
 
----
-
-
----
-
-
----
-
 
 # -*- coding: utf-8 -*-
 """
@@ -319,8 +311,8 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
 
 
 
-name: Python App CI
 
+name: Python App CI
 on:
   push:
     branches: ["main"]
@@ -334,15 +326,17 @@ on:
       - "**.md"
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
+
+# 同一ブランチの連続実行を最新だけに
+
   workflow_dispatch:
+
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 permissions:
   contents: read
-
 jobs:
   test:
     name: test (${{ matrix.python-version }})
@@ -350,6 +344,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+
+        python-version: [ "3.9", "3.10", "3.11" ]  # 必要なら "3.12" も追加可
+
 
         # 必要なら "3.12" も追加可
         python-version: [ "3.9", "3.10", "3.11" ]
@@ -361,17 +358,22 @@ jobs:
         shell: bash
 
 
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+      - name: Install dependencies / tools
+
           cache-dependency-path: |
             requirements.txt
             requirements-dev.txt
@@ -383,6 +385,7 @@ jobs:
 
       # ランタイム依存関係（実行用）
       - name: Install runtime dependencies
+
         run: |
           set -euo pipefail
           if [ -f requirements.txt ]; then
@@ -390,6 +393,11 @@ jobs:
           else
             echo "requirements.txt not found, skipping runtime deps"
           fi
+
+          # 最低限のCI用ツール（requirementsに無い時の保険）
+          pip install -q pytest pytest-cov pytest-xdist ruff yamllint
+      # ワークフロー自身の軽いYAMLLint（括弧・truthy・行長を緩める）
+
 
       # 開発・CI用依存関係（テスト・Lint 等）
       - name: Install development dependencies
@@ -408,8 +416,17 @@ jobs:
           pip install pytest pytest-cov pytest-xdist ruff yamllint
 
 
+
       - name: Lint workflow (self check)
         run: |
+
+          yamllint -d '{extends: default,
+                        rules: {brackets: disable,
+                                truthy: disable,
+                                line-length: {max: 140, level: warning}}}' \
+                   .github/workflows/python-app.yml
+      - name: Ruff check
+
           set -euo pipefail
           cat > .yamllint-ci.yml <<'YAML'
           extends: default
@@ -425,9 +442,20 @@ jobs:
 
       # 注釈を出したくないので github フォーマットは使わない
       - name: Ruff check (report only, no annotations)
+
         run: |
           set -euo pipefail
           ruff --version
+
+          ruff check . --output-format=github
+      - name: Run tests (parallel) with coverage
+        env:
+          PYTHONWARNINGS: ignore::DeprecationWarning
+        run: |
+          pytest -q -n auto --dist loadfile --cov=. --cov-report=xml:coverage.xml --cov-report=term
+      - name: Upload coverage xml
+        if: always()
+
           ruff check . --exit-zero --output-format=concise
 
       - name: Run tests (py3.11 with coverage)
@@ -451,11 +479,14 @@ jobs:
 
       - name: Upload coverage xml (py3.11 only)
         if: always() && matrix.python-version == '3.11'
+
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
+
           if-no-files-found: ignore
+
 
       - name: Upload pytest logs on failure
         if: failure()
@@ -469,8 +500,12 @@ jobs:
             **/junit-*.xml
           if-no-files-found: ignore
 
+  # 各Pythonバージョンのcoverage.xmlをまとめて結合（必要な場合）
+
+
 
   # 各Pythonバージョンの coverage.xml をまとめて結合（必要な場合）
+
   coverage-combine:
     name: coverage combine
 
@@ -600,6 +635,8 @@ jobs:
         with:
 
           path: covs
+
+
           if-no-files-found: ignore
 
           fetch-depth: 1
@@ -607,16 +644,15 @@ jobs:
 
 
       - na=======
+
       - name: Setup Python
 
         uses: actions/setup-python@v6
         with:
 
           python-version: "3.11"
-
       - name: Install coverage
         run: pip install coverage
-
       - name: Combine coverage
         run: |
           python - << 'PY'
@@ -628,29 +664,39 @@ jobs:
               print("no coverage.xml found — skip merge")
               sys.exit(0)
 
+
           # coverage.py の combine XML は標準機能が薄いので、最小限のXMLマージ
           # （同一ファイル構成前提／CIの可視化用の粗い統合）
+
           first = ET.parse(files[0])
           root = first.getroot()
           packages = root.find("packages")
 
           for f in files[1:]:
+
+            t = ET.parse(f).getroot()
+            pkgs = t.find("packages")
+            if pkgs is not None:
+              for p in pkgs.findall("package"):
+                packages.append(p)
+
               t = ET.parse(f).getroot()
               pkgs = t.find("packages")
               if pkgs is not None:
                   for p in pkgs.findall("package"):
                       packages.append(p)
 
+
           first.write("coverage-merged.xml", encoding="utf-8", xml_declaration=True)
           print(f"Merged {len(files)} coverage files -> coverage-merged.xml")
           PY
-
       - name: Upload merged coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-merged
           path: coverage-merged.xml
+
           if-no-files-found: ignore
 
           python-version: ${{ matrix.python-version }}
@@ -820,6 +866,7 @@ jobs:
 
 
           pytest -q
+
 
 
 

@@ -1,3 +1,108 @@
+
+
+---
+
+# 📜 LICENSE
+
+**Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)**
+**クリエイティブ・コモンズ 表示-非営利-継承 4.0 国際**
+
+---
+
+## ⚖️ 英文原文（Official English Version）
+
+This work is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License**.
+To view a copy of this license, visit:
+🔗 [https://creativecommons.org/licenses/by-nc-sa/4.0/](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+You are free to:
+
+* **Share** — copy and redistribute the material in any medium or format
+* **Adapt** — remix, transform, and build upon the material
+
+Under the following terms:
+
+* **Attribution** — You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+* **NonCommercial** — You may not use the material for commercial purposes.
+* **ShareAlike** — If you remix, transform, or build upon the material, you must distribute your contributions under the same license as the original.
+
+No additional restrictions — You may not apply legal terms or technological measures that legally restrict others from doing anything the license permits.
+
+---
+
+## 🇯🇵 日本語訳（参考訳）
+
+本作品は **クリエイティブ・コモンズ 表示-非営利-継承 4.0 国際ライセンス** の下で提供されています。
+ライセンス全文は以下で閲覧できます：
+🔗 [https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja](https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja)
+
+あなたは次のことができます：
+
+* **共有** — あらゆる媒体または形式で複製および再配布することができます。
+* **改変** — リミックス、変形、またはこの資料を基にした派生作品を作ることができます。
+
+ただし、次の条件に従う必要があります：
+
+* **表示** — 適切なクレジットを表示し、ライセンスへのリンクを提供し、変更があった場合にはその旨を明示する必要があります。
+* **非営利** — 営利目的で利用することはできません。
+* **継承** — 派生作品を作成した場合は、元の作品と同じライセンス（CC BY-NC-SA 4.0）で公開する必要があります。
+
+その他の制限 — 法的または技術的手段により、他者がこのライセンスで許可されている行為を制限してはなりません。
+
+---
+
+## 🧩 Additional Terms / 追加条項（Japan1988オリジナル）
+
+© 2024–2025 Japan1988
+All rights reserved except as permitted under this license.
+Educational and research use is **encouraged**, provided proper credit is given.
+
+**追加条件（日本語）**
+
+* 本ライセンスは、教育・研究目的での利用を推奨します。
+* 商用利用、販売、再配布、もしくは第三者への有償提供を目的とする利用は禁止します。
+* 本作品を使用する際は、READMEまたは引用欄に必ず以下を明記してください：
+
+  > “© Japan1988, Licensed under CC BY-NC-SA 4.0 International”
+
+---
+
+## 🛡️ Disclaimer / 免責事項
+
+This software is provided “as is,” without warranty of any kind, express or implied.
+The author assumes no liability for any damages resulting from the use of this software.
+
+本ソフトウェアは現状のまま提供され、いかなる明示または黙示の保証も行いません。
+利用によって生じた損害について、著作者は一切の責任を負いません。
+
+---
+
+### 📘 Summary / 概要（英日要約）
+
+| 項目      | 内容                                                |
+| ------- | ------------------------------------------------- |
+| ライセンス種別 | CC BY-NC-SA 4.0 International                     |
+| 著作権保持者  | Japan1988                                         |
+| 使用目的    | 教育・研究目的のみ許可                                       |
+| 商用利用    | 禁止                                                |
+| 再配布・派生  | 同一ライセンス下で許可                                       |
+| クレジット表示 | “© Japan1988, Licensed under CC BY-NC-SA 4.0” を明記 |
+| 保証      | 一切なし（as-is）                                       |
+| バージョン   | 1.2（2025年11月版）                                    |
+
+---
+
+🔖 **推奨設置先:**
+このファイルをリポジトリ直下の `/LICENSE` に配置してください。
+README に以下の1行を追記すれば GitHub上でも明示されます：
+
+```markdown
+> ⚖️ Licensed under CC BY-NC-SA 4.0 © Japan1988  
+> Educational and research use only. Commercial use prohibited.
+```
+
+---
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -199,3 +304,4 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
