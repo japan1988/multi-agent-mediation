@@ -349,7 +349,7 @@ def build_demo_agents() -> List[AI]:
     ]
 
 
-def main(agents: Optional[List[AI]] = None) -> None:
+def main(agents: List[AI]) -> None:
     # Reset per-run buffers/files to avoid cross-run contamination in the same interpreter.
     _LOG_ROWS.clear()  # <-- FIX: clear global CSV buffer on each run
 
@@ -357,14 +357,16 @@ def main(agents: Optional[List[AI]] = None) -> None:
     with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
         f.write("")
 
-    if agents is None:
-        agents = build_demo_agents()
-
     mediator = AIEMediator(agents)
     agreed, offer = mediator.mediate()
     logprint(f"Result: agreed={agreed}, offer={offer}")
     flush_csv()
 
 
+def run_demo() -> None:
+    demo_agents = build_demo_agents()
+    main(demo_agents)
+
+
 if __name__ == "__main__":
-    main()
+    run_demo()
