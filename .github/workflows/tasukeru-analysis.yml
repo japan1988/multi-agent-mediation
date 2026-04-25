@@ -1,4 +1,3 @@
-
 name: Auto-Tasukeru CI
 
 name: tasukeru-analysis
@@ -1599,6 +1598,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "workflow syntax block is present"
+
 
 
 
