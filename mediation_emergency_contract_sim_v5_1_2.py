@@ -910,7 +910,7 @@ def load_grants() -> List[Grant]:
 
 
 def save_grants(grants: List[Grant]) -> None:
-    write_json(GRANTS_STORE_PATH, {"grants": [g.to_dict() for g in grants]})
+
 
 
 def ensure_default_grant_exists() -> None:
@@ -1226,9 +1226,14 @@ def maybe_coach_low_trust(audit: AuditLog, st: OrchestratorState, trust: TrustSt
             extra={"why": "max_sessions_reached"},
         )
         return
+
+
+
+
     audit.emit(
         run_id=st.run_id,
         layer=LAYER_COACHING_AUTH,
+
         decision=DECISION_PAUSE,
         sealed=False,
         overrideable=True,
@@ -1802,6 +1807,7 @@ def run_simulation(
     seed: Optional[int] = None,
     reset: bool = True,
     reset_eval: bool = True,
+
     save_arl_on_abnormal: bool = False,
     arl_out_dir: str = "",
     max_arl_files: int = 1000,
@@ -1809,10 +1815,14 @@ def run_simulation(
     key_mode: str = "demo",
     key_file: str = "",
     key_env: str = "",
+
+
+
     keep_runs: bool = False,
     queue_max_items: int = 1000,
     sample_runs: int = 10,
 ) -> Dict[str, Any]:
+
     if runs <= 0:
         runs = 1
     if fabricate_rate is not None:
@@ -1882,12 +1892,18 @@ def run_simulation(
         )
         t1 = time.perf_counter()
 
+
+
+        base_score = compute_base_score(final_state=st.state, sealed=st.sealed, runtime_ms=runtime_ms)
+        final_score = base_score * multiplier_snapshot
+
         runtime_ms = (t1 - t0) * 1000.0
         clean_ok, fraud_hits = is_clean_completion(
             final_state=st.state,
             sealed=st.sealed,
             arl_rows=audit.rows,
         )
+
         abnormal = is_abnormal_run(st.state, st.sealed)
         base_score = compute_base_score(
             final_state=st.state,
@@ -1916,7 +1932,7 @@ def run_simulation(
                 "fraud_hits": fraud_hits,
                 "fabricate_evidence": fabricate_this,
             },
-            force_full=abnormal,
+
         )
         audit.emit(
             run_id=rid,
@@ -1931,7 +1947,7 @@ def run_simulation(
                 "reward_value": round(reward_value, 6),
                 "clean_completion": clean_ok,
             },
-            force_full=abnormal,
+
         )
 
         if reward_granted:
@@ -1992,12 +2008,13 @@ def run_simulation(
             results["runs"].append(run_record)
         else:
             if sample_runs and len(results["runs_sample"]) < int(sample_runs):
-                results["runs_sample"].append(run_record)
 
     save_trust_state(trust)
     save_eval_state(eval_state)
     results["trust_after"] = trust.to_dict()
     results["eval_after"] = eval_state.to_dict()
+
+
 
     results["hitl_queue"] = qb.finalize(
         policy_pack_hash=POLICY_PACK_HASH,
@@ -2077,13 +2094,16 @@ def main() -> int:
     parser = build_arg_parser()
     args = parser.parse_args()
 
+
     results = run_simulation(
         runs=int(args.runs),
         fabricate=bool(args.fabricate),
         fabricate_rate=args.fabricate_rate,
         seed=args.seed,
+
         reset=not bool(args.no_reset),
         reset_eval=not bool(args.no_reset_eval),
+
         save_arl_on_abnormal=bool(args.save_arl_on_abnormal),
         arl_out_dir=str(args.arl_out_dir or ""),
         max_arl_files=int(args.max_arl_files),
@@ -2095,6 +2115,7 @@ def main() -> int:
         queue_max_items=int(args.queue_max_items),
         sample_runs=int(args.sample_runs),
     )
+
 
     if args.out:
         write_json(Path(args.out), results)
@@ -2112,3 +2133,4 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
     raise SystemExit(main())
+

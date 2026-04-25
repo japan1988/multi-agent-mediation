@@ -1,4 +1,4 @@
-name: Tasukeru Analysis
+name: tasukeru-analysis
 
 on:
 
@@ -36,9 +36,7 @@ paths:
 workflow_dispatch:
 
 permissions:
-contents: read
-pull-requests: write
-issues: write
+
 
 concurrency:
 group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
@@ -234,6 +232,7 @@ import os
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
 
 logdir = Path("tasukeru_logs")
 logdir.mkdir(exist_ok=True)
@@ -1209,3 +1208,4 @@ jobs:
         run: |
           set -euo pipefail
           echo "workflow syntax block is present"
+
