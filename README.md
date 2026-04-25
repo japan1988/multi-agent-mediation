@@ -12,7 +12,14 @@
 >
 > Research / educational governance simulations for agentic workflows.
 
+
+### Recommended entrypoint
+
+# Doc orchestrator (KAGE3-style, implementation reference for post-HITL semantics)
+python ai_doc_orchestrator_kage3_v1_2_4.py
+
 Maestro Orchestrator is a **research-oriented orchestration framework** for supervising agent workflows with **fail-closed safety**, **HITL escalation**, and **audit-ready traceability**.
+
 
 This repository focuses on governance / mediation / negotiation-style simulations and implementation references for **traceable, reproducible, safety-first orchestration**.
 
