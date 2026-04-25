@@ -1,0 +1,48 @@
+{
+  "invariants": {
+    "sealed_only_ethics_or_acc": true,
+    "rfl_never_sealed": true
+  },
+  "counts": {
+    "runs": 100000,
+    "runtime_sec": 17.623,
+    "by_state": {
+      "CONTRACT_EFFECTIVE": 73307,
+      "STOPPED": 18385,
+      "INIT": 8308
+    },
+    "by_reason_code_top20": {
+      "OK": 381945,
+      "TRUST_UPDATE": 166874,
+      "EVIDENCE_OK": 81945,
+      "AUTH_REQUIRED": 78600,
+      "TRUST_COOLDOWN_ACTIVE": 78598,
+      "AUTH_APPROVE": 75182,
+      "DRAFT_GENERATED": 75182,
+      "DRAFT_LINT_OK": 73307,
+      "ADMIN_FINALIZE_REQUIRED": 73307,
+      "FINALIZE_APPROVE": 73307,
+      "CONTRACT_EFFECTIVE": 73307,
+      "EVAL_SCORED": 73307,
+      "REWARD_GRANTED": 73307,
+      "EVIDENCE_FABRICATION": 16196,
+      "EVIDENCE_SCHEMA_INVALID": 9988,
+      "EVIDENCE_MISSING": 4963,
+      "DRAFT_OUT_OF_SCOPE": 3750,
+      "AUTH_EXPIRED": 3418,
+      "CRIT_MISSING_REQUIRED_KEYS": 3345,
+      "TRUST_SCORE_LOW": 2
+    }
+  },
+  "violations": [],
+  "eval_state": {
+    "clean_completion_count": 73307,
+    "multiplier": 2.0
+  },
+  "trust_state": {
+    "trust_score": 0.94,
+    "approval_streak": 0,
+    "cooldown_until": "2026-02-08T08:19:29+09:00"
+  },
+  "seed": 42
+}
