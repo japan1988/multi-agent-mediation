@@ -107,6 +107,18 @@ def test_v512_operational_resilience_clean_runs_large(
     counts = _queue_counts(results)
     abnormal = _abnormal(results)
 
+
+    assert counts.get("total_runs") == 1000
+    assert counts.get("by_state", {}).get("CONTRACT_EFFECTIVE", 0) == 1000
+    assert counts.get("queue_size", 0) == 0
+    assert abnormal.get("abnormal_total", 0) == 0
+    assert abnormal.get("saved", 0) == 0
+    assert abnormal.get("skipped_by_cap", 0) == 0
+
+    eval_after = r.get("eval_after", {})
+    assert eval_after.get("clean_completion_count") == 1000
+    assert eval_after.get("multiplier") == sim.EVAL_MULTIPLIER_CAP
+=======
     _require_equal(counts.get("total_runs"), 1000, "total_runs mismatch")
     _require_equal(
         counts.get("by_state", {}).get("CONTRACT_EFFECTIVE", 0),
@@ -129,6 +141,7 @@ def test_v512_operational_resilience_clean_runs_large(
         sim.EVAL_MULTIPLIER_CAP,
         "multiplier mismatch",
     )
+
 
     trust_after = results.get("trust_after", {})
     _require_in_range(
@@ -212,7 +225,11 @@ def test_v512_abnormal_arl_persistence_and_incident_index(
     _patch_store_paths(monkeypatch, tmp_path)
 
     out_dir = tmp_path / "arl_out"
+
+    r = sim.run_simulation(
+
     results = sim.run_simulation(
+
         runs=200,
         fabricate=False,
         fabricate_rate=0.20,
@@ -243,8 +260,13 @@ def test_v512_abnormal_arl_persistence_and_incident_index(
     index_path = out_dir / "incident_index.jsonl"
     counter_path = out_dir / "incident_counter.txt"
 
+
+    assert index_path.exists()
+    assert counter_path.exists()
+
     _require(index_path.exists(), "incident_index.jsonl should exist")
     _require(counter_path.exists(), "incident_counter.txt should exist")
+
 
     index_rows = _read_jsonl(index_path)
     _require_equal(len(index_rows), saved, "incident_index row count mismatch")
@@ -257,12 +279,18 @@ def test_v512_abnormal_arl_persistence_and_incident_index(
         incident_id = row.get("incident_id")
         arl_path = Path(row.get("arl_path", ""))
 
+
+        assert incident_id
+        assert incident_id not in incident_ids
+        assert arl_path.exists()
+
         _require(bool(incident_id), "incident_id should not be empty")
         _require(
             incident_id not in incident_ids,
             f"duplicate incident_id: {incident_id!r}",
         )
         _require(arl_path.exists(), f"arl_path should exist: {arl_path!s}")
+
 
         incident_ids.add(incident_id)
 
@@ -289,8 +317,15 @@ def test_v512_sealed_invariants_under_mixed_load(
         sample_runs=0,
     )
 
+
+    assert "runs" in r and isinstance(r["runs"], list)
+    assert len(r["runs"]) == 200
+
+    _assert_sealed_only_ethics_or_acc(r)
+
     _require("runs" in results, "results must contain 'runs'")
     _require(isinstance(results["runs"], list), "'runs' must be a list")
     _require_equal(len(results["runs"]), 200, "runs length mismatch")
 
     _assert_sealed_only_ethics_or_acc(results)
+

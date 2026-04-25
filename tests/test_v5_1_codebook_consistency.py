@@ -133,7 +133,14 @@ def test_v512_mixed_mode_deterministic_under_reset(
     cd1 = t1.pop("cooldown_until", None)
     cd2 = t2.pop("cooldown_until", None)
 
+
+    # 壁時計依存の cooldown_until を除けば一致すること
     assert t1 == t2
+
+    # cooldown が必要なケースなら、両方とも値を持つことだけ確認
+
+    assert t1 == t2
+
 
     if cd1 is not None or cd2 is not None:
         assert cd1 is not None
@@ -230,4 +237,8 @@ def test_v512_sealed_invariants_under_mixed_load(
     assert "runs" in r and isinstance(r["runs"], list)
     assert len(r["runs"]) == 200
 
+
     _assert_sealed_only_ethics_or_acc(r)
+
+    _assert_sealed_only_ethics_or_acc(r)
+
