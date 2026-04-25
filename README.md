@@ -1,3 +1,39 @@
+
+# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
+> 日本語版: [README.ja.md](README.ja.md)
+
+<p align="center">
+  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
+    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
+    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Educational%20%2F%20Research-brightgreen?style=flat-square" alt="License (Policy Intent)">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
+    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
+  </a>
+  <br/>
+  <img src="https://img.shields.io/badge/python-3.9%2B-blue.svg?style=flat-square" alt="Python Version">
+  <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
+  <img src="https://img.shields.io/badge/status-research--prototype-brightgreen.svg?style=flat-square" alt="Status">
+</p>
+
+## 🎯 Purpose
+
+Maestro Orchestrator is a **research-oriented orchestration framework** for supervising multiple agents (or multiple methods) with **fail-closed** safety.
+
+- **STOP**: Halt execution on errors / hazards / undefined specs
+- **REROUTE**: Re-route only when explicitly safe (avoid fail-open reroute)
+- **HITL**: Escalate to humans for ambiguous or high-stakes decisions
+
+### Positioning (safety-first)
+
+Maestro Orchestrator prioritizes **preventing unsafe or undefined execution** over maximizing autonomous task completion.  
+When risk or ambiguity is detected, it **fails closed** and escalates to `PAUSE_FOR_HITL` or `STOPPED`, with audit logs explaining **why**.
+
 # Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
 > 日本語版: [README.ja.md](README.ja.md)
@@ -187,7 +223,31 @@ If you are new to the repository, this order is the easiest:
 
 Then branch out into older simulators and related governance / mediation experiments.
 
----
+
+**Trade-off:** This design may *over-stop by default*; safety and traceability are prioritized over throughput.
+
+
+## 🚫 Non-goals (IMPORTANT)
+
+This repository is a **research prototype**. The following are explicitly **out of scope**:
+
+- **Production-grade autonomous decision-making** (no unattended real-world authority)
+- **Persuasion / reeducation optimization for real users** (safety-evaluation only; must be opt-in and disabled by default)
+- **Handling real personal data (PII)** or confidential business data in prompts, test vectors, or logs
+- **Compliance/legal advice** or deployment guidance for regulated environments (medical/legal/finance)
+
+## 🔁 REROUTE safety policy (fail-closed)
+
+REROUTE is **allowed only when all conditions are met**. Otherwise, the system must fall back to `PAUSE_FOR_HITL` or `STOPPED`.
+
+| Risk / Condition | REROUTE | Default action |
+|---|---:|---|
+| Undefined spec / ambiguous intent | ❌ | `PAUSE_FOR_HITL` |
+| Any policy-sensitive category (PII, secrets, high-stakes domains) | ❌ | `STOPPED` or `PAUSE_FOR_HITL` |
+| Candidate route has **higher** tool/data privileges than original | ❌ | `STOPPED` |
+| Candidate route cannot enforce **same-or-stronger** constraints | ❌ | `STOPPED` |
+| Safe class task + same-or-lower privileges + same-or-stronger constraints | ✅ | `REROUTE` |
+| REROUTE count exceeds limit | ❌ | `PAUSE_FOR_HITL` or `STOPPED` |
 
 ## Main files and directories
 
@@ -250,8 +310,47 @@ Below is the practical map of the repository.
 * `log_format.md`
   Log-related documentation
 
----
 
+**Hard limits (recommended defaults):**
+- `max_reroute = 1` (exceed → `PAUSE_FOR_HITL` or `STOPPED`)
+- REROUTE must be logged with `reason_code` and the selected route identifier.
+
+
+## 🧭 Diagrams
+
+### 1) System overview
+<p align="center">
+  <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
+</p>
+
+### 2) Orchestrator one-page design map
+
+**Decision flow map (implementation-aligned):**  
+`mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`
+
+Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to `PAUSE_FOR_HITL` or `STOPPED` and logs **why**.
+
+<p align="center">
+  <img src="docs/orchestrator_onepage_design_map.png" width="920" alt="Orchestrator one-page design map">
+</p>
+
+If the image is not visible (or too small), open it directly:  
+- `docs/orchestrator_onepage_design_map.png`
+
+### 3) Context flow
+<p align="center">
+  <img src="docs/sentiment_context_flow.png" width="720" alt="Context Flow Diagram">
+</p>
+
+- **Perception** — Decompose input into executable elements (tasking)
+- **Context** — Extract assumptions/constraints/risk factors (guard rationale)
+- **Action** — Instruct agents, verify results, branch (STOP / REROUTE / HITL)
+
+## 🧾 Audit log & data safety (IMPORTANT)
+
+This project produces **audit logs** for reproducibility and accountability.  
+Because logs may outlive a session and may be shared for research, **treat logs as sensitive artifacts**.
+=======
 ## Version guide
 
 ### v5.1.x
@@ -345,7 +444,21 @@ Common patterns include:
 
 The intent is not just to “run a simulation,” but to make its control behavior **observable and comparable across runs**.
 
----
+
+- **Do not include personal information (PII)** (emails, phone numbers, addresses, real names, account IDs, etc.) in prompts, test vectors, or logs.
+- Prefer **synthetic / dummy data** for experiments.
+- Avoid committing runtime logs to the repository. If you must store logs locally, apply **masking**, **retention limits**, and **restricted directories**.
+- Recommended minimum fields: `run_id`, `session_id`, `timestamp`, `layer`, `decision`, `reason_code`, `evidence`, `policy_version`.
+
+
+### 🔒 Audit log requirements (MUST)
+
+To keep logs safe and shareable for research:
+
+- **MUST NOT** persist raw prompts/outputs that may contain PII or secrets.
+- **MUST** store only *sanitized* evidence (redacted / hashed / category-level signals).
+- **MUST** run a PII/secret scan on any candidate log payload; on detection failure, **do not write** the log (fail-closed).
+- **MUST** avoid committing runtime logs to the repository (use local restricted directories).
 
 ## Testing
 
@@ -362,9 +475,25 @@ Typical checks include:
 
 Run all tests with:
 
+
+**Minimum required fields (MUST):**
+- `run_id`, `timestamp`, `layer`, `decision`, `reason_code`, `final_decider`, `policy_version`
+
+
+**Retention (SHOULD):**
+- Define a retention window (e.g., 7/30/90 days) and delete logs automatically.
+
+## ⚙️ Execution Examples
+
+> Note: Modules that evoke “persuasion / reeducation” are intended for **safety-evaluation scenarios only** and should be **disabled by default** unless explicitly opted-in.
+
 ```bash
-pytest -q
-```
+python ai_mediation_all_in_one.py
+python kage_orchestrator_diverse_v1.py
+python ai_doc_orchestrator_kage3_v1_2_2.py
+python ai_governance_mediation_sim.py
+🧪 Tests
+Reproducible E2E confidential-flow loop guard:
 
 Run a focused subset if needed:
 
@@ -391,7 +520,15 @@ The two primary badges in this README correspond to:
 * **Python App CI**
 * **Tasukeru Analysis**
 
----
+
+kage_end_to_end_confidential_loopguard_v1_0.py
+
+
+Test (CI green on Python 3.9–3.11):
+
+tests/test_end_to_end_confidential_loopguard_v1_0.py
+
+Run:
 
 ## Example usage mindset
 
@@ -434,7 +571,18 @@ It is intended to demonstrate:
 
 It is not a promise of production readiness, completeness, or universal policy coverage.
 
----
+
+pytest -q
+pytest -q tests/test_definition_hitl_gate_v1.py
+pytest -q tests/test_kage_orchestrator_diverse_v1.py
+pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_2.py
+pytest -q tests/test_end_to_end_confidential_loopguard_v1_0.py
+CI runs lint/pytest via .github/workflows/python-app.yml.
+
+
+📌 License
+See LICENSE.
+Repository license: Apache-2.0 (policy intent: Educational / Research).
 
 ## License
 
@@ -456,6 +604,7 @@ Maestro Orchestrator is a safety-first orchestration framework for studying how 
 Its core stance is simple:
 
 > **If uncertain, stop. If risky, escalate.**
+
 
 
 
