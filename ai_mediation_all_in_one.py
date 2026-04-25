@@ -204,8 +204,10 @@ class AIEMediator:
 
     def mediate(self):
 
+
     def mediate(self) -> None:
         """最大 max_rounds まで妥協交渉を行い、ハーモニースコアを評価する。"""
+
 
         if not self.agents:
             logprint("No agents provided; skipping mediation.")
@@ -213,7 +215,9 @@ class AIEMediator:
 
 
 
+
         # ログファイル初期化
+
 
         with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
             f.write("=== AI Mediation Log ===\n")
@@ -325,6 +329,7 @@ class AIEMediator:
             max_ratio = max(ratios.values()) if ratios else 0
 
 
+
             # 全体優先度の合計が 0 の場合は安全にゼロ除算を回避し、優先度ゼロとして扱う
             if total == 0.0:
                 ratios = {k: 0.0 for k in combined}
@@ -332,6 +337,7 @@ class AIEMediator:
                 ratios = {k: v / total for k, v in combined.items()}
 
             max_ratio = max(ratios.values()) if ratios else 0.0
+
 
 
             avg_relativity = (
@@ -480,8 +486,12 @@ class AIEMediator:
 def main():
 
 
+def main():
+
+
 def main() -> None:
     """デモ用のエージェントを構成して mediation を実行する。"""
+
 
     agents = [
         AI(
@@ -593,5 +603,6 @@ def run_demo() -> None:
 
 if __name__ == "__main__":
     run_demo()
+
 
 
