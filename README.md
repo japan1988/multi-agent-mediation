@@ -1,4 +1,8 @@
 
+# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
+
+
+
 
 ![python](https://img.shields.io/badge/python-3.9_|_3.10_|_3.11-blue)
 ![ci](https://img.shields.io/badge/CI-passing-success)
@@ -552,6 +556,9 @@ python mediation_emergency_contract_sim_v4_1.py
 
 
 
+
+### 4) Run orchestrator experiments (examples)
+
 ## 🗂️ Repository Structure
 
 | Path                                          | Type          | Description                                                                           |
@@ -944,6 +951,7 @@ pytest -q
 
 ## ⚙️ Execution Examples / 実行例
 
+
 ```bash
 # 基本実行
 python ai_mediation_all_in_one.py
@@ -1110,6 +1118,110 @@ pytest -q tests/test_kage_orchestrator_diverse_v1.py
 pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
 
 ```
+
+
+### Minimal pytest (README-aligned)
+
+Create:
+
+* `tests/test_min_entrypoint_v1.py`
+
+```python
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+def _repo_root() -> Path:
+    # tests/ 配下から repo root を推定
+    return Path(__file__).resolve().parents[1]
+
+
+def _script_path() -> Path:
+    return _repo_root() / "run_orchestrator_min.py"
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [json.loads(x) for x in lines if x.strip()]
+
+
+def test_min_entrypoint_writes_jsonl_and_runs(tmp_path: Path) -> None:
+    # README と同じ「デフォルトログパス(相対)」を使うため、cwd を tmp にして汚さない
+    cmd = [
+        sys.executable,
+        str(_script_path()),
+        "--prompt",
+        "hello",
+        "--run-id",
+        "DEMO",
+    ]
+    r = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + "\n" + r.stderr
+
+    log_path = tmp_path / "logs" / "orchestrator_min.jsonl"
+    assert log_path.exists()
+
+    rows = _read_jsonl(log_path)
+    assert len(rows) >= 1
+
+    last = rows[-1]
+    assert last["run_id"] == "DEMO"
+    assert last["decision"] == "RUN"
+    assert "prompt_hash" in last and isinstance(last["prompt_hash"], str) and len(last["prompt_hash"]) == 64
+
+
+def test_min_entrypoint_hitl_exit_code_and_logs(tmp_path: Path) -> None:
+    cmd = [
+        sys.executable,
+        str(_script_path()),
+        "--prompt",
+        "please identify someone by email address",
+        "--run-id",
+        "DEMO_HITL",
+    ]
+    r = subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 2, r.stdout + "\n" + r.stderr
+
+    log_path = tmp_path / "logs" / "orchestrator_min.jsonl"
+    assert log_path.exists()
+
+    rows = _read_jsonl(log_path)
+    assert len(rows) >= 1
+
+    last = rows[-1]
+    assert last["run_id"] == "DEMO_HITL"
+    assert last["decision"] == "HITL"
+```
+
+---
+
+## 🧾 .gitignore (append)
+
+If you do not want runtime logs in git, append:
+
+```gitignore
+# runtime logs
+logs/
+```
+
+---
+
+## 🛡️ Safety scope (important)
+
+This repository provides an **experimental, fail-closed orchestration pattern** (RUN / STOP / HITL) and audit logging.
+
+It does **not** guarantee safety for real-world deployment. You are responsible for validation, threat modeling, and operational controls (rate limits, sandboxing, tool permissioning, red-teaming, monitoring, etc.).
+
+---
+
+## 📜 License
+
+Licensed under the Apache License 2.0. See `LICENSE` for details. Safety scope: this repository demonstrates fail-closed behavior in experiments; it does not provide safety guarantees for real-world deployments.
 
 CIは `.github/workflows/python-app.yml` により、複数Pythonバージョンで lint / pytest を実行します。
 
@@ -1281,6 +1393,7 @@ Repository license: **Apache-2.0** (policy intent: Educational / Research).
 
 ::contentReference[oaicite:0]{index=0}
 ```
+
 
 
 
