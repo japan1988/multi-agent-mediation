@@ -75,6 +75,10 @@ This repository is designed for experimentation: it helps you model how an “or
 
 This repository is a **research-oriented orchestration framework** that supervises multiple agents (or multiple approaches) and performs **STOP / REROUTE / HITL (Human-in-the-Loop escalation)** when it detects **errors, hazards, or uncertainty**.
 
+
+</p>
+
+
 The main focus is not “negotiation itself,” but the following supervisory functions:
 
 - **Routing**: Task decomposition and assignment (which agent does what)
@@ -88,6 +92,7 @@ Maestro Orchestrator is a **research-oriented orchestration framework** for supe
 - **STOP**: Halt execution on errors / hazards / undefined specs
 - **REROUTE**: Re-route only when explicitly safe (avoid fail-open reroute)
 - **HITL**: Escalate to humans for ambiguous or high-stakes decisions
+
 
 
 
