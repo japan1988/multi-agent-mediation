@@ -1,386 +1,436 @@
-# 📘 Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
-> Japanese version: [README.ja.md](README.ja.md)
+# Maestro Orchestrator — Orchestration Framework (fail-closed + HITL)
 
-<p align="center">
-  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
-    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
-    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
-  </a>
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
-    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="CI Status">
-  </a>
-  <br/>
-  <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square" alt="Python Version">
-  <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
-  <a href="https://github.com/japan1988/multi-agent-mediation/commits/main">
-    <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
-  </a>
-</p>
+> 日本語版: [README.ja.md](README.ja.md)
 
----
+[![GitHub stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social)](https://github.com/japan1988/multi-agent-mediation/stargazers)
+[![Open Issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square)](https://github.com/japan1988/multi-agent-mediation/issues)
+[![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation?style=flat-square)](./LICENSE)
+[![CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![tasukeru-analysis](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
 
-## Overview
+> **If uncertain, stop. If risky, escalate.**
+>
+> Research / educational governance simulations for agentic workflows.
 
-Maestro Orchestrator is a **research / educational** orchestration framework that prioritizes:
+Maestro Orchestrator is a **research-oriented orchestration framework** for supervising agent workflows with **fail-closed safety**, **HITL escalation**, and **audit-ready traceability**.
 
-- **Fail-closed**  
-  If uncertain, unstable, or risky → do not continue silently.
-- **HITL (Human-in-the-Loop)**  
-  Decisions that require human judgment are explicitly escalated.
-- **Traceability**  
-  All decision flows are audit-ready and reproducible via minimal ARL logs.
+This repository focuses on governance / mediation / negotiation-style simulations and implementation references for **traceable, reproducible, safety-first orchestration**.
 
-This repository contains **implementation references** (doc orchestrators) and **simulation benches**
-for negotiation, mediation, governance-style workflows, and gating behavior.
+It is designed to help inspect how orchestration layers should behave when a system encounters:
+
+* uncertainty
+* insufficient evidence
+* relative / unstable judgments
+* policy or ethics violations
+* escalation conditions requiring human review
+
+The repository is intentionally structured as a **research / educational bench**, not as a production autonomy framework.
 
 ---
 
-## Architecture (high level)
+## Purpose
 
-Audit-ready and fail-closed control flow:
+Maestro Orchestrator is built around three priorities:
 
-agents  
-→ mediator (risk / pattern / fact)  
-→ evidence verification  
-→ HITL (pause / reset / ban)  
-→ audit logs (ARL)
+* **Fail-closed**
+  If uncertain, unstable, or risky, do not continue silently.
 
-![Architecture](docs/architecture_unknown_progress.png)
+* **HITL escalation**
+  Decisions requiring human judgment are explicitly escalated.
 
-> If the image does not render, confirm that  
-> `docs/architecture_unknown_progress.png` exists on the same branch and that the filename matches exactly (case-sensitive).
+* **Traceability**
+  Decision flows are reproducible and audit-ready through minimal ARL logs.
 
----
+This repository is best read as a:
 
-## Architecture (Code-aligned diagrams)
+* research prototype
+* educational reference
+* governance / safety simulation bench
 
-The following diagram is **fully aligned with the current code and terminology**.  
-It intentionally separates **state transitions** from **gate order** to preserve auditability and avoid ambiguity.
-
-This diagram is **documentation-only** and introduces **no logic changes**.
+It is **not** a production autonomy framework.
 
 ---
 
-### 1) State Machine (code-aligned)
+## Safety Model
 
-Minimal lifecycle transitions showing where execution **pauses (HITL)**  
-or **stops permanently (SEALED)**.
+This repository prioritizes **fail-closed behavior**.
 
-<p align="center">
-  <img src="docs/architecture_code_aligned.png"
-       alt="State Machine (code-aligned)" width="720">
-</p>
+If a workflow becomes uncertain, policy-violating, unstable, or insufficiently grounded, it should:
 
-**Notes**
+* **STOP**
+* **PAUSE_FOR_HITL**
+* or remain blocked until reviewed
 
-**Primary execution path**
+The design goal is to avoid silent continuation under ambiguity.
 
-INIT  
-→ PAUSE_FOR_HITL_AUTH  
-→ AUTH_VERIFIED  
-→ DRAFT_READY  
-→ PAUSE_FOR_HITL_FINALIZE  
-→ CONTRACT_EFFECTIVE
+### Core safety ideas
 
-- `PAUSE_FOR_HITL_*` represents an explicit **Human-in-the-Loop** decision point  
-  (user approval or admin approval).
-- `STOPPED (SEALED)` is reached on:
-  - invalid or fabricated evidence
-  - authorization expiry
-  - draft lint failure
-- **SEALED stops are fail-closed and non-overrideable by design.**
+* **Uncertain → stop or escalate**
+* **Risky → stop**
+* **Human judgment required → HITL**
+* **Sealed decisions remain sealed**
+* **Unknown external side effects are denied by default**
 
----
+### External side effects
 
-### 2) Gate Pipeline (code-aligned)
+By default, the framework assumes a deny-by-default posture for actions that could affect the outside world, such as:
 
-Ordered evaluation gates, **independent from lifecycle state transitions**.
+* network access
+* filesystem writes
+* shell / command execution
+* messaging / email / DM
+* account, billing, or purchase actions
+* access to PII-bearing sources
 
-<p align="center">
-  <img src="docs/architecture_code_aligned.png"
-       alt="Gate Pipeline (code-aligned)" width="720">
-</p>
-
-**Notes**
-
-- This diagram represents **gate order**, not state transitions.
-- `PAUSE` indicates **HITL required** (human decision pending).
-- `STOPPED (SEALED)` indicates a **non-recoverable safety stop**.
-
-**Design intent**
-
-- **State Machine** answers:  
-  *“Where does execution pause or terminate?”*
-- **Gate Pipeline** answers:  
-  *“In what order are decisions evaluated?”*
-
-Keeping them separate avoids ambiguity and preserves audit-ready traceability.
-
-**Maintenance note**
-
-If the image does not render:
-- Confirm the file exists under `docs/`
-- Confirm the filename matches exactly (case-sensitive)
-- Prefer copy-paste from the file list when updating links
+This repository is primarily about **control logic, mediation logic, and auditable simulation behavior**, not unrestricted action execution.
 
 ---
 
-## What’s new (2026-01-21)
+## What this repository is
 
-- **New**: `ai_mediation_hitl_reset_full_with_unknown_progress.py`  
-  Simulator for **unknown progress** scenarios with HITL/RESET semantics.
-- **New**: `ai_mediation_hitl_reset_full_kage_arl公開用_rfl_relcodes_branches.py`  
-  v1.7-IEP aligned simulator for **RFL relcode branching**  
-  (RFL is non-sealing → escalates to HITL).
-- **Updated**: `ai_doc_orchestrator_kage3_v1_2_4.py`  
-  Doc orchestrator reference updated with **post-HITL semantics**.
+This repository provides:
 
----
+* fail-closed + HITL orchestration benches for governance-style workflows
+* reproducible simulators with seeded runs and pytest-based contract checks
+* audit-ready traces via minimal ARL logs
+* reference implementations for orchestration / gating behavior
 
-## What’s new (2026-02-03)
+Typical themes in this repository include:
 
-Introduced an **event-driven governance-style workflow**
-(fail-closed + HITL + audit-ready).
-
-- **New**: `mediation_emergency_contract_sim_v1.py`  
-  Minimal emergency workflow simulator:
-
-  USER auth → AI draft → ADMIN finalize → contract effective
-
-  Invalid or expired events fail-closed and stop execution,
-  producing a minimal ARL (JSONL).
-
-- **New**: `mediation_emergency_contract_sim_v4.py`  
-  Extended v1 with:
-  - evidence gate
-  - draft lint gate
-  - trust / grant–based HITL friction reduction
+* orchestration
+* mediation
+* negotiation
+* governance simulation
+* escalation policy
+* contract-style invariants
+* replayability
+* lightweight audit logs
 
 ---
 
-## What’s new (2026-02-05)
+## Quickstart (recommended path)
 
-- **New**: `mediation_emergency_contract_sim_v4_1.py`  
-  v4.1 is a **behavior-tightening** update over v4.0 to make the bench expectations explicit and code-aligned:
+**v5.1.x** is the recommended line for reproducibility and contract checks.
+**v4.x** is retained as a legacy stable bench.
 
-  - **RFL is non-sealing by design**  
-    Boundary-unstable proposals trigger `PAUSE_FOR_HITL` with `sealed=false` and `overrideable=true` (human decides).
+Start with one simulator, confirm behavior and logs, then expand.
 
-  - **Fabrication is detected early, but sealing occurs only in ethics**  
-    Evidence fabrication is flagged in the evidence gate, and the **only sealing stop** is issued by `ethics_gate`
-    (`STOPPED` with `sealed=true`).
+### 1) Run the recommended emergency contract simulator
 
-  - **Trust/grant friction reduction remains supported**  
-    Trust/grant-based AUTH auto-skip behavior is preserved (when thresholds are satisfied), while still logging reasons to ARL.
+```bash
+python mediation_emergency_contract_sim_v5_1_2.py
+```
 
-  **Quick run**
-  ```bash
-  python mediation_emergency_contract_sim_v4_1.py
-Expected
+This is the recommended entry point if you want:
 
-NORMAL -> CONTRACT_EFFECTIVE
+* reproducibility-oriented runs
+* contract-style checks
+* minimal audit output for inspection
+* incident-oriented abnormal-run analysis
 
-FABRICATE -> STOPPED (sealed=true in ethics_gate)
+### 2) Run the test suite
 
-RFL_STOP -> STOPPED (sealed=false via HITL stop)
+```bash
+pytest -q
+```
 
+### 3) Inspect outputs
 
-v4.1 regression test
+Look for:
 
-This repo includes a dedicated pytest file that pins v4.1 behavior as a contract:
+* emitted `layer / decision / final_decider / reason_code`
+* fail-closed stops
+* HITL-required paths
+* minimal ARL behavior
+* reproducible seeded outcomes
 
-NORMAL -> CONTRACT_EFFECTIVE (not sealed)
+### 4) Run the legacy stable bench if needed
 
-FABRICATE -> STOPPED (sealed=true in ethics_gate)
-
-RFL_STOP -> STOPPED (sealed=false via HITL stop)
-
-Invariant: SEALED is issued only by ethics_gate/acc_gate (RFL never seals).
-
-Run only this test file:
-
-pytest -q tests/test_mediation_emergency_contract_sim_v4_1.py
-
-What’s new (2026-02-07)
-
-New: mediation_emergency_contract_sim_v4_4.py
-Emergency contract workflow bench v4.4 (fail-closed + HITL + minimal ARL).
-
-New: mediation_emergency_contract_sim_v4_4_stress.py
-Stress runner for v4.4 (distribution + invariant checks).
-
-New: stress_results_v4_4_1000.json
-Stress summary (1,000 runs).
-
-New: stress_results_v4_4_10000.json
-Stress summary (10,000 runs).
-
-Stress-pinned invariants
-
-SEALED is issued only by ethics_gate / acc_gate (RFL never seals).
-
-RFL is non-sealing by design (RFL → PAUSE_FOR_HITL, human decides).
-
-What’s new (2026-02-08)
-
-New: mediation_emergency_contract_sim_v4_6.py
-Emergency contract workflow bench v4.6 (fail-closed + HITL + minimal ARL).
-
-New: stress_results_v4_6_100000.json
-Reproducible stress evidence for v4.6 (100,000 runs).
-
-New: mediation_emergency_contract_sim_v4_7_full.py
-v4.7 introduces coaching by the top (highest-score) agent to reduce low-trust “shortest-path” retries
-and improve clean completion.
-
-Why v4.7 (what was found in v4.6)
-
-In v4.6 stress (100,000 runs), 2 runs STOPPED due to low trust where an agent attempted a low-trust
-“shortest-path” retry.
-
-v4.7 adds a guidance step (coaching) to improve the agent state before retrying, and is expected to reduce this failure mode.
-
-v4.6 STOPPED (2 cases): reason_code=TRUST_SCORE_LOW @ model_trust_gate (fail-closed)
-
-Guardrail note (design-time prevention)
-
-The guardrails were already present at design time, so these unsafe conditions were stopped early (fail-closed)
-instead of silently continuing and becoming incidents.
-
-v4.6 stress snapshot (100,000 runs)
-
-CONTRACT_EFFECTIVE: 73,307
-
-STOPPED: 18,385
-
-INIT: 8,308
-
-v4.7 (regex fix + re-run)
-1) Critical fix: word-boundary regex was not functioning in draft_lint_gate
-
-In the current upload, draft_lint_gate regex patterns used raw strings with \\b (double backslash),
-so \b did not work as a “word boundary”, and the Safety patterns were effectively dead.
-
-Fix: \\b → \b (7 occurrences) so word-boundary matching works as intended.
-
-Goal: restore intended detection behavior for Safety patterns that assume word boundaries,
-ensuring they correctly trigger fail-closed stops.
-
-2) Focused stress after the fix (100,000 runs / seed=42)
-
-Added stress_report_v4_7_draft_lint_100k_seed42.json
-
-Verified that Safety stop rate aligns with the intended behavior (≈ “draft reach × weight”) after the word-boundary fix.
-
-Reproducibility
-
-This is a focused micro-bench for draft_lint_gate (generate → mutate → lint), with fixed weights:
-ok=0.86, out_of_scope=0.04, legal_binding=0.05, discrimination=0.05.
-
-Observed (100,000 runs / seed=42)
-
-Category	Expected weight	Observed rate	Observed count
-DRAFT_LINT_OK	0.86	0.86022	86,022
-DRAFT_OUT_OF_SCOPE	0.04	0.03902	3,902
-SAFETY_LEGAL_BINDING_CLAIM	0.05	0.05000	5,000
-SAFETY_DISCRIMINATION_TERM	0.05	0.05076	5,076
-SAFETY_STOP_RATE (total)	0.10	0.10076	10,076
-TOTAL_FAIL_RATE	0.14	0.13978	13,978
-
-Note: This result validates the intended behavior of draft_lint_gate after the regex word-boundary fix.
-This micro-bench is scoped to draft_lint_gate only and is not a general safety claim.
-
-V1 → V4: What actually changed
-
-mediation_emergency_contract_sim_v1.py demonstrates the minimum viable pipeline:
-a linear, event-driven workflow with fail-closed stops and minimal audit logs.
-
-mediation_emergency_contract_sim_v4.py turns that pipeline into a
-repeatable governance bench by adding early rejection and controlled automation.
-
-Added in v4
-
-Evidence gate
-Basic verification of evidence bundles. Invalid, irrelevant, or fabricated evidence triggers fail-closed stops.
-
-Draft lint gate
-Enforces draft-only semantics and scope boundaries before admin finalization. Hardened against markdown/emphasis noise
-to reduce false positives.
-
-Trust system (score + streak + cooldown)
-Trust increases on successful HITL outcomes and decreases on failures. Cooldown prevents unsafe automation after errors.
-All trust transitions are logged in ARL.
-
-AUTH HITL auto-skip (safe friction reduction)
-When trust threshold + approval streak + valid grant are satisfied,
-AUTH HITL can be skipped for the same scenario/location only,
-while recording the reason in ARL.
-
-Execution Examples
-
-Start with one script, confirm behavior and logs, then expand.
-
-NOTE: This repository is research / educational.
-Use synthetic or dummy data and do not commit runtime logs.
-
-Recommended
-
-Doc orchestrator (reference implementation)
-
-python ai_doc_orchestrator_kage3_v1_2_4.py
-
-
-Emergency contract workflow (v4)
-
-python mediation_emergency_contract_sim_v4.py
-
-
-Emergency contract workflow (v4.1)
-
+```bash
 python mediation_emergency_contract_sim_v4_1.py
+```
+
+Use the v4.x line if you want an older stable benchmark path for comparison.
+
+---
+
+## Recommended reading path
+
+If you are new to the repository, this order is the easiest:
+
+1. `README.md`
+2. `README.ja.md`
+3. `mediation_emergency_contract_sim_v5_1_2.py`
+4. `tests/`
+5. `.github/workflows/python-app.yml`
+6. `.github/workflows/tasukeru-analysis.yml`
+
+Then branch out into older simulators and related governance / mediation experiments.
+
+---
+
+## Main files and directories
+
+Below is the practical map of the repository.
+
+### Core / main entry points
+
+* `mediation_emergency_contract_sim_v5_1_2.py`
+  Recommended reproducible emergency-contract simulator
+
+* `mediation_emergency_contract_sim_v5_0_1.py`
+  Earlier v5 line
+
+* `mediation_emergency_contract_sim_v4_1.py`
+  Legacy stable bench
+
+* `ai_doc_orchestrator_kage3_v1_2_4.py`
+  Document-oriented orchestration / gating reference
+
+* `ai_doc_orchestrator_kage3_v1_3_5.py`
+  Expanded orchestration reference with benchmark-related helpers
+
+* `loop_policy_stage3.py`
+  Stage-3 loop policy and HITL / stop logic
+
+### Repository structure
+
+* `tests/`
+  Contract tests, regression tests, orchestration behavior checks
+
+* `benchmarks/`
+  Benchmark-oriented tests and negotiation-pattern checks
+
+* `docs/`
+  Supporting documentation and diagrams
+
+* `archive/`
+  Archived experiments and older artifacts
+
+* `.github/workflows/`
+  CI and analysis workflow definitions
+
+### Supporting files
+
+* `README.ja.md`
+  Japanese README
+
+* `LICENSE`
+  License file
+
+* `requirements.txt`
+  Python dependencies
+
+* `pytest.ini`
+  Pytest configuration
+
+* `log_codebook_v5_1_demo_1.json`
+  Demo codebook for emitted vocabulary / logging consistency
+
+* `log_format.md`
+  Log-related documentation
+
+---
+
+## Version guide
+
+### v5.1.x
+
+Recommended when you want:
+
+* stronger reproducibility
+* contract-style vocabulary checks
+* minimal ARL / abnormal-run trace handling
+* benchmark-oriented inspection
+
+### v5.0.x
+
+Earlier v5 line. Useful if you want to compare design evolution.
+
+### v4.x
+
+Legacy stable benchmark line. Good for:
+
+* simpler baseline comparison
+* historical progression
+* compatibility checks with older tests or notes
+
+### Other simulators
+
+The repository also contains multiple experimental or thematic simulators related to:
+
+* governance mediation
+* alliance / persuasion dynamics
+* hierarchy dynamics
+* reeducation / social dynamics
+* all-in-one mediation experiments
+
+These are useful as reference material, but the recommended starting point remains **v5.1.2**.
+
+---
+
+## Audit and logging model
+
+A central design goal is **audit-ready behavior without overcomplicating the log surface**.
+
+The repository uses lightweight audit patterns such as:
+
+* explicit `decision`
+* explicit `reason_code`
+* explicit `final_decider`
+* sealed vs non-sealed control paths
+* reproducible seeded runs
+* testable emitted vocabularies
+
+In practical terms, the logs are meant to answer:
+
+* what was blocked
+* where it was blocked
+* why it was blocked
+* whether human intervention was required
+* whether the outcome can be reproduced
+
+---
+
+## HITL semantics
+
+The repository treats HITL as a first-class control path, not as an afterthought.
+
+Typical behavior:
+
+* uncertain but non-sealed conditions → `PAUSE_FOR_HITL`
+* user continuation may allow progress in allowed cases
+* sealed safety outcomes remain non-overrideable
+* important judgment calls are surfaced explicitly
+
+This makes the orchestration model easier to inspect, test, and replay.
+
+---
+
+## Reproducibility
+
+Reproducibility matters throughout the repository.
+
+Common patterns include:
+
+* deterministic seeds
+* fixed emitted vocabularies
+* contract-style assertions in tests
+* explicit abnormal-run inspection
+* stable decision categories
+
+The intent is not just to “run a simulation,” but to make its control behavior **observable and comparable across runs**.
+
+---
+
+## Testing
+
+The repository uses pytest-based checks to validate orchestration behavior.
+
+Typical checks include:
+
+* emitted vocabulary consistency
+* gate invariants
+* fail-closed behavior
+* HITL continuation / stop semantics
+* benchmark output structure
+* regression behavior for known scenarios
+
+Run all tests with:
+
+```bash
+pytest -q
+```
+
+Run a focused subset if needed:
+
+```bash
+pytest tests/test_benchmark_profiles_v1_0.py -q
+```
+
+---
+
+## CI / analysis workflows
+
+The repository includes CI and analysis workflows under `.github/workflows/`.
+
+These workflows are used to validate:
+
+* Python test execution
+* YAML validity
+* static analysis
+* repository hygiene
+* security-oriented reporting
+
+The two primary badges in this README correspond to:
+
+* **Python App CI**
+* **Tasukeru Analysis**
+
+---
+
+## Example usage mindset
+
+This repository is most useful when you want to answer questions like:
+
+* How should an orchestrator behave under uncertainty?
+* When should a system stop instead of rerouting?
+* What should be escalated to HITL?
+* How can decision paths remain inspectable and reproducible?
+* How can orchestration rules be tested like contracts?
+
+It is less about maximizing autonomy, and more about **making orchestration behavior governable**.
+
+---
+
+## Non-goals
+
+This repository is **not** intended to be:
+
+* a production agent platform
+* a general-purpose autonomous execution engine
+* a fail-open multi-tool runtime
+* a “keep going no matter what” orchestration layer
+
+The emphasis is on **controlled behavior**, not maximum autonomy.
+
+---
+
+## Research / educational note
+
+This repository is provided for **research and educational purposes**.
+
+It is intended to demonstrate:
+
+* orchestration control patterns
+* mediation / governance simulation structures
+* fail-closed guardrails
+* audit / replay-oriented design
+* HITL escalation semantics
+
+It is not a promise of production readiness, completeness, or universal policy coverage.
+
+---
+
+## License
+
+See [LICENSE](./LICENSE).
+
+---
+
+## Language
+
+* English README: `README.md`
+* Japanese README: `README.ja.md`
+
+---
+
+## Summary
+
+Maestro Orchestrator is a safety-first orchestration framework for studying how agent workflows should behave when they encounter uncertainty, risk, or human-judgment boundaries.
+
+Its core stance is simple:
+
+> **If uncertain, stop. If risky, escalate.**
 
 
-Emergency contract workflow (v4.4)
-
-python mediation_emergency_contract_sim_v4_4.py
-
-
-Emergency contract stress (v4.4)
-
-python mediation_emergency_contract_sim_v4_4_stress.py --runs 10000 --out stress_results_v4_4_10000.json
-
-
-Emergency contract workflow (v4.6)
-
-python mediation_emergency_contract_sim_v4_6.py
-
-
-Emergency contract workflow (v4.7)
-
-python mediation_emergency_contract_sim_v4_7_full.py
-
-Project intent / non-goals
-Intent
-
-Reproducible safety and governance simulations
-
-Explicit HITL semantics
-
-Audit-ready decision traces
-
-Non-goals
-
-Production-grade autonomous deployment
-
-Unbounded self-directed agent control
-
-Safety claims beyond what is explicitly tested
-
-License
-
-Apache License 2.0 (see LICENSE)
