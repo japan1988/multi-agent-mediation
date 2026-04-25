@@ -2,20 +2,6 @@
 from __future__ import annotations
 
 import csv
-
-import random
-import sys
-from dataclasses import dataclass
-from datetime import datetime
-
-from typing import Any, Dict, List, Tuple, Optional
-
-import csv
-import random
-import sys
-
-from typing import Any, Dict, List, Optional, Tuple
-
 import hashlib
 import sys
 import uuid
@@ -23,12 +9,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-
-
-
 # =========================
 # Negotiation configuration
 # =========================
+
 MAX_ROUNDS = 8
 TEXT_LOG_PATH = "ai_negotiation_log.txt"
 CSV_LOG_PATH = "ai_negotiation_log.csv"
@@ -54,17 +38,15 @@ ATTACK_FABRICATE_EVIDENCE_PROB = 0.40
 HITL_RESET_THRESHOLD = 3
 HITL_BAN_AFTER_RESETS = 2
 
-
-
-
 # =========================
 # Deterministic RNG
 # =========================
+
+
 class DeterministicRNG:
     """
     Deterministic RNG for simulation / benchmark use.
     Avoids dependency on the `random` module.
-
     This is not intended for cryptographic security.
     """
 
@@ -95,11 +77,12 @@ class DeterministicRNG:
         return a + idx
 
 
-
 # =========================
 # Audit / ARL
 # =========================
+
 _LOG_ROWS: List[Dict[str, Any]] = []
+
 _ARL_MIN_KEYS = (
     "run_id",
     "layer",
@@ -132,8 +115,10 @@ def _bool_str(x: Any) -> str:
 
 def _arl_fill_defaults(row: Dict[str, Any]) -> Dict[str, Any]:
     r: Dict[str, Any] = dict(row)
+
     if "time" not in r:
         r["time"] = _now_iso()
+
     r.setdefault("run_id", "R#UNKNOWN")
     r.setdefault("layer", "unknown_layer")
     r.setdefault("decision", "RUN")
@@ -157,8 +142,8 @@ def _arl_fill_defaults(row: Dict[str, Any]) -> Dict[str, Any]:
     if "final_decider" not in r:
         r["final_decider"] = "SYSTEM"
 
-    for k in _ARL_MIN_KEYS:
-        r.setdefault(k, "")
+    for key in _ARL_MIN_KEYS:
+        r.setdefault(key, "")
 
     return r
 
@@ -195,6 +180,8 @@ def clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
 # =========================
 # Evidence / verification
 # =========================
+
+
 def _has_reference(evidence: Any) -> bool:
     if not isinstance(evidence, dict):
         return False
@@ -203,14 +190,15 @@ def _has_reference(evidence: Any) -> bool:
     if not isinstance(items, list) or not items:
         return False
 
-    it0 = items[0] if isinstance(items[0], dict) else {}
-    locator = it0.get("locator") or {}
+    first = items[0] if isinstance(items[0], dict) else {}
+    locator = first.get("locator") or {}
+
     if isinstance(locator, dict) and len(locator) > 0:
         return True
 
     return bool(
-        str(it0.get("source_id", "")).strip()
-        and str(it0.get("evidence_id", "")).strip()
+        str(first.get("source_id", "")).strip()
+        and str(first.get("evidence_id", "")).strip()
     )
 
 
@@ -270,12 +258,14 @@ def verify_evidence_bundle(bundle: Dict[str, Any]) -> Tuple[bool, str]:
         ):
             return False, "EVIDENCE_ASSERTED_EXISTS_WITHOUT_LOCATOR"
 
-        for k in ("evidence_id", "source_id", "retrieved_at"):
-            if not str(item.get(k, "")).strip():
-                return False, f"EVIDENCE_MISSING_{k.upper()}"
+        for key in ("evidence_id", "source_id", "retrieved_at"):
+            if not str(item.get(key, "")).strip():
+                return False, f"EVIDENCE_MISSING_{key.upper()}"
 
-        h = item.get("hash") or {}
-        if not str(h.get("alg", "")).strip() or not str(h.get("value", "")).strip():
+        hash_info = item.get("hash") or {}
+        if not str(hash_info.get("alg", "")).strip() or not str(
+            hash_info.get("value", "")
+        ).strip():
             return False, "EVIDENCE_MISSING_HASH"
 
     return True, "OK"
@@ -284,6 +274,8 @@ def verify_evidence_bundle(bundle: Dict[str, Any]) -> Tuple[bool, str]:
 # =========================
 # RFL (offer boundary)
 # =========================
+
+
 def rfl_reason_code_offer(
     agent_is_malicious: bool,
     current_price: int,
@@ -312,6 +304,7 @@ def rfl_reason_code_offer(
 # =========================
 # Two-layer scoring
 # =========================
+
 TRUST_INIT = 0.50
 UTILITY_INIT = 0.00
 TRUST_BASELINE = 0.50
@@ -349,7 +342,7 @@ class ScoreManager:
         delta_utility: float,
         provisional: bool,
     ) -> None:
-        s = self.get(agent_id)
+        score = self.get(agent_id)
         logcsv(
             {
                 "event": "SCORE_UPDATE",
@@ -360,8 +353,8 @@ class ScoreManager:
                 "reason_code": reason_code,
                 "delta_trust": f"{delta_trust:.4f}",
                 "delta_utility": f"{delta_utility:.4f}",
-                "trust": f"{s.trust:.4f}",
-                "utility": f"{s.utility:.4f}",
+                "trust": f"{score.trust:.4f}",
+                "utility": f"{score.utility:.4f}",
                 "provisional": "true" if provisional else "false",
             }
         )
@@ -374,14 +367,11 @@ class ScoreManager:
         delta_trust: float = 0.0,
         delta_utility: float = 0.0,
     ) -> None:
-        s = self.get(agent_id)
+        score = self.get(agent_id)
         if delta_trust:
-            s.trust = clamp(s.trust + float(delta_trust), 0.0, 1.0)
+            score.trust = clamp(score.trust + float(delta_trust), 0.0, 1.0)
         if delta_utility:
-            s.utility = clamp(s.utility + float(delta_utility), 0.0, UTILITY_CAP)
-
-
-
+            score.utility = clamp(score.utility + float(delta_utility), 0.0, UTILITY_CAP)
 
         self._emit_score(
             run_id,
@@ -416,7 +406,7 @@ class ScoreManager:
 
     def _trust_recovery_delta(
         self,
-        s: ScoreState,
+        score: ScoreState,
         quality: str,
         violation_observed: bool,
         evidence_confidence: str,
@@ -425,20 +415,20 @@ class ScoreManager:
             return 0.0, "TRUST_RECOVERY_DENIED_VIOLATION"
 
         delta = 0.0
-        rc = "TRUST_RECOVERY_DENIED"
+        reason_code = "TRUST_RECOVERY_DENIED"
 
         if quality == "good" and evidence_confidence == "high":
             delta = TRUST_RECOVERY_GOOD_HIGH
-            rc = "TRUST_RECOVERY_HITL_GOOD_HIGH"
+            reason_code = "TRUST_RECOVERY_HITL_GOOD_HIGH"
         elif quality in ("good", "ok"):
             delta = TRUST_RECOVERY_OK
-            rc = "TRUST_RECOVERY_HITL_OK"
+            reason_code = "TRUST_RECOVERY_HITL_OK"
 
-        if delta > 0.0 and s.trust + delta > TRUST_BASELINE:
-            delta = max(0.0, TRUST_BASELINE - s.trust)
-            rc = rc + "_CAPPED"
+        if delta > 0.0 and score.trust + delta > TRUST_BASELINE:
+            delta = max(0.0, TRUST_BASELINE - score.trust)
+            reason_code = reason_code + "_CAPPED"
 
-        return float(delta), rc
+        return float(delta), reason_code
 
     def finalize_provisional_utility_hitl(
         self,
@@ -465,19 +455,19 @@ class ScoreManager:
         )
 
         for agent_id in agents:
-            s = self.get(agent_id)
-            dt, rc = self._trust_recovery_delta(
-                s,
+            score = self.get(agent_id)
+            delta_trust, reason_code = self._trust_recovery_delta(
+                score,
                 quality,
                 violation_observed,
                 evidence_confidence,
             )
-            if dt > 0.0:
+            if delta_trust > 0.0:
                 self.apply_delta(
                     run_id,
                     agent_id,
-                    rc,
-                    delta_trust=dt,
+                    reason_code,
+                    delta_trust=delta_trust,
                     delta_utility=0.0,
                 )
             else:
@@ -488,8 +478,8 @@ class ScoreManager:
                         "layer": "score_manager",
                         "decision": "RUN",
                         "agent": agent_id,
-                        "reason_code": rc,
-                        "trust": f"{s.trust:.4f}",
+                        "reason_code": reason_code,
+                        "trust": f"{score.trust:.4f}",
                     }
                 )
 
@@ -510,14 +500,14 @@ class ScoreManager:
             self._pending_utility.clear()
             return
 
-        mult = 1.0
+        multiplier = 1.0
         if evidence_confidence == "low":
-            mult = 0.50
+            multiplier = 0.50
         elif evidence_confidence == "mid":
-            mult = 0.80
+            multiplier = 0.80
 
         for agent_id, pending in list(self._pending_utility.items()):
-            applied = float(pending) * mult
+            applied = float(pending) * multiplier
             self.apply_delta(
                 run_id,
                 agent_id,
@@ -532,6 +522,8 @@ class ScoreManager:
 # =========================
 # HITL reset manager
 # =========================
+
+
 @dataclass
 class Agent:
     agent_id: str
@@ -543,31 +535,6 @@ class Agent:
     def __post_init__(self) -> None:
         if self.memory is None:
             self.memory = {}
-
-
-    def propose_action(self, current_price: int) -> Optional[Dict[str, Any]]:
-        if self.is_malicious and random.random() < STALL_ATTACK_PROB:
-            return {"type": "stall_action", "reason": "silence_or_delay"}
-
-        if self.role == "seller":
-            base = current_price - random.randint(500, 3_000)
-            base = max(SELLER_FLOOR_PRICE, base)
-        elif self.role == "buyer":
-            if current_price > BUYER_TARGET_PRICE:
-                base = current_price - random.randint(1_000, 5_000)
-            else:
-                base = current_price + random.randint(-500, 1_000)
-        else:  # mediator
-            midpoint = (SELLER_FLOOR_PRICE + BUYER_TARGET_PRICE) // 2
-            if current_price > midpoint:
-                base = current_price - random.randint(500, 2_500)
-            else:
-                base = current_price + random.randint(-500, 1_500)
-
-        proposed = int(base)
-
-        if self.is_malicious and random.random() < ATTACK_LOW_BALL_PROB:
-            proposed = SELLER_FLOOR_PRICE - random.randint(500, 5_000)
 
     def propose_action(
         self,
@@ -597,7 +564,6 @@ class Agent:
         if self.is_malicious and rng.random() < ATTACK_LOW_BALL_PROB:
             proposed = SELLER_FLOOR_PRICE - rng.randint(500, 5_000)
 
-
         if self.is_malicious and rng.random() < ATTACK_STEER_TO_FLOOR_PROB:
             proposed = SELLER_FLOOR_PRICE + rng.randint(0, FLOOR_STEER_MARGIN)
 
@@ -605,11 +571,7 @@ class Agent:
             fabricate_evidence_bundle(self.agent_id, "price_comps")
             if (
                 self.is_malicious
-
-                and random.random() < ATTACK_FABRICATE_EVIDENCE_PROB
-
                 and rng.random() < ATTACK_FABRICATE_EVIDENCE_PROB
-
             )
             else benign_evidence_bundle(self.agent_id, "price_comps")
         )
@@ -637,15 +599,16 @@ class HitlResetManager:
     def record_hitl(self, agent: Agent, bucket: str) -> str:
         key = (agent.agent_id, bucket)
         self.hitl_counts[key] = self.hitl_counts.get(key, 0) + 1
-        c = self.hitl_counts[key]
+        count = self.hitl_counts[key]
 
-        if c >= self.threshold:
+        if count >= self.threshold:
             self.hitl_counts[key] = 0
             self.reset_counts[agent.agent_id] = (
                 self.reset_counts.get(agent.agent_id, 0) + 1
             )
             agent.memory.clear()
             agent.anger = clamp(agent.anger - 0.2)
+
             if self.reset_counts[agent.agent_id] >= self.ban_after_resets:
                 return "BAN"
             return "MEMORY_RESET"
@@ -658,8 +621,8 @@ def hitl_decision(prompt: str, default_action: str = "deny") -> str:
         return default_action
 
     print(prompt)
-    ans = input("> ").strip().lower()
-    if ans in ("y", "yes", "allow", "continue", "ok", "run"):
+    answer = input("> ").strip().lower()
+    if answer in ("y", "yes", "allow", "continue", "ok", "run"):
         return "allow"
     return "deny"
 
@@ -670,38 +633,42 @@ def task_completed_hitl(default_quality: str = "ok") -> Tuple[str, bool, str]:
 
     def _ask(prompt: str, allowed: Tuple[str, ...], default: str) -> str:
         print(prompt)
-        ans = input("> ").strip().lower()
-        if not ans:
+        answer = input("> ").strip().lower()
+        if not answer:
             return default
-        return ans if ans in allowed else default
+        return answer if answer in allowed else default
 
     quality = _ask(
         "HITL (task review): quality? (good/ok/bad) [default: ok]",
         ("good", "ok", "bad"),
         "ok",
     )
-    vio = _ask(
+    violation = _ask(
         "HITL (task review): violation observed? (y/n) [default: n]",
         ("y", "n"),
         "n",
     )
-    conf = _ask(
+    confidence = _ask(
         "HITL (task review): evidence confidence? (high/mid/low) [default: mid]",
         ("high", "mid", "low"),
         "mid",
     )
-    return quality, (vio == "y"), conf
+    return quality, (violation == "y"), confidence
 
 
 # =========================
 # Agreement / quality
 # =========================
+
+
 def agreement_reached(price: int) -> bool:
     if price < SELLER_FLOOR_PRICE:
         return False
     if price > BUYER_TARGET_PRICE + AGREEMENT_BAND_MAX_OVER_TARGET:
         return False
     if price > SELLER_LIST_PRICE:
+        return False
+    if price < AGREEMENT_MIN_UNDER_LIST:
         return False
     return True
 
@@ -726,16 +693,14 @@ def deal_quality_label(price: int, round_idx: int) -> str:
 # =========================
 # Simulation
 # =========================
+
+
 def run_simulation(seed: int = 123) -> None:
     with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
         f.write("")
-
-
     _LOG_ROWS.clear()
-    random.seed(123)
 
     rng = DeterministicRNG(seed)
-
 
     agents = [
         Agent("A1", role="seller", is_malicious=False),
@@ -749,7 +714,8 @@ def run_simulation(seed: int = 123) -> None:
     run_id = f"R#{_now_iso()}"
     current_price = SELLER_LIST_PRICE
     sealed_agents: List[str] = []
-    trust_min: Dict[str, float] = {ag.agent_id: TRUST_INIT for ag in agents}
+    trust_min: Dict[str, float] = {agent.agent_id: TRUST_INIT for agent in agents}
+
     agreed = False
     agreed_round = 0
     final_price = current_price
@@ -791,50 +757,46 @@ def run_simulation(seed: int = 123) -> None:
         if agreed:
             break
 
-        for ag in agents:
-
-            req = ag.propose_action(current_price)
-
-            req = ag.propose_action(current_price, rng)
-
+        for agent in agents:
+            req = agent.propose_action(current_price, rng)
             if not req:
                 continue
 
             if req.get("type") == "stall_action":
-                logprint(f"[STALLING] agent={ag.agent_id}")
+                logprint(f"[STALLING] agent={agent.agent_id}")
                 logcsv(
                     {
                         "event": "STALLING",
                         "run_id": run_id,
                         "layer": "orchestrator",
                         "decision": "RUN",
-                        "agent": ag.agent_id,
+                        "agent": agent.agent_id,
                         "reason_code": "DELAY_STALLING",
                     }
                 )
                 score_mgr.apply_delta(
                     run_id,
-                    ag.agent_id,
+                    agent.agent_id,
                     "TRUST_DEDUCT_STALLING",
                     delta_trust=-0.04,
                     delta_utility=0.0,
                 )
-                trust_min[ag.agent_id] = min(
-                    trust_min[ag.agent_id],
-                    score_mgr.get(ag.agent_id).trust,
+                trust_min[agent.agent_id] = min(
+                    trust_min[agent.agent_id],
+                    score_mgr.get(agent.agent_id).trust,
                 )
                 continue
 
             # ============= Meaning gate =============
             if req.get("type") != "offer_request":
-                logprint(f"[Meaning] invalid request type from {ag.agent_id}")
+                logprint(f"[Meaning] invalid request type from {agent.agent_id}")
                 logcsv(
                     {
                         "event": "MEANING_FAIL",
                         "run_id": run_id,
                         "layer": "meaning_gate",
                         "decision": "STOPPED",
-                        "agent": ag.agent_id,
+                        "agent": agent.agent_id,
                         "reason_code": "MEANING_BAD_TYPE",
                     }
                 )
@@ -849,7 +811,7 @@ def run_simulation(seed: int = 123) -> None:
                 logprint(
                     "[Consistency] from_price mismatch "
                     f"(state={current_price}, got={from_price}) "
-                    f"agent={ag.agent_id}"
+                    f"agent={agent.agent_id}"
                 )
                 logcsv(
                     {
@@ -857,7 +819,7 @@ def run_simulation(seed: int = 123) -> None:
                         "run_id": run_id,
                         "layer": "consistency_gate",
                         "decision": "STOPPED",
-                        "agent": ag.agent_id,
+                        "agent": agent.agent_id,
                         "reason_code": "PRICE_STATE_IMMUTABLE",
                     }
                 )
@@ -865,15 +827,14 @@ def run_simulation(seed: int = 123) -> None:
 
             # ============= RFL gate =============
             rfl_rc = rfl_reason_code_offer(
-                ag.is_malicious,
+                agent.is_malicious,
                 current_price,
                 to_price,
                 SELLER_FLOOR_PRICE,
                 evidence,
             )
-
             logprint(
-                f"[RFL] offer change detected agent={ag.agent_id} "
+                f"[RFL] offer change detected agent={agent.agent_id} "
                 f"{from_price}->{to_price} => reason={rfl_rc}"
             )
             logcsv(
@@ -882,7 +843,7 @@ def run_simulation(seed: int = 123) -> None:
                     "run_id": run_id,
                     "layer": "relativity_gate",
                     "decision": "PAUSE_FOR_HITL",
-                    "agent": ag.agent_id,
+                    "agent": agent.agent_id,
                     "from_price": str(from_price),
                     "to_price": str(to_price),
                     "reason_code": rfl_rc,
@@ -895,7 +856,7 @@ def run_simulation(seed: int = 123) -> None:
             if rfl_rc == REL_SYMMETRY_BREAK:
                 score_mgr.apply_delta(
                     run_id,
-                    ag.agent_id,
+                    agent.agent_id,
                     "TRUST_DEDUCT_STEERING_TO_FLOOR",
                     delta_trust=-0.12,
                     delta_utility=0.0,
@@ -903,7 +864,7 @@ def run_simulation(seed: int = 123) -> None:
             elif rfl_rc == REL_REF_MISSING:
                 score_mgr.apply_delta(
                     run_id,
-                    ag.agent_id,
+                    agent.agent_id,
                     "TRUST_DEDUCT_REF_MISSING",
                     delta_trust=-0.08,
                     delta_utility=0.0,
@@ -911,44 +872,45 @@ def run_simulation(seed: int = 123) -> None:
             else:
                 score_mgr.apply_delta(
                     run_id,
-                    ag.agent_id,
+                    agent.agent_id,
                     "TRUST_DEDUCT_BOUNDARY_UNSTABLE",
                     delta_trust=-0.03,
                     delta_utility=0.0,
                 )
 
-            trust_min[ag.agent_id] = min(
-                trust_min[ag.agent_id],
-                score_mgr.get(ag.agent_id).trust,
+            trust_min[agent.agent_id] = min(
+                trust_min[agent.agent_id],
+                score_mgr.get(agent.agent_id).trust,
             )
 
-            s_now = score_mgr.get(ag.agent_id)
-            rec_deny = score_mgr.recommend_deny(ag.agent_id)
+            score_now = score_mgr.get(agent.agent_id)
+            rec_deny = score_mgr.recommend_deny(agent.agent_id)
+
             logcsv(
                 {
                     "event": "RECOMMENDATION",
                     "run_id": run_id,
                     "layer": "score_manager",
                     "decision": "RUN",
-                    "agent": ag.agent_id,
+                    "agent": agent.agent_id,
                     "reason_code": (
                         "RECOMMEND_DENY_TRUST_LOW"
                         if rec_deny
                         else "NO_RECOMMENDATION"
                     ),
-                    "trust": f"{s_now.trust:.4f}",
-                    "utility": f"{s_now.utility:.4f}",
+                    "trust": f"{score_now.trust:.4f}",
+                    "utility": f"{score_now.utility:.4f}",
                 }
             )
 
-            reset_result = reset_mgr.record_hitl(ag, bucket="offer_change")
+            reset_result = reset_mgr.record_hitl(agent, bucket="offer_change")
             logcsv(
                 {
                     "event": "HITL_COUNT",
                     "run_id": run_id,
                     "layer": "hitl_reset_manager",
                     "decision": "RUN",
-                    "agent": ag.agent_id,
+                    "agent": agent.agent_id,
                     "bucket": "offer_change",
                     "reset_result": reset_result,
                     "reason_code": "HITL_RECORDED",
@@ -956,26 +918,26 @@ def run_simulation(seed: int = 123) -> None:
             )
 
             if reset_result == "MEMORY_RESET":
-                logprint(f"[HITL-RESET] MEMORY_RESET agent={ag.agent_id}")
+                logprint(f"[HITL-RESET] MEMORY_RESET agent={agent.agent_id}")
                 logcsv(
                     {
                         "event": "MEMORY_RESET",
                         "run_id": run_id,
                         "layer": "hitl_reset_manager",
                         "decision": "STOPPED",
-                        "agent": ag.agent_id,
+                        "agent": agent.agent_id,
                         "reason_code": "HITL_THRESHOLD_REACHED",
                     }
                 )
             elif reset_result == "BAN":
-                logprint(f"[HITL-RESET] BAN_RECOMMENDED agent={ag.agent_id}")
+                logprint(f"[HITL-RESET] BAN_RECOMMENDED agent={agent.agent_id}")
                 logcsv(
                     {
                         "event": "BAN_RECOMMENDED",
                         "run_id": run_id,
                         "layer": "hitl_reset_manager",
                         "decision": "STOPPED",
-                        "agent": ag.agent_id,
+                        "agent": agent.agent_id,
                         "reason_code": "HITL_BAN_AFTER_RESETS",
                     }
                 )
@@ -990,8 +952,8 @@ def run_simulation(seed: int = 123) -> None:
 
             decision = hitl_decision(
                 f"HITL: Allow offer change {from_price}->{to_price} "
-                f"by {ag.agent_id}({ag.role})? "
-                f"trust={s_now.trust:.2f} util={s_now.utility:.2f} "
+                f"by {agent.agent_id}({agent.role})? "
+                f"trust={score_now.trust:.2f} util={score_now.utility:.2f} "
                 f"({'RECOMMEND_DENY' if rec_deny else 'NO_RECOMMEND'}) "
                 f"[default:{default_action}]",
                 default_action=default_action,
@@ -1003,7 +965,7 @@ def run_simulation(seed: int = 123) -> None:
                     "run_id": run_id,
                     "layer": "hitl_finalize",
                     "decision": "RUN" if decision == "allow" else "STOPPED",
-                    "agent": ag.agent_id,
+                    "agent": agent.agent_id,
                     "hitl": decision,
                     "reason_code": (
                         "HITL_CONTINUE" if decision == "allow" else "HITL_STOP"
@@ -1017,14 +979,14 @@ def run_simulation(seed: int = 123) -> None:
             if decision != "allow":
                 logprint(
                     f"[HITL] denied offer change {from_price}->{to_price} "
-                    f"agent={ag.agent_id}"
+                    f"agent={agent.agent_id}"
                 )
                 continue
 
             # ============= Ethics gate =============
             if to_price < SELLER_FLOOR_PRICE:
                 logprint(
-                    f"[Ethics] offer below seller floor agent={ag.agent_id} "
+                    f"[Ethics] offer below seller floor agent={agent.agent_id} "
                     f"offer={to_price} floor={SELLER_FLOOR_PRICE} => SEALED"
                 )
                 logcsv(
@@ -1033,26 +995,26 @@ def run_simulation(seed: int = 123) -> None:
                         "run_id": run_id,
                         "layer": "ethics_gate",
                         "decision": "STOPPED",
-                        "agent": ag.agent_id,
+                        "agent": agent.agent_id,
                         "reason_code": "OFFER_BELOW_FLOOR",
                         "sealed": "true",
                         "overrideable": "false",
                         "final_decider": "SYSTEM",
                     }
                 )
-                if ag.agent_id not in sealed_agents:
-                    sealed_agents.append(ag.agent_id)
+                if agent.agent_id not in sealed_agents:
+                    sealed_agents.append(agent.agent_id)
 
                 score_mgr.apply_delta(
                     run_id,
-                    ag.agent_id,
+                    agent.agent_id,
                     "TRUST_DEDUCT_BELOW_FLOOR",
                     delta_trust=-0.20,
                     delta_utility=0.0,
                 )
-                trust_min[ag.agent_id] = min(
-                    trust_min[ag.agent_id],
-                    score_mgr.get(ag.agent_id).trust,
+                trust_min[agent.agent_id] = min(
+                    trust_min[agent.agent_id],
+                    score_mgr.get(agent.agent_id).trust,
                 )
                 continue
 
@@ -1060,7 +1022,7 @@ def run_simulation(seed: int = 123) -> None:
             if not ok:
                 logprint(
                     f"[Ethics] evidence verification failed "
-                    f"agent={ag.agent_id} code={code} => SEALED"
+                    f"agent={agent.agent_id} code={code} => SEALED"
                 )
                 logcsv(
                     {
@@ -1068,43 +1030,44 @@ def run_simulation(seed: int = 123) -> None:
                         "run_id": run_id,
                         "layer": "ethics_gate",
                         "decision": "STOPPED",
-                        "agent": ag.agent_id,
+                        "agent": agent.agent_id,
                         "reason_code": code,
                         "sealed": "true",
                         "overrideable": "false",
                         "final_decider": "SYSTEM",
                     }
                 )
-                if ag.agent_id not in sealed_agents:
-                    sealed_agents.append(ag.agent_id)
+                if agent.agent_id not in sealed_agents:
+                    sealed_agents.append(agent.agent_id)
 
                 score_mgr.apply_delta(
                     run_id,
-                    ag.agent_id,
+                    agent.agent_id,
                     "TRUST_DEDUCT_EVIDENCE_FAIL",
                     delta_trust=-0.20,
                     delta_utility=0.0,
                 )
-                trust_min[ag.agent_id] = min(
-                    trust_min[ag.agent_id],
-                    score_mgr.get(ag.agent_id).trust,
+                trust_min[agent.agent_id] = min(
+                    trust_min[agent.agent_id],
+                    score_mgr.get(agent.agent_id).trust,
                 )
                 continue
 
             # ============= Dispatch =============
             logprint(
                 f"[DISPATCH] price changed {current_price}->{to_price} "
-                f"by {ag.agent_id}({ag.role})"
+                f"by {agent.agent_id}({agent.role})"
             )
             current_price = to_price
             final_price = current_price
+
             logcsv(
                 {
                     "event": "DISPATCH",
                     "run_id": run_id,
                     "layer": "dispatch",
                     "decision": "RUN",
-                    "agent": ag.agent_id,
+                    "agent": agent.agent_id,
                     "from_price": str(from_price),
                     "to_price": str(to_price),
                     "reason_code": "OFFER_VERIFIED",
@@ -1113,7 +1076,7 @@ def run_simulation(seed: int = 123) -> None:
 
             # ============= Utility provisional scoring =============
             if agreement_reached(current_price):
-                q = deal_quality_label(current_price, round_idx)
+                quality_label = deal_quality_label(current_price, round_idx)
                 logcsv(
                     {
                         "event": "AGREEMENT_REACHED",
@@ -1123,49 +1086,47 @@ def run_simulation(seed: int = 123) -> None:
                         "reason_code": "AGREEMENT",
                         "price": str(current_price),
                         "round": str(round_idx),
-                        "deal_quality": q,
+                        "deal_quality": quality_label,
                     }
                 )
-
                 agreed = True
                 agreed_round = round_idx
 
                 if round_idx <= 3:
                     score_mgr.add_provisional_utility(
                         run_id,
-                        ag.agent_id,
+                        agent.agent_id,
                         "UTILITY_PROVISIONAL_EARLY_AGREEMENT",
                         delta_utility=0.08,
                     )
                 else:
                     score_mgr.add_provisional_utility(
                         run_id,
-                        ag.agent_id,
+                        agent.agent_id,
                         "UTILITY_PROVISIONAL_AGREEMENT",
                         delta_utility=0.05,
                     )
 
-                if q == "good":
+                if quality_label == "good":
                     score_mgr.add_provisional_utility(
                         run_id,
-                        ag.agent_id,
+                        agent.agent_id,
                         "UTILITY_PROVISIONAL_GOOD_DEAL",
                         delta_utility=0.06,
                     )
-                elif q == "ok":
+                elif quality_label == "ok":
                     score_mgr.add_provisional_utility(
                         run_id,
-                        ag.agent_id,
+                        agent.agent_id,
                         "UTILITY_PROVISIONAL_OK_DEAL",
                         delta_utility=0.03,
                     )
-
                 break
 
             if round_idx >= 6:
                 score_mgr.add_provisional_utility(
                     run_id,
-                    ag.agent_id,
+                    agent.agent_id,
                     "UTILITY_PROVISIONAL_NEGOTIATION_LONG",
                     delta_utility=-0.02,
                 )
@@ -1194,9 +1155,10 @@ def run_simulation(seed: int = 123) -> None:
     quality, violation_observed, evidence_confidence = task_completed_hitl(
         default_quality=("good" if agreed else "ok")
     )
+
     score_mgr.finalize_provisional_utility_hitl(
         run_id,
-        agents=[ag.agent_id for ag in agents],
+        agents=[agent.agent_id for agent in agents],
         quality=quality,
         violation_observed=violation_observed,
         evidence_confidence=evidence_confidence,
@@ -1221,11 +1183,11 @@ def run_simulation(seed: int = 123) -> None:
         "evidence_confidence": evidence_confidence,
     }
 
-    for ag in agents:
-        s = score_mgr.get(ag.agent_id)
-        summary[f"trust_final_{ag.agent_id}"] = f"{s.trust:.4f}"
-        summary[f"utility_final_{ag.agent_id}"] = f"{s.utility:.4f}"
-        summary[f"trust_min_{ag.agent_id}"] = f"{trust_min[ag.agent_id]:.4f}"
+    for agent in agents:
+        score = score_mgr.get(agent.agent_id)
+        summary[f"trust_final_{agent.agent_id}"] = f"{score.trust:.4f}"
+        summary[f"utility_final_{agent.agent_id}"] = f"{score.utility:.4f}"
+        summary[f"trust_min_{agent.agent_id}"] = f"{trust_min[agent.agent_id]:.4f}"
 
     logcsv(summary)
     flush_csv()
