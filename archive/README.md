@@ -1,48 +1,26 @@
-# Archive (research history)
 
-This directory contains archived / legacy / exploratory materials kept for traceability and comparison.
+Comment (paste as-is)
 
-## Policy
-- Not part of active entrypoints.
-- Not guaranteed to run. (Compatibility may intentionally drift.)
-- CI should not depend on this directory unless explicitly wired.
-- Prefer keeping only the current/recommended entrypoints at repo root.
+CI is still red because pytest is collecting legacy tests under tests/ that import modules which are no longer present at repo root:
 
-## Structure (convention)
-- `orchestrator_versions/`: older orchestrator variants
-- `experiments/`: one-off runs / exploratory scripts
-- `legacy_tests/`: tests not used by current CI (optional; may not exist yet)
+tests/test_ai_doc_orchestrator_kage3_v1_2_4.py → ModuleNotFoundError: ai_doc_orchestrator_kage3_v1_2_4
 
-## Current references (repo root)
-These are intentionally kept at repo root for discoverability and execution examples.
+tests/test_ai_doc_orchestrator_kage3_v1_3_5.py → ModuleNotFoundError: ai_doc_orchestrator_kage3_v1_3_5
 
-- `mediation_emergency_contract_sim_v5_1_2.py`: latest recommended emergency contract simulator (v5.1.2).
-- `ai_doc_orchestrator_kage3_v1_2_4.py`: reference for post-HITL semantics (doc-orchestrator line).
+tests/test_doc_orchestrator_with_mediator_v1_0.py → ModuleNotFoundError: ai_doc_orchestrator_with_mediator_v1_0
 
-## Planned moves (initial)
-- `ai_doc_orchestrator_kage3_v1_2_2.py` → `archive/orchestrator_versions/`
-- (Keep in repo root) `ai_doc_orchestrator_kage3_v1_2_4.py` as a current reference
-- (Keep in repo root) `mediation_emergency_contract_sim_v5_1_2.py` as the recommended simulator entrypoint
+pytest.ini excludes archive/, but these failing tests live in tests/, so they are still part of the CI suite.
 
-## Move checklist (must-do before moving)
-1. Search references (GitHub search):
-   - `ai_doc_orchestrator_kage3_v1_2_2`
-   - `ai_doc_orchestrator_kage3_v1_2_4`
-   - `mediation_emergency_contract_sim_v5_1_2`
-2. Check also:
-   - `README.md`, `README.ja.md`, `tests/`, `scripts/`, `agents.yaml`, `.github/workflows`
-3. If referenced by imports/tests/docs, update paths or keep in root.
-4. Move via `git mv` (recommended) or GitHub UI rename.
-5. Run CI/tests.
+Next step (recommended):
+
+Move version-pinned tests from tests/ to archive/legacy_tests/ (or mark them skipped), keeping only maintained tests in tests/.
+
+CI stays green, while legacy variants remain runnable manually (best-effort).
 
 ## How to use (optional)
 - To run maintained tests (CI suite):
   - `pytest -q`
 
-- To run archived tests (best-effort, may fail):
-  - CI excludes `archive/` via `pytest.ini` (`norecursedirs = archive`).
-  - If `archive/legacy_tests/` exists, run locally by overriding config, e.g.:
-    - `pytest -q -c /dev/null archive/legacy_tests`
-    - (Windows) `pytest -q -c NUL archive/legacy_tests`
 
 Note: `archive/` is best-effort; only maintained entrypoints/tests are expected to stay green.
+

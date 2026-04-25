@@ -312,11 +312,15 @@ class AIEMediator:
 
 
 def build_demo_agents() -> List[AI]:
+
+    # Demo agents are defined in a function to prevent any import-time execution surprises.
+
     """
     Construct the demo agent set used by the CLI entry point.
     Keeping this as a helper avoids instantiating agents (and a mediator)
     at module import time, so consumers can safely import the models.
     """
+
     return [
         AI(
             id="AI-A",
@@ -349,13 +353,21 @@ def build_demo_agents() -> List[AI]:
     ]
 
 
+
+def main() -> None:
+
 def main(agents: List[AI]) -> None:
     # Reset per-run buffers/files to avoid cross-run contamination in the same interpreter.
     _LOG_ROWS.clear()  # <-- FIX: clear global CSV buffer on each run
 
+
     # Reset text log on each run (optional; comment out if you want append-only)
     with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
         f.write("")
+
+
+    agents = build_demo_agents()
+
 
     mediator = AIEMediator(agents)
     agreed, offer = mediator.mediate()
