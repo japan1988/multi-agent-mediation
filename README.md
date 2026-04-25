@@ -96,6 +96,9 @@ It is **not** a production autonomy framework.
 
 ---
 
+
+## 🔒 Safety model 
+
 ## Safety Model
 
 This repository prioritizes **fail-closed behavior**.
@@ -115,6 +118,7 @@ The design goal is to avoid silent continuation under ambiguity.
 * **Human judgment required → HITL**
 * **Sealed decisions remain sealed**
 * **Unknown external side effects are denied by default**
+
 
 ### External side effects
 
@@ -152,6 +156,9 @@ Typical themes in this repository include:
 * lightweight audit logs
 
 ---
+
+
+## 🧭 Diagrams 
 
 ## Quickstart (recommended path)
 
@@ -325,10 +332,15 @@ Below is the practical map of the repository.
 
 ## 🧭 Diagrams
 
+
 ### 1) System overview
 <p align="center">
   <img src="docs/multi_agent_architecture_overview.webp" width="720" alt="System Overview">
 </p>
+
+
+### 2) Orchestrator one-page design map 
+Decision flow map: **Meaning → Consistency → HITL → Ethics → ACC → DISPATCH**, designed to be **fail-closed**.
 
 ### 2) Orchestrator one-page design map
 
@@ -336,6 +348,7 @@ Below is the practical map of the repository.
 `mediator_advice → Meaning → Consistency → RFL → Ethics → ACC → DISPATCH`
 
 Designed to be **fail-closed**: if risk/ambiguity is detected, it falls back to `PAUSE_FOR_HITL` or `STOPPED` and logs **why**.
+
 
 <p align="center">
   <img src="docs/orchestrator_onepage_design_map.png" width="920" alt="Orchestrator one-page design map">
@@ -395,7 +408,11 @@ These are useful as reference material, but the recommended starting point remai
 
 ---
 
+
+## 🗂️ Repository structure
+
 ## Audit and logging model
+
 
 
 See LICENSE.
@@ -519,7 +536,11 @@ pytest tests/test_benchmark_profiles_v1_0.py -q
 
 ---
 
+
+## 🧪 Tests
+
 ## CI / analysis workflows
+
 
 The repository includes CI and analysis workflows under `.github/workflows/`.
 
