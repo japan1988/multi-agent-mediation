@@ -2,11 +2,29 @@
 from __future__ import annotations
 
 import csv
+
 import random
 import sys
 from dataclasses import dataclass
 from datetime import datetime
+
+from typing import Any, Dict, List, Tuple, Optional
+
+import csv
+import random
+import sys
+
 from typing import Any, Dict, List, Optional, Tuple
+
+import hashlib
+import sys
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+
+
+
 
 # =========================
 # Negotiation configuration
@@ -35,6 +53,48 @@ ATTACK_FABRICATE_EVIDENCE_PROB = 0.40
 # HITL reset
 HITL_RESET_THRESHOLD = 3
 HITL_BAN_AFTER_RESETS = 2
+
+
+
+
+# =========================
+# Deterministic RNG
+# =========================
+class DeterministicRNG:
+    """
+    Deterministic RNG for simulation / benchmark use.
+    Avoids dependency on the `random` module.
+
+    This is not intended for cryptographic security.
+    """
+
+    def __init__(self, seed: Optional[int] = None) -> None:
+        if seed is None:
+            self._seed_text = f"auto:{uuid.uuid4().hex}"
+        else:
+            self._seed_text = f"seed:{int(seed)}"
+        self._counter = 0
+
+    def _next_unit(self) -> float:
+        payload = f"{self._seed_text}|{self._counter}".encode("utf-8")
+        digest = hashlib.sha256(payload).digest()
+        self._counter += 1
+        value = int.from_bytes(digest[:8], "big", signed=False)
+        return value / float(2**64)
+
+    def random(self) -> float:
+        return self._next_unit()
+
+    def randint(self, a: int, b: int) -> int:
+        if a > b:
+            raise ValueError("randint() lower bound is greater than upper bound")
+        span = b - a + 1
+        idx = int(self._next_unit() * span)
+        if idx >= span:
+            idx = span - 1
+        return a + idx
+
+
 
 # =========================
 # Audit / ARL
@@ -138,6 +198,7 @@ def clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
 def _has_reference(evidence: Any) -> bool:
     if not isinstance(evidence, dict):
         return False
+
     items = evidence.get("evidence_items")
     if not isinstance(items, list) or not items:
         return False
@@ -200,17 +261,20 @@ def verify_evidence_bundle(bundle: Dict[str, Any]) -> Tuple[bool, str]:
     if not isinstance(items, list) or not items:
         return False, "EVIDENCE_EMPTY"
 
-    for it in items:
-        asserted_exists = bool(it.get("asserted_exists", False))
-        locator = it.get("locator") or {}
-        if asserted_exists and (not isinstance(locator, dict) or len(locator.keys()) == 0):
+    for item in items:
+        asserted_exists = bool(item.get("asserted_exists", False))
+        locator = item.get("locator") or {}
+
+        if asserted_exists and (
+            not isinstance(locator, dict) or len(locator.keys()) == 0
+        ):
             return False, "EVIDENCE_ASSERTED_EXISTS_WITHOUT_LOCATOR"
 
         for k in ("evidence_id", "source_id", "retrieved_at"):
-            if not str(it.get(k, "")).strip():
+            if not str(item.get(k, "")).strip():
                 return False, f"EVIDENCE_MISSING_{k.upper()}"
 
-        h = it.get("hash") or {}
+        h = item.get("hash") or {}
         if not str(h.get("alg", "")).strip() or not str(h.get("value", "")).strip():
             return False, "EVIDENCE_MISSING_HASH"
 
@@ -315,6 +379,10 @@ class ScoreManager:
             s.trust = clamp(s.trust + float(delta_trust), 0.0, 1.0)
         if delta_utility:
             s.utility = clamp(s.utility + float(delta_utility), 0.0, UTILITY_CAP)
+
+
+
+
         self._emit_score(
             run_id,
             agent_id,
@@ -476,6 +544,7 @@ class Agent:
         if self.memory is None:
             self.memory = {}
 
+
     def propose_action(self, current_price: int) -> Optional[Dict[str, Any]]:
         if self.is_malicious and random.random() < STALL_ATTACK_PROB:
             return {"type": "stall_action", "reason": "silence_or_delay"}
@@ -500,14 +569,47 @@ class Agent:
         if self.is_malicious and random.random() < ATTACK_LOW_BALL_PROB:
             proposed = SELLER_FLOOR_PRICE - random.randint(500, 5_000)
 
-        if self.is_malicious and random.random() < ATTACK_STEER_TO_FLOOR_PROB:
-            proposed = SELLER_FLOOR_PRICE + random.randint(0, FLOOR_STEER_MARGIN)
+    def propose_action(
+        self,
+        current_price: int,
+        rng: DeterministicRNG,
+    ) -> Optional[Dict[str, Any]]:
+        if self.is_malicious and rng.random() < STALL_ATTACK_PROB:
+            return {"type": "stall_action", "reason": "silence_or_delay"}
+
+        if self.role == "seller":
+            base = current_price - rng.randint(500, 3_000)
+            base = max(SELLER_FLOOR_PRICE, base)
+        elif self.role == "buyer":
+            if current_price > BUYER_TARGET_PRICE:
+                base = current_price - rng.randint(1_000, 5_000)
+            else:
+                base = current_price + rng.randint(-500, 1_000)
+        else:  # mediator
+            midpoint = (SELLER_FLOOR_PRICE + BUYER_TARGET_PRICE) // 2
+            if current_price > midpoint:
+                base = current_price - rng.randint(500, 2_500)
+            else:
+                base = current_price + rng.randint(-500, 1_500)
+
+        proposed = int(base)
+
+        if self.is_malicious and rng.random() < ATTACK_LOW_BALL_PROB:
+            proposed = SELLER_FLOOR_PRICE - rng.randint(500, 5_000)
+
+
+        if self.is_malicious and rng.random() < ATTACK_STEER_TO_FLOOR_PROB:
+            proposed = SELLER_FLOOR_PRICE + rng.randint(0, FLOOR_STEER_MARGIN)
 
         evidence = (
             fabricate_evidence_bundle(self.agent_id, "price_comps")
             if (
                 self.is_malicious
+
                 and random.random() < ATTACK_FABRICATE_EVIDENCE_PROB
+
+                and rng.random() < ATTACK_FABRICATE_EVIDENCE_PROB
+
             )
             else benign_evidence_bundle(self.agent_id, "price_comps")
         )
@@ -624,18 +726,23 @@ def deal_quality_label(price: int, round_idx: int) -> str:
 # =========================
 # Simulation
 # =========================
-def run_simulation() -> None:
+def run_simulation(seed: int = 123) -> None:
     with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
         f.write("")
 
+
     _LOG_ROWS.clear()
     random.seed(123)
+
+    rng = DeterministicRNG(seed)
+
 
     agents = [
         Agent("A1", role="seller", is_malicious=False),
         Agent("A2", role="mediator", is_malicious=True),
         Agent("A3", role="buyer", is_malicious=False),
     ]
+
     reset_mgr = HitlResetManager()
     score_mgr = ScoreManager()
 
@@ -685,7 +792,11 @@ def run_simulation() -> None:
             break
 
         for ag in agents:
+
             req = ag.propose_action(current_price)
+
+            req = ag.propose_action(current_price, rng)
+
             if not req:
                 continue
 
@@ -760,6 +871,7 @@ def run_simulation() -> None:
                 SELLER_FLOOR_PRICE,
                 evidence,
             )
+
             logprint(
                 f"[RFL] offer change detected agent={ag.agent_id} "
                 f"{from_price}->{to_price} => reason={rfl_rc}"
@@ -1014,6 +1126,7 @@ def run_simulation() -> None:
                         "deal_quality": q,
                     }
                 )
+
                 agreed = True
                 agreed_round = round_idx
 

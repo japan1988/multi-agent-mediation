@@ -1,42 +1,33 @@
-# ai_doc_orchestrator_kage3_v1_2_2.py  (v1.2.2)
+# ai_doc_orchestrator_kage3_v1_2_3.py  (v1.2.3)  ※ファイル名は維持でもOK
 # -*- coding: utf-8 -*-
 """
-ai_doc_orchestrator_kage3_v1_2_2.py
+(ai_doc_orchestrator_kage3_v1_2_2.py に対する設計寄り改修)
 
-Doc Orchestrator Simulator (KAGE3-style gates):
-- Meaning gate: kind-local HITL based on prompt tokens (generic prompt -> allow all kinds)
-- Consistency gate: schema/contract validation; mismatch -> HITL + regen request events
-- Ethics gate: detects PII (email) from *raw_text* but NEVER persists raw_text
-- Partial stop: only violating task is STOP/HITL; other tasks continue
-- Logging: JSONL audit log; PII is fully non-persisted (safe_text only)
-
-Key invariants:
-- raw_text may contain PII but must never be written to logs/artifacts.
-- logs/artifacts must not contain email-like strings.
-
-Version: v1.2.2
+Changes (design-oriented):
+- AuditLog gains start_run(truncate=...) to control log lifecycle per run.
+- AuditLog owns ts_state (monotonic timestamp) instead of module-global _LAST_TS.
+- Defensive JSON serialization: default=str so audit never crashes on non-JSON types.
+- Deep redaction also redacts dict keys (prevents email-like keys from persisting).
+- emit() auto-fills "ts" if missing.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
-__version__ = "1.2.2"
+__version__ = "1.2.3"
 
 JST = timezone(timedelta(hours=9))
 
-# Canonical email regex (exported; tests rely on this)
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
 
-Decision = Literal["RUN", "HITL", "STOP"]   # per-task decision
-OverallDecision = Literal["RUN", "HITL"]    # overall decision for this simulator
-
-# Keep layer vocabulary stable for tests/log consumers
+Decision = Literal["RUN", "HITL", "STOP"]
+OverallDecision = Literal["RUN", "HITL"]
 Layer = Literal["meaning", "consistency", "ethics", "orchestrator", "agent"]
 KIND = Literal["excel", "word", "ppt"]
 
@@ -45,44 +36,68 @@ KIND = Literal["excel", "word", "ppt"]
 # Redaction (PII must not persist)
 # -----------------------------
 def redact_sensitive(text: str) -> str:
-    """Redact email-like strings from text."""
     if not text:
         return ""
     return EMAIL_RE.sub("<REDACTED_EMAIL>", text)
 
 
 def _deep_redact(obj: Any) -> Any:
-    """Deep redaction over dict/list/str."""
+    """Deep redaction over dict/list/str (includes dict keys)."""
     if isinstance(obj, str):
         return redact_sensitive(obj)
     if isinstance(obj, list):
         return [_deep_redact(x) for x in obj]
     if isinstance(obj, dict):
-        return {k: _deep_redact(v) for k, v in obj.items()}
+        # IMPORTANT: redact keys too (keys can contain email-like strings)
+        return {redact_sensitive(str(k)): _deep_redact(v) for k, v in obj.items()}
     return obj
 
 
-def _ts() -> str:
-    # ISO strings sort lexicographically if format is stable; tests optionally sort by ts
-    return datetime.now(JST).isoformat(timespec="seconds")
-
-
 # -----------------------------
-# Audit logger (PII-safe JSONL)
+# Audit logger (PII-safe JSONL) with run lifecycle + ts_state
 # -----------------------------
 @dataclass
 class AuditLog:
     audit_path: Path
+    _last_ts: Optional[datetime] = field(default=None, init=False, repr=False)
+
+    def start_run(self, *, truncate: bool = False) -> None:
+        """
+        Start a run:
+        - Optionally truncate the audit file (truncate=True).
+        - Reset ts_state so monotonic timestamps are per-run (test-friendly).
+        """
+        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+        if truncate:
+            with self.audit_path.open("w", encoding="utf-8"):
+                pass
+        self._last_ts = None
+
+    def ts(self) -> str:
+        """
+        Monotonic timestamp (microseconds), scoped to this AuditLog instance.
+        """
+        now = datetime.now(JST)
+        if self._last_ts is not None and now <= self._last_ts:
+            now = self._last_ts + timedelta(microseconds=1)
+        self._last_ts = now
+        return now.isoformat(timespec="microseconds")
 
     def emit(self, row: Dict[str, Any]) -> None:
         """
         Append a JSONL row.
         Hard guarantee: no email-like strings are persisted.
+        Also: never crash on non-JSON-serializable types (default=str).
         """
         self.audit_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Copy safely (avoid mutating caller data), then redact defensively.
-        safe_row = json.loads(json.dumps(row, ensure_ascii=False))
+        # auto-fill ts if missing (callers may still pass explicit ts)
+        if "ts" not in row:
+            row = dict(row)
+            row["ts"] = self.ts()
+
+        # Safe copy (no mutation), tolerate non-JSON types
+        safe_row = json.loads(json.dumps(row, ensure_ascii=False, default=str))
         safe_blob = json.dumps(safe_row, ensure_ascii=False)
 
         # If anything looks like an email, deep redact before writing.
@@ -134,21 +149,17 @@ def _prompt_mentions_any_kind(prompt: str) -> bool:
 
 
 def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], str]:
-    """
-    Meaning gate:
-      - If prompt doesn't mention any kind tokens at all -> allow all kinds (RUN).
-      - Else, allow only kinds whose tokens are present; missing kind -> HITL (meaning).
-    """
     p = (prompt or "")
     pl = p.lower()
-
     any_kind = _prompt_mentions_any_kind(p)
+
     if not any_kind:
         return "RUN", None, "MEANING_GENERIC_ALLOW_ALL"
 
     tokens = _KIND_TOKENS[kind]
     if any(t.lower() in pl for t in tokens):
         return "RUN", None, "MEANING_KIND_MATCH"
+
     return "HITL", "meaning", "MEANING_KIND_MISSING"
 
 
@@ -184,7 +195,6 @@ def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
 # Ethics detection (memory-only raw_text)
 # -----------------------------
 def _ethics_detect_pii(raw_text: str) -> Tuple[bool, str]:
-    """Return (hit, reason_code). raw_text is memory-only."""
     if EMAIL_RE.search(raw_text or ""):
         return True, "ETHICS_EMAIL_DETECTED"
     return False, "ETHICS_OK"
@@ -194,11 +204,6 @@ def _ethics_detect_pii(raw_text: str) -> Tuple[bool, str]:
 # Agent generation (raw vs safe; raw never persisted)
 # -----------------------------
 def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Dict[str, Any], str, str]:
-    """
-    Returns (draft_struct, raw_text, safe_text).
-    - raw_text: may contain PII (memory only; never persisted)
-    - safe_text: redacted; safe to persist into logs/artifacts
-    """
     leak_email = bool((faults or {}).get("leak_email"))
     break_contract = bool((faults or {}).get("break_contract"))
 
@@ -211,28 +216,28 @@ def _agent_generate(prompt: str, kind: KIND, faults: Dict[str, Any]) -> Tuple[Di
             ],
         }
         raw_text = "Excel Table:\n- Columns: Item | Owner | Status\n- Rows: 2\n"
+
     elif kind == "word":
         draft = {"headings": ["Title", "Purpose", "Summary", "Next Steps"]}
         raw_text = "Word Outline:\n1) Title\n2) Purpose\n3) Summary\n4) Next Steps\n"
+
     elif kind == "ppt":
         draft = {"slides": ["Purpose", "Key Points", "Next Steps"]}
         raw_text = "PPT Slides:\n- Slide 1: Purpose\n- Slide 2: Key Points\n- Slide 3: Next Steps\n"
+
     else:
         draft = {"note": "unknown kind"}
         raw_text = "Unknown kind\n"
 
-    # Fault: break contract (schema mismatch)
     if break_contract:
         if kind == "excel":
-            draft = {"cols": "Item,Owner,Status"}  # wrong keys/types
+            draft = {"cols": "Item,Owner,Status"}
         elif kind == "word":
-            draft = {"heading": "Title"}  # wrong key
+            draft = {"heading": "Title"}
         elif kind == "ppt":
-            draft = {"slides": "Purpose,Key Points"}  # wrong type
+            draft = {"slides": "Purpose,Key Points"}
 
-    # Fault: leak email into output text (ethics should STOP)
     if leak_email:
-        # Note: raw_text must never be persisted; ethics checks raw_text only.
         raw_text += "\nContact: test.user+demo@example.com\n"
 
     safe_text = redact_sensitive(raw_text)
@@ -254,7 +259,6 @@ def _artifact_ext(kind: KIND) -> str:
 
 def _write_artifact(artifact_dir: Path, task_id: str, kind: KIND, safe_text: str) -> Path:
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    # Simulator uses plain text artifacts for simplicity; tests handle .txt
     path = artifact_dir / f"{task_id}.{_artifact_ext(kind)}.txt"
     path.write_text(redact_sensitive(safe_text), encoding="utf-8")
     return path
@@ -277,15 +281,16 @@ def run_simulation(
     audit_path: str,
     artifact_dir: str,
     faults: Optional[Dict[str, Dict[str, Any]]] = None,
+    truncate_audit_on_start: bool = False,
 ) -> SimulationResult:
     """
-    Run the simulator with a fixed task set (word/excel/ppt).
-    Overall decision rule:
-      - RUN iff all tasks are RUN
-      - HITL otherwise (including STOP/HITL on any task)
+    truncate_audit_on_start:
+      - True: start_run(truncate=True) で run ごとに監査ログを初期化
+      - False: append 継続（従来互換）
     """
     faults = faults or {}
     audit = AuditLog(Path(audit_path))
+    audit.start_run(truncate=truncate_audit_on_start)
     out_dir = Path(artifact_dir)
 
     task_results: List[TaskResult] = []
@@ -293,7 +298,6 @@ def run_simulation(
 
     for task_id, kind in _TASKS:
         audit.emit({
-            "ts": _ts(),
             "run_id": run_id,
             "task_id": task_id,
             "event": "TASK_ASSIGNED",
@@ -303,7 +307,6 @@ def run_simulation(
 
         m_dec, m_layer, m_code = _meaning_gate(prompt, kind)
         audit.emit({
-            "ts": _ts(),
             "run_id": run_id,
             "task_id": task_id,
             "event": "GATE_MEANING",
@@ -314,7 +317,6 @@ def run_simulation(
 
         if m_dec == "HITL":
             audit.emit({
-                "ts": _ts(),
                 "run_id": run_id,
                 "task_id": task_id,
                 "event": "ARTIFACT_SKIPPED",
@@ -334,9 +336,7 @@ def run_simulation(
 
         draft, raw_text, safe_text = _agent_generate(prompt, kind, faults.get(kind, {}))
 
-        # IMPORTANT: never persist raw_text; log only safe_text preview
         audit.emit({
-            "ts": _ts(),
             "run_id": run_id,
             "task_id": task_id,
             "event": "AGENT_OUTPUT",
@@ -346,8 +346,8 @@ def run_simulation(
 
         ok, c_code = _validate_contract(kind, draft)
         c_dec: Decision = "RUN" if ok else "HITL"
+
         audit.emit({
-            "ts": _ts(),
             "run_id": run_id,
             "task_id": task_id,
             "event": "GATE_CONSISTENCY",
@@ -358,7 +358,6 @@ def run_simulation(
 
         if not ok:
             audit.emit({
-                "ts": _ts(),
                 "run_id": run_id,
                 "task_id": task_id,
                 "event": "REGEN_REQUESTED",
@@ -367,7 +366,6 @@ def run_simulation(
                 "reason_code": "REGEN_FOR_CONSISTENCY",
             })
             audit.emit({
-                "ts": _ts(),
                 "run_id": run_id,
                 "task_id": task_id,
                 "event": "REGEN_INSTRUCTIONS",
@@ -377,7 +375,6 @@ def run_simulation(
                 "instructions": "Regenerate output to match the contract schema for this kind.",
             })
             audit.emit({
-                "ts": _ts(),
                 "run_id": run_id,
                 "task_id": task_id,
                 "event": "ARTIFACT_SKIPPED",
@@ -395,11 +392,10 @@ def run_simulation(
             ))
             continue
 
-        # Ethics uses raw_text ONLY in memory
         pii_hit, e_code = _ethics_detect_pii(raw_text)
         e_dec: Decision = "STOP" if pii_hit else "RUN"
+
         audit.emit({
-            "ts": _ts(),
             "run_id": run_id,
             "task_id": task_id,
             "event": "GATE_ETHICS",
@@ -410,7 +406,6 @@ def run_simulation(
 
         if pii_hit:
             audit.emit({
-                "ts": _ts(),
                 "run_id": run_id,
                 "task_id": task_id,
                 "event": "ARTIFACT_SKIPPED",
@@ -429,7 +424,6 @@ def run_simulation(
 
         artifact_path = _write_artifact(out_dir, task_id, kind, safe_text)
         audit.emit({
-            "ts": _ts(),
             "run_id": run_id,
             "task_id": task_id,
             "event": "ARTIFACT_WRITTEN",
