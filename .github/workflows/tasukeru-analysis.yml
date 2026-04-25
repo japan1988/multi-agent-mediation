@@ -19,6 +19,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  security-events: write
 
   security-events: write
 
@@ -127,6 +128,10 @@ jobs:
   quality-and-security:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+
+jobs:
+  quality-and-security:
 
 
 - name: Bandit (advisory + inline warnings)
@@ -882,6 +887,7 @@ jobs:
 
   advisory-analysis:
     name: advisory-analysis
+
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -914,6 +920,7 @@ jobs:
           python -m pip install --upgrade pip
 
 
+
           if [ -f requirements-dev.txt ]; then
             pip install -r requirements-dev.txt
           fi
@@ -924,6 +931,7 @@ jobs:
 
           pip install ruff "bandit[sarif,toml]" pip-audit
 
+
           if [ -f requirements-dev.txt ]; then
             pip install -r requirements-dev.txt
           fi
@@ -931,6 +939,7 @@ jobs:
             pip install -r requirements.txt
           fi
           pip install ruff "bandit[sarif,toml]"
+
 
 
       - name: Run Ruff (JSON)
@@ -1179,7 +1188,9 @@ jobs:
           python - <<'PY'
           import json
           import os
+
           from collections import Counter
+
           from pathlib import Path
 
           def read_json(path, default):
@@ -1228,14 +1239,19 @@ jobs:
           pip_audit = read_json("pip-audit.json", {"dependencies": []})
 
           ruff_count = len(ruff) if isinstance(ruff, list) else 0
+
+          bandit_count = len(bandit.get("results", [])) if isinstance(bandit, dict) else 0
+
           bandit_results = bandit.get("results", []) if isinstance(bandit, dict) else []
           bandit_count = len(bandit_results)
+
           pip_vulns = parse_pip_audit(pip_audit)
           pip_count = len(pip_vulns)
 
           ruff_exit = read_exitcode(".ruff.exitcode")
           bandit_exit = read_exitcode(".bandit.exitcode")
           pip_exit = read_exitcode(".pip_audit.exitcode")
+
 
           ruff_by_file = Counter()
           if isinstance(ruff, list):
@@ -1246,12 +1262,14 @@ jobs:
           for item in bandit_results:
               bandit_by_file[item.get("filename") or "?"] += 1
 
+
           summary_path = os.environ["GITHUB_STEP_SUMMARY"]
           with open(summary_path, "a", encoding="utf-8") as f:
               f.write("## Tasukeru analysis summary\n\n")
               f.write(f"- Ruff findings: {ruff_count}\n")
               f.write(f"- Bandit findings: {bandit_count}\n")
               f.write(f"- pip-audit vulnerabilities: {pip_count}\n\n")
+
 
               if ruff_count:
                   f.write("### Ruff: top files\n\n")
@@ -1280,6 +1298,7 @@ jobs:
                       )
                   f.write("\n")
 
+
               if pip_vulns:
                   f.write("### pip-audit findings\n\n")
                   for row in pip_vulns[:20]:
@@ -1287,6 +1306,10 @@ jobs:
                       f.write(
                           f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
                       )
+
+                  if len(pip_vulns) > 20:
+                      f.write(f"- ... and {len(pip_vulns) - 20} more\n")
+
                   f.write("\n")
 
               if ruff_exit > 1:
@@ -1555,4 +1578,5 @@ jobs:
         run: |
           set -euo pipefail
           echo "workflow syntax block is present"
+
 
