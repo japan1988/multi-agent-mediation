@@ -278,6 +278,10 @@ These are useful as reference material, but the recommended starting point remai
 
 ## Audit and logging model
 
+
+See LICENSE.
+Repository license: Apache-2.0 (policy intent: Educational / Research).
+
 A central design goal is **audit-ready behavior without overcomplicating the log surface**.
 
 The repository uses lightweight audit patterns such as:
@@ -439,5 +443,6 @@ Maestro Orchestrator is a safety-first orchestration framework for studying how 
 Its core stance is simple:
 
 > **If uncertain, stop. If risky, escalate.**
+
 
 
