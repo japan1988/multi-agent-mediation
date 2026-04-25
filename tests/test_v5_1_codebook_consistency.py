@@ -133,10 +133,8 @@ def test_v512_mixed_mode_deterministic_under_reset(
     cd1 = t1.pop("cooldown_until", None)
     cd2 = t2.pop("cooldown_until", None)
 
-    # 壁時計依存の cooldown_until を除けば一致すること
     assert t1 == t2
 
-    # cooldown が必要なケースなら、両方とも値を持つことだけ確認
     if cd1 is not None or cd2 is not None:
         assert cd1 is not None
         assert cd2 is not None
