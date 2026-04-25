@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 ai_alliance_persuasion_simulator.py
@@ -310,3 +311,4 @@ if __name__ == "__main__":
     run_simulation(demo_agents, rounds=3, seed=42)
     for a in demo_agents:
         print(a.name, a.status, f"anger={a.anger():.2f}", a.priorities)
+
