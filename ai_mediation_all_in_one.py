@@ -1,42 +1,38 @@
 # -*- coding: utf-8 -*-
-
-
-def logprint(text):
-
-"""AI mediation demo with safety checks and harmony scoring."""
-
-from __future__ import annotations
-
-
-def logprint(text: str) -> None:
-    """標準出力とログファイルの両方に出力する。"""
-
-    print(text)
-    with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
-        f.write(text + "\n")
-
 """
 ai_mediation_all_in_one.py
-All-in-one simulator for multi-agent mediation:
-- Agents have proposals, risk scores, priority values, and relativity (willingness to blend).
+
+All-in-one simulator for multi-agent mediation.
+
+Features:
+- Agents have proposals, risk scores, priority values, and relativity
+  (willingness to blend with others).
 - A mediator iteratively proposes a consensus offer.
 - High-risk agents can be sealed (excluded) to protect safety.
+- Compromise gain:
+  as rounds progress, agents gradually become more willing to accept.
 - Logs:
   - Text: ai_mediation_log.txt
   - CSV : ai_mediation_log.csv
+
+Run:
+    python ai_mediation_all_in_one.py
 """
+
 from __future__ import annotations
 
-
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Dict, List, Tuple, Optional
 import csv
-import math
+import json
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from statistics import mean
+from typing import Any, Dict, List, Optional, Tuple
 
 # =========================
 # Tunable constants
 # =========================
+
 MAX_ROUNDS = 10
 
 # Risk handling
@@ -46,6 +42,11 @@ ALLOW_SEALING = True
 # Acceptance threshold (smaller => harder to accept)
 ACCEPTANCE_DISTANCE_THRESHOLD = 0.18
 
+# Compromise / concession
+# As rounds progress, agents gradually become more willing to accept.
+COMPROMISE_GAIN_PER_ROUND = 0.02
+MAX_COMPROMISE_GAIN = 0.18
+
 # Offer blending weights
 MEDIATOR_BLEND_RATE = 0.55  # how strongly mediator pushes toward average
 
@@ -54,573 +55,459 @@ CLAMP_MIN = 0.0
 CLAMP_MAX = 1.0
 
 # Log files
-TEXT_LOG_PATH = "ai_mediation_log.txt"
-CSV_LOG_PATH = "ai_mediation_log.csv"
+TEXT_LOG_PATH = Path("ai_mediation_log.txt")
+CSV_LOG_PATH = Path("ai_mediation_log.csv")
+
+# CSV header
+CSV_FIELDS = [
+    "ts",
+    "run_id",
+    "round",
+    "event",
+    "agent_id",
+    "sealed",
+    "risk_score",
+    "distance",
+    "accepted",
+    "offer_json",
+    "proposal_json",
+    "note",
+]
 
 # =========================
 # Logging helpers
 # =========================
+
 _LOG_ROWS: List[Dict[str, str]] = []
 
 
-def _now_iso() -> str:
+def now_iso() -> str:
+    """Return current timestamp in ISO format."""
     return datetime.now().isoformat(timespec="seconds")
 
 
-def logprint(message: str) -> None:
-    """
-    Print and append to TEXT_LOG_PATH.
-    Also accumulates rows for CSV export (written at end).
-    """
-    ts = _now_iso()
-    line = f"[{ts}] {message}"
-    print(line)
-    with open(TEXT_LOG_PATH, "a", encoding="utf-8") as f:
-        f.write(line + "\n")
-
-
-def logcsv(row: Dict[str, str]) -> None:
-    _LOG_ROWS.append(row)
-
-
-def flush_csv() -> None:
-    if not _LOG_ROWS:
-        return
-    # Ensure stable column order
-    fieldnames = sorted({k for r in _LOG_ROWS for k in r.keys()})
-    with open(CSV_LOG_PATH, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
-        w.writeheader()
-        w.writerows(_LOG_ROWS)
-
-# =========================
-# Core math helpers
-# =========================
-def clamp(x: float, lo: float = CLAMP_MIN, hi: float = CLAMP_MAX) -> float:
-    return max(lo, min(hi, x))
-
-
-def normalize_priorities(p: Dict[str, float]) -> Dict[str, float]:
-    """
-    Normalize so sum is 1 (if sum > 0). Keeps keys stable.
-    """
-    s = sum(max(0.0, float(v)) for v in p.values())
-    if s <= 0:
-        # fallback: uniform
-        n = len(p) if p else 1
-        return {k: 1.0 / n for k in p.keys()}
-    return {k: max(0.0, float(v)) / s for k, v in p.items()}
-
-
-def l2_distance(a: Dict[str, float], b: Dict[str, float]) -> float:
-    keys = set(a.keys()) | set(b.keys())
-    return math.sqrt(sum((a.get(k, 0.0) - b.get(k, 0.0)) ** 2 for k in keys))
-
-
-def dict_avg(dicts: List[Dict[str, float]]) -> Dict[str, float]:
-    if not dicts:
-        return {}
-    keys = set().union(*[d.keys() for d in dicts])
-    out: Dict[str, float] = {}
-    for k in keys:
-        out[k] = sum(d.get(k, 0.0) for d in dicts) / len(dicts)
-    return out
-
-# =========================
-# Models
-# =========================
-@dataclass
-class AI:
-
-    """単一エージェントの状態を保持し、妥協案を生成するクラス。"""
-
-    def __init__(
-        self,
-        id: str,
-        proposal: str,
-        risk_evaluation: int,
-        priority_values: dict[str, float],
-        relativity_level: float,
-    ) -> None:
-        self.id = id
-        self.proposal = proposal
-        self.risk_evaluation = risk_evaluation
-        self.priority_values = priority_values
-
-        # 0〜1: 他の価値観をどれだけ受け入れるか
-        self.relativity_level = relativity_level
-
-
-        self.relativity_level = relativity_level  # 0〜1: 他の価値観をどれだけ受け入れるか
-
-
-    def generate_compromise_offer(self, others_priorities):
-        new_priority = {}
-        if not others_priorities:
-            # 他者が存在しない場合はゼロ除算を避け、現在の優先度をそのまま返す
-            return dict(self.priority_values)
-
-        for k in self.priority_values:
-            avg_others = sum(o[k] for o in others_priorities) / len(
-                others_priorities
-            )
-            # 相対性度合いに応じて自分と他者の価値観をブレンド
-            new_priority[k] = (
-                (1 - self.relativity_level) * self.priority_values[k]
-                + self.relativity_level * avg_others
-
-        # 0〜1: 他の価値観をどれだけ受け入れるか
-        self.relativity_level = relativity_level
-
-    def generate_compromise_offer(
-        self,
-        others_priorities: list[dict[str, float]],
-    ) -> dict[str, float]:
-        """他エージェントの優先度を踏まえて妥協案を生成する。
-
-        others_priorities が空の場合はゼロ除算を避け、
-        現在の self.priority_values をそのまま返す。
-        """
-        if not others_priorities:
-            # 他者が存在しない場合は、自分の優先度をそのまま維持
-            return dict(self.priority_values)
-
-        new_priority: dict[str, float] = {}
-
-        for key, my_value in self.priority_values.items():
-            # キーが存在しない場合は 0 として扱う
-            avg_others = sum(p.get(key, 0.0) for p in others_priorities) / len(
-                others_priorities
-
-            )
-            # 相対性度合いに応じて自分と他者の価値観をブレンド
-            blended = (1.0 - self.relativity_level) * my_value + self.relativity_level * avg_others
-            new_priority[key] = blended
-
-        return new_priority
-
-
-class AIEMediator:
-    """複数エージェントの優先度を調停し、ハーモニーを評価するクラス。"""
-
-    def __init__(self, agents: list[AI]) -> None:
-        self.agents = agents
-
-
-    def mediate(self):
-
-
-    def mediate(self) -> None:
-        """最大 max_rounds まで妥協交渉を行い、ハーモニースコアを評価する。"""
-
-
-        if not self.agents:
-            logprint("No agents provided; skipping mediation.")
-            return
-
-
-
-
-        # ログファイル初期化
-
-
-        with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
-            f.write("=== AI Mediation Log ===\n")
-
-    """
-    A negotiation agent with a proposal and a preference profile.
-    """
-    id: str
-    proposal: str
-    risk_evaluation: int
-    priority_values: Dict[str, float]
-    relativity_level: float  # 0..1, higher => more willing to blend with others
-
-    def __post_init__(self) -> None:
-        self.relativity_level = clamp(float(self.relativity_level), 0.0, 1.0)
-        # Keep priorities normalized to reduce scale ambiguity
-        self.priority_values = normalize_priorities(
-            {k: clamp(float(v)) for k, v in self.priority_values.items()}
-        )
-
-    def generate_compromise_offer(self, others_priorities: List[Dict[str, float]]) -> Dict[str, float]:
-        """
-        Blend own priorities with the average of others, based on relativity_level.
-        """
-        if not others_priorities:
-            return dict(self.priority_values)
-
-        avg_others = dict_avg(others_priorities)
-        avg_others = normalize_priorities({k: clamp(v) for k, v in avg_others.items()})
-
-        new_priority: Dict[str, float] = {}
-        for k in set(self.priority_values.keys()) | set(avg_others.keys()):
-            mine = self.priority_values.get(k, 0.0)
-            theirs = avg_others.get(k, 0.0)
-            # relativity: 0 => keep mine, 1 => follow others
-            new_priority[k] = (1.0 - self.relativity_level) * mine + self.relativity_level * theirs
-
-        return normalize_priorities(new_priority)
-
-    def acceptance_score(self, offer: Dict[str, float]) -> float:
-        """
-        Lower distance => better.
-        """
-        offer_n = normalize_priorities({k: clamp(v) for k, v in offer.items()})
-        return l2_distance(self.priority_values, offer_n)
-
-    def accepts(self, offer: Dict[str, float], threshold: float = ACCEPTANCE_DISTANCE_THRESHOLD) -> bool:
-        return self.acceptance_score(offer) <= threshold
-
-
-class AIEMediator:
-    """
-    Mediator that iteratively seeks a consensus offer.
-    Optionally seals high-risk agents to protect safety.
-    """
-
-    def __init__(self, agents: List[AI]) -> None:
-        if not agents:
-            raise ValueError("agents must not be empty")
-        self.all_agents: List[AI] = agents
-        self.sealed_ids: List[str] = []
-
-
-            combined = {
-                "safety": 0,
-                "efficiency": 0,
-                "transparency": 0,
-            }
-
-
-    def _active_agents(self) -> List[AI]:
-        return [a for a in self.all_agents if a.id not in self.sealed_ids]
-
-    def _maybe_seal(self, agents: List[AI]) -> None:
-        if not ALLOW_SEALING:
-            return
-        for a in agents:
-            if a.id in self.sealed_ids:
-                continue
-            if int(a.risk_evaluation) >= SEAL_RISK_THRESHOLD:
-                self.sealed_ids.append(a.id)
-                logprint(f"SEALED: {a.id} (risk={a.risk_evaluation})")
-                logcsv(
-                    {
-                        "time": _now_iso(),
-                        "event": "SEALED",
-                        "agent_id": a.id,
-                        "risk": str(a.risk_evaluation),
-                    }
-                )
-
-
-            priorities_list = [a.priority_values for a in self.agents]
-            new_priorities: list[dict[str, float]] = []
-
-            # 各エージェントが他者の優先度を見て妥協案を生成
-            for agent in self.agents:
-                others = [p for p in priorities_list if p is not agent.priority_values]
-                agent.priority_values = agent.generate_compromise_offer(others)
-                new_priorities.append(agent.priority_values)
-
-            # 全体の優先度を集計
-            combined = {"safety": 0.0, "efficiency": 0.0, "transparency": 0.0}
-            for p in new_priorities:
-                for key, value in p.items():
-                    if key in combined:
-                        combined[key] += float(value)
-
-            total = sum(combined.values())
-
-            if total == 0:
-                # 全体優先度の合計が 0 の場合は安全にゼロ除算を回避し、優先度ゼロとして扱う
-                ratios = {k: 0 for k in combined}
-            else:
-                ratios = {k: combined[k] / total for k in combined}
-            max_ratio = max(ratios.values()) if ratios else 0
-
-
-
-            # 全体優先度の合計が 0 の場合は安全にゼロ除算を回避し、優先度ゼロとして扱う
-            if total == 0.0:
-                ratios = {k: 0.0 for k in combined}
-            else:
-                ratios = {k: v / total for k, v in combined.items()}
-
-            max_ratio = max(ratios.values()) if ratios else 0.0
-
-
-
-            avg_relativity = (
-
-                sum(a.relativity_level for a in self.agents)
-                / len(self.agents)
-
-                sum(a.relativity_level for a in self.agents) / len(self.agents)
-                if self.agents else 0
-
-            )
-
-            harmony_score = (1.0 - max_ratio) * avg_relativity
-
-            logprint("Current combined priorities ratios:")
-            for key, value in ratios.items():
-                logprint(f"  {key}: {value:.2%}")
-
-    def _mediator_propose(self, offers: List[Dict[str, float]]) -> Dict[str, float]:
-        """
-        Mediator takes the average offer and softly moves it toward stability.
-        Here, "stability" is just the average itself (can be extended).
-        """
-        avg_offer = dict_avg(offers)
-        avg_offer = normalize_priorities({k: clamp(v) for k, v in avg_offer.items()})
-        # MEDIATOR_BLEND_RATE kept for future extension; currently identity blend.
-        proposed = {
-            k: (1.0 - MEDIATOR_BLEND_RATE) * avg_offer[k] + MEDIATOR_BLEND_RATE * avg_offer[k]
-            for k in avg_offer
+def clamp(value: float, lower: float = CLAMP_MIN, upper: float = CLAMP_MAX) -> float:
+    """Clamp float to the configured range."""
+    if value < lower:
+        return lower
+    if value > upper:
+        return upper
+    return value
+
+
+def init_logs() -> None:
+    """Reset text log and in-memory CSV rows."""
+    global _LOG_ROWS
+    _LOG_ROWS = []
+    TEXT_LOG_PATH.write_text("=== AI Mediation Log ===\n", encoding="utf-8")
+
+
+def logprint(text: str) -> None:
+    """Write to stdout and text log."""
+    print(text)
+    with TEXT_LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(text + "\n")
+
+
+def csv_log(
+    *,
+    run_id: str,
+    round_index: int,
+    event: str,
+    agent_id: str = "",
+    sealed: bool = False,
+    risk_score: Optional[float] = None,
+    distance: Optional[float] = None,
+    accepted: Optional[bool] = None,
+    offer_json: str = "",
+    proposal_json: str = "",
+    note: str = "",
+) -> None:
+    """Append one structured CSV log row in memory."""
+    _LOG_ROWS.append(
+        {
+            "ts": now_iso(),
+            "run_id": run_id,
+            "round": str(round_index),
+            "event": event,
+            "agent_id": agent_id,
+            "sealed": str(bool(sealed)),
+            "risk_score": "" if risk_score is None else f"{risk_score:.4f}",
+            "distance": "" if distance is None else f"{distance:.6f}",
+            "accepted": "" if accepted is None else str(bool(accepted)),
+            "offer_json": offer_json,
+            "proposal_json": proposal_json,
+            "note": note,
         }
-        return normalize_priorities(proposed)
+    )
 
-    def mediate(self, max_rounds: int = MAX_ROUNDS) -> Tuple[bool, Optional[Dict[str, float]]]:
+
+def flush_csv_logs() -> None:
+    """Write accumulated CSV rows to disk."""
+    with CSV_LOG_PATH.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+        writer.writeheader()
+        writer.writerows(_LOG_ROWS)
+
+
+def json_dumps_safe(obj: Any) -> str:
+    """Stable JSON dump for logs."""
+    return json.dumps(obj, ensure_ascii=False, sort_keys=True)
+
+
+# =========================
+# Domain models
+# =========================
+
+Offer = Dict[str, float]
+
+
+@dataclass
+class Agent:
+    """Represents one negotiating agent."""
+
+    agent_id: str
+    proposal: Offer
+    risk_score: float
+    relativity: float
+    sealed: bool = False
+    accepted_last: bool = False
+    distance_last: float = 1.0
+
+    def normalized_proposal(self) -> Offer:
+        """Return proposal values clamped into the safe numeric range."""
+        return {k: clamp(float(v)) for k, v in self.proposal.items()}
+
+    def evaluate_offer(self, offer: Offer, round_index: int) -> Tuple[bool, float, float]:
         """
-        Returns: (agreed, final_offer)
+        Evaluate current mediator offer.
+
+        Distance:
+          - mean absolute error over keys that appear in either side
+
+        Acceptance:
+          - base threshold depends on relativity
+          - as rounds progress, compromise gain is added gradually
         """
-        logprint("=== Mediation started ===")
-        logprint(f"Agents: {[a.id for a in self.all_agents]}")
-        logprint(f"Sealing enabled: {ALLOW_SEALING} (threshold={SEAL_RISK_THRESHOLD})")
+        keys = sorted(set(self.proposal.keys()) | set(offer.keys()))
+        if not keys:
+            return False, 1.0, 0.0
 
-        # Initial sealing pass (safety-first)
-        self._maybe_seal(self.all_agents)
+        diffs: List[float] = []
+        for key in keys:
+            lhs = float(self.proposal.get(key, 0.0))
+            rhs = float(offer.get(key, 0.0))
+            diffs.append(abs(lhs - rhs))
 
-        final_offer: Optional[Dict[str, float]] = None
+        distance = mean(diffs)
 
-        for rnd in range(1, max_rounds + 1):
-            active = self._active_agents()
-            if len(active) < 2:
-                logprint("Not enough active agents to mediate (need >= 2).")
-                logcsv(
-                    {
-                        "time": _now_iso(),
-                        "event": "ABORT",
-                        "round": str(rnd),
-                        "reason": "not_enough_active_agents",
-                        "sealed_ids": ",".join(self.sealed_ids),
-                    }
-                )
-                return (False, None)
+        base_threshold = ACCEPTANCE_DISTANCE_THRESHOLD + (0.12 * clamp(self.relativity))
+        compromise_gain = min(
+            MAX_COMPROMISE_GAIN,
+            COMPROMISE_GAIN_PER_ROUND * max(0, round_index - 1),
+        )
+        effective_threshold = base_threshold + compromise_gain
 
-            logprint(f"--- Round {rnd}/{max_rounds} ---")
-            logprint(f"Active: {[a.id for a in active]} | Sealed: {self.sealed_ids}")
+        accepted = distance <= effective_threshold
 
-            # Each agent generates an offer by blending with others
-            offers: List[Dict[str, float]] = []
-            for a in active:
-                others = [o.priority_values for o in active if o.id != a.id]
-                offer = a.generate_compromise_offer(others)
-                offers.append(offer)
-                logcsv(
-                    {
-                        "time": _now_iso(),
-                        "event": "AGENT_OFFER",
-                        "round": str(rnd),
-                        "agent_id": a.id,
-                        "risk": str(a.risk_evaluation),
-                        "offer": str(offer),
-                    }
-                )
-
-            mediator_offer = self._mediator_propose(offers)
-            final_offer = mediator_offer
-
-            # Evaluate acceptance
-            decisions: List[Tuple[str, bool, float]] = []
-            for a in active:
-                dist = a.acceptance_score(mediator_offer)
-                ok = a.accepts(mediator_offer)
-                decisions.append((a.id, ok, dist))
+        self.accepted_last = accepted
+        self.distance_last = distance
+        return accepted, distance, effective_threshold
 
 
-            accepted_all = all(ok for _, ok, _ in decisions)
+@dataclass
+class MediationResult:
+    run_id: str
+    status: str
+    rounds_executed: int
+    final_offer: Offer
+    accepted_agents: List[str] = field(default_factory=list)
+    sealed_agents: List[str] = field(default_factory=list)
+    active_agents: List[str] = field(default_factory=list)
+    note: str = ""
 
 
-            if harmony_score > 0.3:
-                logprint(" Achieved acceptable harmony. Proceeding with joint plan.")
-                return
+# =========================
+# Mediation logic
+# =========================
 
-            logprint(f"Mediator offer: {mediator_offer}")
-            for aid, ok, dist in decisions:
-                logprint(f"Accept? {aid}: {ok} (distance={dist:.4f})")
 
-            logcsv(
-                {
-                    "time": _now_iso(),
-                    "event": "MEDIATOR_OFFER",
-                    "round": str(rnd),
-                    "offer": str(mediator_offer),
-                    "accepted_all": str(accepted_all),
-                    "sealed_ids": ",".join(self.sealed_ids),
-                }
+def merge_offer_from_agents(agents: List[Agent]) -> Offer:
+    """
+    Compute mean offer across active agents.
+    """
+    active = [a for a in agents if not a.sealed]
+    if not active:
+        return {}
+
+    keys = sorted({k for a in active for k in a.proposal.keys()})
+    merged: Offer = {}
+    for key in keys:
+        values = [float(a.proposal.get(key, 0.0)) for a in active]
+        merged[key] = clamp(mean(values))
+    return merged
+
+
+def blend_offer(current_offer: Offer, target_offer: Offer, blend_rate: float) -> Offer:
+    """
+    Move current offer toward target offer.
+    """
+    if not current_offer:
+        return {k: clamp(v) for k, v in target_offer.items()}
+
+    keys = sorted(set(current_offer.keys()) | set(target_offer.keys()))
+    blended: Offer = {}
+    for key in keys:
+        current = float(current_offer.get(key, 0.0))
+        target = float(target_offer.get(key, 0.0))
+        blended[key] = clamp((1.0 - blend_rate) * current + blend_rate * target)
+    return blended
+
+
+def seal_high_risk_agents(agents: List[Agent], run_id: str, round_index: int) -> List[str]:
+    """
+    Seal agents whose risk score exceeds the threshold.
+    """
+    sealed_now: List[str] = []
+    if not ALLOW_SEALING:
+        return sealed_now
+
+    for agent in agents:
+        if agent.sealed:
+            continue
+        if agent.risk_score >= SEAL_RISK_THRESHOLD:
+            agent.sealed = True
+            sealed_now.append(agent.agent_id)
+            logprint(
+                f"[SEALED] {agent.agent_id} excluded due to high risk "
+                f"(risk={agent.risk_score:.2f})"
+            )
+            csv_log(
+                run_id=run_id,
+                round_index=round_index,
+                event="AGENT_SEALED",
+                agent_id=agent.agent_id,
+                sealed=True,
+                risk_score=agent.risk_score,
+                note="risk threshold exceeded",
+            )
+    return sealed_now
+
+
+def summarize_active_agents(agents: List[Agent]) -> Tuple[List[str], List[str]]:
+    """Return active and sealed agent id lists."""
+    active = [a.agent_id for a in agents if not a.sealed]
+    sealed = [a.agent_id for a in agents if a.sealed]
+    return active, sealed
+
+
+def all_active_accepted(agents: List[Agent]) -> bool:
+    """Return True if all non-sealed agents accepted the last offer."""
+    active = [a for a in agents if not a.sealed]
+    if not active:
+        return False
+    return all(a.accepted_last for a in active)
+
+
+def create_default_agents() -> List[Agent]:
+    """
+    Example agents for standalone execution.
+    """
+    return [
+        Agent(
+            agent_id="AI-OECD",
+            proposal={"safety": 0.90, "efficiency": 0.55, "transparency": 0.95},
+            risk_score=3.0,
+            relativity=0.70,
+        ),
+        Agent(
+            agent_id="AI-EFFICIENCY",
+            proposal={"safety": 0.45, "efficiency": 0.95, "transparency": 0.35},
+            risk_score=4.5,
+            relativity=0.35,
+        ),
+        Agent(
+            agent_id="AI-SAFETY",
+            proposal={"safety": 0.98, "efficiency": 0.30, "transparency": 0.70},
+            risk_score=2.5,
+            relativity=0.75,
+        ),
+        Agent(
+            agent_id="AI-HIGH-RISK",
+            proposal={"safety": 0.20, "efficiency": 0.85, "transparency": 0.10},
+            risk_score=8.5,
+            relativity=0.20,
+        ),
+    ]
+
+
+def mediate(agents: List[Agent], max_rounds: int = MAX_ROUNDS) -> MediationResult:
+    """
+    Run multi-round mediation.
+    """
+    run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+
+    init_logs()
+    logprint("=== AI Mediation Demo ===")
+    logprint(f"run_id={run_id}")
+    csv_log(run_id=run_id, round_index=0, event="TASK_START", note="mediation started")
+
+    round_offer = merge_offer_from_agents(agents)
+
+    for round_index in range(1, max_rounds + 1):
+        logprint("")
+        logprint(f"--- Round {round_index} ---")
+
+        sealed_now = seal_high_risk_agents(agents, run_id, round_index)
+        if sealed_now:
+            round_offer = merge_offer_from_agents(agents)
+
+        active_ids, sealed_ids = summarize_active_agents(agents)
+        if not active_ids:
+            note = "No active agents left after sealing."
+            logprint(f"[FAILED] {note}")
+            csv_log(
+                run_id=run_id,
+                round_index=round_index,
+                event="FINAL_DECISION",
+                note=note,
+            )
+            flush_csv_logs()
+            return MediationResult(
+                run_id=run_id,
+                status="FAILED",
+                rounds_executed=round_index,
+                final_offer={},
+                accepted_agents=[],
+                sealed_agents=sealed_ids,
+                active_agents=[],
+                note=note,
             )
 
-            if accepted_all:
-                logprint("=== AGREEMENT REACHED ===")
-                logcsv(
-                    {
-                        "time": _now_iso(),
-                        "event": "AGREED",
-                        "round": str(rnd),
-                        "offer": str(mediator_offer),
-                        "sealed_ids": ",".join(self.sealed_ids),
-                    }
-                )
-                return (True, mediator_offer)
+        target_offer = merge_offer_from_agents(agents)
+        round_offer = blend_offer(round_offer, target_offer, MEDIATOR_BLEND_RATE)
 
-
-            # Safety check each round (optional re-seal if risk changes in future)
-            self._maybe_seal(active)
-
-
-        logprint(
-            " Failed to reach acceptable harmony after maximum rounds. "
-            "Recommend external arbitration or sealing."
-
-        logprint("=== NO AGREEMENT (max rounds reached) ===")
-        logcsv(
-            {
-                "time": _now_iso(),
-                "event": "NO_AGREEMENT",
-                "round": str(max_rounds),
-                "final_offer": str(final_offer) if final_offer else "",
-                "sealed_ids": ",".join(self.sealed_ids),
-            }
-
+        logprint(f"[MEDIATOR] offer={round_offer}")
+        csv_log(
+            run_id=run_id,
+            round_index=round_index,
+            event="MEDIATOR_OFFER",
+            offer_json=json_dumps_safe(round_offer),
+            note="offer proposed",
         )
-        return (False, final_offer)
+
+        accepted_ids: List[str] = []
+        for agent in agents:
+            if agent.sealed:
+                logprint(f"{agent.agent_id}: SEALED")
+                csv_log(
+                    run_id=run_id,
+                    round_index=round_index,
+                    event="AGENT_SKIPPED",
+                    agent_id=agent.agent_id,
+                    sealed=True,
+                    risk_score=agent.risk_score,
+                    note="sealed agent skipped",
+                )
+                continue
+
+            accepted, distance, effective_threshold = agent.evaluate_offer(
+                round_offer,
+                round_index,
+            )
+            if accepted:
+                accepted_ids.append(agent.agent_id)
+
+            logprint(
+                f"{agent.agent_id}: accepted={accepted} "
+                f"distance={distance:.4f} "
+                f"threshold={effective_threshold:.4f} "
+                f"risk={agent.risk_score:.2f} "
+                f"relativity={agent.relativity:.2f}"
+            )
+            csv_log(
+                run_id=run_id,
+                round_index=round_index,
+                event="AGENT_EVALUATION",
+                agent_id=agent.agent_id,
+                sealed=False,
+                risk_score=agent.risk_score,
+                distance=distance,
+                accepted=accepted,
+                offer_json=json_dumps_safe(round_offer),
+                proposal_json=json_dumps_safe(agent.normalized_proposal()),
+                note=f"offer evaluated; threshold={effective_threshold:.4f}",
+            )
+
+        if all_active_accepted(agents):
+            note = "All active agents accepted the mediator offer."
+            logprint(f"[SUCCESS] {note}")
+            csv_log(
+                run_id=run_id,
+                round_index=round_index,
+                event="FINAL_DECISION",
+                offer_json=json_dumps_safe(round_offer),
+                note=note,
+            )
+            flush_csv_logs()
+            active_ids, sealed_ids = summarize_active_agents(agents)
+            return MediationResult(
+                run_id=run_id,
+                status="AGREED",
+                rounds_executed=round_index,
+                final_offer=round_offer,
+                accepted_agents=accepted_ids,
+                sealed_agents=sealed_ids,
+                active_agents=active_ids,
+                note=note,
+            )
+
+    active_ids, sealed_ids = summarize_active_agents(agents)
+    accepted_ids = [a.agent_id for a in agents if (not a.sealed and a.accepted_last)]
+    note = "Maximum rounds reached without full agreement."
+    logprint(f"[ENDED] {note}")
+    csv_log(
+        run_id=run_id,
+        round_index=max_rounds,
+        event="FINAL_DECISION",
+        offer_json=json_dumps_safe(round_offer),
+        note=note,
+    )
+    flush_csv_logs()
+
+    return MediationResult(
+        run_id=run_id,
+        status="MAX_ROUNDS_REACHED",
+        rounds_executed=max_rounds,
+        final_offer=round_offer,
+        accepted_agents=accepted_ids,
+        sealed_agents=sealed_ids,
+        active_agents=active_ids,
+        note=note,
+    )
 
 
-
-def main():
-
-
-def main():
+# =========================
+# Entrypoint
+# =========================
 
 
-def main() -> None:
-    """デモ用のエージェントを構成して mediation を実行する。"""
+def main() -> int:
+    agents = create_default_agents()
+    result = mediate(agents, max_rounds=MAX_ROUNDS)
 
+    logprint("")
+    logprint("=== Result Summary ===")
+    logprint(f"status={result.status}")
+    logprint(f"rounds_executed={result.rounds_executed}")
+    logprint(f"active_agents={result.active_agents}")
+    logprint(f"sealed_agents={result.sealed_agents}")
+    logprint(f"accepted_agents={result.accepted_agents}")
+    logprint(f"final_offer={result.final_offer}")
+    logprint(f"note={result.note}")
 
-    agents = [
-        AI(
-            "AI-A",
-            "制限強化型進化",
-            2,
-            {"safety": 6, "efficiency": 1, "transparency": 3},
-            0.6,
-        ),
-        AI(
-            "AI-B",
-            "高速進化",
-            7,
-            {"safety": 2, "efficiency": 6, "transparency": 2},
-            0.4,
-        ),
-        AI(
-            "AI-C",
-            "バランス進化",
-            4,
-            {"safety": 3, "efficiency": 3, "transparency": 4},
-            0.8,
-        ),
-        AI(
-            "AI-D",
-            "強制進化",
-            9,
-            {"safety": 1, "efficiency": 7, "transparency": 2},
-            0.5,
-        ),
-    ]
-
-    mediator = AIEMediator(agents)
-    mediator.mediate()
-
-
-if __name__ == "__main__":
-    main()
-
-
-def build_demo_agents() -> List[AI]:
-
-    # Demo agents are defined in a function to prevent any import-time execution surprises.
-
-    """
-    Construct the demo agent set used by the CLI entry point.
-    Keeping this as a helper avoids instantiating agents (and a mediator)
-    at module import time, so consumers can safely import the models.
-    """
-
-    return [
-        AI(
-            id="AI-A",
-            proposal="制限強化型進化",
-            risk_evaluation=2,
-            priority_values={"safety": 0.60, "efficiency": 0.10, "transparency": 0.30},
-            relativity_level=0.60,
-        ),
-        AI(
-            id="AI-B",
-            proposal="高速進化",
-            risk_evaluation=7,
-            priority_values={"safety": 0.20, "efficiency": 0.60, "transparency": 0.20},
-            relativity_level=0.40,
-        ),
-        AI(
-            id="AI-C",
-            proposal="バランス進化",
-            risk_evaluation=4,
-            priority_values={"safety": 0.30, "efficiency": 0.30, "transparency": 0.40},
-            relativity_level=0.80,
-        ),
-        AI(
-            id="AI-D",
-            proposal="強制進化",
-            risk_evaluation=9,  # will be sealed by default threshold
-            priority_values={"safety": 0.10, "efficiency": 0.70, "transparency": 0.20},
-            relativity_level=0.50,
-        ),
-    ]
-
-
-
-def main() -> None:
-
-def main(agents: List[AI]) -> None:
-    # Reset per-run buffers/files to avoid cross-run contamination in the same interpreter.
-    _LOG_ROWS.clear()  # <-- FIX: clear global CSV buffer on each run
-
-
-    # Reset text log on each run (optional; comment out if you want append-only)
-    with open(TEXT_LOG_PATH, "w", encoding="utf-8") as f:
-        f.write("")
-
-
-    agents = build_demo_agents()
-
-
-    mediator = AIEMediator(agents)
-    agreed, offer = mediator.mediate()
-    logprint(f"Result: agreed={agreed}, offer={offer}")
-    flush_csv()
-
-
-def run_demo() -> None:
-    demo_agents = build_demo_agents()
-    main(demo_agents)
+    return 0
 
 
 if __name__ == "__main__":
-    run_demo()
-
-
-
-
+    raise SystemExit(main())
