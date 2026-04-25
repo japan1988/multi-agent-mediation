@@ -1,17 +1,29 @@
+
  japan1988-patch-76
  name: Python App CI
+
+name: Python App CI
+
 
 on:
   push:
     branches: ["main"]
     paths-ignore:
+
       - "**.md"
+
+      - "**/*.md"
+
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
   pull_request:
     branches: ["main"]
     paths-ignore:
+
       - "**.md"
+
+      - "**/*.md"
+
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
@@ -49,13 +61,35 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
+            pylock.*.toml
+
+
       - name: Install dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
+
           pip install -r requirements.txt
 
       - name: Lint workflow YAML
+
+
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          fi
+
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install pytest yamllint
+
+      - name: Yamllint python-app workflow
+
         run: |
           set -euo pipefail
           printf '%s\n' \
@@ -68,6 +102,7 @@ jobs:
             '    max: 140' \
             '    level: warning' \
             > .yamllint-ci.yml
+
           yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
 
       - name: Ruff check
@@ -124,4 +159,33 @@ jobs:
  **/.pytest_cache
  **/pytest*.log
  **/junit-*.xml
- main
+
+
+          echo "===== python-app.yml ====="
+          nl -ba .github/workflows/python-app.yml
+
+          echo "===== yamllint ====="
+          yamllint -f parsable -c .yamllint-ci.yml .github/workflows/python-app.yml
+
+      - name: Run pytest
+        run: |
+          set -euo pipefail
+
+          pytest -q --maxfail=1 --disable-warnings \
+            --junitxml=junit-py${{ matrix.python-version }}.xml
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts-py${{ matrix.python-version }}
+          if-no-files-found: ignore
+          path: |
+            .pytest_cache
+            **/.pytest_cache
+            **/pytest*.log
+            **/junit-*.xml
+
+          pytest -q
+
+
