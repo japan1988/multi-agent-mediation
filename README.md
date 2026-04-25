@@ -29,6 +29,8 @@ Maestro Orchestrator is a **research-oriented orchestration framework** for supe
 - **REROUTE**: Re-route only when explicitly safe (avoid fail-open reroute)
 - **HITL**: Escalate to humans for ambiguous or high-stakes decisions
 
+
+
 ### Positioning (safety-first)
 
 Maestro Orchestrator prioritizes **preventing unsafe or undefined execution** over maximizing autonomous task completion.  
@@ -227,6 +229,7 @@ Then branch out into older simulators and related governance / mediation experim
 **Trade-off:** This design may *over-stop by default*; safety and traceability are prioritized over throughput.
 
 
+
 ## 🚫 Non-goals (IMPORTANT)
 
 This repository is a **research prototype**. The following are explicitly **out of scope**:
@@ -248,6 +251,7 @@ REROUTE is **allowed only when all conditions are met**. Otherwise, the system m
 | Candidate route cannot enforce **same-or-stronger** constraints | ❌ | `STOPPED` |
 | Safe class task + same-or-lower privileges + same-or-stronger constraints | ✅ | `REROUTE` |
 | REROUTE count exceeds limit | ❌ | `PAUSE_FOR_HITL` or `STOPPED` |
+
 
 ## Main files and directories
 
@@ -311,9 +315,12 @@ Below is the practical map of the repository.
   Log-related documentation
 
 
+
 **Hard limits (recommended defaults):**
 - `max_reroute = 1` (exceed → `PAUSE_FOR_HITL` or `STOPPED`)
 - REROUTE must be logged with `reason_code` and the selected route identifier.
+
+
 
 
 ## 🧭 Diagrams
@@ -350,7 +357,7 @@ If the image is not visible (or too small), open it directly:
 
 This project produces **audit logs** for reproducibility and accountability.  
 Because logs may outlive a session and may be shared for research, **treat logs as sensitive artifacts**.
-=======
+
 ## Version guide
 
 ### v5.1.x
@@ -460,6 +467,11 @@ To keep logs safe and shareable for research:
 - **MUST** run a PII/secret scan on any candidate log payload; on detection failure, **do not write** the log (fail-closed).
 - **MUST** avoid committing runtime logs to the repository (use local restricted directories).
 
+
+**Minimum required fields (MUST):**
+- `run_id`, `timestamp`, `layer`, `decision`, `reason_code`, `final_decider`, `policy_version`
+
+
 ## Testing
 
 The repository uses pytest-based checks to validate orchestration behavior.
@@ -478,6 +490,7 @@ Run all tests with:
 
 **Minimum required fields (MUST):**
 - `run_id`, `timestamp`, `layer`, `decision`, `reason_code`, `final_decider`, `policy_version`
+
 
 
 **Retention (SHOULD):**
@@ -578,6 +591,9 @@ pytest -q tests/test_kage_orchestrator_diverse_v1.py
 pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_2.py
 pytest -q tests/test_end_to_end_confidential_loopguard_v1_0.py
 CI runs lint/pytest via .github/workflows/python-app.yml.
+
+
+CI runs lint/pytest via `.github/workflows/python-app.yml'.
 
 
 📌 License
