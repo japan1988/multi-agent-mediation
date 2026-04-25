@@ -298,6 +298,19 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path) -> None:
     HITL firepoint must be observable in logs:
     - HITL_REQUESTED (SYSTEM, PAUSE_FOR_HITL, overrideable=True, sealed=False)
     - HITL_DECIDED (USER, RUN or STOPPED, overrideable=False, sealed=False)
+
+    and ARL-min fields must exist.
+    """
+    audit_path = tmp_path / "audit.jsonl"
+    art_dir = tmp_path / "artifacts"
+
+    # Prompt mentions only Excel => word/ppt meaning gate should HITL.
+    def resolver(
+        run_id: str,
+        task_id: str,
+        layer: str,
+        reason_code: str,
+
     """
     paths = _audit_paths(tmp_path)
 
@@ -306,6 +319,7 @@ def test_hitl_firepoint_events_and_arl_fields_present(tmp_path: Path) -> None:
         _task_id: str,
         _layer: str,
         _reason_code: str,
+
     ) -> sim.HitlChoice:
         return "STOP"
 
@@ -444,6 +458,21 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path) -> 
         truncate=True,
     )
 
+
+    rows = _read_jsonl(audit_path)
+    rfl_gate = [
+        r
+        for r in rows
+        if r.get("event") == "GATE_RFL" and r.get("decision") == "PAUSE_FOR_HITL"
+    ]
+
+    assert rfl_gate, "RFL gate did not trigger PAUSE_FOR_HITL"
+    assert any(
+        r.get("event") == "HITL_REQUESTED" and r.get("layer") == "rfl"
+        for r in rows
+    )
+    assert res.artifacts_written_task_ids, "No artifacts were written after HITL_CONTINUE"
+
     rows = _read_jsonl(paths["audit"])
     _require(bool(rows), "Audit log should not be empty")
 
@@ -469,6 +498,7 @@ def test_rfl_gate_triggers_hitl_and_continue_allows_dispatch(tmp_path: Path) -> 
     _require(artifacts_written, "Expected ARTIFACT_WRITTEN after CONTINUE")
 
 
+
 def test_rfl_hitl_stop_blocks_dispatch(tmp_path: Path) -> None:
     """
     Same RFL trigger but STOP:
@@ -486,7 +516,18 @@ def test_rfl_hitl_stop_blocks_dispatch(tmp_path: Path) -> None:
         truncate=True,
     )
 
+
+    rows = _read_jsonl(audit_path)
+    ethics_rows = [
+        r
+        for r in rows
+        if r.get("event") == "GATE_ETHICS" and r.get("decision") == "STOPPED"
+    ]
+
+    assert ethics_rows, "No STOPPED GATE_ETHICS found"
+
     _require_equal(out.decision, "STOPPED", "Expected STOPPED after RFL HITL STOP")
+
 
     events = _read_jsonl(paths["audit"])
     _require(bool(events), "Audit log should not be empty")
@@ -605,14 +646,70 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
         r.get("task_id") == "task_excel"
         and r.get("event") == "ARTIFACT_SKIPPED"
         and r.get("decision") == "PAUSE_FOR_HITL"
+
+    ]
+    assert excel_skips, (
+        "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending"
+
         for r in rows
     )
+
+
+    # Ensure at least one task is STOPPED due to ethics
+    assert any(t.decision == "STOPPED" and t.blocked_layer == "ethics" for t in res.tasks)
+
+    # Hard guarantee: no email-like strings in logs
+    assert "@" not in _blob(rows)
+
+
+def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(tmp_path: Path):
+    """
+    Consistency:
+    - If contract mismatch occurs, system raises HITL, and on CONTINUE it must:
+      - emit REGEN_REQUESTED + REGEN_INSTRUCTIONS
+      - keep task as PAUSE_FOR_HITL and skip artifact
+    """
+    audit_path = tmp_path / "audit.jsonl"
+    art_dir = tmp_path / "artifacts"
+
+    # break_contract on excel -> mismatch at consistency
+    res = sim.run_simulation(
+        prompt="WordとExcelとPPTを作って",
+        run_id="T#CONS",
+        audit_path=str(audit_path),
+        artifact_dir=str(art_dir),
+        truncate_audit_on_start=True,
+        faults={"excel": {"break_contract": True}},
+        hitl_resolver=lambda *_: "CONTINUE",
+    )
+
+    rows = _read_jsonl(audit_path)
+
+    # Regen events must exist for the excel task
+    assert any(r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED" for r in rows)
+    assert any(r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS" for r in rows)
+
+    # For excel, artifact must be skipped with PAUSE_FOR_HITL
+    excel_skips = [
+        r
+        for r in rows
+        if r.get("task_id") == "task_excel"
+        and r.get("event") == "ARTIFACT_SKIPPED"
+        and r.get("decision") == "PAUSE_FOR_HITL"
+    ]
+    assert excel_skips, "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending"
+
+    # Result should include excel as PAUSE_FOR_HITL
+    excel_tr = next(t for t in res.tasks if t.task_id == "task_excel")
+    assert excel_tr.decision == "PAUSE_FOR_HITL"
+    assert excel_tr.blocked_layer == "consistency"
 
     _require(regen_requested, "Expected REGEN_REQUESTED on contract mismatch")
     _require(regen_instructions, "Expected REGEN_INSTRUCTIONS on contract mismatch")
     _require(
         skipped_paused,
         "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending",
+
     )
 
     excel_task = _get_task(out, "task_excel")
@@ -622,3 +719,4 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
         out.decision in ("PAUSE_FOR_HITL", "STOPPED"),
         f"Unexpected overall decision: {out.decision!r}",
     )
+
