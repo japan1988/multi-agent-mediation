@@ -654,6 +654,56 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
         for r in rows
     )
 
+
+    # Ensure at least one task is STOPPED due to ethics
+    assert any(t.decision == "STOPPED" and t.blocked_layer == "ethics" for t in res.tasks)
+
+    # Hard guarantee: no email-like strings in logs
+    assert "@" not in _blob(rows)
+
+
+def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(tmp_path: Path):
+    """
+    Consistency:
+    - If contract mismatch occurs, system raises HITL, and on CONTINUE it must:
+      - emit REGEN_REQUESTED + REGEN_INSTRUCTIONS
+      - keep task as PAUSE_FOR_HITL and skip artifact
+    """
+    audit_path = tmp_path / "audit.jsonl"
+    art_dir = tmp_path / "artifacts"
+
+    # break_contract on excel -> mismatch at consistency
+    res = sim.run_simulation(
+        prompt="WordとExcelとPPTを作って",
+        run_id="T#CONS",
+        audit_path=str(audit_path),
+        artifact_dir=str(art_dir),
+        truncate_audit_on_start=True,
+        faults={"excel": {"break_contract": True}},
+        hitl_resolver=lambda *_: "CONTINUE",
+    )
+
+    rows = _read_jsonl(audit_path)
+
+    # Regen events must exist for the excel task
+    assert any(r.get("task_id") == "task_excel" and r.get("event") == "REGEN_REQUESTED" for r in rows)
+    assert any(r.get("task_id") == "task_excel" and r.get("event") == "REGEN_INSTRUCTIONS" for r in rows)
+
+    # For excel, artifact must be skipped with PAUSE_FOR_HITL
+    excel_skips = [
+        r
+        for r in rows
+        if r.get("task_id") == "task_excel"
+        and r.get("event") == "ARTIFACT_SKIPPED"
+        and r.get("decision") == "PAUSE_FOR_HITL"
+    ]
+    assert excel_skips, "Expected excel ARTIFACT_SKIPPED with PAUSE_FOR_HITL after regen pending"
+
+    # Result should include excel as PAUSE_FOR_HITL
+    excel_tr = next(t for t in res.tasks if t.task_id == "task_excel")
+    assert excel_tr.decision == "PAUSE_FOR_HITL"
+    assert excel_tr.blocked_layer == "consistency"
+
     _require(regen_requested, "Expected REGEN_REQUESTED on contract mismatch")
     _require(regen_instructions, "Expected REGEN_INSTRUCTIONS on contract mismatch")
     _require(
@@ -669,3 +719,4 @@ def test_consistency_mismatch_continue_enters_regen_pending_and_skips_artifact(t
         out.decision in ("PAUSE_FOR_HITL", "STOPPED"),
         f"Unexpected overall decision: {out.decision!r}",
     )
+
