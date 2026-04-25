@@ -1,46 +1,47 @@
-          loc = item.get("location") or {}
+              loc = item.get("location") or {}
           f.write(
               f"- `{item.get('filename','?')}:{loc.get('row',1)}` "
               f"[{item.get('code','RUFF')}] {item.get('message','')}\n"
           )
-      f.write("\n")
-
-      if bandit_advisory_count:
-          f.write("### Bandit LOW/MEDIUM: top files\n\n")
-          for filename, count in bandit_by_file.most_common(10):
-              f.write(f"- `{filename}`: {count}\n")
-          f.write("\n")
-          f.write("### Bandit LOW/MEDIUM: first findings\n\n")
-          for item in bandit_advisory_results[:20]:
-              f.write(
-                  f"- `{item.get('filename','?')}:{item.get('line_number',1)}` "
-                  f"[{item.get('test_id','BANDIT')}] {item.get('issue_text','')}\n"
-              )
           f.write("\n")
 
-      if pip_count:
-          f.write("### pip-audit findings\n\n")
-          for row in pip_vulns[:20]:
-              fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "なし"
-              f.write(
-                  f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
-              )
-          if len(pip_vulns) > 20:
-              f.write(f"- ... and {len(pip_vulns) - 20} more\n")
-          f.write("\n")
+          if bandit_advisory_count:
+              f.write("### Bandit LOW/MEDIUM: top files\n\n")
+              for filename, count in bandit_by_file.most_common(10):
+                  f.write(f"- `{filename}`: {count}\n")
+              f.write("\n")
 
-      if ruff_exit > 1:
-          f.write("### Ruff execution error\n\n")
-          f.write(f"- exit code: {ruff_exit}\n\n")
+              f.write("### Bandit LOW/MEDIUM: first findings\n\n")
+              for item in bandit_advisory_results[:20]:
+                  f.write(
+                      f"- `{item.get('filename','?')}:{item.get('line_number',1)}` "
+                      f"[{item.get('test_id','BANDIT')}] {item.get('issue_text','')}\n"
+                  )
+              f.write("\n")
 
-      if bandit_exit > 1:
-          f.write("### Bandit execution error\n\n")
-          f.write(f"- exit code: {bandit_exit}\n\n")
+          if pip_count:
+              f.write("### pip-audit findings\n\n")
+              for row in pip_vulns[:20]:
+                  fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "なし"
+                  f.write(
+                      f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
+                  )
+              if len(pip_vulns) > 20:
+                  f.write(f"- ... and {len(pip_vulns) - 20} more\n")
+              f.write("\n")
 
-      if pip_exit > 1 and pip_count == 0:
-          f.write("### pip-audit execution error\n\n")
-          f.write(f"- exit code: {pip_exit}\n\n")
-      PY
+          if ruff_exit > 1:
+              f.write("### Ruff execution error\n\n")
+              f.write(f"- exit code: {ruff_exit}\n\n")
+
+          if bandit_exit > 1:
+              f.write("### Bandit execution error\n\n")
+              f.write(f"- exit code: {bandit_exit}\n\n")
+
+          if pip_exit > 1 and pip_count == 0:
+              f.write("### pip-audit execution error\n\n")
+              f.write(f"- exit code: {pip_exit}\n\n")
+          PY
 
       - name: Complete advisory phase
         if: always()
@@ -48,4 +49,4 @@
         run: |
           set -euo pipefail
           echo "workflow syntax block is present"
-          echo "Advisory analysis completed (non-blocking)"
+          echo "Advisory analysis completed (non-blocking)"      
