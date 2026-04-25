@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 
+
+def logprint(text):
+
 """AI mediation demo with safety checks and harmony scoring."""
 
 from __future__ import annotations
@@ -7,6 +10,7 @@ from __future__ import annotations
 
 def logprint(text: str) -> None:
     """標準出力とログファイルの両方に出力する。"""
+
     print(text)
     with open("ai_mediation_log.txt", "a", encoding="utf-8") as f:
         f.write(text + "\n")
@@ -142,6 +146,24 @@ class AI:
         self.proposal = proposal
         self.risk_evaluation = risk_evaluation
         self.priority_values = priority_values
+
+        self.relativity_level = relativity_level  # 0〜1: 他の価値観をどれだけ受け入れるか
+
+    def generate_compromise_offer(self, others_priorities):
+        new_priority = {}
+        if not others_priorities:
+            # 他者が存在しない場合はゼロ除算を避け、現在の優先度をそのまま返す
+            return dict(self.priority_values)
+
+        for k in self.priority_values:
+            avg_others = sum(
+                o[k] for o in others_priorities
+            ) / len(others_priorities)
+            # 相対性度合いに応じて自分と他者の価値観をブレンド
+            new_priority[k] = (
+                (1 - self.relativity_level) * self.priority_values[k]
+                + self.relativity_level * avg_others
+
         # 0〜1: 他の価値観をどれだけ受け入れるか
         self.relativity_level = relativity_level
 
@@ -164,6 +186,7 @@ class AI:
             # キーが存在しない場合は 0 として扱う
             avg_others = sum(p.get(key, 0.0) for p in others_priorities) / len(
                 others_priorities
+
             )
             # 相対性度合いに応じて自分と他者の価値観をブレンド
             blended = (1.0 - self.relativity_level) * my_value + self.relativity_level * avg_others
@@ -178,16 +201,23 @@ class AIEMediator:
     def __init__(self, agents: list[AI]) -> None:
         self.agents = agents
 
+
+    def mediate(self):
+
     def mediate(self) -> None:
         """最大 max_rounds まで妥協交渉を行い、ハーモニースコアを評価する。"""
+
         if not self.agents:
             logprint("No agents provided; skipping mediation.")
             return
 
+
+
         # ログファイル初期化
+
         with open("ai_mediation_log.txt", "w", encoding="utf-8") as f:
             f.write("=== AI Mediation Log ===\n")
-=======
+
     """
     A negotiation agent with a proposal and a preference profile.
     """
@@ -287,6 +317,14 @@ class AIEMediator:
 
             total = sum(combined.values())
 
+            if total == 0:
+                # 全体優先度の合計が 0 の場合は安全にゼロ除算を回避し、優先度ゼロとして扱う
+                ratios = {k: 0 for k in combined}
+            else:
+                ratios = {k: combined[k] / total for k in combined}
+            max_ratio = max(ratios.values()) if ratios else 0
+
+
             # 全体優先度の合計が 0 の場合は安全にゼロ除算を回避し、優先度ゼロとして扱う
             if total == 0.0:
                 ratios = {k: 0.0 for k in combined}
@@ -295,8 +333,10 @@ class AIEMediator:
 
             max_ratio = max(ratios.values()) if ratios else 0.0
 
+
             avg_relativity = (
                 sum(a.relativity_level for a in self.agents) / len(self.agents)
+                if self.agents else 0
             )
 
             harmony_score = (1.0 - max_ratio) * avg_relativity
@@ -437,8 +477,12 @@ class AIEMediator:
 
 
 
+def main():
+
+
 def main() -> None:
     """デモ用のエージェントを構成して mediation を実行する。"""
+
     agents = [
         AI(
             "AI-A",
@@ -476,6 +520,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 def build_demo_agents() -> List[AI]:
 
@@ -548,4 +593,5 @@ def run_demo() -> None:
 
 if __name__ == "__main__":
     run_demo()
+
 
