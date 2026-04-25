@@ -1,4 +1,7 @@
 
+---
+
+
 # -*- coding: utf-8 -*-
 """
 Goals:
@@ -305,6 +308,7 @@ def test_simulate_run_emits_only_codebook_reason_codes_and_keeps_invariants(
             f"Unknown reason_code in ARL: {r['reason_code']}"
         )
     _assert_rows_keep_core_invariants(rows2)
+
 
 
 name: Python App CI
@@ -737,6 +741,10 @@ jobs:
         with:
 
           name: coverage-merged
+
+          path: coverage-merged.xml
+          
+
           path: coverage-merged.xm
 
           name: ci-artifacts-py${{ matrix.python-version }}
@@ -750,6 +758,7 @@ jobs:
 
 
           pytest -q
+
 
 
 
