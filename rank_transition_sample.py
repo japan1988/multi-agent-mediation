@@ -1,48 +1,3 @@
-
-
-
-diff --git a/rank_transition_sample.py b/rank_transition_sample.py
-index 1111111..2222222 100644
---- a/rank_transition_sample.py
-+++ b/rank_transition_sample.py
-@@ -1,6 +1,9 @@
- # -*- coding: utf-8 -*-
- """
- Hierarchy Rank Transition plotter
-+
-+Note:
-+- For reproducibility, this script supports an optional RNG seed.
- """
- from __future__ import annotations
- 
-@@ -36,11 +39,17 @@ def run_simulation(
-     initial_follow_rate: float = 0.5,
-     steps: int = 50,
-     mediation_interval: int = 5,
-     mediation_strength: float = 0.5,
-+    seed: int | None = None,
- ) -> list[float]:
-+    # Reproducibility: if seed is provided, make the simulation deterministic.
-+    if seed is not None:
-+        random.seed(seed)
-+
-     agents = [
-         AIAgent(
-             agent_id=i,
-             is_rule_follower=(random.random() < initial_follow_rate),
-             self_purpose=random.uniform(0.0, 0.5),
-@@ -70,7 +79,7 @@ def run_simulation(
- 
- def main() -> None:
-     steps = 50
--    rates = run_simulation(steps=steps, mediation_strength=0.5)
-+    rates = run_simulation(steps=steps, mediation_strength=0.5, seed=42)
- 
-     plt.figure(figsize=(6, 4))
-     plt.plot(range(steps), rates, marker="o")
-     plt.ylim(0.0, 1.0)
-
-
 # -*- coding: utf-8 -*-
 """
 Hierarchy Rank Transition plotter
@@ -50,7 +5,6 @@ Hierarchy Rank Transition plotter
 Note:
 - For reproducibility, this script supports an optional RNG seed.
 """
-
 from __future__ import annotations
 
 import random
@@ -93,15 +47,14 @@ def run_simulation(
     Returns:
         List of rule-following rates at each step.
     """
-    if seed is not None:
-        random.seed(seed)
+    rng = random.Random(seed)
 
     agents = [
         AIAgent(
             agent_id=i,
-            is_rule_follower=(random.random() < initial_follow_rate),
-            self_purpose=random.uniform(0.0, 0.5),
-            adaptability=random.uniform(0.1, 0.9),
+            is_rule_follower=(rng.random() < initial_follow_rate),
+            self_purpose=rng.uniform(0.0, 0.5),
+            adaptability=rng.uniform(0.1, 0.9),
         )
         for i in range(n_agents)
     ]
@@ -124,10 +77,6 @@ def run_simulation(
             follow_pressure = current_follow_rate
             defect_pressure = 1.0 - current_follow_rate
 
-            # Rule-following tendency:
-            # - strengthened by surrounding followers
-            # - weakened by self-purpose
-            # - strengthened on mediation steps
             tendency = (
                 0.5 * follow_pressure
                 + 0.35 * agent.adaptability
@@ -137,19 +86,18 @@ def run_simulation(
             if mediated_step:
                 tendency += mediation_strength * 0.35
 
-            # Small noise to avoid a fully static trajectory.
-            tendency += random.uniform(-0.08, 0.08)
+            tendency += rng.uniform(-0.08, 0.08)
 
             probability_follow = _clip01(0.5 + tendency - 0.5 * defect_pressure)
-            next_states.append(random.random() < probability_follow)
+            next_states.append(rng.random() < probability_follow)
 
         for agent, next_state in zip(agents, next_states):
             agent.is_rule_follower = next_state
 
-            # Self-purpose drifts slightly.
-            drift = random.uniform(-0.03, 0.03)
+            drift = rng.uniform(-0.03, 0.03)
             if mediated_step:
                 drift -= mediation_strength * 0.02
+
             agent.self_purpose = _clip01(agent.self_purpose + drift)
 
     return rates
@@ -176,4 +124,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
