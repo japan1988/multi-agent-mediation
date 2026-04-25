@@ -1,3 +1,4 @@
+
 Comment (paste as-is)
 
 CI is still red because pytest is collecting legacy tests under tests/ that import modules which are no longer present at repo root:
@@ -15,3 +16,11 @@ Next step (recommended):
 Move version-pinned tests from tests/ to archive/legacy_tests/ (or mark them skipped), keeping only maintained tests in tests/.
 
 CI stays green, while legacy variants remain runnable manually (best-effort).
+
+## How to use (optional)
+- To run maintained tests (CI suite):
+  - `pytest -q`
+
+
+Note: `archive/` is best-effort; only maintained entrypoints/tests are expected to stay green.
+
