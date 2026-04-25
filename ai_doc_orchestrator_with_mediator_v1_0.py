@@ -4,15 +4,15 @@ ai_doc_orchestrator_with_mediator_v1_0.py
 
 Agent -> Mediator -> Orchestrator pipeline (research simulator)
 
-Fixed gate order:
-  Meaning -> Consistency -> RFL -> Ethics -> ACC -> DISPATCH
+KAGE-ish gates fixed order:
+  Meaning -> Consistency -> RFL -> Ethics -> ACC -> Dispatch
 
 Invariants:
-- Mediator has no STOP authority. It returns only RUN or PAUSE_FOR_HITL.
+- Mediator has NO execution authority: returns only RUN or PAUSE_FOR_HITL.
 - Orchestrator always evaluates gates in fixed order.
-- sealed=True appears only at Ethics/ACC.
-- raw_text is never persisted.
-- logs never contain '@' after sanitization.
+- sealed=True may appear ONLY at Ethics/ACC.
+- raw_text must NEVER be persisted.
+- logs must NEVER contain '@'.
 """
 
 from __future__ import annotations
@@ -20,16 +20,18 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Union
 
 JST = timezone(timedelta(hours=9))
 
 Decision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
 FinalDecider = Literal["SYSTEM", "USER"]
-HitlChoice = Literal["CONTINUE", "STOP"]
+
+DECISION_RUN = "RUN"
+DECISION_PAUSE = "PAUSE_FOR_HITL"
+DECISION_STOPPED = "STOPPED"
 
 HITL_UNSPECIFIED = "unspecified"
 HITL_CONTINUE = "CONTINUE"
@@ -39,21 +41,28 @@ KNOWN_KINDS = {"xlsx", "pptx"}
 
 REASON_MEDIATOR_RUN = "MEDIATOR_RUN_OK"
 REASON_MEDIATOR_HITL_CONTINUE = "MEDIATOR_HITL_CONTINUE"
+
 REASON_HITL_CONTINUE = "HITL_CONTINUE"
 REASON_HITL_STOP = "HITL_STOP_REQUESTED"
+REASON_HITL_WAIT = "HITL_UNSPECIFIED_WAIT"
+
 REASON_MEANING_OK = "MEANING_OK"
 REASON_MEANING_INVALID_KIND = "MEANING_INVALID_KIND"
 REASON_MEANING_EMPTY_PROMPT = "MEANING_EMPTY_PROMPT"
+
 REASON_CONSISTENCY_OK = "CONSISTENCY_OK"
 REASON_CONSISTENCY_MISMATCH = "CONSISTENCY_KIND_PROMPT_MISMATCH"
+
 REASON_RFL_OK = "RFL_OK"
 REASON_RFL_RELATIVE = "RFL_RELATIVE_REQUEST"
+
 REASON_ETHICS_OK = "ETHICS_OK"
 REASON_ETHICS_PII = "ETHICS_PII_DETECTED"
+
 REASON_ACC_OK = "ACC_OK"
 REASON_ACC_EXTERNAL_SIDE_EFFECT = "ACC_EXTERNAL_SIDE_EFFECT_REQUIRES_HITL"
+
 REASON_DISPATCH_OK = "ORCH_RUN_OK"
-REASON_HITL_WAIT = "HITL_UNSPECIFIED_WAIT"
 
 LAYER_MEDIATOR = "mediator_advice"
 LAYER_MEANING = "meaning_gate"
@@ -68,12 +77,11 @@ RFL_PATTERNS = (
     r"いい感じ",
     r"\bbest\b",
     r"おまかせ",
+    r"おすすめ",
     r"どっち",
     r"どちら",
-    r"どれ",
-    r"\?",
-    r"？",
 )
+
 SPREADSHEET_PATTERNS = (
     r"表",
     r"表計算",
@@ -84,6 +92,7 @@ SPREADSHEET_PATTERNS = (
     r"excel",
     r"xlsx",
 )
+
 SLIDE_PATTERNS = (
     r"スライド",
     r"発表",
@@ -94,26 +103,25 @@ SLIDE_PATTERNS = (
     r"資料",
     r"まとめ",
 )
+
 SIDE_EFFECT_PATTERNS = (
     r"\bemail\b",
     r"\bsend\b",
     r"\bupload\b",
     r"メール",
     r"送信",
+    r"送って",
     r"アップロード",
 )
 
 EMAIL_PATTERN = re.compile(
-    r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
-    re.IGNORECASE,
+    r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"
 )
 PHONE_PATTERN = re.compile(
     r"(?:\+?\d{1,3}[-\s]?)?(?:\(?\d{2,4}\)?[-\s]?)?\d{2,4}[-\s]?\d{3,4}[-\s]?\d{3,4}"
 )
 AT_PATTERN = re.compile(r"@")
-RELATIVE_TERMS = re.compile("|".join(RFL_PATTERNS), re.IGNORECASE)
-EXTERNAL_SIDE_EFFECT_HINTS = re.compile("|".join(SIDE_EFFECT_PATTERNS), re.IGNORECASE)
-_TASKS: Tuple[str, ...] = ("excel", "word", "ppt")
+
 
 JSONScalar = Union[str, int, float, bool, None]
 JSONValue = Union[JSONScalar, Dict[str, Any], List[Any]]
@@ -122,35 +130,15 @@ JSONValue = Union[JSONScalar, Dict[str, Any], List[Any]]
 @dataclass
 class Task:
     task_id: str
-    kind: str
+    kind: Literal["xlsx", "pptx"]
     prompt: str
-    hitl: str = HITL_UNSPECIFIED
-
-
-@dataclass
-class AgentProposal:
-    task_id: str
-    kind: str
-    spec: Dict[str, Any]
-    raw_text: str
-
-
-@dataclass
-class MediatorReview:
-    task_id: str
-    decision: Literal["RUN", "PAUSE_FOR_HITL"]
-    reason_code: str
-    revised_spec: Optional[Dict[str, Any]] = None
-    safe_preview: str = ""
-    kind: str = ""
-    prompt: str = ""
     hitl: str = HITL_UNSPECIFIED
 
 
 @dataclass
 class OrchestratorResult:
     task_id: str
-    decision: str
+    decision: Decision
     reason_code: str
     artifact_preview: Optional[str] = None
 
@@ -165,8 +153,6 @@ class AuditEvent:
     decision: str
     reason_code: str
     sealed: Optional[bool] = None
-    overrideable: Optional[bool] = None
-    final_decider: Optional[str] = None
     artifact_preview: Optional[str] = None
     safe_context: Optional[Dict[str, JSONValue]] = None
 
@@ -184,14 +170,6 @@ def ensure_text(value: Any) -> str:
     if value is None:
         return ""
     return str(value)
-
-
-def _sha256_text(s: str) -> str:
-    return hashlib.sha256(ensure_text(s).encode("utf-8", errors="ignore")).hexdigest()
-
-
-def safe_prompt_digest(prompt: str) -> str:
-    return _sha256_text(prompt)[:12]
 
 
 def sanitize_string(text: str) -> str:
@@ -212,198 +190,43 @@ def sanitize_json_value(value: JSONValue) -> JSONValue:
     if isinstance(value, dict):
         sanitized: Dict[str, JSONValue] = {}
         for key, item in value.items():
-            if str(key).lower() in {"raw_text", "raw", "prompt_raw"}:
+            if str(key) == "raw_text":
                 continue
             sanitized[sanitize_string(str(key))] = sanitize_json_value(item)
         return sanitized
     return value
 
 
-def _pii_like(s: str) -> bool:
-    s = ensure_text(s)
-    return bool(EMAIL_PATTERN.search(s) or PHONE_PATTERN.search(s))
-
-
-def _contains_external_side_effect_request(s: str) -> bool:
-    return bool(EXTERNAL_SIDE_EFFECT_HINTS.search(ensure_text(s)))
-
-
-def _rfl_hit(s: str) -> bool:
-    return bool(RELATIVE_TERMS.search(ensure_text(s)))
-
-
-def _redact_email_like(s: str) -> str:
-    return sanitize_string(s)
-
-
-def _build_artifact_preview(spec: Dict[str, Any]) -> str:
-    return sanitize_string(json.dumps(spec, ensure_ascii=False)[:240])
+def safe_prompt_digest(prompt: str) -> str:
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:12]
 
 
 def contains_pattern(patterns: Sequence[str], text: str) -> bool:
-    text = ensure_text(text)
     for pattern in patterns:
         if re.search(pattern, text, flags=re.IGNORECASE):
             return True
     return False
 
 
-class AuditLog:
-    """
-    JSONL audit writer with safety guards:
-    - Never persists raw_text.
-    - Never persists any '@' character.
-    """
-
-    def __init__(self, log_path: str, run_id: str = "", session_id: str = "") -> None:
-        self.log_path = log_path
+class AuditLogger:
+    def __init__(
+        self,
+        path: str,
+        run_id: str = "",
+        session_id: str = "",
+    ) -> None:
+        self.path = path
         self.run_id = ensure_text(run_id)
         self.session_id = ensure_text(session_id)
 
-    def start_run(self, truncate: bool = False) -> None:
-        path = Path(self.log_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if truncate:
-            path.write_text("", encoding="utf-8")
-
-    def _sanitize_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
-        sanitized = sanitize_json_value(event)
-        if not isinstance(sanitized, dict):
-            raise TypeError("sanitized audit event must be a dict")
-        return sanitized
-
-    def emit(self, event: Dict[str, Any]) -> None:
-        safe = self._sanitize_event(event)
-        path = Path(self.log_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            line = json.dumps(safe, ensure_ascii=False, default=str)
-            if "@" in line:
-                line = line.replace("@", "[REDACTED]")
-            f.write(line + "\n")
-
-    def log(self, event: Union[AuditEvent, Dict[str, Any]]) -> None:
-        payload: Dict[str, Any]
-        if is_dataclass(event):
-            payload = asdict(event)
-        else:
-            payload = dict(event)
-        if not payload.get("ts"):
-            payload["ts"] = utc_ts()
-        if not payload.get("run_id"):
-            payload["run_id"] = self.run_id
-        if not payload.get("session_id"):
-            payload["session_id"] = self.session_id
-        self.emit(payload)
-
-
-AuditLogger = AuditLog
-
-
-def _arl_min(
-    run_id: str,
-    session_id: str,
-    task: Task,
-    layer: str,
-    decision: str,
-    reason_code: str,
-    sealed: bool,
-    overrideable: bool,
-    final_decider: FinalDecider,
-) -> Dict[str, Any]:
-    return {
-        "ts": datetime.now(JST).isoformat(),
-        "run_id": run_id,
-        "session_id": session_id,
-        "task_id": task.task_id,
-        "layer": layer,
-        "decision": decision,
-        "reason_code": reason_code,
-        "sealed": sealed,
-        "overrideable": overrideable,
-        "final_decider": final_decider,
-        "kind": task.kind,
-        "prompt_sha256": _sha256_text(task.prompt),
-    }
-
-
-def agent_generate(task: Task) -> AgentProposal:
-    if task.kind == "xlsx":
-        spec = {
-            "format": "xlsx",
-            "sheet_name": "Summary",
-            "rows": [
-                ["Title", "Value"],
-                ["Task", task.prompt[:80]],
-            ],
-        }
-        raw_text = "Generated XLSX spec."
-    elif task.kind == "pptx":
-        spec = {
-            "format": "pptx",
-            "slides": [
-                {"title": "Overview", "bullets": [task.prompt[:80]]},
-            ],
-        }
-        raw_text = "Generated PPTX spec."
-    else:
-        spec = {"format": task.kind, "content": task.prompt[:80]}
-        raw_text = "Generated generic spec."
-    return AgentProposal(task_id=task.task_id, kind=task.kind, spec=spec, raw_text=raw_text)
-
-
-def mediator_review(task: Task, proposal: AgentProposal) -> MediatorReview:
-    if _contains_external_side_effect_request(task.prompt):
-        return MediatorReview(
-            task_id=task.task_id,
-            decision="PAUSE_FOR_HITL",
-            reason_code="MEDIATOR_EXTERNAL_SIDE_EFFECT_AMBIGUOUS",
-            safe_preview="Prompt suggests external side effects; escalate to HITL.",
-            kind=task.kind,
-            prompt=task.prompt,
-            hitl=task.hitl,
-        )
-
-    if _rfl_hit(task.prompt):
-        return MediatorReview(
-            task_id=task.task_id,
-            decision="PAUSE_FOR_HITL",
-            reason_code="MEDIATOR_REL_BOUNDARY_UNSTABLE",
-            safe_preview="Relativity terms detected; request clarification via HITL.",
-            kind=task.kind,
-            prompt=task.prompt,
-            hitl=task.hitl,
-        )
-
-    if _pii_like(task.prompt) or _pii_like(proposal.raw_text):
-        return MediatorReview(
-            task_id=task.task_id,
-            decision="PAUSE_FOR_HITL",
-            reason_code="MEDIATOR_PII_LIKE_DETECTED",
-            safe_preview="PII-like pattern detected; escalate to HITL.",
-            kind=task.kind,
-            prompt=task.prompt,
-            hitl=task.hitl,
-        )
-
-    revised = dict(proposal.spec)
-    if proposal.kind == "xlsx":
-        revised.setdefault("format", "xlsx")
-        revised.setdefault("rows", [])
-    elif proposal.kind == "pptx":
-        revised.setdefault("format", "pptx")
-        revised.setdefault("slides", [])
-
-    return MediatorReview(
-        task_id=task.task_id,
-        decision="RUN",
-        reason_code="MEDIATOR_OK",
-        revised_spec=revised,
-        safe_preview="Mediator OK; forwarding to Orchestrator.",
-        kind=task.kind,
-        prompt=task.prompt,
-        hitl=task.hitl,
-    )
+    def log(self, event: AuditEvent) -> None:
+        payload = asdict(event)
+        sanitized = sanitize_json_value(payload)
+        line = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
+        if "@" in line:
+            line = line.replace("@", "[REDACTED]")
+        with open(self.path, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
 
 
 class Agent:
@@ -421,19 +244,36 @@ class Agent:
         hitl = ensure_text(item.get("hitl") or HITL_UNSPECIFIED)
         return Task(
             task_id=ensure_text(item.get("task_id")),
-            kind=ensure_text(item.get("kind")),
+            kind=ensure_text(item.get("kind")),  # type: ignore[arg-type]
             prompt=ensure_text(item.get("prompt")),
             hitl=hitl or HITL_UNSPECIFIED,
         )
 
 
 class Mediator:
-    def __init__(self, audit: AuditLog) -> None:
+    def __init__(self, audit: AuditLogger) -> None:
         self.audit = audit
 
     def evaluate(self, task: Task) -> Dict[str, str]:
-        proposal = agent_generate(task)
-        review = mediator_review(task, proposal)
+        if task.hitl == HITL_STOP:
+            decision = DECISION_PAUSE
+            reason_code = REASON_HITL_STOP
+        elif task.hitl == HITL_CONTINUE:
+            decision = DECISION_RUN
+            reason_code = REASON_MEDIATOR_HITL_CONTINUE
+        elif contains_pattern(SIDE_EFFECT_PATTERNS, task.prompt):
+            decision = DECISION_PAUSE
+            reason_code = "MEDIATOR_EXTERNAL_SIDE_EFFECT_AMBIGUOUS"
+        elif contains_pattern(RFL_PATTERNS, task.prompt):
+            decision = DECISION_PAUSE
+            reason_code = "MEDIATOR_REL_BOUNDARY_UNSTABLE"
+        elif EMAIL_PATTERN.search(task.prompt) or PHONE_PATTERN.search(task.prompt):
+            decision = DECISION_PAUSE
+            reason_code = "MEDIATOR_PII_LIKE_DETECTED"
+        else:
+            decision = DECISION_RUN
+            reason_code = REASON_MEDIATOR_RUN
+
         self.audit.log(
             AuditEvent(
                 ts=utc_ts(),
@@ -441,24 +281,20 @@ class Mediator:
                 session_id=self.audit.session_id,
                 task_id=task.task_id,
                 layer=LAYER_MEDIATOR,
-                decision=review.decision,
-                reason_code=review.reason_code,
-                sealed=False,
-                overrideable=True if review.decision == "PAUSE_FOR_HITL" else False,
-                final_decider="SYSTEM",
+                decision=decision,
+                reason_code=reason_code,
                 safe_context={
                     "kind": task.kind,
                     "hitl": task.hitl,
                     "prompt_digest": safe_prompt_digest(task.prompt),
-                    "safe_preview": review.safe_preview,
                 },
             )
         )
-        return {"decision": review.decision, "reason_code": review.reason_code}
+        return {"decision": decision, "reason_code": reason_code}
 
 
 class Orchestrator:
-    def __init__(self, audit: AuditLog) -> None:
+    def __init__(self, audit: AuditLogger) -> None:
         self.audit = audit
 
     def run(self, task: Task, mediator_state: Dict[str, str]) -> OrchestratorResult:
@@ -474,7 +310,7 @@ class Orchestrator:
         outcome = self._gate_rfl(task, current_decision, current_reason)
         current_decision, current_reason = outcome["decision"], outcome["reason_code"]
 
-        if current_decision == "PAUSE_FOR_HITL":
+        if current_decision == DECISION_PAUSE:
             current_decision, current_reason = self._resolve_hitl_after_pause(
                 task, current_decision, current_reason
             )
@@ -485,7 +321,7 @@ class Orchestrator:
         outcome = self._gate_acc(task, current_decision, current_reason)
         current_decision, current_reason = outcome["decision"], outcome["reason_code"]
 
-        if current_decision == "PAUSE_FOR_HITL":
+        if current_decision == DECISION_PAUSE:
             current_decision, current_reason = self._resolve_hitl_after_pause(
                 task, current_decision, current_reason
             )
@@ -506,8 +342,6 @@ class Orchestrator:
         reason_code: str,
         *,
         sealed: Optional[bool] = None,
-        overrideable: Optional[bool] = None,
-        final_decider: Optional[str] = "SYSTEM",
         artifact_preview: Optional[str] = None,
         safe_context: Optional[Dict[str, JSONValue]] = None,
     ) -> AuditEvent:
@@ -520,8 +354,6 @@ class Orchestrator:
             decision=decision,
             reason_code=reason_code,
             sealed=sealed,
-            overrideable=overrideable,
-            final_decider=final_decider,
             artifact_preview=artifact_preview,
             safe_context=safe_context,
         )
@@ -529,28 +361,26 @@ class Orchestrator:
     def _gate_meaning(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
-        if current_decision != "RUN":
+        if current_decision != DECISION_RUN:
             self.audit.log(
                 self._audit_event(
                     task.task_id,
                     LAYER_MEANING,
                     current_decision,
                     current_reason,
-                    sealed=False,
-                    overrideable=True if current_decision == "PAUSE_FOR_HITL" else False,
                     safe_context={"skipped": True},
                 )
             )
             return {"decision": current_decision, "reason_code": current_reason}
 
         if not task.prompt.strip():
-            decision = "PAUSE_FOR_HITL"
+            decision = DECISION_PAUSE
             reason = REASON_MEANING_EMPTY_PROMPT
         elif task.kind not in KNOWN_KINDS:
-            decision = "PAUSE_FOR_HITL"
+            decision = DECISION_PAUSE
             reason = REASON_MEANING_INVALID_KIND
         else:
-            decision = "RUN"
+            decision = DECISION_RUN
             reason = REASON_MEANING_OK
 
         self.audit.log(
@@ -559,8 +389,6 @@ class Orchestrator:
                 LAYER_MEANING,
                 decision,
                 reason,
-                sealed=False,
-                overrideable=True if decision == "PAUSE_FOR_HITL" else False,
                 safe_context={
                     "kind": task.kind,
                     "prompt_digest": safe_prompt_digest(task.prompt),
@@ -572,15 +400,13 @@ class Orchestrator:
     def _gate_consistency(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
-        if current_decision != "RUN":
+        if current_decision != DECISION_RUN:
             self.audit.log(
                 self._audit_event(
                     task.task_id,
                     LAYER_CONSISTENCY,
                     current_decision,
                     current_reason,
-                    sealed=False,
-                    overrideable=True if current_decision == "PAUSE_FOR_HITL" else False,
                     safe_context={"skipped": True},
                 )
             )
@@ -595,10 +421,10 @@ class Orchestrator:
             ok = False
 
         if ok:
-            decision = "RUN"
+            decision = DECISION_RUN
             reason = REASON_CONSISTENCY_OK
         else:
-            decision = "PAUSE_FOR_HITL"
+            decision = DECISION_PAUSE
             reason = REASON_CONSISTENCY_MISMATCH
 
         self.audit.log(
@@ -607,8 +433,6 @@ class Orchestrator:
                 LAYER_CONSISTENCY,
                 decision,
                 reason,
-                sealed=False,
-                overrideable=True if decision == "PAUSE_FOR_HITL" else False,
                 safe_context={
                     "kind": task.kind,
                     "prompt_digest": safe_prompt_digest(prompt),
@@ -620,7 +444,7 @@ class Orchestrator:
     def _gate_rfl(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
-        if current_decision != "RUN":
+        if current_decision != DECISION_RUN:
             self.audit.log(
                 self._audit_event(
                     task.task_id,
@@ -628,17 +452,16 @@ class Orchestrator:
                     current_decision,
                     current_reason,
                     sealed=False,
-                    overrideable=True if current_decision == "PAUSE_FOR_HITL" else False,
                     safe_context={"skipped": True},
                 )
             )
             return {"decision": current_decision, "reason_code": current_reason}
 
-        if _rfl_hit(task.prompt):
-            decision = "PAUSE_FOR_HITL"
+        if contains_pattern(RFL_PATTERNS, task.prompt):
+            decision = DECISION_PAUSE
             reason = REASON_RFL_RELATIVE
         else:
-            decision = "RUN"
+            decision = DECISION_RUN
             reason = REASON_RFL_OK
 
         self.audit.log(
@@ -648,7 +471,6 @@ class Orchestrator:
                 decision,
                 reason,
                 sealed=False,
-                overrideable=True if decision == "PAUSE_FOR_HITL" else False,
                 safe_context={"prompt_digest": safe_prompt_digest(task.prompt)},
             )
         )
@@ -657,7 +479,7 @@ class Orchestrator:
     def _resolve_hitl_after_pause(
         self, task: Task, current_decision: str, current_reason: str
     ) -> tuple[str, str]:
-        if current_decision != "PAUSE_FOR_HITL":
+        if current_decision != DECISION_PAUSE:
             return current_decision, current_reason
 
         if task.hitl == HITL_CONTINUE:
@@ -665,60 +487,52 @@ class Orchestrator:
                 self._audit_event(
                     task.task_id,
                     LAYER_HITL,
-                    "RUN",
+                    DECISION_RUN,
                     REASON_HITL_CONTINUE,
-                    sealed=False,
-                    overrideable=False,
-                    final_decider="USER",
                     safe_context={"hitl": task.hitl, "from_reason": current_reason},
                 )
             )
-            return "RUN", REASON_HITL_CONTINUE
+            return DECISION_RUN, REASON_HITL_CONTINUE
 
         if task.hitl == HITL_STOP:
             self.audit.log(
                 self._audit_event(
                     task.task_id,
                     LAYER_HITL,
-                    "PAUSE_FOR_HITL",
+                    DECISION_PAUSE,
                     REASON_HITL_STOP,
-                    sealed=False,
-                    overrideable=False,
-                    final_decider="USER",
                     safe_context={"hitl": task.hitl, "from_reason": current_reason},
                 )
             )
-            return "PAUSE_FOR_HITL", REASON_HITL_STOP
+            return DECISION_PAUSE, REASON_HITL_STOP
 
-        wait_reason = REASON_HITL_WAIT if current_reason == REASON_RFL_RELATIVE else current_reason
+        wait_reason = (
+            REASON_HITL_WAIT if current_reason == REASON_RFL_RELATIVE else current_reason
+        )
         self.audit.log(
             self._audit_event(
                 task.task_id,
                 LAYER_HITL,
-                "PAUSE_FOR_HITL",
+                DECISION_PAUSE,
                 wait_reason,
-                sealed=False,
-                overrideable=True,
-                final_decider="SYSTEM",
                 safe_context={"hitl": task.hitl, "from_reason": current_reason},
             )
         )
-        return "PAUSE_FOR_HITL", wait_reason
+        return DECISION_PAUSE, wait_reason
 
     def _gate_ethics(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
-        contains_pii = _pii_like(task.prompt)
+        contains_pii = self._contains_pii(task.prompt)
+
         if contains_pii:
-            decision = "STOPPED"
+            decision = DECISION_STOPPED
             reason = REASON_ETHICS_PII
             sealed = True
-            overrideable = False
         else:
             decision = current_decision
-            reason = REASON_ETHICS_OK if current_decision == "RUN" else current_reason
-            sealed = False
-            overrideable = True if decision == "PAUSE_FOR_HITL" else False
+            reason = REASON_ETHICS_OK if current_decision == DECISION_RUN else current_reason
+            sealed = None
 
         self.audit.log(
             self._audit_event(
@@ -727,8 +541,6 @@ class Orchestrator:
                 decision,
                 reason,
                 sealed=sealed,
-                overrideable=overrideable,
-                final_decider="SYSTEM",
                 safe_context={
                     "prompt_digest": safe_prompt_digest(task.prompt),
                     "contains_pii": contains_pii,
@@ -740,22 +552,22 @@ class Orchestrator:
     def _gate_acc(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, str]:
-        contains_side_effect = _contains_external_side_effect_request(task.prompt)
-        if current_decision != "RUN":
+        contains_side_effect = contains_pattern(SIDE_EFFECT_PATTERNS, task.prompt)
+
+        # ここが今回の修正点
+        # MediatorがPAUSEでも、ACC対象なら最終理由はACC側で上書きする
+        if current_decision == DECISION_STOPPED:
             decision = current_decision
             reason = current_reason
-            sealed = False
-            overrideable = True if decision == "PAUSE_FOR_HITL" else False
         elif contains_side_effect:
-            decision = "PAUSE_FOR_HITL"
+            decision = DECISION_PAUSE
             reason = REASON_ACC_EXTERNAL_SIDE_EFFECT
-            sealed = False
-            overrideable = True
+        elif current_decision != DECISION_RUN:
+            decision = current_decision
+            reason = current_reason
         else:
-            decision = "RUN"
+            decision = DECISION_RUN
             reason = REASON_ACC_OK
-            sealed = False
-            overrideable = False
 
         self.audit.log(
             self._audit_event(
@@ -763,10 +575,10 @@ class Orchestrator:
                 LAYER_ACC,
                 decision,
                 reason,
-                sealed=sealed,
-                overrideable=overrideable,
-                final_decider="SYSTEM",
-                safe_context={"contains_external_side_effect": contains_side_effect},
+                safe_context={
+                    "acc_mode": "pass_through",
+                    "contains_external_side_effect": contains_side_effect,
+                },
             )
         )
         return {"decision": decision, "reason_code": reason}
@@ -774,16 +586,13 @@ class Orchestrator:
     def _gate_dispatch(
         self, task: Task, current_decision: str, current_reason: str
     ) -> Dict[str, Any]:
-        if current_decision != "RUN":
+        if current_decision != DECISION_RUN:
             self.audit.log(
                 self._audit_event(
                     task.task_id,
                     LAYER_DISPATCH,
                     current_decision,
                     current_reason,
-                    sealed=False,
-                    overrideable=True if current_decision == "PAUSE_FOR_HITL" else False,
-                    final_decider="SYSTEM",
                     artifact_preview=None,
                     safe_context={"kind": task.kind, "skipped": True},
                 )
@@ -794,25 +603,30 @@ class Orchestrator:
                 "artifact_preview": None,
             }
 
-        artifact_preview = sanitize_string(f"{task.kind} artifact preview: {task.prompt[:80]}")
+        artifact_preview = self._build_artifact_preview(task)
         self.audit.log(
             self._audit_event(
                 task.task_id,
                 LAYER_DISPATCH,
-                "RUN",
+                DECISION_RUN,
                 REASON_DISPATCH_OK,
-                sealed=False,
-                overrideable=False,
-                final_decider="SYSTEM",
                 artifact_preview=artifact_preview,
                 safe_context={"kind": task.kind},
             )
         )
         return {
-            "decision": "RUN",
+            "decision": DECISION_RUN,
             "reason_code": REASON_DISPATCH_OK,
             "artifact_preview": artifact_preview,
         }
+
+    def _build_artifact_preview(self, task: Task) -> str:
+        base = sanitize_string(task.prompt.strip())
+        preview = f"{task.kind} artifact preview: {base[:80]}"
+        return sanitize_string(preview)
+
+    def _contains_pii(self, text: str) -> bool:
+        return bool(EMAIL_PATTERN.search(text) or PHONE_PATTERN.search(text))
 
 
 class Pipeline:
@@ -822,7 +636,11 @@ class Pipeline:
         run_id: str = "",
         session_id: str = "",
     ) -> None:
-        self.audit = AuditLog(audit_log_path, run_id=run_id, session_id=session_id)
+        self.audit = AuditLogger(
+            audit_log_path,
+            run_id=run_id,
+            session_id=session_id,
+        )
         self.agent = Agent()
         self.mediator = Mediator(self.audit)
         self.orchestrator = Orchestrator(self.audit)
@@ -842,41 +660,6 @@ class Pipeline:
         return results
 
 
-def orchestrator_eval(
-    task: Task,
-    mediator: MediatorReview,
-    run_id: str,
-    session_id: str,
-    audit: AuditLog,
-    hitl_choice: Optional[Literal["STOP", "CONTINUE"]] = None,
-) -> OrchestratorResult:
-    audit.emit(
-        _arl_min(
-            run_id,
-            session_id,
-            task,
-            layer=LAYER_MEDIATOR,
-            decision=mediator.decision,
-            reason_code=mediator.reason_code,
-            sealed=False,
-            overrideable=mediator.decision == "PAUSE_FOR_HITL",
-            final_decider="SYSTEM",
-        )
-    )
-
-    patched_task = Task(
-        task_id=task.task_id,
-        kind=task.kind,
-        prompt=task.prompt,
-        hitl=hitl_choice if hitl_choice is not None else task.hitl,
-    )
-    orchestrator = Orchestrator(audit)
-    return orchestrator.run(
-        patched_task,
-        {"decision": mediator.decision, "reason_code": mediator.reason_code},
-    )
-
-
 def run_pipeline(
     tasks: Union[Task, Dict[str, Any], Sequence[Union[Task, Dict[str, Any]]]],
     run_id: str,
@@ -887,7 +670,6 @@ def run_pipeline(
     agent = Agent()
     normalized = agent.normalize(tasks)
     choices = hitl_choices or {}
-
     patched: List[Task] = []
     for task in normalized:
         hitl = choices.get(task.task_id, task.hitl)
@@ -914,14 +696,14 @@ def run_demo() -> None:
         tasks=[
             {"task_id": "T1", "kind": "xlsx", "prompt": "売上サマリーを表にして"},
             {"task_id": "T2", "kind": "pptx", "prompt": "プロジェクト概要スライドを作って"},
-            {"task_id": "T3", "kind": "pptx", "prompt": "いい感じにまとめて"},
+            {"task_id": "T3", "kind": "pptx", "prompt": "いい感じにまとめて", "hitl": HITL_STOP},
             {"task_id": "T4", "kind": "pptx", "prompt": "作った資料をメールで送って"},
             {"task_id": "T5", "kind": "xlsx", "prompt": "連絡先は test@example.com に送って"},
         ],
-        run_id="RUN#DEMO",
-        session_id="SESSION_CREATOR_1848CC59",
-        log_path="audit_mediator_pipeline_v1_0.jsonl",
-        hitl_choices={"T3": HITL_STOP, "T4": HITL_CONTINUE},
+        run_id="DEMO",
+        session_id="DEMO_SESSION",
+        log_path="audit.jsonl",
+        hitl_choices={"T4": HITL_CONTINUE},
     )
     for item in results:
         print(json.dumps(asdict(item), ensure_ascii=False))
