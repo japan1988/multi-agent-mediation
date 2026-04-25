@@ -446,4 +446,9 @@ jobs:
         if: always()
         shell: bash
         run: |
+
+          set -euo pipefail
+          echo "workflow syntax block is present"
+
           echo "Advisory analysis completed (non-blocking)"
+
