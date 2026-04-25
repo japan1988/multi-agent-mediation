@@ -510,6 +510,9 @@ Reproducible E2E confidential-flow loop guard:
 
 Run a focused subset if needed:
 
+Reproducible E2E confidential-flow loop guard: `kage_end_to_end_confidential_loopguard_v1_0.py`
+Test: `test_end_to_end_confidential_loopguard_v1_0.py` (CI green on Python 3.9–3.11)
+
 ```bash
 pytest tests/test_benchmark_profiles_v1_0.py -q
 ```
@@ -588,6 +591,11 @@ It is not a promise of production readiness, completeness, or universal policy c
 pytest -q
 pytest -q tests/test_definition_hitl_gate_v1.py
 pytest -q tests/test_kage_orchestrator_diverse_v1.py
+
+pytest -q test_ai_doc_orchestrator_kage3_v1_2_2.py
+pytest -q test_end_to_end_confidential_loopguard_v1_0.py
+```
+
 pytest -q tests/test_ai_doc_orchestrator_kage3_v1_2_2.py
 pytest -q tests/test_end_to_end_confidential_loopguard_v1_0.py
 CI runs lint/pytest via .github/workflows/python-app.yml.
@@ -621,6 +629,16 @@ Its core stance is simple:
 
 > **If uncertain, stop. If risky, escalate.**
 
+
+
+
+
+See `LICENSE`.
+Repository license: **Apache-2.0** (policy intent: Educational / Research).
+
+```
+::contentReference[oaicite:0]{index=0}
+```
 
 
 
