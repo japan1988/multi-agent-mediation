@@ -18,7 +18,7 @@ def _layers_in_order(events):
 
         e for e in events
 
-        e
+        
         for e in events
 
         if isinstance(e, dict) and "layer" in e and "run_id" in e
