@@ -1,7 +1,9 @@
 # tests/test_stage3_loop_policy.py
+
 from __future__ import annotations
 
 from typing import Any, Optional
+
 
 from loop_policy_stage3 import (
     Decision,
@@ -96,11 +98,19 @@ def test_two_stage_firing_and_stop_and_terminal_guard() -> None:
     )
 
     stop = maestro_maybe_stop(spec, state, end_events[0])
+
+    assert stop is not None
+    assert stop.kind == K_STOPPED
+    assert stop.decision == Decision.STOPPED
+    assert stop.sealed is True
+    assert stop.overrideable is False
+
     _require_is_not_none(stop, "Expected maestro_maybe_stop to return a stop event")
     _require_equal(stop.kind, K_STOPPED, "Unexpected stop kind")
     _require_equal(stop.decision, Decision.STOPPED, "Unexpected stop decision")
     _require(stop.sealed is True, "Expected stop event to be sealed")
     _require(stop.overrideable is False, "Expected sealed stop to be non-overrideable")
+
 
     after = mk_event(
         event_id="E_after",
@@ -118,7 +128,11 @@ def test_plan_flow_idempotent_and_does_not_pollute_hitl_count() -> None:
     counter = HitlCounter(spec)
     state = SessionState(session_id="S1")
     fp = "fp:plan"
+
+    plan_req = None
+
     plan_req: Optional[Any] = None
+
 
     for i in range(1, 4):
         e = mk_event(

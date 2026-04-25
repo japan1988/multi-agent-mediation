@@ -1,4 +1,5 @@
 
+
 diff --git a/run_benchmark_kage3_v1_3_5.py b/run_benchmark_kage3_v1_3_5.py
 index 4a1b0ee..9c2e6a4 100644
 --- a/run_benchmark_kage3_v1_3_5.py
@@ -188,6 +189,7 @@ index 4a1b0ee..9c2e6a4 100644
  
  if __name__ == "__main__":
      raise SystemExit(main())
+
 
 # -*- coding: utf-8 -*-
 """

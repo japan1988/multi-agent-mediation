@@ -1,4 +1,6 @@
 
+
+
 diff --git a/rank_transition_sample.py b/rank_transition_sample.py
 index 1111111..2222222 100644
 --- a/rank_transition_sample.py
@@ -39,6 +41,7 @@ index 1111111..2222222 100644
      plt.figure(figsize=(6, 4))
      plt.plot(range(steps), rates, marker="o")
      plt.ylim(0.0, 1.0)
+
 
 # -*- coding: utf-8 -*-
 """

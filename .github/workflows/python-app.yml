@@ -1,4 +1,14 @@
 
+---
+name: Python App CI
+
+"on":
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**.md"
+
+
  japan1988-patch-76
  name: Python App CI
 
@@ -14,6 +24,7 @@ on:
 
       - "**/*.md"
 
+
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
   pull_request:
@@ -21,11 +32,17 @@ on:
     paths-ignore:
 
       - "**.md"
+      - "docs/**"
+      - ".github/workflows/python-app.yml"
+
+
+      - "**.md"
 
       - "**/*.md"
 
       - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
+
   workflow_dispatch:
 
 concurrency:
@@ -55,11 +72,17 @@ jobs:
         with:
           fetch-depth: 1
 
+
+      - na=======
       - name: Setup Python
+
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
+          cache-dependency-path: requirements.txt
+
 
           cache-dependency-path: |
             requirements.txt
@@ -68,10 +91,29 @@ jobs:
             pylock.*.toml
 
 
+
       - name: Install dependencies
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
+
+          pip install -r requirements.txt
+
+      - name: Show GitHub context
+        run: |
+          set -euo pipefail
+          echo "ref=${GITHUB_REF}"
+          echo "ref_name=${GITHUB_REF_NAME}"
+          echo "head_ref=${GITHUB_HEAD_REF:-}"
+          echo "base_ref=${GITHUB_BASE_REF:-}"
+
+      - name: Lint workflow YAML
+        run: |
+          set -euo pipefail
+          yamllint -f parsable .github/workflows/python-app.yml
+
+      - name: Ruff
+
 
           pip install -r requirements.txt
 
@@ -106,6 +148,7 @@ jobs:
           yamllint -c .yamllint-ci.yml .github/workflows/python-app.yml
 
       - name: Ruff check
+
         run: |
           set -euo pipefail
           ruff check .
@@ -119,6 +162,8 @@ jobs:
         run: |
           set -euo pipefail
           pytest -q --maxfail=1 --disable-warnings \
+
+
             --junitxml=junit-py${{ matrix.python-version 
 
      - name: Lint workflow YAML
@@ -172,6 +217,7 @@ jobs:
           set -euo pipefail
 
           pytest -q --maxfail=1 --disable-warnings \
+
             --junitxml=junit-py${{ matrix.python-version }}.xml
 
       - name: Upload test artifacts
@@ -186,6 +232,9 @@ jobs:
             **/pytest*.log
             **/junit-*.xml
 
+
+
           pytest -q
+
 
 
