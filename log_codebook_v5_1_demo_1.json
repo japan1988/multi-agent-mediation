@@ -83,7 +83,8 @@
       "TRUST_COOLDOWN_ACTIVE": 35,
       "TRUST_SCORE_LOW": 36,
       "TRUST_UPDATE": 37,
-      "ADMIN_FINALIZE_REQUIRED": 38
+      "ADMIN_FINALIZE_REQUIRED": 38,
+      "REL_SYMMETRY_BREAK": 39
     }
   },
   "reverse_maps": {
@@ -156,7 +157,8 @@
       "35": "TRUST_COOLDOWN_ACTIVE",
       "36": "TRUST_SCORE_LOW",
       "37": "TRUST_UPDATE",
-      "38": "ADMIN_FINALIZE_REQUIRED"
+      "38": "ADMIN_FINALIZE_REQUIRED",
+      "39": "REL_SYMMETRY_BREAK"
     }
   },
   "pack_spec_example": {

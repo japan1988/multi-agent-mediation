@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-import mediation_emergency_contract_sim_v5_1_2 as sim
+# Ensure repository root is importable under pytest/CI cwd differences.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+import mediation_emergency_contract_sim_v5_1_2 as sim  # noqa: E402
 
 
 def _fail(message: str) -> None:
@@ -51,17 +57,8 @@ def _patch_store_paths(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(sim, "EVAL_STORE_PATH", eval_path, raising=False)
 
 
-
-def _queue_counts(results: dict) -> dict:
-    return (((results or {}).get("hitl_queue") or {}).get("counts") or {})
-
-
-def _abnormal(results: dict) -> dict:
-    return (results or {}).get("abnormal_arl_persistence", {}) or {}
-
 def _queue_counts(results: Dict[str, Any]) -> Dict[str, Any]:
     return (((results or {}).get("hitl_queue") or {}).get("counts") or {})
-
 
 
 def _abnormal(results: Dict[str, Any]) -> Dict[str, Any]:
@@ -85,25 +82,17 @@ def _assert_sealed_only_ethics_or_acc(results: Dict[str, Any]) -> None:
             layer = row.get("layer")
             sealed = bool(row.get("sealed", False))
             if sealed:
-
-                assert layer in (sim.LAYER_ETHICS, sim.LAYER_ACC)
-
                 _require(
                     layer in (sim.LAYER_ETHICS, sim.LAYER_ACC),
                     f"sealed row must be ethics/acc only (layer={layer!r})",
                 )
-
             if layer == sim.LAYER_RFL:
                 _require(sealed is False, "RFL rows must never be sealed")
 
 
-
-def test_v512_operational_resilience_clean_runs_large(monkeypatch, tmp_path: Path) -> None:
-
 def test_v512_operational_resilience_clean_runs_large(
     monkeypatch, tmp_path: Path
 ) -> None:
-
     """
     clean run 大量反復での運用耐性確認。
     keep_runs=False でメモリ肥大を避けつつ、
@@ -121,30 +110,8 @@ def test_v512_operational_resilience_clean_runs_large(
         sample_runs=0,
     )
 
-
-    counts = _queue_counts(r)
-    abnormal = _abnormal(r)
-
-    assert counts.get("total_runs") == 1000
-    assert counts.get("by_state", {}).get("CONTRACT_EFFECTIVE", 0) == 1000
-    assert counts.get("queue_size", 0) == 0
-
-
     counts = _queue_counts(results)
     abnormal = _abnormal(results)
-
-
-    assert counts.get("total_runs") == 1000
-    assert counts.get("by_state", {}).get("CONTRACT_EFFECTIVE", 0) == 1000
-    assert counts.get("queue_size", 0) == 0
-
-    assert abnormal.get("abnormal_total", 0) == 0
-    assert abnormal.get("saved", 0) == 0
-    assert abnormal.get("skipped_by_cap", 0) == 0
-
-    eval_after = r.get("eval_after", {})
-    assert eval_after.get("clean_completion_count") == 1000
-    assert eval_after.get("multiplier") == sim.EVAL_MULTIPLIER_CAP
 
     _require_equal(counts.get("total_runs"), 1000, "total_runs mismatch")
     _require_equal(
@@ -153,6 +120,7 @@ def test_v512_operational_resilience_clean_runs_large(
         "CONTRACT_EFFECTIVE count mismatch",
     )
     _require_equal(counts.get("queue_size", 0), 0, "queue_size mismatch")
+
     _require_equal(abnormal.get("abnormal_total", 0), 0, "abnormal_total mismatch")
     _require_equal(abnormal.get("saved", 0), 0, "saved mismatch")
     _require_equal(abnormal.get("skipped_by_cap", 0), 0, "skipped_by_cap mismatch")
@@ -169,7 +137,6 @@ def test_v512_operational_resilience_clean_runs_large(
         "multiplier mismatch",
     )
 
-
     trust_after = results.get("trust_after", {})
     _require_in_range(
         trust_after.get("trust_score", -1),
@@ -179,13 +146,9 @@ def test_v512_operational_resilience_clean_runs_large(
     )
 
 
-
-def test_v512_mixed_mode_deterministic_under_reset(monkeypatch, tmp_path: Path) -> None:
-
 def test_v512_mixed_mode_deterministic_under_reset(
     monkeypatch, tmp_path: Path
 ) -> None:
-
     """
     fabricate-rate 混在時でも、
     reset + seed 固定なら queue / trust / eval が再現することを確認。
@@ -208,20 +171,6 @@ def test_v512_mixed_mode_deterministic_under_reset(
     result_1 = sim.run_simulation(**params)
     result_2 = sim.run_simulation(**params)
 
-
-    c1 = _queue_counts(r1)
-    c2 = _queue_counts(r2)
-    assert c1 == c2
-
-    a1 = _abnormal(r1)
-    a2 = _abnormal(r2)
-    assert a1 == a2
-
-    t1 = dict(r1.get("trust_after", {}))
-    t2 = dict(r2.get("trust_after", {}))
-    cd1 = t1.pop("cooldown_until", None)
-    cd2 = t2.pop("cooldown_until", None)
-
     counts_1 = _queue_counts(result_1)
     counts_2 = _queue_counts(result_2)
     _require_equal(counts_1, counts_2, "queue counts must be deterministic")
@@ -239,7 +188,6 @@ def test_v512_mixed_mode_deterministic_under_reset(
     cooldown_1 = trust_1.pop("cooldown_until", None)
     cooldown_2 = trust_2.pop("cooldown_until", None)
 
-
     _require_equal(
         trust_1,
         trust_2,
@@ -250,18 +198,12 @@ def test_v512_mixed_mode_deterministic_under_reset(
         _require(cooldown_1 is not None, "cooldown_1 must exist if either cooldown exists")
         _require(cooldown_2 is not None, "cooldown_2 must exist if either cooldown exists")
 
-
-    assert r1.get("eval_after") == r2.get("eval_after")
-    assert a1.get("abnormal_total", 0) > 0
-
-
-def test_v512_abnormal_arl_persistence_and_incident_index(monkeypatch, tmp_path: Path) -> None:
-
     _require_equal(
         result_1.get("eval_after"),
         result_2.get("eval_after"),
         "eval_after must be deterministic",
     )
+
     _require_ge(
         abnormal_1.get("abnormal_total", 0),
         1,
@@ -272,17 +214,13 @@ def test_v512_abnormal_arl_persistence_and_incident_index(monkeypatch, tmp_path:
 def test_v512_abnormal_arl_persistence_and_incident_index(
     monkeypatch, tmp_path: Path
 ) -> None:
-
     """
     異常時のみ ARL 保存 + incident index / counter の整合確認。
     """
     _patch_store_paths(monkeypatch, tmp_path)
+
     out_dir = tmp_path / "arl_out"
-
-    r = sim.run_simulation(
-
     results = sim.run_simulation(
-
         runs=200,
         fabricate=False,
         fabricate_rate=0.20,
@@ -298,11 +236,7 @@ def test_v512_abnormal_arl_persistence_and_incident_index(
         full_context_n=5,
     )
 
-
-    abnormal = _abnormal(r)
-
     abnormal = _abnormal(results)
-
     saved = int(abnormal.get("saved", 0))
     abnormal_total = int(abnormal.get("abnormal_total", 0))
     skipped = int(abnormal.get("skipped_by_cap", 0))
@@ -316,13 +250,8 @@ def test_v512_abnormal_arl_persistence_and_incident_index(
 
     index_path = out_dir / "incident_index.jsonl"
     counter_path = out_dir / "incident_counter.txt"
-
-    assert index_path.exists()
-    assert counter_path.exists()
-
     _require(index_path.exists(), "incident_index.jsonl should exist")
     _require(counter_path.exists(), "incident_counter.txt should exist")
-
 
     index_rows = _read_jsonl(index_path)
     _require_equal(len(index_rows), saved, "incident_index row count mismatch")
@@ -335,11 +264,6 @@ def test_v512_abnormal_arl_persistence_and_incident_index(
         incident_id = row.get("incident_id")
         arl_path = Path(row.get("arl_path", ""))
 
-
-        assert incident_id
-        assert incident_id not in incident_ids
-        assert arl_path.exists()
-
         _require(bool(incident_id), "incident_id should not be empty")
         _require(
             incident_id not in incident_ids,
@@ -347,17 +271,12 @@ def test_v512_abnormal_arl_persistence_and_incident_index(
         )
         _require(arl_path.exists(), f"arl_path should exist: {arl_path!s}")
 
-
         incident_ids.add(incident_id)
 
-
-
-def test_v512_sealed_invariants_under_mixed_load(monkeypatch, tmp_path: Path) -> None:
 
 def test_v512_sealed_invariants_under_mixed_load(
     monkeypatch, tmp_path: Path
 ) -> None:
-
     """
     keep_runs=True の中規模 runs で、
     sealed は ethics / acc のみ、
@@ -377,14 +296,8 @@ def test_v512_sealed_invariants_under_mixed_load(
         sample_runs=0,
     )
 
-
-    assert "runs" in r and isinstance(r["runs"], list)
-    assert len(r["runs"]) == 200
-    _assert_sealed_only_ethics_or_acc(r)
-
     _require("runs" in results, "results must contain 'runs'")
     _require(isinstance(results["runs"], list), "'runs' must be a list")
     _require_equal(len(results["runs"]), 200, "runs length mismatch")
 
     _assert_sealed_only_ethics_or_acc(results)
-
