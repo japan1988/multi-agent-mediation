@@ -9,6 +9,11 @@ on:
       - "pyproject.toml"
       - "requirements*.txt"
       - ".github/workflows/tasukeru-analysis.yml"
+      - "README*.md"
+      - "LICENSE*"
+      - "docs/**"
+      - "log_codebook*.json"
+      - "**/*.jsonl"
   workflow_dispatch:
 
 permissions:
@@ -75,11 +80,27 @@ jobs:
             2> tasukeru_logs/bandit.stderr
           bandit_exit=$?
 
-          python -m pip_audit \
-            -f json \
-            -o tasukeru_logs/pip-audit.json \
-            > tasukeru_logs/pip-audit.stdout \
-            2> tasukeru_logs/pip-audit.stderr
+          if [ -f requirements-dev.txt ]; then
+            python -m pip_audit \
+              -r requirements-dev.txt \
+              -f json \
+              -o tasukeru_logs/pip-audit.json \
+              > tasukeru_logs/pip-audit.stdout \
+              2> tasukeru_logs/pip-audit.stderr
+          elif [ -f requirements.txt ]; then
+            python -m pip_audit \
+              -r requirements.txt \
+              -f json \
+              -o tasukeru_logs/pip-audit.json \
+              > tasukeru_logs/pip-audit.stdout \
+              2> tasukeru_logs/pip-audit.stderr
+          else
+            python -m pip_audit \
+              -f json \
+              -o tasukeru_logs/pip-audit.json \
+              > tasukeru_logs/pip-audit.stdout \
+              2> tasukeru_logs/pip-audit.stderr
+          fi
           pip_exit=$?
 
           set -e
@@ -91,6 +112,464 @@ jobs:
           echo "ruff_exit=${ruff_exit}"
           echo "bandit_exit=${bandit_exit}"
           echo "pip_exit=${pip_exit}"
+
+      - name: Run Tasukeru logic review
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p tasukeru_logs
+
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import re
+          from collections import Counter
+          from pathlib import Path
+          from typing import Any
+
+          repo = Path(".")
+          log_dir = Path("tasukeru_logs")
+          out_json = log_dir / "logic-review.json"
+          out_md = log_dir / "logic-review.md"
+
+          skip_dirs = {
+              ".git",
+              ".venv",
+              "venv",
+              "__pycache__",
+              ".pytest_cache",
+              ".mypy_cache",
+              ".ruff_cache",
+              "archive",
+          }
+
+          text_exts = {
+              ".py",
+              ".yml",
+              ".yaml",
+              ".md",
+              ".txt",
+              ".json",
+              ".jsonl",
+              ".toml",
+              ".cfg",
+              ".ini",
+              ".rst",
+          }
+
+          allowed_decisions = {"RUN", "PAUSE_FOR_HITL", "STOPPED"}
+          ethics_or_acc_layers = {"ethics_gate", "acc_gate"}
+          rfl_layers = {"relativity_gate", "rfl", "RFL"}
+          required_arl_keys = {
+              "run_id",
+              "layer",
+              "decision",
+              "sealed",
+              "overrideable",
+              "final_decider",
+              "reason_code",
+          }
+
+          findings: list[dict[str, Any]] = []
+
+          def add(
+              severity: str,
+              category: str,
+              code: str,
+              message: str,
+              path: str = "",
+              line: int | None = None,
+              detail: dict[str, Any] | None = None,
+          ) -> None:
+              findings.append(
+                  {
+                      "severity": severity,
+                      "category": category,
+                      "code": code,
+                      "message": message,
+                      "path": path,
+                      "line": line,
+                      "detail": detail or {},
+                  }
+              )
+
+          def is_skipped(path: Path) -> bool:
+              return any(part in skip_dirs for part in path.parts)
+
+          def is_text_candidate(path: Path) -> bool:
+              if is_skipped(path):
+                  return False
+              if not path.is_file():
+                  return False
+              if path.stat().st_size > 2_000_000:
+                  return False
+              return path.suffix in text_exts or path.name in {"LICENSE", "NOTICE"}
+
+          def read_text(path: Path) -> str:
+              try:
+                  return path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  return path.read_text(encoding="utf-8", errors="replace")
+              except Exception:
+                  return ""
+
+          def iter_text_files() -> list[Path]:
+              return sorted(path for path in repo.rglob("*") if is_text_candidate(path))
+
+          def check_conflict_markers(path: Path, text: str) -> None:
+              for idx, line in enumerate(text.splitlines(), start=1):
+                  stripped = line.strip()
+                  if stripped.startswith("<<<<<<< ") or stripped == "=======" or stripped.startswith(">>>>>>> "):
+                      add(
+                          "CRITICAL_ADVISORY",
+                          "repo_integrity",
+                          "MERGE_CONFLICT_MARKER",
+                          "Unresolved merge conflict marker was found.",
+                          str(path),
+                          idx,
+                      )
+
+          def check_license_consistency() -> None:
+              license_path = repo / "LICENSE"
+              policy_path = repo / "LICENSE_POLICY.md"
+              readme_path = repo / "README.md"
+              readme_ja_path = repo / "README.ja.md"
+
+              license_text = read_text(license_path) if license_path.exists() else ""
+              policy_text = read_text(policy_path) if policy_path.exists() else ""
+              readme_text = read_text(readme_path) if readme_path.exists() else ""
+              readme_ja_text = read_text(readme_ja_path) if readme_ja_path.exists() else ""
+
+              if license_text:
+                  has_apache = "Apache License" in license_text
+                  has_cc = "Creative Commons" in license_text or "CC BY-NC-SA" in license_text
+                  if has_apache and has_cc:
+                      add(
+                          "WARN",
+                          "license",
+                          "LICENSE_MIXED_APACHE_AND_CC",
+                          "LICENSE appears to contain both Apache and Creative Commons terms. Prefer Apache text in LICENSE and split policy in LICENSE_POLICY.md.",
+                          "LICENSE",
+                      )
+
+              combined_readme = f"{readme_text}\n{readme_ja_text}"
+              if "CC BY-NC-SA" in combined_readme and "LICENSE_POLICY.md" not in combined_readme:
+                  add(
+                      "WARN",
+                      "license",
+                      "README_CC_WITHOUT_POLICY_LINK",
+                      "README mentions CC BY-NC-SA but does not link to LICENSE_POLICY.md.",
+                      "README.md / README.ja.md",
+                  )
+
+              if policy_path.exists():
+                  if "Apache License" not in policy_text or "CC BY-NC-SA" not in policy_text:
+                      add(
+                          "WARN",
+                          "license",
+                          "LICENSE_POLICY_INCOMPLETE_SPLIT_LICENSE",
+                          "LICENSE_POLICY.md should mention both Apache License 2.0 and CC BY-NC-SA 4.0.",
+                          "LICENSE_POLICY.md",
+                      )
+
+          def collect_reason_codes(obj: Any, found: set[str]) -> None:
+              if isinstance(obj, dict):
+                  for key, value in obj.items():
+                      if key == "reason_code" and isinstance(value, str):
+                          found.add(value)
+                      elif key in {"reason_codes", "allowed_reason_codes"} and isinstance(value, list):
+                          for item in value:
+                              if isinstance(item, str):
+                                  found.add(item)
+                              elif isinstance(item, dict):
+                                  code = item.get("code") or item.get("reason_code")
+                                  if isinstance(code, str):
+                                      found.add(code)
+                      elif isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]+", value):
+                          if value.startswith(("REL_", "EVIDENCE_", "TRUST_", "DRAFT_", "FINALIZE_", "ACC_", "ETHICS_")):
+                              found.add(value)
+                      else:
+                          collect_reason_codes(value, found)
+              elif isinstance(obj, list):
+                  for item in obj:
+                      collect_reason_codes(item, found)
+
+          def check_codebook() -> None:
+              candidates = sorted(repo.glob("log_codebook*.json"))
+              required = {
+                  "REL_BOUNDARY_UNSTABLE",
+                  "REL_REF_MISSING",
+                  "REL_SYMMETRY_BREAK",
+              }
+
+              if not candidates:
+                  add(
+                      "WARN",
+                      "codebook",
+                      "CODEBOOK_NOT_FOUND",
+                      "No log_codebook*.json file was found.",
+                  )
+                  return
+
+              for path in candidates:
+                  try:
+                      data = json.loads(read_text(path))
+                  except Exception as err:
+                      add(
+                          "WARN",
+                          "codebook",
+                          "CODEBOOK_JSON_PARSE_FAILED",
+                          "Codebook JSON could not be parsed.",
+                          str(path),
+                          detail={"error": repr(err)},
+                      )
+                      continue
+
+                  found: set[str] = set()
+                  collect_reason_codes(data, found)
+                  raw_text = read_text(path)
+                  found.update(code for code in required if code in raw_text)
+
+                  missing = sorted(required - found)
+                  if missing:
+                      add(
+                          "CRITICAL_ADVISORY",
+                          "codebook",
+                          "REQUIRED_REASON_CODES_MISSING",
+                          "Required RFL reason codes are missing from the codebook.",
+                          str(path),
+                          detail={"missing": missing},
+                      )
+
+          def parse_bool(value: Any) -> bool:
+              if isinstance(value, bool):
+                  return value
+              if isinstance(value, str):
+                  return value.strip().lower() in {"true", "1", "yes", "y"}
+              return bool(value)
+
+          def check_arl_row(path: Path, line_no: int, row: dict[str, Any]) -> None:
+              missing = sorted(key for key in required_arl_keys if key not in row)
+              if missing:
+                  add(
+                      "WARN",
+                      "arl",
+                      "ARL_REQUIRED_KEYS_MISSING",
+                      "ARL row is missing required keys.",
+                      str(path),
+                      line_no,
+                      detail={"missing": missing},
+                  )
+
+              layer = str(row.get("layer", ""))
+              decision = str(row.get("decision", ""))
+              final_decider = str(row.get("final_decider", ""))
+              reason_code = str(row.get("reason_code", ""))
+              sealed = parse_bool(row.get("sealed", False))
+              overrideable = parse_bool(row.get("overrideable", False))
+
+              if decision and decision not in allowed_decisions:
+                  add(
+                      "WARN",
+                      "arl",
+                      "ARL_UNKNOWN_DECISION",
+                      "ARL decision is outside the canonical decision set.",
+                      str(path),
+                      line_no,
+                      detail={"decision": decision},
+                  )
+
+              if not reason_code:
+                  add(
+                      "WARN",
+                      "arl",
+                      "ARL_REASON_CODE_EMPTY",
+                      "ARL reason_code is empty.",
+                      str(path),
+                      line_no,
+                  )
+
+              if sealed and layer not in ethics_or_acc_layers:
+                  add(
+                      "CRITICAL_ADVISORY",
+                      "arl_invariant",
+                      "SEALED_LAYER_NOT_ETHICS_OR_ACC",
+                      "sealed=true is only allowed for ethics_gate or acc_gate.",
+                      str(path),
+                      line_no,
+                      detail={"layer": layer},
+                  )
+
+              if layer in rfl_layers and sealed:
+                  add(
+                      "CRITICAL_ADVISORY",
+                      "arl_invariant",
+                      "RFL_MUST_NOT_BE_SEALED",
+                      "RFL / relativity_gate rows must never be sealed.",
+                      str(path),
+                      line_no,
+                  )
+
+              if sealed and overrideable:
+                  add(
+                      "CRITICAL_ADVISORY",
+                      "arl_invariant",
+                      "SEALED_MUST_NOT_BE_OVERRIDEABLE",
+                      "sealed=true implies overrideable=false.",
+                      str(path),
+                      line_no,
+                  )
+
+              if sealed and final_decider != "SYSTEM":
+                  add(
+                      "CRITICAL_ADVISORY",
+                      "arl_invariant",
+                      "SEALED_FINAL_DECIDER_MUST_BE_SYSTEM",
+                      "sealed=true implies final_decider=SYSTEM.",
+                      str(path),
+                      line_no,
+                      detail={"final_decider": final_decider},
+                  )
+
+              if decision == "PAUSE_FOR_HITL" and sealed:
+                  add(
+                      "CRITICAL_ADVISORY",
+                      "arl_invariant",
+                      "PAUSE_FOR_HITL_MUST_NOT_BE_SEALED",
+                      "PAUSE_FOR_HITL must remain unsealed and overrideable.",
+                      str(path),
+                      line_no,
+                  )
+
+          def check_arl_jsonl_files() -> None:
+              candidates = []
+              for path in iter_text_files():
+                  name = path.name.lower()
+                  if path.suffix == ".jsonl" and ("arl" in name or "audit" in name or "incident" in name):
+                      candidates.append(path)
+
+              for path in candidates:
+                  with path.open("r", encoding="utf-8", errors="replace") as f:
+                      for idx, line in enumerate(f, start=1):
+                          if idx > 5000:
+                              break
+                          line = line.strip()
+                          if not line:
+                              continue
+                          try:
+                              obj = json.loads(line)
+                          except Exception:
+                              add(
+                                  "WARN",
+                                  "arl",
+                                  "ARL_JSONL_PARSE_FAILED",
+                                  "A JSONL row could not be parsed.",
+                                  str(path),
+                                  idx,
+                              )
+                              continue
+                          if isinstance(obj, dict):
+                              check_arl_row(path, idx, obj)
+
+          def check_python_side_effect_patterns(path: Path, text: str) -> None:
+              if path.suffix != ".py":
+                  return
+
+              lowered = text.lower()
+              has_hitl_guard = "hitl" in lowered or "pause_for_hitl" in lowered or "approval" in lowered
+
+              patterns = [
+                  ("EMAIL_SIDE_EFFECT", r"\b(smtplib|send_email|sendmail)\b"),
+                  ("HTTP_MUTATION_SIDE_EFFECT", r"\brequests\.(post|put|patch|delete)\b"),
+                  ("SUBPROCESS_SIDE_EFFECT", r"\bsubprocess\.(run|popen|call)\b"),
+                  ("FILE_DELETE_SIDE_EFFECT", r"\b(os\.remove|os\.unlink|shutil\.rmtree)\b"),
+                  ("DYNAMIC_EXECUTION", r"\b(eval|exec)\s*\("),
+              ]
+
+              for code, pattern in patterns:
+                  match = re.search(pattern, text)
+                  if match and not has_hitl_guard:
+                      line_no = text[: match.start()].count("\n") + 1
+                      add(
+                          "WARN",
+                          "side_effect",
+                          code,
+                          "Potential external side effect or risky dynamic execution without an obvious HITL guard in the same file.",
+                          str(path),
+                          line_no,
+                      )
+
+          def check_workflow_conflicts_and_hazards(path: Path, text: str) -> None:
+              if path.suffix not in {".yml", ".yaml"}:
+                  return
+              if ".github/workflows" not in str(path):
+                  return
+
+              if "reviewdog/action-setup@v1" in text:
+                  add(
+                      "WARN",
+                      "workflow",
+                      "REVIEWDOG_DYNAMIC_SETUP_RISK",
+                      "reviewdog/action-setup@v1 may fail on network or upstream tag resolution. Prefer avoiding it in non-critical advisory workflows.",
+                      str(path),
+                  )
+
+          for file_path in iter_text_files():
+              content = read_text(file_path)
+              check_conflict_markers(file_path, content)
+              check_python_side_effect_patterns(file_path, content)
+              check_workflow_conflicts_and_hazards(file_path, content)
+
+          check_license_consistency()
+          check_codebook()
+          check_arl_jsonl_files()
+
+          severity_counts = Counter(str(item["severity"]) for item in findings)
+          category_counts = Counter(str(item["category"]) for item in findings)
+
+          result = {
+              "schema_version": "1.0",
+              "tool": "tasukeru_logic_review",
+              "findings_count": len(findings),
+              "severity_counts": dict(severity_counts),
+              "category_counts": dict(category_counts),
+              "findings": findings,
+          }
+
+          out_json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          with out_md.open("w", encoding="utf-8") as f:
+              f.write("### Tasukeru logic review\n\n")
+              f.write(f"- Findings: {len(findings)}\n")
+              f.write(f"- Critical advisory: {severity_counts.get('CRITICAL_ADVISORY', 0)}\n")
+              f.write(f"- Warning: {severity_counts.get('WARN', 0)}\n")
+              f.write(f"- Info: {severity_counts.get('INFO', 0)}\n\n")
+
+              if category_counts:
+                  f.write("#### Categories\n\n")
+                  for category, count in category_counts.most_common():
+                      f.write(f"- `{category}`: {count}\n")
+                  f.write("\n")
+
+              if findings:
+                  f.write("#### First findings\n\n")
+                  for item in findings[:30]:
+                      location = item["path"] or "repository"
+                      if item.get("line"):
+                          location = f"{location}:{item['line']}"
+                      f.write(
+                          f"- **{item['severity']}** `{item['code']}` "
+                          f"at `{location}` — {item['message']}\n"
+                      )
+                  if len(findings) > 30:
+                      f.write(f"- ... and {len(findings) - 30} more\n")
+                  f.write("\n")
+              else:
+                  f.write("No Tasukeru logic review findings.\n\n")
+
+          print(out_md.read_text(encoding="utf-8"))
+          PY
 
       - name: Generate advisory summary
         if: always()
@@ -208,6 +687,7 @@ jobs:
           ruff_items = normalize_ruff_items(read_json(log_dir / "ruff.json", []))
           bandit_items = normalize_bandit_items(read_json(log_dir / "bandit.json", {}))
           pip_vulns = normalize_pip_vulns(read_json(log_dir / "pip-audit.json", {}))
+          logic_review = read_json(log_dir / "logic-review.json", {})
 
           bandit_advisory_results = [
               item
@@ -219,6 +699,11 @@ jobs:
           bandit_advisory_count = len(bandit_advisory_results)
           pip_count = len(pip_vulns)
 
+          logic_findings = logic_review.get("findings", []) if isinstance(logic_review, dict) else []
+          logic_count = len(logic_findings) if isinstance(logic_findings, list) else 0
+          logic_severity_counts = logic_review.get("severity_counts", {}) if isinstance(logic_review, dict) else {}
+          logic_critical = int(logic_severity_counts.get("CRITICAL_ADVISORY", 0)) if isinstance(logic_severity_counts, dict) else 0
+
           ruff_by_file = Counter(str(item.get("filename", "?")) for item in ruff_items)
           bandit_by_file = Counter(str(item.get("filename", "?")) for item in bandit_advisory_results)
 
@@ -226,7 +711,9 @@ jobs:
               f.write("# Tasukeru advisory summary\n\n")
               f.write(f"- Ruff findings: {ruff_count}\n")
               f.write(f"- Bandit LOW/MEDIUM findings: {bandit_advisory_count}\n")
-              f.write(f"- pip-audit vulnerabilities: {pip_count}\n\n")
+              f.write(f"- pip-audit vulnerabilities: {pip_count}\n")
+              f.write(f"- Tasukeru logic review findings: {logic_count}\n")
+              f.write(f"- Tasukeru critical advisories: {logic_critical}\n\n")
 
               if ruff_count:
                   f.write("### Ruff: top files\n\n")
@@ -266,6 +753,11 @@ jobs:
                       )
                   if len(pip_vulns) > 20:
                       f.write(f"- ... and {len(pip_vulns) - 20} more\n")
+                  f.write("\n")
+
+              logic_md = read_text(log_dir / "logic-review.md").strip()
+              if logic_md:
+                  f.write(logic_md)
                   f.write("\n")
 
               if ruff_exit > 1:
