@@ -164,15 +164,14 @@ Additional advisory or analysis workflows may exist under:
 ```
 
 ---
-
 ## Tasukeru Advisory
 
-**Tasukeru** is a non-blocking advisory workflow for lightweight quality and safety review.
+**Tasukeru** is a non-blocking advisory workflow for lightweight quality, safety, and logic review.
 
-It is designed to help maintain this repository by collecting advisory signals from static analysis, dependency checks, and workflow summaries.
+It is designed to help maintain this repository by collecting advisory signals from static analysis, dependency checks, workflow summaries, and project-specific logic checks.
 
 Tasukeru is **not** a production security guarantee.  
-It is a support layer for reviewing code quality, common Python issues, dependency risks, and advisory findings during development.
+It is a support layer for reviewing code quality, common Python issues, dependency risks, repository consistency, and advisory findings during development.
 
 Current Tasukeru functions include:
 
@@ -184,6 +183,12 @@ Current Tasukeru functions include:
 
 - **pip-audit dependency scan**  
   Checks Python dependencies for known vulnerability advisories.
+
+- **Tasukeru logic review**  
+  Checks project-specific consistency rules, including unresolved merge conflict markers, ARL invariant violations, license-policy inconsistencies, workflow hazards, and potential side-effect patterns.
+
+- **ARL / governance invariant advisory checks**  
+  Reviews whether audit-style records follow expected safety contracts such as canonical decisions, required ARL keys, non-sealed RFL behavior, and proper sealed-state semantics.
 
 - **GitHub Actions summary output**  
   Generates a readable advisory summary inside the workflow run.
@@ -198,7 +203,6 @@ Its purpose is to surface issues early without preventing research iterations fr
 In short:
 
 > **Tasukeru helps review the repository, but it does not replace human judgment.**
-
 ---
 
 ## Design stance
