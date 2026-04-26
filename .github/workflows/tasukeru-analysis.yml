@@ -1,47 +1,317 @@
-loc = item.get("location") or {}
-          f.write(
-              f"- `{item.get('filename','?')}:{loc.get('row',1)}` "
-              f"[{item.get('code','RUFF')}] {item.get('message','')}\n"
-          )
-          f.write("\n")
+name: Tasukeru Analysis
 
-          if bandit_advisory_count:
-              f.write("### Bandit LOW/MEDIUM: top files\n\n")
-              for filename, count in bandit_by_file.most_common(10):
-                  f.write(f"- `{filename}`: {count}\n")
-              f.write("\n")
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "**/*.py"
+      - "**/*.ipynb"
+      - "pyproject.toml"
+      - "requirements*.txt"
+      - ".github/workflows/tasukeru-analysis.yml"
+  workflow_dispatch:
 
-              f.write("### Bandit LOW/MEDIUM: first findings\n\n")
-              for item in bandit_advisory_results[:20]:
-                  f.write(
-                      f"- `{item.get('filename','?')}:{item.get('line_number',1)}` "
-                      f"[{item.get('test_id','BANDIT')}] {item.get('issue_text','')}\n"
-                  )
-              f.write("\n")
+permissions:
+  contents: read
 
-          if pip_count:
-              f.write("### pip-audit findings\n\n")
-              for row in pip_vulns[:20]:
-                  fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "なし"
-                  f.write(
-                      f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
-                  )
-              if len(pip_vulns) > 20:
-                  f.write(f"- ... and {len(pip_vulns) - 20} more\n")
-              f.write("\n")
+concurrency:
+  group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
-          if ruff_exit > 1:
-              f.write("### Ruff execution error\n\n")
-              f.write(f"- exit code: {ruff_exit}\n\n")
+jobs:
+  advisory-analysis:
+    name: advisory analysis
+    runs-on: ubuntu-latest
 
-          if bandit_exit > 1:
-              f.write("### Bandit execution error\n\n")
-              f.write(f"- exit code: {bandit_exit}\n\n")
+    defaults:
+      run:
+        shell: bash
 
-          if pip_exit > 1 and pip_count == 0:
-              f.write("### pip-audit execution error\n\n")
-              f.write(f"- exit code: {pip_exit}\n\n")
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            pyproject.toml
+            pylock.*.toml
+
+      - name: Install dependencies and advisory tools
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+          pip install "ruff==0.6.9" "bandit[toml]" "pip-audit"
+
+      - name: Run advisory tools
+        run: |
+          set -euo pipefail
+          mkdir -p tasukeru_logs
+
+          set +e
+
+          ruff check . --output-format=json > tasukeru_logs/ruff.json 2> tasukeru_logs/ruff.stderr
+          ruff_exit=$?
+
+          bandit -r . \
+            -x "./.git,./.venv,./venv,./archive" \
+            -f json \
+            -o tasukeru_logs/bandit.json \
+            > tasukeru_logs/bandit.stdout \
+            2> tasukeru_logs/bandit.stderr
+          bandit_exit=$?
+
+          python -m pip_audit \
+            -f json \
+            -o tasukeru_logs/pip-audit.json \
+            > tasukeru_logs/pip-audit.stdout \
+            2> tasukeru_logs/pip-audit.stderr
+          pip_exit=$?
+
+          set -e
+
+          echo "${ruff_exit}" > tasukeru_logs/ruff.exit
+          echo "${bandit_exit}" > tasukeru_logs/bandit.exit
+          echo "${pip_exit}" > tasukeru_logs/pip-audit.exit
+
+          echo "ruff_exit=${ruff_exit}"
+          echo "bandit_exit=${bandit_exit}"
+          echo "pip_exit=${pip_exit}"
+
+      - name: Generate advisory summary
+        if: always()
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from collections import Counter
+          from pathlib import Path
+          from typing import Any
+
+          log_dir = Path("tasukeru_logs")
+          summary_path = Path.cwd() / "tasukeru_advisory_summary.md"
+
+          def read_text(path: Path, default: str = "") -> str:
+              try:
+                  return path.read_text(encoding="utf-8")
+              except Exception:
+                  return default
+
+          def read_exit(name: str) -> int:
+              text = read_text(log_dir / name, "0").strip()
+              try:
+                  return int(text)
+              except ValueError:
+                  return 0
+
+          def read_json(path: Path, default: Any) -> Any:
+              try:
+                  text = path.read_text(encoding="utf-8").strip()
+                  if not text:
+                      return default
+                  return json.loads(text)
+              except Exception:
+                  return default
+
+          def normalize_ruff_items(raw: Any) -> list[dict[str, Any]]:
+              if isinstance(raw, list):
+                  return [item for item in raw if isinstance(item, dict)]
+              if isinstance(raw, dict):
+                  for key in ("diagnostics", "results", "items"):
+                      value = raw.get(key)
+                      if isinstance(value, list):
+                          return [item for item in value if isinstance(item, dict)]
+              return []
+
+          def normalize_bandit_items(raw: Any) -> list[dict[str, Any]]:
+              if isinstance(raw, dict):
+                  value = raw.get("results")
+                  if isinstance(value, list):
+                      return [item for item in value if isinstance(item, dict)]
+              if isinstance(raw, list):
+                  return [item for item in raw if isinstance(item, dict)]
+              return []
+
+          def normalize_pip_vulns(raw: Any) -> list[dict[str, Any]]:
+              vulns: list[dict[str, Any]] = []
+
+              if isinstance(raw, dict):
+                  dependencies = raw.get("dependencies")
+                  if isinstance(dependencies, list):
+                      for dep in dependencies:
+                          if not isinstance(dep, dict):
+                              continue
+                          name = str(dep.get("name", "?"))
+                          version = str(dep.get("version", "?"))
+                          for vuln in dep.get("vulns", []) or []:
+                              if not isinstance(vuln, dict):
+                                  continue
+                              vulns.append(
+                                  {
+                                      "name": name,
+                                      "version": version,
+                                      "id": str(vuln.get("id", "?")),
+                                      "fix_versions": vuln.get("fix_versions", []) or [],
+                                  }
+                              )
+
+                  direct = raw.get("vulnerabilities")
+                  if isinstance(direct, list):
+                      for item in direct:
+                          if not isinstance(item, dict):
+                              continue
+                          vulns.append(
+                              {
+                                  "name": str(item.get("name", item.get("package", "?"))),
+                                  "version": str(item.get("version", "?")),
+                                  "id": str(item.get("id", "?")),
+                                  "fix_versions": item.get("fix_versions", []) or [],
+                              }
+                          )
+
+              elif isinstance(raw, list):
+                  for item in raw:
+                      if not isinstance(item, dict):
+                          continue
+                      vulns.append(
+                          {
+                              "name": str(item.get("name", item.get("package", "?"))),
+                              "version": str(item.get("version", "?")),
+                              "id": str(item.get("id", "?")),
+                              "fix_versions": item.get("fix_versions", []) or [],
+                          }
+                      )
+
+              return vulns
+
+          ruff_exit = read_exit("ruff.exit")
+          bandit_exit = read_exit("bandit.exit")
+          pip_exit = read_exit("pip-audit.exit")
+
+          ruff_items = normalize_ruff_items(read_json(log_dir / "ruff.json", []))
+          bandit_items = normalize_bandit_items(read_json(log_dir / "bandit.json", {}))
+          pip_vulns = normalize_pip_vulns(read_json(log_dir / "pip-audit.json", {}))
+
+          bandit_advisory_results = [
+              item
+              for item in bandit_items
+              if str(item.get("issue_severity", "")).upper() in {"LOW", "MEDIUM"}
+          ]
+
+          ruff_count = len(ruff_items)
+          bandit_advisory_count = len(bandit_advisory_results)
+          pip_count = len(pip_vulns)
+
+          ruff_by_file = Counter(str(item.get("filename", "?")) for item in ruff_items)
+          bandit_by_file = Counter(str(item.get("filename", "?")) for item in bandit_advisory_results)
+
+          with summary_path.open("w", encoding="utf-8") as f:
+              f.write("# Tasukeru advisory summary\n\n")
+              f.write(f"- Ruff findings: {ruff_count}\n")
+              f.write(f"- Bandit LOW/MEDIUM findings: {bandit_advisory_count}\n")
+              f.write(f"- pip-audit vulnerabilities: {pip_count}\n\n")
+
+              if ruff_count:
+                  f.write("### Ruff: top files\n\n")
+                  for filename, count in ruff_by_file.most_common(10):
+                      f.write(f"- `{filename}`: {count}\n")
+                  f.write("\n")
+
+                  f.write("### Ruff: first findings\n\n")
+                  for item in ruff_items[:20]:
+                      loc = item.get("location") or {}
+                      f.write(
+                          f"- `{item.get('filename','?')}:{loc.get('row',1)}` "
+                          f"[{item.get('code','RUFF')}] {item.get('message','')}\n"
+                      )
+                  f.write("\n")
+
+              if bandit_advisory_count:
+                  f.write("### Bandit LOW/MEDIUM: top files\n\n")
+                  for filename, count in bandit_by_file.most_common(10):
+                      f.write(f"- `{filename}`: {count}\n")
+                  f.write("\n")
+
+                  f.write("### Bandit LOW/MEDIUM: first findings\n\n")
+                  for item in bandit_advisory_results[:20]:
+                      f.write(
+                          f"- `{item.get('filename','?')}:{item.get('line_number',1)}` "
+                          f"[{item.get('test_id','BANDIT')}] {item.get('issue_text','')}\n"
+                      )
+                  f.write("\n")
+
+              if pip_count:
+                  f.write("### pip-audit findings\n\n")
+                  for row in pip_vulns[:20]:
+                      fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "なし"
+                      f.write(
+                          f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
+                      )
+                  if len(pip_vulns) > 20:
+                      f.write(f"- ... and {len(pip_vulns) - 20} more\n")
+                  f.write("\n")
+
+              if ruff_exit > 1:
+                  f.write("### Ruff execution error\n\n")
+                  f.write(f"- exit code: {ruff_exit}\n\n")
+                  stderr = read_text(log_dir / "ruff.stderr").strip()
+                  if stderr:
+                      f.write("```text\n")
+                      f.write(stderr[:4000])
+                      f.write("\n```\n\n")
+
+              if bandit_exit > 1:
+                  f.write("### Bandit execution error\n\n")
+                  f.write(f"- exit code: {bandit_exit}\n\n")
+                  stderr = read_text(log_dir / "bandit.stderr").strip()
+                  if stderr:
+                      f.write("```text\n")
+                      f.write(stderr[:4000])
+                      f.write("\n```\n\n")
+
+              if pip_exit > 1 and pip_count == 0:
+                  f.write("### pip-audit execution error\n\n")
+                  f.write(f"- exit code: {pip_exit}\n\n")
+                  stderr = read_text(log_dir / "pip-audit.stderr").strip()
+                  if stderr:
+                      f.write("```text\n")
+                      f.write(stderr[:4000])
+                      f.write("\n```\n\n")
+
+          github_summary = Path(__import__("os").environ.get("GITHUB_STEP_SUMMARY", ""))
+          if github_summary:
+              with github_summary.open("a", encoding="utf-8") as out:
+                  out.write(summary_path.read_text(encoding="utf-8"))
+
+          print(summary_path.read_text(encoding="utf-8"))
           PY
+
+      - name: Upload advisory logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tasukeru-advisory-logs
+          path: |
+            tasukeru_logs/
+            tasukeru_advisory_summary.md
+          if-no-files-found: ignore
 
       - name: Complete advisory phase
         if: always()
