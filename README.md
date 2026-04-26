@@ -284,7 +284,11 @@ Files under `archive/` should generally be treated as historical or reference ma
 
 ## License
 
-See [LICENSE](./LICENSE).
+## License
 
-Repository license: **Apache-2.0**  
-Policy intent: **Educational / Research**
+This repository uses a split-license model:
+
+- Software code: **Apache License 2.0**
+- Documentation, diagrams, and research materials: **CC BY-NC-SA 4.0**
+
+See [LICENSE_POLICY.md](./LICENSE_POLICY.md) for details.
