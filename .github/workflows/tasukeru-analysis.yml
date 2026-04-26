@@ -49,4 +49,4 @@ loc = item.get("location") or {}
         run: |
           set -euo pipefail
           echo "workflow syntax block is present"
-          echo "Advisory analysis completed (non-blocking)"
+          echo "Advisory analysis completed
