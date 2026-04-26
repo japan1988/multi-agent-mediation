@@ -165,15 +165,14 @@ Python 3.11
 ```
 
 ---
-
 ## Tasukeru Advisory（助ける君）
 
-**Tasukeru（助ける君）** は、軽量な品質・安全性レビューのための non-blocking advisory workflow です。
+**Tasukeru（助ける君）** は、軽量な品質・安全性・ロジックレビューのための non-blocking advisory workflow です。
 
-このリポジトリの保守を補助するために、静的解析、依存関係チェック、workflow summary から advisory signal を収集します。
+このリポジトリの保守を補助するために、静的解析、依存関係チェック、workflow summary、プロジェクト固有のロジックチェックから advisory signal を収集します。
 
 Tasukeru は、**本番レベルのセキュリティ保証ではありません**。  
-開発中のコード品質、よくある Python 上の問題、依存関係リスク、advisory finding を確認するための補助層です。
+開発中のコード品質、よくある Python 上の問題、依存関係リスク、リポジトリ整合性、advisory finding を確認するための補助層です。
 
 現在の Tasukeru の主な機能:
 
@@ -185,6 +184,12 @@ Tasukeru は、**本番レベルのセキュリティ保証ではありません
 
 - **pip-audit dependency scan**  
   Python 依存関係に既知の脆弱性 advisory がないか確認します。
+
+- **Tasukeru logic review**  
+  未解決のマージ競合記号、ARL 不変条件違反、ライセンスポリシーの不整合、workflow 上の危険要因、副作用候補など、プロジェクト固有の整合性ルールを確認します。
+
+- **ARL / governance invariant advisory checks**  
+  audit-style record が、canonical decision、必須 ARL key、RFL 非封印、sealed-state semantics などの安全契約に従っているかを確認します。
 
 - **GitHub Actions summary 出力**  
   workflow run の中に、人間が読みやすい advisory summary を生成します。
@@ -199,7 +204,6 @@ Tasukeru は意図的に **advisory / non-blocking** として扱われます。
 要約すると:
 
 > **Tasukeru はリポジトリのレビューを補助するが、人間の判断を置き換えるものではありません。**
-
 ---
 
 ## 設計上の立場
