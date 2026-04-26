@@ -283,9 +283,11 @@ tests/test_doc_orchestrator_with_mediator_v1_0.py
 
 ---
 
-## License
+## License / ライセンス
 
-See [LICENSE](./LICENSE).
+このリポジトリは分離ライセンス方式を採用しています。
 
-Repository license: **Apache-2.0**  
-Policy intent: **Educational / Research**
+- ソースコード: **Apache License 2.0**
+- ドキュメント、図、研究資料: **CC BY-NC-SA 4.0**
+
+詳細は [LICENSE_POLICY.md](./LICENSE_POLICY.md) を参照してください。
