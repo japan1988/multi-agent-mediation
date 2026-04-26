@@ -1,4 +1,4 @@
-         loc = item.get("location") or {}
+ loc = item.get("location") or {}
           f.write(
               f"- `{item.get('filename','?')}:{loc.get('row',1)}` "
               f"[{item.get('code','RUFF')}] {item.get('message','')}\n"
