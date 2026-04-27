@@ -135,8 +135,13 @@ Direct diagram links are also available:
 - [Checkpoint resume flow](docs/checkpoint-resume-flow.png)
 - [Data structure map](docs/data-structure-map.png)
 
+For other diagrams, reference files, bundles, and documentation assets, see:
+
+- [Documentation Index](docs/index.md)
+
 The README keeps the overview concise, while detailed diagrams are separated
-into `docs/architecture.md`.
+into `docs/architecture.md` and the broader documentation index is separated
+into `docs/index.md`.
 
 ---
 
