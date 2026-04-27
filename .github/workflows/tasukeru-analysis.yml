@@ -739,6 +739,31 @@ jobs:
                       "stress",
                       "benchmark",
                       "evaluation",
+                      "orchestrator",
+                      "mediation",
+                      "rank_transition",
+                      "pattern_steering",
+                      "kage",
+                  )
+              )
+
+          def is_historical_version_path(path: str) -> bool:
+              normalized = path.replace("\\", "/").lower()
+              name = normalized.rsplit("/", 1)[-1]
+              return any(
+                  marker in name
+                  for marker in (
+                      "_v1",
+                      "_v2",
+                      "_v3",
+                      "_v4",
+                      "_v5_0",
+                      "v1_",
+                      "v2_",
+                      "v3_",
+                      "v4_",
+                      "fixed_regex",
+                      "full..",
                   )
               )
 
@@ -785,6 +810,14 @@ jobs:
                           "reason": "Bandit flags assert usage because Python can remove assert statements under optimization. In pytest tests, assert is normally expected.",
                           "suggestion": "Usually keep as-is in tests. If noise is too high, add a narrow '# nosec B101' with a reason. In runtime code, replace assert with explicit error handling.",
                       }
+
+                  if is_historical_version_path(filename):
+                      return {
+                          "level": "REVIEW_RECOMMENDED",
+                          "reason": "This assert appears in a historical or versioned simulator file. It may be preserved for reproducibility, but runtime safety semantics should still be reviewed.",
+                          "suggestion": "If the file is historical, keep as-is or add a narrow '# nosec B101' with a reason. If it is still an active entry point, replace assert with explicit error handling.",
+                      }
+
                   return {
                       "level": "FIX_RECOMMENDED",
                       "reason": "Runtime assert statements can disappear when Python is run with optimization flags.",
@@ -792,16 +825,31 @@ jobs:
                   }
 
               if code == "B311":
+                  if is_test_path(filename):
+                      return {
+                          "level": "NOISE_CANDIDATE",
+                          "reason": "Standard pseudo-random generators are usually acceptable for tests when they are not used for security-sensitive behavior.",
+                          "suggestion": "Keep as-is for deterministic tests. If used for secrets, tokens, authentication, or authorization, replace with 'secrets'.",
+                      }
+
                   if is_simulation_path(filename):
                       return {
                           "level": "REVIEW_RECOMMENDED",
                           "reason": "Standard pseudo-random generators are often acceptable for deterministic simulations, but not for security-sensitive behavior.",
                           "suggestion": "If simulation-only, document that the randomness is non-cryptographic. If used for secrets, tokens, authentication, or authorization, replace with 'secrets' or 'random.SystemRandom'.",
                       }
+
                   return {
                       "level": "FIX_RECOMMENDED",
                       "reason": "Standard pseudo-random generators are not appropriate for security-sensitive values.",
                       "suggestion": "Use the 'secrets' module for security-sensitive randomness. Keep 'random' only for deterministic simulation or test data.",
+                  }
+
+              if code == "B404":
+                  return {
+                      "level": "REVIEW_RECOMMENDED",
+                      "reason": "Importing subprocess is not itself an external side effect, but files that import subprocess should be reviewed for actual execution sites.",
+                      "suggestion": "Check whether the file actually calls subprocess. If execution occurs, require HITL approval near the call site and prefer argument lists over shell=True.",
                   }
 
               if code in {"B602", "B603", "B604", "B605", "B606", "B607"}:
@@ -813,9 +861,9 @@ jobs:
 
               if "subprocess" in issue.lower():
                   return {
-                      "level": "HITL_REQUIRED",
-                      "reason": "The finding appears to involve subprocess execution.",
-                      "suggestion": "Add a HITL approval gate before execution and document the expected safe command shape.",
+                      "level": "REVIEW_RECOMMENDED",
+                      "reason": "The finding appears to involve subprocess. Review whether it is only an import warning or an actual execution path.",
+                      "suggestion": "If this is only an import warning, treat as review-only. If execution occurs, add a HITL approval gate near the call site.",
                   }
 
               if str(item.get("issue_severity", "")).upper() == "MEDIUM":
@@ -1178,7 +1226,7 @@ jobs:
               if pip_count:
                   f.write("### pip-audit findings\n\n")
                   for row in pip_vulns[:20]:
-                      fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "なし"
+                      fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "none"
                       f.write(
                           f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
                       )
