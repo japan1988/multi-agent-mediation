@@ -89,6 +89,108 @@ maintainers' security policy and responsible disclosure process.
 
 ---
 
+## Tasukeru Analysis
+
+Tasukeru Analysis is an advisory workflow for defensive repository review.
+
+It runs static and repository-specific checks such as:
+
+- Ruff
+- Bandit
+- pip-audit
+- Tasukeru logic review
+- HITL decision support classification
+
+The workflow is designed to improve maintainability, safety review, and
+developer usability without automatically treating every advisory finding as a
+blocking failure.
+
+### HITL decision support
+
+Tasukeru Analysis classifies findings into review levels so maintainers can
+separate actionable issues from expected noise.
+
+Current review levels:
+
+- `HITL_REQUIRED`: human review is recommended before merge
+- `FIX_RECOMMENDED`: a concrete fix is likely appropriate
+- `REVIEW_RECOMMENDED`: review the context before deciding
+- `NOISE_CANDIDATE`: likely acceptable in tests, demos, or research simulations
+- `INFO_ONLY`: informational finding
+
+This classification is advisory by default. It helps maintainers decide whether
+to fix, document, suppress, or accept a finding.
+
+### Typical classification examples
+
+Examples:
+
+- `B603` subprocess execution:
+  - usually `HITL_REQUIRED`
+  - requires review because subprocess execution can create external side effects
+
+- `B404` subprocess import:
+  - usually `REVIEW_RECOMMENDED`
+  - importing `subprocess` is not itself an external side effect
+
+- `B101` assert usage in tests:
+  - usually `NOISE_CANDIDATE`
+  - pytest tests commonly use `assert`
+
+- `B101` assert usage in active runtime code:
+  - usually `FIX_RECOMMENDED`
+  - runtime `assert` statements can be removed under Python optimization flags
+
+- `B311` pseudo-random generator usage in simulations:
+  - usually `REVIEW_RECOMMENDED`
+  - deterministic simulation randomness may be acceptable when not used for
+    secrets, tokens, authentication, or authorization
+
+- dependency vulnerabilities from `pip-audit`:
+  - usually `FIX_RECOMMENDED`
+
+### Output artifacts
+
+Tasukeru Analysis may generate the following review artifacts:
+
+```text
+tasukeru_advisory_summary.md
+tasukeru_hitl_review.md
+tasukeru_hitl_review.json
+```
+
+`tasukeru_advisory_summary.md` provides a concise overview.
+
+`tasukeru_hitl_review.md` provides human-readable review guidance, including:
+
+- file path
+- line number
+- finding code
+- issue summary
+- review level
+- suggested action
+
+`tasukeru_hitl_review.json` provides the same decision-support data in a
+machine-readable format.
+
+### Advisory behavior
+
+Tasukeru Analysis is advisory by default.
+
+It should help maintainers answer:
+
+- Which findings are likely noise?
+- Which findings should be reviewed?
+- Which files need attention?
+- Why is the finding relevant?
+- What is the suggested fix?
+- Does this require HITL before merge?
+
+The workflow does not replace human review. It is a triage and documentation
+aid for safer repository maintenance.
+
+---
+
 ## Repository purpose
 
 The main purpose of this repository is to explore how agentic workflows can be
