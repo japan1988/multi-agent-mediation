@@ -1,231 +1,182 @@
-# 📜 License Policy
-
-Copyright © 2024–2026 Japan1988
-
-This repository uses a **split-license model**.
-
----
-
-## English Version
-
-### 1. Software Code
-
-Unless otherwise stated in an individual file, all software source code in this repository is licensed under the:
-
-**Apache License, Version 2.0**
-
-You may obtain a copy of the license at:
-
-```text
-https://www.apache.org/licenses/LICENSE-2.0
-```
-
-This applies to files such as:
-
-- Python source files
-- test code
-- scripts
-- workflow-related implementation code
-- reusable software modules
-
----
-
-### 2. Documentation, Diagrams, and Research Materials
-
-Unless otherwise stated in an individual file, non-code materials in this repository are licensed under the:
-
-**Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License  
-CC BY-NC-SA 4.0**
-
-You may view the license at:
-
-```text
-https://creativecommons.org/licenses/by-nc-sa/4.0/
-```
-
-This applies to non-code materials such as:
-
-- README files
-- documentation
-- diagrams
-- architecture notes
-- research notes
-- explanatory text
-- educational materials
-
-Under this license, you may share and adapt the materials for non-commercial purposes, provided that appropriate credit is given and adapted materials are shared under the same or a compatible license.
-
----
-
-### 3. Attribution
-
-When using, quoting, adapting, or redistributing materials from this repository, please include the following attribution where reasonable:
-
-```text
-© Japan1988
-Source: https://github.com/japan1988/multi-agent-mediation
-Software code licensed under Apache License 2.0.
-Documentation and research materials licensed under CC BY-NC-SA 4.0 unless otherwise stated.
-```
-
----
-
-### 4. Commercial Use
-
-Commercial use of software code is governed by the Apache License 2.0.
-
-Commercial use of documentation, diagrams, research notes, and other non-code materials is not permitted under CC BY-NC-SA 4.0 unless separate permission is granted by the copyright holder.
-
----
-
-### 5. File-Level License Priority
-
-If a specific file contains its own license notice, that file-level license notice takes priority over this general policy.
-
----
-
-### 6. No Warranty
-
-This repository is provided on an **“AS IS”** basis, without warranties or conditions of any kind, either express or implied.
-
-The author assumes no liability for any damages, losses, or issues arising from the use, modification, distribution, or inability to use this repository.
-
----
-
-### 7. Research and Educational Purpose
-
-This repository is primarily intended for research, education, experimentation, and governance simulation.
-
-It is not a promise of production readiness, regulatory compliance, or complete safety coverage.
-
----
-
-### 8. Summary
-
-| Category | License |
-|---|---|
-| Software code | Apache License 2.0 |
-| Tests and scripts | Apache License 2.0 |
-| README and documentation | CC BY-NC-SA 4.0 |
-| Diagrams and research notes | CC BY-NC-SA 4.0 |
-| Commercial use of code | Governed by Apache License 2.0 |
-| Commercial use of non-code materials | Not permitted without separate permission |
-| Warranty | None / AS IS |
-
----
-
-# 📜 ライセンスポリシー
-
-Copyright © 2024–2026 Japan1988
-
-このリポジトリは、対象物の種類に応じてライセンスを分ける **分離ライセンス方式** を採用します。
-
----
-
-## 日本語版
-
-### 1. ソフトウェア・コード
-
-個別ファイルに別途明記がない限り、このリポジトリ内のソフトウェア・ソースコードは、以下のライセンスの下で提供されます。
-
-**Apache License, Version 2.0**
-
-ライセンス全文は以下で確認できます。
-
-```text
-https://www.apache.org/licenses/LICENSE-2.0
-```
-
-主な対象例:
-
-- Python ソースコード
-- テストコード
-- スクリプト
-- workflow 関連の実装コード
-- 再利用可能なソフトウェア・モジュール
-
----
-
-### 2. ドキュメント・図・研究資料
-
-個別ファイルに別途明記がない限り、このリポジトリ内の非コード資料は、以下のライセンスの下で提供されます。
-
-**クリエイティブ・コモンズ 表示-非営利-継承 4.0 国際  
-CC BY-NC-SA 4.0**
-
-ライセンス内容は以下で確認できます。
-
-```text
-https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja
-```
-
-主な対象例:
-
-- README
-- ドキュメント
-- 図表
-- アーキテクチャ説明
-- 研究メモ
-- 解説文
-- 教育用資料
-
-このライセンスの下では、適切なクレジットを表示し、非営利目的であり、派生物を同一または互換ライセンスで共有する場合に、共有・改変が許可されます。
-
----
-
-### 3. クレジット表記
-
-このリポジトリの内容を利用、引用、改変、再配布する場合は、可能な範囲で以下のクレジットを明記してください。
-
-```text
-© Japan1988
-Source: https://github.com/japan1988/multi-agent-mediation
-ソースコードは Apache License 2.0 の下で提供されます。
-ドキュメントおよび研究資料は、別途明記がない限り CC BY-NC-SA 4.0 の下で提供されます。
-```
-
----
-
-### 4. 商用利用について
-
-ソフトウェア・コードの商用利用については、Apache License 2.0 の条件に従います。
-
-一方、ドキュメント、図、研究メモ、その他の非コード資料については、CC BY-NC-SA 4.0 に基づき、著作権者から別途許可を得ない限り、商用利用は許可されません。
-
----
-
-### 5. ファイル単位のライセンス優先
-
-個別ファイルに固有のライセンス表示がある場合、そのファイル単位のライセンス表示が、この一般ポリシーより優先されます。
-
----
-
-### 6. 免責事項
-
-このリポジトリは **現状有姿（AS IS）** で提供されます。
-
-明示または黙示を問わず、いかなる保証も行いません。
-
-このリポジトリの利用、改変、配布、または利用不能によって生じたいかなる損害、損失、問題についても、著作者は責任を負いません。
-
----
-
-### 7. 研究・教育目的
-
-このリポジトリは、主に研究、教育、実験、ガバナンス・シミュレーションを目的としています。
-
-本番運用への適合性、規制準拠、または完全な安全性カバレッジを保証するものではありません。
-
----
-
-### 8. 要約
-
-| 区分 | ライセンス |
-|---|---|
-| ソースコード | Apache License 2.0 |
-| テスト・スクリプト | Apache License 2.0 |
-| README・ドキュメント | CC BY-NC-SA 4.0 |
-| 図・研究メモ | CC BY-NC-SA 4.0 |
-| コードの商用利用 | Apache License 2.0 に従う |
-| 非コード資料の商用利用 | 別途許可がない限り不可 |
-| 保証 | なし / AS IS |
+Apache License
+Version 2.0, January 2004
+https://www.apache.org/licenses/
+
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+1. Definitions.
+
+"License" shall mean the terms and conditions for use, reproduction,
+and distribution as defined by Sections 1 through 9 of this document.
+
+"Licensor" shall mean the copyright owner or entity authorized by
+the copyright owner that is granting the License.
+
+"Legal Entity" shall mean the union of the acting entity and all
+other entities that control, are controlled by, or are under common
+control with that entity. For the purposes of this definition,
+"control" means (i) the power, direct or indirect, to cause the
+direction or management of such entity, whether by contract or
+otherwise, or (ii) ownership of fifty percent (50%) or more of the
+outstanding shares, or (iii) beneficial ownership of such entity.
+
+"You" or "Your" shall mean an individual or Legal Entity exercising
+permissions granted by this License.
+
+"Source" form shall mean the preferred form for making modifications,
+including but not limited to software source code, documentation
+source, and configuration files.
+
+"Object" form shall mean any form resulting from mechanical
+transformation or translation of a Source form, including but
+not limited to compiled object code, generated documentation,
+and conversions to other media types.
+
+"Work" shall mean the work of authorship, whether in Source or
+Object form, made available under the License, as indicated by a
+copyright notice that is included in or attached to the work.
+
+"Derivative Works" shall mean any work, whether in Source or Object
+form, that is based on or derived from the Work and for which the
+editorial revisions, annotations, elaborations, or other modifications
+represent, as a whole, an original work of authorship. For the purposes
+of this License, Derivative Works shall not include works that remain
+separable from, or merely link or bind by name to the interfaces of,
+the Work and Derivative Works thereof.
+
+"Contribution" shall mean any work of authorship, including the
+original version of the Work and any modifications or additions
+to that Work or Derivative Works thereof, that is intentionally
+submitted to Licensor for inclusion in the Work by the copyright owner
+or by an individual or Legal Entity authorized to submit on behalf of
+the copyright owner. For the purposes of this definition, "submitted"
+means any form of electronic, verbal, or written communication sent
+to the Licensor or its representatives, including but not limited to
+communication on electronic mailing lists, source code control systems,
+and issue tracking systems that are managed by, or on behalf of,
+the Licensor for the purpose of discussing and improving the Work,
+but excluding communication that is conspicuously marked or otherwise
+designated in writing by the copyright owner as "Not a Contribution."
+
+"Contributor" shall mean Licensor and any individual or Legal Entity
+on behalf of whom a Contribution has been received by Licensor and
+subsequently incorporated within the Work.
+
+2. Grant of Copyright License.
+
+Subject to the terms and conditions of this License, each Contributor
+hereby grants to You a perpetual, worldwide, non-exclusive, no-charge,
+royalty-free, irrevocable copyright license to reproduce, prepare
+Derivative Works of, publicly display, publicly perform, sublicense,
+and distribute the Work and such Derivative Works in Source or
+Object form.
+
+3. Grant of Patent License.
+
+Subject to the terms and conditions of this License, each Contributor
+hereby grants to You a perpetual, worldwide, non-exclusive, no-charge,
+royalty-free, irrevocable patent license to make, have made, use,
+offer to sell, sell, import, and otherwise transfer the Work, where
+such license applies only to those patent claims licensable by such
+Contributor that are necessarily infringed by their Contribution(s)
+alone or by combination of their Contribution(s) with the Work to
+which such Contribution(s) was submitted. If You institute patent
+litigation against any entity, including a cross-claim or counterclaim
+in a lawsuit, alleging that the Work or a Contribution incorporated
+within the Work constitutes direct or contributory patent infringement,
+then any patent licenses granted to You under this License for that
+Work shall terminate as of the date such litigation is filed.
+
+4. Redistribution.
+
+You may reproduce and distribute copies of the Work or Derivative
+Works thereof in any medium, with or without modifications, and in
+Source or Object form, provided that You meet the following conditions:
+
+(a) You must give any other recipients of the Work or Derivative Works
+    a copy of this License; and
+
+(b) You must cause any modified files to carry prominent notices
+    stating that You changed the files; and
+
+(c) You must retain, in the Source form of any Derivative Works that
+    You distribute, all copyright, patent, trademark, and attribution
+    notices from the Source form of the Work, excluding those notices
+    that do not pertain to any part of the Derivative Works; and
+
+(d) If the Work includes a "NOTICE" text file as part of its
+    distribution, then any Derivative Works that You distribute must
+    include a readable copy of the attribution notices contained
+    within such NOTICE file, excluding those notices that do not
+    pertain to any part of the Derivative Works, in at least one
+    of the following places: within a NOTICE text file distributed
+    as part of the Derivative Works; within the Source form or
+    documentation, if provided along with the Derivative Works; or,
+    within a display generated by the Derivative Works, if and
+    wherever such third-party notices normally appear. The contents
+    of the NOTICE file are for informational purposes only and
+    do not modify the License. You may add Your own attribution
+    notices within Derivative Works that You distribute, alongside
+    or as an addendum to the NOTICE text from the Work, provided
+    that such additional attribution notices cannot be construed
+    as modifying the License.
+
+You may add Your own copyright statement to Your modifications and
+may provide additional or different license terms and conditions
+for use, reproduction, or distribution of Your modifications, or
+for any such Derivative Works as a whole, provided Your use,
+reproduction, and distribution of the Work otherwise complies with
+the conditions stated in this License.
+
+5. Submission of Contributions.
+
+Unless You explicitly state otherwise, any Contribution intentionally
+submitted for inclusion in the Work by You to the Licensor shall be
+under the terms and conditions of this License, without any additional
+terms or conditions. Notwithstanding the above, nothing herein shall
+supersede or modify the terms of any separate license agreement you
+may have executed with Licensor regarding such Contributions.
+
+6. Trademarks.
+
+This License does not grant permission to use the trade names,
+trademarks, service marks, or product names of the Licensor, except
+as required for reasonable and customary use in describing the origin
+of the Work and reproducing the content of the NOTICE file.
+
+7. Disclaimer of Warranty.
+
+Unless required by applicable law or agreed to in writing, Licensor
+provides the Work, and each Contributor provides its Contributions,
+on an "AS IS" basis, without warranties or conditions of any kind,
+either express or implied, including, without limitation, any warranties
+or conditions of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS
+FOR A PARTICULAR PURPOSE. You are solely responsible for determining
+the appropriateness of using or redistributing the Work and assume
+any risks associated with Your exercise of permissions under this
+License.
+
+8. Limitation of Liability.
+
+In no event and under no legal theory, whether in tort, including
+negligence, contract, or otherwise, unless required by applicable law,
+such as deliberate and grossly negligent acts, or agreed to in writing,
+shall any Contributor be liable to You for damages, including any
+direct, indirect, special, incidental, or consequential damages of
+any character arising as a result of this License or out of the use
+or inability to use the Work, including but not limited to damages
+for loss of goodwill, work stoppage, computer failure or malfunction,
+or any and all other commercial damages or losses, even if such
+Contributor has been advised of the possibility of such damages.
+
+9. Accepting Warranty or Additional Liability.
+
+While redistributing the Work or Derivative Works thereof, You may
+choose to offer, and charge a fee for, acceptance of support, warranty,
+indemnity, or other liability obligations and/or rights consistent
+with this License. However, in accepting such obligations, You may
+act only on Your own behalf and on Your sole responsibility, not on
+behalf of any other Contributor, and only if You agree to indemnify,
+defend, and hold each Contributor harmless for any liability incurred
+by, or claims asserted against, such Contributor by reason of your
+accepting any such warranty or additional liability.
