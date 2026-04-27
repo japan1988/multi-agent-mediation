@@ -5,21 +5,25 @@ verify_stop_comparator_v1_2.py
 A small reproducibility/packaging verifier for one or more Python files.
 
 Usage (repo root):
-    python tests/tools/verify_stop_comparator_v1_2.py path/to/stop_comparator_v1.py
-    python tests/tools/verify_stop_comparator_v1_2.py path/to/stop_comparator_v1.py path/to/observed_bridge_exactmatch_v1_2.py
+    python tests/tools/verify_stop_comparator_v1_2.py path/to/stop_comparator_v1.py --hitl-approved
+    python tests/tools/verify_stop_comparator_v1_2.py path/to/stop_comparator_v1.py path/to/observed_bridge_exactmatch_v1_2.py --hitl-approved
 
 What it does (per target file):
   1) SHA256 (byte-level)
   2) py_compile (syntax check)
   3) import by file path and call _self_check() if present
-  4) run as script (__main__) and capture stdout/stderr (can be disabled with --no-main)
+  4) run as script (__main__) and capture stdout/stderr
+     - can be disabled with --no-main
+     - requires explicit HITL approval when enabled
 
 Exit code:
   0: all checks passed for all targets
   non-zero: at least one target failed
 
 Note:
-  - This is NOT a pytest test file (name does not start with test_), so it won't clash with existing tests.
+  - This is NOT a pytest test file, so it should not clash with existing tests.
+  - Running a target as __main__ starts a child Python process.
+    That boundary is intentionally HITL / approval gated.
 """
 
 from __future__ import annotations
@@ -34,27 +38,74 @@ import sys
 import traceback
 from typing import List
 
+HITL_APPROVAL_ENV = "VERIFY_STOP_COMPARATOR_HITL_APPROVED"
+HITL_APPROVED_VALUES = {"1", "true", "yes", "y", "approved"}
+
+
+class HitlApprovalError(PermissionError):
+    """Raised when running a target as __main__ lacks explicit approval."""
+
+
+def _env_hitl_approved() -> bool:
+    """Return True when HITL approval is provided through the environment."""
+    value = os.environ.get(HITL_APPROVAL_ENV, "")
+    return value.strip().lower() in HITL_APPROVED_VALUES
+
+
+def require_hitl_approval_for_main_run(
+    *,
+    approved: bool,
+    target_path: str,
+) -> None:
+    """
+    Require explicit approval before running a target file as __main__.
+
+    Importing and compiling are local verification steps. Running a file as a
+    script starts a child process and may execute arbitrary top-level behavior
+    in the target file, so this step is guarded.
+    """
+    if approved or _env_hitl_approved():
+        return
+
+    raise HitlApprovalError(
+        "HITL approval required before running target as __main__. "
+        "Use --hitl-approved, set "
+        f"{HITL_APPROVAL_ENV}=1, or use --no-main. "
+        f"target={target_path!r}"
+    )
+
 
 def sha256_file(path: str) -> str:
+    """Return the SHA-256 digest of a file."""
     h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+    with open(path, "rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
 
 
 def import_from_path(mod_name: str, path: str):
+    """Import a Python module from a filesystem path."""
     spec = importlib.util.spec_from_file_location(mod_name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"failed to build import spec for: {path}")
+
     mod = importlib.util.module_from_spec(spec)
-    # register so imports inside the module (if any) can resolve it by name
+
+    # Register so imports inside the module, if any, can resolve it by name.
     sys.modules[mod_name] = mod
     spec.loader.exec_module(mod)
+
     return mod
 
 
-def run_one_target(path: str, *, run_as_script: bool = True) -> int:
+def run_one_target(
+    path: str,
+    *,
+    run_as_script: bool = True,
+    hitl_approved: bool = False,
+) -> int:
+    """Run all verifier checks for one target file."""
     path = os.path.abspath(path)
 
     print("=" * 80)
@@ -82,7 +133,7 @@ def run_one_target(path: str, *, run_as_script: bool = True) -> int:
         traceback.print_exc()
         return 4
 
-    # 3) Import + _self_check (if exists)
+    # 3) Import + _self_check if present
     try:
         mod_name = f"_under_test_{os.path.basename(path).replace('.', '_')}"
         mod = import_from_path(mod_name, path)
@@ -99,13 +150,19 @@ def run_one_target(path: str, *, run_as_script: bool = True) -> int:
         traceback.print_exc()
         return 5
 
-    # 4) Run as script (__main__) (can be disabled with --no-main)
+    # 4) Run as script (__main__), if enabled
     if run_as_script:
         try:
+            require_hitl_approval_for_main_run(
+                approved=hitl_approved,
+                target_path=path,
+            )
+
             proc = subprocess.run(
                 [sys.executable, path],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             print(f"[INFO] __main__ returncode={proc.returncode}")
 
@@ -119,36 +176,53 @@ def run_one_target(path: str, *, run_as_script: bool = True) -> int:
 
             if proc.returncode != 0:
                 print("[FAIL] __main__ non-zero return code")
-                return proc.returncode  # keep target's exit code
+                return proc.returncode
+
             print("[OK] __main__")
+        except HitlApprovalError as exc:
+            print(f"[FAIL] {exc}")
+            return 6
         except Exception:
-            # CHANGED: do not pass silently; fail-closed
             print("[FAIL] failed to run as script (__main__)")
             traceback.print_exc()
-            return 6
+            return 7
 
     print("[PASS] target checks passed")
     return 0
 
 
 def main(argv: List[str]) -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument(
+    """CLI entry point."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
         "paths",
         nargs="+",
-        help="one or more python file paths to verify",
+        help="one or more Python file paths to verify",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--no-main",
         action="store_true",
-        help="skip running as __main__ (import/_self_check only)",
+        help="skip running as __main__ and perform import/_self_check only",
     )
-    args = ap.parse_args(argv)
+    parser.add_argument(
+        "--hitl-approved",
+        action="store_true",
+        help=(
+            "explicit approval for running targets as __main__; "
+            f"equivalent to setting {HITL_APPROVAL_ENV}=1"
+        ),
+    )
+
+    args = parser.parse_args(argv)
 
     run_as_script = not args.no_main
 
-    for p in args.paths:
-        rc = run_one_target(p, run_as_script=run_as_script)
+    for target_path in args.paths:
+        rc = run_one_target(
+            target_path,
+            run_as_script=run_as_script,
+            hitl_approved=bool(args.hitl_approved),
+        )
         if rc != 0:
             return rc
 
