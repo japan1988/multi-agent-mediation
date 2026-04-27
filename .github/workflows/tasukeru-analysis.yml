@@ -711,6 +711,9 @@ jobs:
 
               return vulns
 
+          def md_text(value: Any) -> str:
+              return str(value).replace("\n", " ").strip()
+
           def md_cell(value: Any) -> str:
               text = str(value)
               text = text.replace("\n", "<br>")
@@ -973,6 +976,75 @@ jobs:
                   str(entry.get("line", "")),
               )
 
+          def write_entry_bullet(f: Any, entry: dict[str, Any]) -> None:
+              location = f"{entry['file']}:{entry['line']}"
+              f.write(
+                  f"- `{entry['level']}` / {entry['source']} / "
+                  f"`{entry['code']}` at `{location}`\n"
+              )
+              f.write(f"  - Issue: {md_text(entry['message'])}\n")
+              f.write(f"  - Suggested action: {md_text(entry['suggestion'])}\n")
+
+          def write_compact_step_summary(
+              path: Path,
+              *,
+              ruff_count: int,
+              bandit_advisory_count: int,
+              pip_count: int,
+              logic_count: int,
+              logic_critical: int,
+              hitl_counts: Counter[str],
+              hitl_entries: list[dict[str, Any]],
+          ) -> None:
+              priority = [
+                  entry
+                  for entry in hitl_entries
+                  if entry["level"] in {"HITL_REQUIRED", "FIX_RECOMMENDED"}
+              ]
+
+              with path.open("a", encoding="utf-8") as out:
+                  out.write("# Tasukeru advisory summary\n\n")
+                  out.write(f"- Ruff findings: {ruff_count}\n")
+                  out.write(f"- Bandit LOW/MEDIUM findings: {bandit_advisory_count}\n")
+                  out.write(f"- pip-audit vulnerabilities: {pip_count}\n")
+                  out.write(f"- Tasukeru logic review findings: {logic_count}\n")
+                  out.write(f"- Tasukeru critical advisories: {logic_critical}\n\n")
+
+                  out.write("## HITL decision support\n\n")
+                  out.write("- HITL_REQUIRED: ")
+                  out.write(f"{hitl_counts.get('HITL_REQUIRED', 0)}\n")
+                  out.write("- FIX_RECOMMENDED: ")
+                  out.write(f"{hitl_counts.get('FIX_RECOMMENDED', 0)}\n")
+                  out.write("- REVIEW_RECOMMENDED: ")
+                  out.write(f"{hitl_counts.get('REVIEW_RECOMMENDED', 0)}\n")
+                  out.write("- NOISE_CANDIDATE: ")
+                  out.write(f"{hitl_counts.get('NOISE_CANDIDATE', 0)}\n")
+                  out.write("- INFO_ONLY: ")
+                  out.write(f"{hitl_counts.get('INFO_ONLY', 0)}\n\n")
+
+                  if priority:
+                      out.write("## Priority review queue\n\n")
+                      for entry in priority[:10]:
+                          write_entry_bullet(out, entry)
+                      if len(priority) > 10:
+                          out.write(
+                              f"\n... and {len(priority) - 10} more priority entries.\n"
+                          )
+                      out.write("\n")
+                  else:
+                      out.write("## Priority review queue\n\n")
+                      out.write("No HITL_REQUIRED or FIX_RECOMMENDED entries.\n\n")
+
+                  out.write("## Detailed artifacts\n\n")
+                  out.write("- `tasukeru_advisory_summary.md`\n")
+                  out.write("- `tasukeru_hitl_review.md`\n")
+                  out.write("- `tasukeru_hitl_review.json`\n\n")
+                  out.write(
+                      "Detailed guidance is uploaded as workflow artifacts. "
+                      "The GitHub step summary is intentionally compact to avoid "
+                      "large table rendering issues.\n"
+                  )
+
           ruff_exit = read_exit("ruff.exit")
           bandit_exit = read_exit("bandit.exit")
           pip_exit = read_exit("pip-audit.exit")
@@ -1117,19 +1189,8 @@ jobs:
 
               if hitl_entries:
                   f.write("## Review queue\n\n")
-                  f.write("| Level | Source | File | Line | Code | Issue | Suggested action |\n")
-                  f.write("|---|---|---|---:|---|---|---|\n")
                   for entry in hitl_entries[:80]:
-                      f.write(
-                          "| "
-                          f"{md_cell(entry['level'])} | "
-                          f"{md_cell(entry['source'])} | "
-                          f"`{md_cell(entry['file'])}` | "
-                          f"{md_cell(entry['line'])} | "
-                          f"`{md_cell(entry['code'])}` | "
-                          f"{md_cell(entry['message'])} | "
-                          f"{md_cell(entry['suggestion'])} |\n"
-                      )
+                      write_entry_bullet(f, entry)
                   if len(hitl_entries) > 80:
                       f.write(
                           f"\nOnly the first 80 entries are shown. "
@@ -1177,22 +1238,20 @@ jobs:
               )
 
               if hitl_entries:
-                  f.write("### HITL / repair queue preview\n\n")
-                  f.write("| Level | Source | File | Line | Code | Suggested action |\n")
-                  f.write("|---|---|---|---:|---|---|\n")
-                  for entry in hitl_entries[:20]:
-                      f.write(
-                          "| "
-                          f"{md_cell(entry['level'])} | "
-                          f"{md_cell(entry['source'])} | "
-                          f"`{md_cell(entry['file'])}` | "
-                          f"{md_cell(entry['line'])} | "
-                          f"`{md_cell(entry['code'])}` | "
-                          f"{md_cell(entry['suggestion'])} |\n"
-                      )
-                  if len(hitl_entries) > 20:
-                      f.write(f"\n... and {len(hitl_entries) - 20} more entries.\n")
-                  f.write("\n")
+                  f.write("### Priority review queue preview\n\n")
+                  priority = [
+                      entry
+                      for entry in hitl_entries
+                      if entry["level"] in {"HITL_REQUIRED", "FIX_RECOMMENDED"}
+                  ]
+                  if priority:
+                      for entry in priority[:20]:
+                          write_entry_bullet(f, entry)
+                      if len(priority) > 20:
+                          f.write(f"\n... and {len(priority) - 20} more priority entries.\n")
+                      f.write("\n")
+                  else:
+                      f.write("No HITL_REQUIRED or FIX_RECOMMENDED entries.\n\n")
 
               if ruff_count:
                   f.write("### Ruff: top files\n\n")
@@ -1268,14 +1327,35 @@ jobs:
 
           github_summary_value = os.environ.get("GITHUB_STEP_SUMMARY", "")
           if github_summary_value:
-              github_summary = Path(github_summary_value)
-              with github_summary.open("a", encoding="utf-8") as out:
-                  out.write(summary_path.read_text(encoding="utf-8"))
-                  out.write("\n")
-                  out.write(hitl_md_path.read_text(encoding="utf-8"))
+              write_compact_step_summary(
+                  Path(github_summary_value),
+                  ruff_count=ruff_count,
+                  bandit_advisory_count=bandit_advisory_count,
+                  pip_count=pip_count,
+                  logic_count=logic_count,
+                  logic_critical=logic_critical,
+                  hitl_counts=hitl_counts,
+                  hitl_entries=hitl_entries,
+              )
 
-          print(summary_path.read_text(encoding="utf-8"))
-          print(hitl_md_path.read_text(encoding="utf-8"))
+          print("# Tasukeru advisory summary")
+          print(f"Ruff findings: {ruff_count}")
+          print(f"Bandit LOW/MEDIUM findings: {bandit_advisory_count}")
+          print(f"pip-audit vulnerabilities: {pip_count}")
+          print(f"Tasukeru logic review findings: {logic_count}")
+          print(f"Tasukeru critical advisories: {logic_critical}")
+          print("")
+          print("HITL decision support")
+          print(f"HITL_REQUIRED: {hitl_counts.get('HITL_REQUIRED', 0)}")
+          print(f"FIX_RECOMMENDED: {hitl_counts.get('FIX_RECOMMENDED', 0)}")
+          print(f"REVIEW_RECOMMENDED: {hitl_counts.get('REVIEW_RECOMMENDED', 0)}")
+          print(f"NOISE_CANDIDATE: {hitl_counts.get('NOISE_CANDIDATE', 0)}")
+          print(f"INFO_ONLY: {hitl_counts.get('INFO_ONLY', 0)}")
+          print("")
+          print("Detailed artifacts written:")
+          print("- tasukeru_advisory_summary.md")
+          print("- tasukeru_hitl_review.md")
+          print("- tasukeru_hitl_review.json")
           PY
 
       - name: Upload advisory logs
