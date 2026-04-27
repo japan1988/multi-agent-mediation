@@ -28,6 +28,9 @@ jobs:
     name: advisory analysis
     runs-on: ubuntu-latest
 
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
     defaults:
       run:
         shell: bash
@@ -220,7 +223,11 @@ jobs:
           def check_conflict_markers(path: Path, text: str) -> None:
               for idx, line in enumerate(text.splitlines(), start=1):
                   stripped = line.strip()
-                  if stripped.startswith("<<<<<<< ") or stripped == "=======" or stripped.startswith(">>>>>>> "):
+                  if (
+                      stripped.startswith("<<<<<<< ")
+                      or stripped == "======="
+                      or stripped.startswith(">>>>>>> ")
+                  ):
                       add(
                           "CRITICAL_ADVISORY",
                           "repo_integrity",
@@ -287,7 +294,17 @@ jobs:
                                   if isinstance(code, str):
                                       found.add(code)
                       elif isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]+", value):
-                          if value.startswith(("REL_", "EVIDENCE_", "TRUST_", "DRAFT_", "FINALIZE_", "ACC_", "ETHICS_")):
+                          if value.startswith(
+                              (
+                                  "REL_",
+                                  "EVIDENCE_",
+                                  "TRUST_",
+                                  "DRAFT_",
+                                  "FINALIZE_",
+                                  "ACC_",
+                                  "ETHICS_",
+                              )
+                          ):
                               found.add(value)
                       else:
                           collect_reason_codes(value, found)
@@ -446,7 +463,9 @@ jobs:
               candidates = []
               for path in iter_text_files():
                   name = path.name.lower()
-                  if path.suffix == ".jsonl" and ("arl" in name or "audit" in name or "incident" in name):
+                  if path.suffix == ".jsonl" and (
+                      "arl" in name or "audit" in name or "incident" in name
+                  ):
                       candidates.append(path)
 
               for path in candidates:
@@ -477,7 +496,11 @@ jobs:
                   return
 
               lowered = text.lower()
-              has_hitl_guard = "hitl" in lowered or "pause_for_hitl" in lowered or "approval" in lowered
+              has_hitl_guard = (
+                  "hitl" in lowered
+                  or "pause_for_hitl" in lowered
+                  or "approval" in lowered
+              )
 
               patterns = [
                   ("EMAIL_SIDE_EFFECT", r"\b(smtplib|send_email|sendmail)\b"),
@@ -506,12 +529,14 @@ jobs:
               if ".github/workflows" not in str(path):
                   return
 
-              if "reviewdog/action-setup@v1" in text:
+              reviewdog_dynamic_setup = "reviewdog/action-setup" + "@v1"
+
+              if reviewdog_dynamic_setup in text:
                   add(
                       "WARN",
                       "workflow",
                       "REVIEWDOG_DYNAMIC_SETUP_RISK",
-                      "reviewdog/action-setup@v1 may fail on network or upstream tag resolution. Prefer avoiding it in non-critical advisory workflows.",
+                      f"{reviewdog_dynamic_setup} may fail on network or upstream tag resolution. Prefer avoiding it in non-critical advisory workflows.",
                       str(path),
                   )
 
@@ -537,7 +562,10 @@ jobs:
               "findings": findings,
           }
 
-          out_json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          out_json.write_text(
+              json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
 
           with out_md.open("w", encoding="utf-8") as f:
               f.write("### Tasukeru logic review\n\n")
@@ -580,6 +608,7 @@ jobs:
           from __future__ import annotations
 
           import json
+          import os
           from collections import Counter
           from pathlib import Path
           from typing import Any
@@ -699,13 +728,27 @@ jobs:
           bandit_advisory_count = len(bandit_advisory_results)
           pip_count = len(pip_vulns)
 
-          logic_findings = logic_review.get("findings", []) if isinstance(logic_review, dict) else []
+          logic_findings = (
+              logic_review.get("findings", [])
+              if isinstance(logic_review, dict)
+              else []
+          )
           logic_count = len(logic_findings) if isinstance(logic_findings, list) else 0
-          logic_severity_counts = logic_review.get("severity_counts", {}) if isinstance(logic_review, dict) else {}
-          logic_critical = int(logic_severity_counts.get("CRITICAL_ADVISORY", 0)) if isinstance(logic_severity_counts, dict) else 0
+          logic_severity_counts = (
+              logic_review.get("severity_counts", {})
+              if isinstance(logic_review, dict)
+              else {}
+          )
+          logic_critical = (
+              int(logic_severity_counts.get("CRITICAL_ADVISORY", 0))
+              if isinstance(logic_severity_counts, dict)
+              else 0
+          )
 
           ruff_by_file = Counter(str(item.get("filename", "?")) for item in ruff_items)
-          bandit_by_file = Counter(str(item.get("filename", "?")) for item in bandit_advisory_results)
+          bandit_by_file = Counter(
+              str(item.get("filename", "?")) for item in bandit_advisory_results
+          )
 
           with summary_path.open("w", encoding="utf-8") as f:
               f.write("# Tasukeru advisory summary\n\n")
@@ -787,8 +830,9 @@ jobs:
                       f.write(stderr[:4000])
                       f.write("\n```\n\n")
 
-          github_summary = Path(__import__("os").environ.get("GITHUB_STEP_SUMMARY", ""))
-          if github_summary:
+          github_summary_value = os.environ.get("GITHUB_STEP_SUMMARY", "")
+          if github_summary_value:
+              github_summary = Path(github_summary_value)
               with github_summary.open("a", encoding="utf-8") as out:
                   out.write(summary_path.read_text(encoding="utf-8"))
 
