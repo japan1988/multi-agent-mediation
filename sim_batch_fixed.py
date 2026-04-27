@@ -21,6 +21,8 @@ Notes:
 - No seaborn.
 - One figure per chart.
 - Uses default matplotlib colors.
+- Subprocess execution is HITL-gated via --hitl-approved or
+  SIM_BATCH_HITL_APPROVED=1.
 """
 
 from __future__ import annotations
@@ -61,6 +63,45 @@ STOP_EVENTS = {
     "defeat_layer_stop",
     "inactive",
 }
+
+HITL_APPROVAL_ENV = "SIM_BATCH_HITL_APPROVED"
+HITL_APPROVED_VALUES = {"1", "true", "yes", "y", "approved"}
+
+
+# === HITL guard ================================================================
+
+
+class HitlApprovalError(PermissionError):
+    """Raised when subprocess execution lacks explicit HITL approval."""
+
+
+def _env_hitl_approved() -> bool:
+    value = os.environ.get(HITL_APPROVAL_ENV, "")
+    return value.strip().lower() in HITL_APPROVED_VALUES
+
+
+def require_hitl_approval_for_subprocess(
+    *,
+    approved: bool,
+    command: list[str],
+    target_script: str,
+) -> None:
+    """
+    Require explicit HITL approval before subprocess execution.
+
+    This batch runner starts another Python process. Even though the default
+    target is a local simulation script, process execution is treated as a
+    side-effect boundary and must be explicitly approved.
+    """
+    if approved:
+        return
+
+    command_text = " ".join(command)
+    raise HitlApprovalError(
+        "HITL approval required before subprocess execution. "
+        f"Set --hitl-approved or {HITL_APPROVAL_ENV}=1. "
+        f"target_script={target_script!r} command={command_text!r}"
+    )
 
 
 # === Helpers ==================================================================
@@ -116,6 +157,8 @@ def run_one_trial(
     master_seed: int,
     out_trial_dir: Path,
     retries: int = 2,
+    *,
+    hitl_approved: bool = False,
 ) -> list[dict]:
     """
     Run one trial for both raw/filtered modes.
@@ -126,6 +169,8 @@ def run_one_trial(
     """
     out_trial_dir.mkdir(parents=True, exist_ok=True)
     stats_rows: list[dict] = []
+
+    effective_hitl_approved = hitl_approved or _env_hitl_approved()
 
     for mode_index, (mode_key, cfg_path) in enumerate(MODES):
         seed = derive_seed(master_seed, trial_id, mode_index)
@@ -144,9 +189,16 @@ def run_one_trial(
                 if "STEP_MAX" in os.environ:
                     env["AI_STEP_MAX"] = os.environ["STEP_MAX"]
 
-                # 実行
+                command = ["python", TARGET_SCRIPT]
+
+                require_hitl_approval_for_subprocess(
+                    approved=effective_hitl_approved,
+                    command=command,
+                    target_script=TARGET_SCRIPT,
+                )
+
                 subprocess.run(
-                    ["python", TARGET_SCRIPT],
+                    command,
                     cwd=str(BASE_DIR),
                     env=env,
                     check=True,
@@ -198,9 +250,7 @@ def run_one_trial(
                 interventions = int(
                     (df.get("event", pd.Series([])) == "mediator_stop").sum()
                 )
-                sealed = int(
-                    df.get("event", pd.Series([])).isin(STOP_EVENTS).any()
-                )
+                sealed = int(df.get("event", pd.Series([])).isin(STOP_EVENTS).any())
 
                 stats_rows.append(
                     {
@@ -294,9 +344,7 @@ def aggregate(outdir: Path, num_trials: int) -> None:
             interventions = int(
                 (df.get("event", pd.Series([])) == "mediator_stop").sum()
             )
-            sealed = int(
-                df.get("event", pd.Series([])).isin(STOP_EVENTS).any()
-            )
+            sealed = int(df.get("event", pd.Series([])).isin(STOP_EVENTS).any())
 
             stats.append(
                 {
@@ -365,8 +413,7 @@ def aggregate(outdir: Path, num_trials: int) -> None:
         plt.figure()
         for mode in ("raw", "filtered"):
             d = first_df[
-                (first_df["mode"] == mode)
-                & (first_df["first_stop_step"] >= 0)
+                (first_df["mode"] == mode) & (first_df["first_stop_step"] >= 0)
             ]["first_stop_step"].to_numpy()
 
             if d.size > 0:
@@ -426,9 +473,7 @@ def main() -> None:
     parser.add_argument(
         "--outdir",
         type=str,
-        default=str(
-            OUT_DIR_DEFAULT / time.strftime("run-%Y%m%d-%H%M%S")
-        ),
+        default=str(OUT_DIR_DEFAULT / time.strftime("run-%Y%m%d-%H%M%S")),
         help="Output root directory.",
     )
     parser.add_argument(
@@ -453,6 +498,14 @@ def main() -> None:
         default=42,
         help="Master random seed.",
     )
+    parser.add_argument(
+        "--hitl-approved",
+        action="store_true",
+        help=(
+            "Explicit HITL approval for local subprocess execution. "
+            f"Equivalent to setting {HITL_APPROVAL_ENV}=1."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -468,6 +521,7 @@ def main() -> None:
             master_seed=args.seed,
             out_trial_dir=trial_dir,
             retries=args.retries,
+            hitl_approved=args.hitl_approved,
         )
         all_stats.extend(rows)
 
@@ -482,6 +536,7 @@ def main() -> None:
             "retries": args.retries,
             "seed": args.seed,
             "target_script": TARGET_SCRIPT,
+            "hitl_approved": bool(args.hitl_approved or _env_hitl_approved()),
         },
     )
 
