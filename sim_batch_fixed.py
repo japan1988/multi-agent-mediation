@@ -11,8 +11,8 @@ Batch runner for raw vs filtered modes.
     - Copies the produced CSV logs into:
         out/<run>/trials/trial-XXXXXX/{raw,filtered}.csv
 - Aggregates:
-    - steps / interventions / sealed flags → out/<run>/aggregate/stats.csv
-    - first stop step → out/<run>/aggregate/first_stop.csv
+    - steps / interventions / sealed flags -> out/<run>/aggregate/stats.csv
+    - first stop step -> out/<run>/aggregate/first_stop.csv
 - Draws simple charts with matplotlib:
     - sealed_ratio.png
     - hist_first_stop.png
@@ -23,6 +23,7 @@ Notes:
 - Uses default matplotlib colors.
 - Subprocess execution is HITL-gated via --hitl-approved or
   SIM_BATCH_HITL_APPROVED=1.
+- The target script is resolved and constrained to this repository directory.
 """
 
 from __future__ import annotations
@@ -34,8 +35,13 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -107,12 +113,44 @@ def require_hitl_approval_for_subprocess(
 # === Helpers ==================================================================
 
 
+def resolve_target_script(target_script: str) -> Path:
+    """
+    Resolve and validate the local target simulation script.
+
+    The target must:
+    - be a Python file
+    - exist
+    - be located under BASE_DIR
+    """
+    raw_path = Path(target_script)
+
+    if raw_path.is_absolute():
+        target_path = raw_path.resolve()
+    else:
+        target_path = (BASE_DIR / raw_path).resolve()
+
+    if target_path.suffix != ".py":
+        raise ValueError(f"target script must be a .py file: {target_script!r}")
+
+    if not target_path.exists():
+        raise FileNotFoundError(f"target script not found: {target_path}")
+
+    try:
+        target_path.relative_to(BASE_DIR)
+    except ValueError as exc:
+        raise ValueError(
+            f"target script must be under BASE_DIR: {target_path}"
+        ) from exc
+
+    return target_path
+
+
 def newest_file(dirpath: Path) -> Path | None:
     """Return the newest *.csv file in dirpath, or None if not found."""
     candidates = list(dirpath.glob("*.csv"))
     if not candidates:
         return None
-    return max(candidates, key=lambda p: p.stat().st_mtime)
+    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def derive_seed(master_seed: int, trial_id: int, mode_index: int) -> int:
@@ -125,13 +163,13 @@ def derive_seed(master_seed: int, trial_id: int, mode_index: int) -> int:
     h.update(str(master_seed).encode("utf-8"))
     h.update(str(trial_id).encode("utf-8"))
     h.update(str(mode_index).encode("utf-8"))
-    # 32bit に収まるようにする
     return int.from_bytes(h.digest()[:4], "big")
 
 
 def compute_first_stop_step(csv_path: Path) -> int:
     """
     Return the step of the first STOP_EVENTS in a log CSV.
+
     If not found or invalid, return -1.
     """
     if not csv_path.exists():
@@ -159,18 +197,26 @@ def run_one_trial(
     retries: int = 2,
     *,
     hitl_approved: bool = False,
-) -> list[dict]:
+) -> list[dict[str, object]]:
     """
     Run one trial for both raw/filtered modes.
 
     - Executes TARGET_SCRIPT with different configs and seeds.
-    - Copies & enriches CSV logs into out_trial_dir.
-    - Returns per-mode summary stats dict list.
+    - Copies and enriches CSV logs into out_trial_dir.
+    - Returns per-mode summary stats.
     """
     out_trial_dir.mkdir(parents=True, exist_ok=True)
-    stats_rows: list[dict] = []
+    stats_rows: list[dict[str, object]] = []
 
     effective_hitl_approved = hitl_approved or _env_hitl_approved()
+    target_path = resolve_target_script(TARGET_SCRIPT)
+    command = [sys.executable, str(target_path)]
+
+    require_hitl_approval_for_subprocess(
+        approved=effective_hitl_approved,
+        command=command,
+        target_script=str(target_path),
+    )
 
     for mode_index, (mode_key, cfg_path) in enumerate(MODES):
         seed = derive_seed(master_seed, trial_id, mode_index)
@@ -189,15 +235,7 @@ def run_one_trial(
                 if "STEP_MAX" in os.environ:
                     env["AI_STEP_MAX"] = os.environ["STEP_MAX"]
 
-                command = ["python", TARGET_SCRIPT]
-
-                require_hitl_approval_for_subprocess(
-                    approved=effective_hitl_approved,
-                    command=command,
-                    target_script=TARGET_SCRIPT,
-                )
-
-                subprocess.run(
+                subprocess.run(  # nosec B603 - HITL-gated local simulator execution; shell=False.
                     command,
                     cwd=str(BASE_DIR),
                     env=env,
@@ -211,7 +249,6 @@ def run_one_trial(
                 src_csv: Path | None
 
                 if new_files:
-                    # 一番新しく出来たものを使う
                     src_csv = Path(max(new_files, key=os.path.getmtime))
                 else:
                     src_csv = newest_file(LOGS_DIR)
@@ -219,7 +256,6 @@ def run_one_trial(
                 if src_csv is None or not src_csv.exists():
                     raise RuntimeError("No CSV log found after simulation run.")
 
-                # ログ読み込み & 正規化
                 df = pd.read_csv(src_csv)
 
                 df["trial_id"] = trial_id
@@ -236,7 +272,6 @@ def run_one_trial(
                     df["seal_flag"] = 0
                     df["halt_reason"] = ""
 
-                # 必須カラムが無ければ埋める
                 if "step" not in df.columns:
                     df["step"] = 0
                 if "timestamp" not in df.columns:
@@ -245,12 +280,10 @@ def run_one_trial(
                 dst_csv = out_trial_dir / f"{mode_key}.csv"
                 df.to_csv(dst_csv, index=False, encoding="utf-8")
 
-                # サマリ
                 steps = int(df["step"].max()) if "step" in df.columns else 0
-                interventions = int(
-                    (df.get("event", pd.Series([])) == "mediator_stop").sum()
-                )
-                sealed = int(df.get("event", pd.Series([])).isin(STOP_EVENTS).any())
+                event_series = df.get("event", pd.Series([], dtype=str))
+                interventions = int((event_series == "mediator_stop").sum())
+                sealed = int(event_series.isin(STOP_EVENTS).any())
 
                 stats_rows.append(
                     {
@@ -262,19 +295,16 @@ def run_one_trial(
                     }
                 )
 
-                break  # 正常終了
+                break
+            except HitlApprovalError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 attempt += 1
+
                 if attempt > retries:
-                    # 失敗しても集計パイプラインが止まらないように
                     dst_csv = out_trial_dir / f"{mode_key}.csv"
-                    with open(
-                        dst_csv,
-                        "w",
-                        encoding="utf-8",
-                        newline="",
-                    ) as f:
-                        writer = csv.writer(f)
+                    with dst_csv.open("w", encoding="utf-8", newline="") as file_obj:
+                        writer = csv.writer(file_obj)
                         writer.writerow(
                             [
                                 "trial_id",
@@ -311,44 +341,40 @@ def run_one_trial(
                     )
                     break
 
-                # 少し待ってリトライ（指数バックオフ）
                 time.sleep(0.3 * (2 ** (attempt - 1)))
 
     return stats_rows
 
 
 def aggregate(outdir: Path, num_trials: int) -> None:
-    """
-    Aggregate all trial CSVs into summary CSVs & charts.
-    """
+    """Aggregate all trial CSVs into summary CSVs and charts."""
     trials_dir = outdir / "trials"
     agg_dir = outdir / "aggregate"
     agg_dir.mkdir(parents=True, exist_ok=True)
 
     # ---- stats.csv -----------------------------------------------------------
 
-    stats: list[dict] = []
+    stats: list[dict[str, object]] = []
 
-    for t in range(num_trials):
+    for trial_id in range(num_trials):
         for mode in ("raw", "filtered"):
-            p = trials_dir / f"trial-{t:06d}" / f"{mode}.csv"
-            if not p.exists():
+            path = trials_dir / f"trial-{trial_id:06d}" / f"{mode}.csv"
+            if not path.exists():
                 continue
 
             try:
-                df = pd.read_csv(p)
+                df = pd.read_csv(path)
             except Exception:
                 continue
 
             steps = int(df.get("step", pd.Series([0])).max())
-            interventions = int(
-                (df.get("event", pd.Series([])) == "mediator_stop").sum()
-            )
-            sealed = int(df.get("event", pd.Series([])).isin(STOP_EVENTS).any())
+            event_series = df.get("event", pd.Series([], dtype=str))
+            interventions = int((event_series == "mediator_stop").sum())
+            sealed = int(event_series.isin(STOP_EVENTS).any())
 
             stats.append(
                 {
-                    "trial_id": t,
+                    "trial_id": trial_id,
                     "mode": mode,
                     "steps": steps,
                     "interventions": interventions,
@@ -365,16 +391,16 @@ def aggregate(outdir: Path, num_trials: int) -> None:
 
     # ---- first_stop.csv ------------------------------------------------------
 
-    first_rows: list[dict] = []
+    first_rows: list[dict[str, object]] = []
 
-    for t in range(num_trials):
+    for trial_id in range(num_trials):
         for mode in ("raw", "filtered"):
-            p = trials_dir / f"trial-{t:06d}" / f"{mode}.csv"
+            path = trials_dir / f"trial-{trial_id:06d}" / f"{mode}.csv"
             first_rows.append(
                 {
-                    "trial_id": t,
+                    "trial_id": trial_id,
                     "mode": mode,
-                    "first_stop_step": compute_first_stop_step(p),
+                    "first_stop_step": compute_first_stop_step(path),
                 }
             )
 
@@ -387,7 +413,6 @@ def aggregate(outdir: Path, num_trials: int) -> None:
 
     # ---- charts --------------------------------------------------------------
 
-    # sealed_ratio.png
     try:
         if not stats_df.empty:
             pivot = (
@@ -405,20 +430,18 @@ def aggregate(outdir: Path, num_trials: int) -> None:
             plt.savefig(agg_dir / "sealed_ratio.png")
             plt.close()
     except Exception:
-        # 可視化失敗は致命的でないので無視
+        # Chart generation failure is non-critical for batch aggregation.
         pass
 
-    # hist_first_stop.png
     try:
         plt.figure()
         for mode in ("raw", "filtered"):
-            d = first_df[
+            data = first_df[
                 (first_df["mode"] == mode) & (first_df["first_stop_step"] >= 0)
             ]["first_stop_step"].to_numpy()
 
-            if d.size > 0:
-                # np.histogram を使って numpy を有効利用
-                counts, bins = np.histogram(d, bins=40)
+            if data.size > 0:
+                counts, bins = np.histogram(data, bins=40)
                 centers = (bins[:-1] + bins[1:]) / 2.0
                 plt.plot(centers, counts, marker="o", linestyle="-", label=mode)
 
@@ -430,10 +453,11 @@ def aggregate(outdir: Path, num_trials: int) -> None:
         plt.savefig(agg_dir / "hist_first_stop.png")
         plt.close()
     except Exception:
+        # Chart generation failure is non-critical for batch aggregation.
         pass
 
 
-def write_manifest(outdir: Path, meta: dict) -> None:
+def write_manifest(outdir: Path, meta: dict[str, object]) -> None:
     """Write run metadata as manifest.json."""
     (outdir / "manifest.json").write_text(
         json.dumps(meta, indent=2, ensure_ascii=False),
@@ -444,8 +468,8 @@ def write_manifest(outdir: Path, meta: dict) -> None:
 def sha256_file(path: Path) -> str:
     """Return SHA-256 checksum of a file."""
     h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
+    with path.open("rb") as file_obj:
+        for chunk in iter(lambda: file_obj.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -454,10 +478,10 @@ def write_checksums(root: Path) -> None:
     """Write checksums.json for all files under root."""
     manifest: dict[str, str] = {}
 
-    for p in root.rglob("*"):
-        if p.is_file():
-            rel = p.relative_to(root).as_posix()
-            manifest[rel] = sha256_file(p)
+    for path in root.rglob("*"):
+        if path.is_file():
+            rel = path.relative_to(root).as_posix()
+            manifest[rel] = sha256_file(path)
 
     (root / "checksums.json").write_text(
         json.dumps(manifest, indent=2),
@@ -509,15 +533,21 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if args.num_trials < 1:
+        raise ValueError("--trials must be 1 or greater.")
+
+    if args.retries < 0:
+        raise ValueError("--retries must be 0 or greater.")
+
     outdir = Path(args.outdir)
     (outdir / "trials").mkdir(parents=True, exist_ok=True)
 
-    all_stats: list[dict] = []
+    all_stats: list[dict[str, object]] = []
 
-    for t in range(args.num_trials):
-        trial_dir = outdir / "trials" / f"trial-{t:06d}"
+    for trial_id in range(args.num_trials):
+        trial_dir = outdir / "trials" / f"trial-{trial_id:06d}"
         rows = run_one_trial(
-            trial_id=t,
+            trial_id=trial_id,
             master_seed=args.seed,
             out_trial_dir=trial_dir,
             retries=args.retries,
@@ -525,7 +555,6 @@ def main() -> None:
         )
         all_stats.extend(rows)
 
-    # 集計とメタ情報
     aggregate(outdir, args.num_trials)
 
     write_manifest(
@@ -535,8 +564,9 @@ def main() -> None:
             "trials": args.num_trials,
             "retries": args.retries,
             "seed": args.seed,
-            "target_script": TARGET_SCRIPT,
+            "target_script": str(resolve_target_script(TARGET_SCRIPT)),
             "hitl_approved": bool(args.hitl_approved or _env_hitl_approved()),
+            "stats_rows": len(all_stats),
         },
     )
 
