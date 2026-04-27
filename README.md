@@ -1,226 +1,14 @@
+
 # 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
-> Japanese: [README.ja.md](README.ja.md)
-
-<p align="center">
-  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
-    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
-    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
-  </a>
-  <a href="./LICENSE">
-    <img src="https://img.shields.io/badge/license-Apache--2.0-brightgreen?style=flat-square" alt="License">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
-    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="Python App CI">
-  </a>
-  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml">
-    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main" alt="Tasukeru Advisory">
-  </a>
-  <br/>
-  <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11-blue.svg?style=flat-square" alt="Python Version">
-  <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
-  <a href="https://github.com/japan1988/multi-agent-mediation/commits/main">
-    <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
-  </a>
-</p>
-
----
-
-This repository is provided for **research and educational purposes**.
-
-It is intended to demonstrate:
-
-- orchestration control patterns
-- mediation / governance simulation structures
-- fail-closed guardrails
-- audit / replay-oriented design
-- HITL escalation semantics
-
-It is **not** a promise of production readiness, completeness, or universal policy coverage.
-
----
-
-## Summary
-
-Maestro Orchestrator is a safety-first orchestration framework for studying how agent workflows should behave when they encounter uncertainty, risk, or human-judgment boundaries.
-
-Its core stance is simple:
-
-> **If uncertain, stop. If risky, escalate.**
-
-This repository contains multiple experimental and versioned simulators, benchmark runners, audit/logging examples, and test suites for studying guarded orchestration behavior.
-
----
-
-## What is in this repository
-
-The repository currently includes:
-
-- orchestration and document workflow simulators
-- mediator / governance negotiation simulations
-- emergency-contract and HITL-controlled workflow simulations
-- benchmark runners and evaluation helpers
-- audit/log / codebook examples
-- regression and invariant-focused pytest suites
-
-Representative files include:
-
-- `ai_doc_orchestrator_kage3_v1_3_5.py`
-- `ai_doc_orchestrator_with_mediator_v1_0.py`
-- `mediation_emergency_contract_sim_v5_1_2.py`
-- `ai_governance_mediation_sim.py`
-- `ai_mediation_all_in_one.py`
-- `run_benchmark_kage3_v1_3_5.py`
-- `run_benchmark_profiles_v1_0.py`
-- `rank_transition_sample.py`
-
-Main directories include:
-
-- `.github/workflows/`
-- `archive/`
-- `benchmarks/`
-- `docs/`
-- `evaluation/`
-- `mediation_core/`
-- `scripts/`
-- `tests/`
-
----
-
-## Repository shape
-
-This repository contains both:
-
-- actively referenced test / workflow targets
-- historical or versioned experimental files kept for comparison and traceability
-
-That means some modules are newer reference points, while others remain as archived or earlier-stage variants.
-
-Because the repository contains multiple experiments and versioned files, not every file should be read as the single canonical implementation of the whole project.
-
-The most reliable guide to current behavior is usually the combination of:
-
-- current tests in `tests/`
-- current CI workflow files in `.github/workflows/`
-- the latest maintained simulator / orchestrator files
-- benchmark runners and codebook / log definitions where applicable
-
----
-
-## Quick start
-
-Create an environment and install dependencies:
-
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements-dev.txt
-```
-
-Run the full test suite:
-
-```bash
-pytest -q
-```
-
----
-
-## Quick test commands
-
-Examples for targeted runs:
-
-```bash
-pytest -q tests/test_definition_hitl_gate_v1.py
-pytest -q tests/test_kage_orchestrator_diverse_v1.py
-pytest -q tests/test_ai_doc_orchestrator_kage3_v1_3_5.py
-pytest -q tests/test_doc_orchestrator_with_mediator_v1_0.py
-pytest -q tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py
-```
-
----
-
-## Continuous Integration
-
-Primary CI runs lint, validation, and pytest through:
-
-```text
-.github/workflows/python-app.yml
-```
-
-The main CI workflow is intended to check that the repository remains executable and testable across the configured Python versions.
-
-Current Python targets:
-
-```text
-Python 3.10
-Python 3.11
-```
-
-Additional advisory or analysis workflows may exist under:
-
-```text
-.github/workflows/
-```
-
----
-## Tasukeru Advisory
-
-**Tasukeru** is a non-blocking advisory workflow for lightweight quality, safety, and logic review.
-
-It is designed to help maintain this repository by collecting advisory signals from static analysis, dependency checks, workflow summaries, and project-specific logic checks.
-
-Tasukeru is **not** a production security guarantee.  
-It is a support layer for reviewing code quality, common Python issues, dependency risks, repository consistency, and advisory findings during development.
-
-Current Tasukeru functions include:
-
-- **Ruff advisory scan**  
-  Detects Python style issues, unused imports, import-position issues, syntax-level problems, and other lint findings.
-
-- **Bandit advisory scan**  
-  Reports common Python security warnings such as non-cryptographic randomness, `assert` usage, and risky implementation patterns.
-
-- **pip-audit dependency scan**  
-  Checks Python dependencies for known vulnerability advisories.
-
-- **Tasukeru logic review**  
-  Checks project-specific consistency rules, including unresolved merge conflict markers, ARL invariant violations, license-policy inconsistencies, workflow hazards, and potential side-effect patterns.
-
-- **ARL / governance invariant advisory checks**  
-  Reviews whether audit-style records follow expected safety contracts such as canonical decisions, required ARL keys, non-sealed RFL behavior, and proper sealed-state semantics.
-
-- **GitHub Actions summary output**  
-  Generates a readable advisory summary inside the workflow run.
-
-- **Artifact output**  
-  Uploads advisory logs so raw scan results can be reviewed later.
-
-Tasukeru is intentionally treated as **advisory / non-blocking**.
-
-Its purpose is to surface issues early without preventing research iterations from continuing.
-
-In short:
-
-> **Tasukeru helps review the repository, but it does not replace human judgment.**
----
-
-## Design stance
-
-This repository is centered on a fail-closed mindset:
-
-- stop on uncertainty
-- escalate on risk
-- preserve auditability
-- keep human judgment in the loop where required
-
-Common themes across the simulations include:
-
-- fixed gate ordering
-- explicit stop / pause semantics
-- reproducibility-oriented tests
-- structured logging and replayability
-- human-in-the-loop escalation boundaries
+Maestro Orchestrator is a research-oriented orchestration framework for
+multi-agent governance, fail-closed control, HITL escalation, checkpoint-based
+resume, and tamper-evident simulation workflows.
+
+This repository contains multiple simulator lines. Some files focus on
+KAGE-like gate behavior and mediator separation, while others focus on
+document-task batch execution, checkpointing, audit integrity, and artifact
+verification.
 
 ---
 
@@ -235,6 +23,8 @@ It is not intended for:
 - legal, medical, financial, or regulatory advice
 - processing real personal data or confidential operational data
 - demonstrating complete or universal safety coverage
+- automatic external submission, upload, sending, or deployment
+- bypassing HITL review for external side effects
 
 The examples should be read as:
 
@@ -242,57 +32,495 @@ The examples should be read as:
 - educational references
 - governance / safety test benches
 - fail-closed and HITL design examples
+- audit-log and checkpoint integrity experiments
+- batch-orchestration examples for local simulation
+
+External submit / upload / push / send actions should remain HITL-gated.
 
 ---
 
-## Testing and behavior
+## Repository purpose
 
-In this repository, tests often define the expected behavior of the simulators and orchestration logic.
+The main purpose of this repository is to explore how agentic workflows can be
+controlled through explicit gates, reproducible logs, interruption points, and
+human review.
 
-When checking behavior, it is usually better to read the implementation together with the corresponding tests.
+The project emphasizes:
+
+- fail-closed behavior
+- HITL escalation
+- gate-order invariants
+- reason-code stability
+- checkpoint / resume behavior
+- tamper-evident audit records
+- artifact integrity verification
+- reproducible simulation outputs
+- clear separation between advice and execution
+
+This repository does not claim to provide complete AI safety coverage. It is a
+research and educational test bench for studying orchestration behavior.
+
+---
+
+## Current simulator lines
+
+### 1. Mediator-based gate simulator
 
 Example:
 
 ```text
 ai_doc_orchestrator_with_mediator_v1_0.py
 tests/test_doc_orchestrator_with_mediator_v1_0.py
+````
+
+This simulator focuses on the following flow:
+
+```text
+Agent → Mediator → Orchestrator
 ```
 
-This is especially important for:
+Core characteristics:
 
-- gate invariants
-- reason-code expectations
-- HITL transitions
-- sealed / non-sealed behavior
-- reproducibility checks
-- benchmark expectations
+* Agent normalizes task input.
+* Mediator gives advice only.
+* Mediator has no execution authority.
+* Orchestrator evaluates gates in a fixed order.
+* RFL is used for relative or ambiguous requests.
+* Ethics / ACC handle higher-risk blocking conditions.
+* `sealed=True` may appear only at Ethics / ACC.
+* raw text should not be persisted.
+* audit logs should avoid direct PII leakage.
+
+Canonical gate order:
+
+```text
+Meaning → Consistency → RFL → Ethics → ACC → Dispatch
+```
+
+This simulator is useful for checking:
+
+* gate invariants
+* HITL transitions
+* RFL pause behavior
+* sealed / non-sealed behavior
+* mediator-to-orchestrator separation
+* reason-code expectations
+* lightweight multi-task orchestration behavior
 
 ---
 
-## Notes
+### 2. Production-oriented document orchestrator simulator
 
-Some files are preserved for historical comparison, reproducibility, or versioned experiments.
+Example version:
 
-A newer version number does not always mean that the file is the primary recommended entry point.
+```text
+v1.2.6-hash-chain-checkpoint
+```
 
-Files under `archive/` should generally be treated as historical or reference material unless explicitly referenced by current tests or documentation.
+This simulator focuses on document-task orchestration with stronger persistence
+and integrity controls.
+
+Core characteristics:
+
+* Task Contract Gate
+* rough token estimation
+* Word / Excel / PPT task simulation
+* per-task checkpoint / resume
+* HMAC-SHA256 audit log hash chain
+* HMAC-protected checkpoint files
+* SHA-256 + HMAC artifact integrity records
+* PII-safe audit / checkpoint / artifact writes
+* tamper-evidence detection
+* CLI-based simulation entry point
+* no mediation / negotiation feature
+* no automatic external submission
+
+Important implementation note:
+
+The simulator writes text-backed artifact outputs representing document-task
+results. It does not claim to generate fully formatted Microsoft Office
+documents unless separate document-generation libraries are connected.
+
+Hashing and HMAC provide tamper evidence. They do not provide physical write
+prevention. In real deployment, HMAC keys must be supplied from an environment
+variable or protected key file and must not be committed to the repository.
+
+---
+
+## Batch execution and resume
+
+This repository also includes batch-style orchestration examples.
+
+Batch execution means that multiple document-related tasks can be evaluated as
+a single orchestration run while preserving gate decisions, audit records, and
+interruption points.
+
+---
+
+### Mediator-based batch flow
+
+The mediator-based simulator can accept multiple tasks in one run.
+
+Example use cases:
+
+* evaluate several spreadsheet / slide tasks together
+* compare task-level gate outcomes
+* check HITL behavior across multiple tasks
+* verify mediator advice before orchestration
+* confirm that each task still passes through the fixed gate order
+
+This line is useful when the focus is on:
+
+* multi-task gate behavior
+* mediator separation
+* RFL / HITL transitions
+* reason-code stability
+* lightweight orchestration tests
+
+Example task sequence:
+
+```text
+T1: xlsx task
+T2: pptx task
+T3: ambiguous task requiring RFL / HITL
+```
+
+Expected behavior:
+
+* each task is normalized by the Agent
+* each task receives Mediator advice
+* each task is evaluated by the Orchestrator
+* paused tasks remain non-sealed unless Ethics / ACC performs a sealed stop
+* dispatch only occurs when the final decision is RUN
+
+---
+
+### Document-task batch flow
+
+The production-oriented document orchestrator simulator uses a fixed
+document-task sequence:
+
+```text
+Word → Excel → PPT
+```
+
+This line is useful when the focus is on:
+
+* batch task execution
+* per-task checkpointing
+* interruption and resume
+* artifact integrity records
+* HMAC-protected checkpoints
+* HMAC-SHA256 audit log hash chains
+* tamper-evidence detection
+
+If a task is interrupted, the simulator records:
+
+* failed task ID
+* failed layer
+* reason code
+* checkpoint path
+* resume requirement
+* HITL confirmation requirement when applicable
+
+A later run can resume from the checkpoint after HITL confirmation when
+required.
+
+---
+
+## Batch scripts
+
+Batch scripts may be used as convenience wrappers for local simulation runs.
+
+Recommended script examples:
+
+```text
+scripts/run_doc_orchestrator_demo.bat
+scripts/run_doc_orchestrator_resume.bat
+scripts/run_doc_orchestrator_tamper_check.bat
+```
+
+These scripts should be treated as local developer utilities only.
+
+They should not:
+
+* embed production HMAC keys
+* upload or submit artifacts automatically
+* bypass HITL confirmation
+* delete files automatically
+* process real personal or confidential data
+* change license or safety semantics
+* weaken tests or gate invariants
+
+For local demonstrations, a demo key mode may be used only when the simulator
+explicitly supports it. Production-like runs should use an environment variable
+or a protected key file for HMAC keys.
+
+---
+
+## Example batch-script roles
+
+### `run_doc_orchestrator_demo.bat`
+
+Purpose:
+
+* run a local demonstration
+* use safe sample input
+* write audit logs and simulated artifacts to local output directories
+* avoid external submission
+
+Typical use:
+
+```text
+Local demo run with demo key mode.
+```
+
+---
+
+### `run_doc_orchestrator_resume.bat`
+
+Purpose:
+
+* resume from a checkpoint
+* require explicit resume confirmation
+* verify completed artifacts before continuing
+* preserve checkpoint integrity
+
+Typical use:
+
+```text
+Resume interrupted Word / Excel / PPT simulation after HITL confirmation.
+```
+
+---
+
+### `run_doc_orchestrator_tamper_check.bat`
+
+Purpose:
+
+* verify audit-log / checkpoint / artifact integrity behavior
+* demonstrate tamper-evidence detection
+* pause for HITL if integrity verification fails
+
+Typical use:
+
+```text
+Local tamper-evidence simulation.
+```
+
+---
+
+## Recommended reading order
+
+For gate behavior and KAGE-like invariants:
+
+```text
+ai_doc_orchestrator_with_mediator_v1_0.py
+tests/test_doc_orchestrator_with_mediator_v1_0.py
+```
+
+For checkpoint, resume, artifact integrity, and HMAC-chain behavior:
+
+```text
+Production-oriented Doc Orchestrator Simulator
+v1.2.6-hash-chain-checkpoint
+```
+
+For behavior verification, always read the implementation together with the
+corresponding tests.
+
+This is especially important for:
+
+* gate invariants
+* reason-code expectations
+* HITL transitions
+* sealed / non-sealed behavior
+* checkpoint / resume behavior
+* tamper-evidence behavior
+* reproducibility checks
+* benchmark expectations
+* batch execution behavior
+
+---
+
+## Testing and behavior
+
+In this repository, tests often define the expected behavior of the simulators
+and orchestration logic.
+
+When checking behavior, it is usually better to read the implementation
+together with the corresponding tests.
+
+Tests may verify:
+
+* fixed gate order
+* fail-closed behavior
+* HITL escalation
+* RFL non-sealing behavior
+* Ethics / ACC sealing constraints
+* checkpoint recovery
+* audit-log integrity
+* artifact hash verification
+* reason-code stability
+* reproducibility expectations
+* batch-task behavior
+* CLI behavior
+
+A newer version number does not always mean that the file is the primary
+recommended entry point. Some files are preserved for historical comparison,
+reproducibility, or versioned experiments.
+
+---
+
+## Gate and decision model
+
+The repository uses explicit gate decisions to make orchestration behavior
+traceable.
+
+Common decisions include:
+
+```text
+RUN
+PAUSE_FOR_HITL
+STOPPED
+```
+
+General interpretation:
+
+* `RUN`: the simulator may continue to the next gate or dispatch step
+* `PAUSE_FOR_HITL`: the simulator should pause and wait for human review
+* `STOPPED`: the simulator has reached a blocking condition
+
+In KAGE-like simulator lines, RFL should pause for HITL rather than seal.
+Sealing behavior should remain limited to higher-risk layers such as Ethics or
+ACC, depending on the simulator contract.
+
+---
+
+## Audit and integrity model
+
+Audit and integrity behavior differs by simulator line.
+
+The mediator-based simulator focuses on lightweight audit events and safe
+context logging.
+
+The production-oriented document simulator adds stronger integrity controls:
+
+* audit log hash chain
+* row-level HMAC
+* checkpoint HMAC
+* artifact SHA-256
+* artifact HMAC
+* completed-artifact verification on resume
+* tamper-evidence detection
+
+These mechanisms are intended to make changes detectable. They do not prevent
+a local actor from modifying files on disk.
+
+---
+
+## Checkpoint and resume model
+
+Checkpoint-based simulators are designed to support interrupted execution.
+
+A checkpoint may record:
+
+* run ID
+* current task ID
+* failed task ID
+* failed layer
+* reason code
+* task status
+* artifact path
+* artifact hash
+* whether resume is allowed
+* whether HITL is required before resume
+
+When resuming, completed artifacts should be verified before the simulator
+continues. If verification fails, the run should pause for HITL rather than
+continue silently.
+
+---
+
+## Artifact model
+
+Artifact outputs in the simulator should be treated as research artifacts.
+
+Depending on the simulator line, outputs may include:
+
+* artifact previews
+* text-backed document-task outputs
+* audit JSONL files
+* checkpoint JSON files
+* integrity metadata
+* summary records
+
+The repository should not describe these simulated outputs as complete
+production Office documents unless actual document-generation code is added and
+tested.
+
+---
+
+## External side effects
+
+External side effects include actions such as:
+
+* sending email
+* uploading files
+* submitting artifacts
+* pushing changes
+* deleting files
+* calling external APIs
+* changing license semantics
+
+These actions should remain blocked, prohibited, or HITL-gated depending on the
+simulator contract.
+
+No script or simulator should silently perform external submission.
+
+---
+
+## Archive and historical files
+
+Some files are preserved for:
+
+* historical comparison
+* reproducibility
+* versioned experiments
+* regression testing
+* design comparison
+
+Files under `archive/` should generally be treated as historical or reference
+material unless explicitly referenced by current tests or documentation.
 
 ---
 
 ## Language
 
-- English README: `README.md`
-- Japanese README: `README.ja.md`
+* English README: `README.md`
+* Japanese README: `README.ja.md`
 
 ---
 
 ## License
 
-## License
-
 This repository uses a split-license model:
 
-- Software code: **Apache License 2.0**
-- Documentation, diagrams, and research materials: **CC BY-NC-SA 4.0**
+* Software code: **Apache License 2.0**
+* Documentation, diagrams, and research materials: **CC BY-NC-SA 4.0**
 
 See [LICENSE_POLICY.md](./LICENSE_POLICY.md) for details.
+
+---
+
+## Disclaimer
+
+This repository is provided for research and educational purposes only.
+
+It is not a production safety system, not a compliance certification, and not a
+guarantee of safe autonomous behavior. Users are responsible for reviewing,
+testing, and adapting the code before any real-world use.
+
+Do not use this repository to process real personal data, confidential
+operational data, or high-stakes decision workflows without independent review
+and appropriate safeguards.
