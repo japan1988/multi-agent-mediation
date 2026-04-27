@@ -127,6 +127,14 @@ This document includes:
 - checkpoint resume flow
 - data structure map
 
+Direct diagram links are also available:
+
+- [Doc Orchestrator overview](docs/doc-orchestrator-overview.png)
+- [Task processing flow](docs/task-processing-flow.png)
+- [Audit HMAC chain](docs/audit-hmac-chain.png)
+- [Checkpoint resume flow](docs/checkpoint-resume-flow.png)
+- [Data structure map](docs/data-structure-map.png)
+
 The README keeps the overview concise, while detailed diagrams are separated
 into `docs/architecture.md`.
 
