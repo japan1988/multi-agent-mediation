@@ -615,6 +615,8 @@ jobs:
 
           log_dir = Path("tasukeru_logs")
           summary_path = Path.cwd() / "tasukeru_advisory_summary.md"
+          hitl_md_path = Path.cwd() / "tasukeru_hitl_review.md"
+          hitl_json_path = Path.cwd() / "tasukeru_hitl_review.json"
 
           def read_text(path: Path, default: str = "") -> str:
               try:
@@ -709,6 +711,220 @@ jobs:
 
               return vulns
 
+          def md_cell(value: Any) -> str:
+              text = str(value)
+              text = text.replace("\n", "<br>")
+              text = text.replace("|", "\\|")
+              return text
+
+          def is_test_path(path: str) -> bool:
+              normalized = path.replace("\\", "/")
+              parts = normalized.split("/")
+              return (
+                  "tests" in parts
+                  or normalized.startswith("test_")
+                  or "/test_" in normalized
+                  or normalized.endswith("_test.py")
+              )
+
+          def is_simulation_path(path: str) -> bool:
+              lowered = path.lower()
+              return any(
+                  token in lowered
+                  for token in (
+                      "sim",
+                      "simulation",
+                      "simulator",
+                      "demo",
+                      "stress",
+                      "benchmark",
+                      "evaluation",
+                  )
+              )
+
+          def classify_ruff(item: dict[str, Any]) -> dict[str, str]:
+              code = str(item.get("code", "RUFF"))
+              filename = str(item.get("filename", "?"))
+
+              if code in {"F401", "F841"}:
+                  return {
+                      "level": "FIX_RECOMMENDED",
+                      "reason": "Unused imports or variables usually reduce clarity and are safe to remove.",
+                      "suggestion": "Remove the unused symbol, or keep it only if it is part of a deliberate public re-export with an explicit comment.",
+                  }
+
+              if code == "E402":
+                  return {
+                      "level": "FIX_RECOMMENDED",
+                      "reason": "Module-level imports should usually stay at the top of the file for predictable import behavior.",
+                      "suggestion": "Move the import to the top of the file, or isolate path/bootstrap logic in a small helper before imports.",
+                  }
+
+              if is_test_path(filename):
+                  return {
+                      "level": "REVIEW_RECOMMENDED",
+                      "reason": "This Ruff finding is in a test file. It may be harmless but should still be reviewed.",
+                      "suggestion": "Fix if simple. If intentional, add a short comment or a narrow noqa suppression.",
+                  }
+
+              return {
+                  "level": "FIX_RECOMMENDED",
+                  "reason": "Ruff findings usually indicate style, import, or correctness issues that are cheap to fix.",
+                  "suggestion": "Apply Ruff's suggested fix when available, or edit the referenced line directly.",
+              }
+
+          def classify_bandit(item: dict[str, Any]) -> dict[str, str]:
+              code = str(item.get("test_id", "BANDIT"))
+              filename = str(item.get("filename", "?"))
+              issue = str(item.get("issue_text", ""))
+
+              if code == "B101":
+                  if is_test_path(filename):
+                      return {
+                          "level": "NOISE_CANDIDATE",
+                          "reason": "Bandit flags assert usage because Python can remove assert statements under optimization. In pytest tests, assert is normally expected.",
+                          "suggestion": "Usually keep as-is in tests. If noise is too high, add a narrow '# nosec B101' with a reason. In runtime code, replace assert with explicit error handling.",
+                      }
+                  return {
+                      "level": "FIX_RECOMMENDED",
+                      "reason": "Runtime assert statements can disappear when Python is run with optimization flags.",
+                      "suggestion": "Replace 'assert condition' with explicit validation, such as 'if not condition: raise ValueError(...)'.",
+                  }
+
+              if code == "B311":
+                  if is_simulation_path(filename):
+                      return {
+                          "level": "REVIEW_RECOMMENDED",
+                          "reason": "Standard pseudo-random generators are often acceptable for deterministic simulations, but not for security-sensitive behavior.",
+                          "suggestion": "If simulation-only, document that the randomness is non-cryptographic. If used for secrets, tokens, authentication, or authorization, replace with 'secrets' or 'random.SystemRandom'.",
+                      }
+                  return {
+                      "level": "FIX_RECOMMENDED",
+                      "reason": "Standard pseudo-random generators are not appropriate for security-sensitive values.",
+                      "suggestion": "Use the 'secrets' module for security-sensitive randomness. Keep 'random' only for deterministic simulation or test data.",
+                  }
+
+              if code in {"B602", "B603", "B604", "B605", "B606", "B607"}:
+                  return {
+                      "level": "HITL_REQUIRED",
+                      "reason": "Subprocess execution can produce external side effects or command-injection risk depending on inputs.",
+                      "suggestion": "Require an explicit HITL approval flag before execution. Prefer argument lists over shell=True and validate inputs.",
+                  }
+
+              if "subprocess" in issue.lower():
+                  return {
+                      "level": "HITL_REQUIRED",
+                      "reason": "The finding appears to involve subprocess execution.",
+                      "suggestion": "Add a HITL approval gate before execution and document the expected safe command shape.",
+                  }
+
+              if str(item.get("issue_severity", "")).upper() == "MEDIUM":
+                  return {
+                      "level": "REVIEW_RECOMMENDED",
+                      "reason": "Bandit marked this as medium severity. Context determines whether it is actionable or noise.",
+                      "suggestion": "Review the referenced file and either fix it, add a narrow suppression with a reason, or document why it is acceptable in this simulator.",
+                  }
+
+              return {
+                  "level": "NOISE_CANDIDATE" if is_test_path(filename) else "REVIEW_RECOMMENDED",
+                  "reason": "Bandit LOW findings are often advisory, especially in tests and research simulations.",
+                  "suggestion": "Review context. Suppress only with a narrow '# nosec' and a reason, otherwise fix if simple.",
+              }
+
+          def classify_pip_vuln(row: dict[str, Any]) -> dict[str, str]:
+              fixes = row.get("fix_versions", []) or []
+              fix_text = ", ".join(str(item) for item in fixes) if fixes else "the fixed version recommended by pip-audit"
+              return {
+                  "level": "FIX_RECOMMENDED",
+                  "reason": "Dependency vulnerabilities should normally be fixed by upgrading the affected package.",
+                  "suggestion": f"Update the dependency constraint to {fix_text}, then rerun pip-audit and tests.",
+              }
+
+          def classify_logic(item: dict[str, Any]) -> dict[str, str]:
+              severity = str(item.get("severity", ""))
+              category = str(item.get("category", ""))
+              code = str(item.get("code", ""))
+
+              if severity == "CRITICAL_ADVISORY":
+                  return {
+                      "level": "HITL_REQUIRED",
+                      "reason": "The custom logic review marked this as a critical advisory.",
+                      "suggestion": "Do not merge until a human reviews the finding and either fixes it or records an explicit rationale.",
+                  }
+
+              if category == "side_effect":
+                  return {
+                      "level": "HITL_REQUIRED",
+                      "reason": "The file appears to contain an external side effect or risky execution pattern without an obvious HITL guard.",
+                      "suggestion": "Add an explicit HITL approval flag or PAUSE_FOR_HITL path before the side effect. Include the affected file, operation, and reason_code.",
+                  }
+
+              if category == "license":
+                  return {
+                      "level": "FIX_RECOMMENDED",
+                      "reason": "License wording inconsistencies can confuse reuse conditions.",
+                      "suggestion": "Keep Apache-2.0 text in LICENSE, put split-license details in LICENSE_POLICY.md, and link that policy from README files.",
+                  }
+
+              if category == "workflow":
+                  return {
+                      "level": "REVIEW_RECOMMENDED",
+                      "reason": "Workflow warnings can be environmental or supply-chain related.",
+                      "suggestion": "Review whether the workflow dependency is necessary. Prefer pinned or first-party actions where possible.",
+                  }
+
+              if code.startswith("ARL_") or "SEALED" in code or "RFL" in code:
+                  return {
+                      "level": "HITL_REQUIRED",
+                      "reason": "The finding touches orchestration invariants or audit-row semantics.",
+                      "suggestion": "Review the ARL row or codebook entry. Preserve invariants: RFL must not be sealed; sealed rows must be SYSTEM-decided and non-overrideable.",
+                  }
+
+              return {
+                  "level": "REVIEW_RECOMMENDED",
+                  "reason": "The custom logic review found a repository-specific advisory.",
+                  "suggestion": "Review the location and either fix it, document it, or leave it as accepted advisory noise.",
+              }
+
+          def add_hitl_entry(
+              entries: list[dict[str, Any]],
+              *,
+              source: str,
+              level: str,
+              file: str,
+              line: Any,
+              code: str,
+              message: str,
+              reason: str,
+              suggestion: str,
+          ) -> None:
+              entries.append(
+                  {
+                      "source": source,
+                      "level": level,
+                      "file": file,
+                      "line": line,
+                      "code": code,
+                      "message": message,
+                      "reason": reason,
+                      "suggestion": suggestion,
+                  }
+              )
+
+          def level_sort_key(entry: dict[str, Any]) -> tuple[int, str, str]:
+              order = {
+                  "HITL_REQUIRED": 0,
+                  "FIX_RECOMMENDED": 1,
+                  "REVIEW_RECOMMENDED": 2,
+                  "NOISE_CANDIDATE": 3,
+                  "INFO_ONLY": 4,
+              }
+              return (
+                  order.get(str(entry.get("level", "")), 9),
+                  str(entry.get("file", "")),
+                  str(entry.get("line", "")),
+              )
+
           ruff_exit = read_exit("ruff.exit")
           bandit_exit = read_exit("bandit.exit")
           pip_exit = read_exit("pip-audit.exit")
@@ -750,6 +966,143 @@ jobs:
               str(item.get("filename", "?")) for item in bandit_advisory_results
           )
 
+          hitl_entries: list[dict[str, Any]] = []
+
+          for item in ruff_items:
+              cls = classify_ruff(item)
+              loc = item.get("location") or {}
+              add_hitl_entry(
+                  hitl_entries,
+                  source="Ruff",
+                  level=cls["level"],
+                  file=str(item.get("filename", "?")),
+                  line=loc.get("row", 1),
+                  code=str(item.get("code", "RUFF")),
+                  message=str(item.get("message", "")),
+                  reason=cls["reason"],
+                  suggestion=cls["suggestion"],
+              )
+
+          for item in bandit_advisory_results:
+              cls = classify_bandit(item)
+              add_hitl_entry(
+                  hitl_entries,
+                  source="Bandit",
+                  level=cls["level"],
+                  file=str(item.get("filename", "?")),
+                  line=item.get("line_number", 1),
+                  code=str(item.get("test_id", "BANDIT")),
+                  message=str(item.get("issue_text", "")),
+                  reason=cls["reason"],
+                  suggestion=cls["suggestion"],
+              )
+
+          for row in pip_vulns:
+              cls = classify_pip_vuln(row)
+              add_hitl_entry(
+                  hitl_entries,
+                  source="pip-audit",
+                  level=cls["level"],
+                  file=str(row.get("name", "?")),
+                  line="-",
+                  code=str(row.get("id", "PIP_AUDIT")),
+                  message=f"{row.get('name', '?')}=={row.get('version', '?')}",
+                  reason=cls["reason"],
+                  suggestion=cls["suggestion"],
+              )
+
+          if isinstance(logic_findings, list):
+              for item in logic_findings:
+                  if not isinstance(item, dict):
+                      continue
+                  cls = classify_logic(item)
+                  add_hitl_entry(
+                      hitl_entries,
+                      source="Tasukeru logic review",
+                      level=cls["level"],
+                      file=str(item.get("path", "repository") or "repository"),
+                      line=item.get("line") or "-",
+                      code=str(item.get("code", "LOGIC_REVIEW")),
+                      message=str(item.get("message", "")),
+                      reason=cls["reason"],
+                      suggestion=cls["suggestion"],
+                  )
+
+          hitl_entries = sorted(hitl_entries, key=level_sort_key)
+          hitl_counts = Counter(str(item["level"]) for item in hitl_entries)
+
+          hitl_payload = {
+              "schema_version": "1.0",
+              "tool": "tasukeru_hitl_decision_support",
+              "counts": dict(hitl_counts),
+              "entries": hitl_entries,
+          }
+
+          hitl_json_path.write_text(
+              json.dumps(hitl_payload, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          with hitl_md_path.open("w", encoding="utf-8") as f:
+              f.write("# Tasukeru HITL decision support\n\n")
+              f.write(
+                  "This report separates likely noise from findings that should be "
+                  "reviewed or fixed by a human maintainer.\n\n"
+              )
+              f.write("## Levels\n\n")
+              f.write("- `HITL_REQUIRED`: human review is recommended before merge.\n")
+              f.write("- `FIX_RECOMMENDED`: a concrete fix is likely appropriate.\n")
+              f.write("- `REVIEW_RECOMMENDED`: review the context before deciding.\n")
+              f.write("- `NOISE_CANDIDATE`: likely acceptable in tests, demos, or research simulations.\n")
+              f.write("- `INFO_ONLY`: informational finding.\n\n")
+
+              f.write("## Counts\n\n")
+              for level in (
+                  "HITL_REQUIRED",
+                  "FIX_RECOMMENDED",
+                  "REVIEW_RECOMMENDED",
+                  "NOISE_CANDIDATE",
+                  "INFO_ONLY",
+              ):
+                  f.write(f"- {level}: {hitl_counts.get(level, 0)}\n")
+              f.write("\n")
+
+              if hitl_entries:
+                  f.write("## Review queue\n\n")
+                  f.write("| Level | Source | File | Line | Code | Issue | Suggested action |\n")
+                  f.write("|---|---|---|---:|---|---|---|\n")
+                  for entry in hitl_entries[:80]:
+                      f.write(
+                          "| "
+                          f"{md_cell(entry['level'])} | "
+                          f"{md_cell(entry['source'])} | "
+                          f"`{md_cell(entry['file'])}` | "
+                          f"{md_cell(entry['line'])} | "
+                          f"`{md_cell(entry['code'])}` | "
+                          f"{md_cell(entry['message'])} | "
+                          f"{md_cell(entry['suggestion'])} |\n"
+                      )
+                  if len(hitl_entries) > 80:
+                      f.write(
+                          f"\nOnly the first 80 entries are shown. "
+                          f"{len(hitl_entries) - 80} additional entries are in "
+                          "`tasukeru_hitl_review.json`.\n"
+                      )
+                  f.write("\n")
+
+                  f.write("## Detailed repair guidance\n\n")
+                  for entry in hitl_entries[:25]:
+                      f.write(
+                          f"### {entry['level']}: {entry['code']} "
+                          f"at `{entry['file']}:{entry['line']}`\n\n"
+                      )
+                      f.write(f"- Source: {entry['source']}\n")
+                      f.write(f"- Issue: {entry['message']}\n")
+                      f.write(f"- Reason: {entry['reason']}\n")
+                      f.write(f"- Suggested fix: {entry['suggestion']}\n\n")
+              else:
+                  f.write("No HITL decision support entries were generated.\n\n")
+
           with summary_path.open("w", encoding="utf-8") as f:
               f.write("# Tasukeru advisory summary\n\n")
               f.write(f"- Ruff findings: {ruff_count}\n")
@@ -757,6 +1110,41 @@ jobs:
               f.write(f"- pip-audit vulnerabilities: {pip_count}\n")
               f.write(f"- Tasukeru logic review findings: {logic_count}\n")
               f.write(f"- Tasukeru critical advisories: {logic_critical}\n\n")
+
+              f.write("## HITL decision support\n\n")
+              f.write(
+                  "This section separates likely noise from findings that should be "
+                  "reviewed or fixed. It is advisory by default and does not fail "
+                  "the workflow.\n\n"
+              )
+              f.write(f"- HITL_REQUIRED: {hitl_counts.get('HITL_REQUIRED', 0)}\n")
+              f.write(f"- FIX_RECOMMENDED: {hitl_counts.get('FIX_RECOMMENDED', 0)}\n")
+              f.write(f"- REVIEW_RECOMMENDED: {hitl_counts.get('REVIEW_RECOMMENDED', 0)}\n")
+              f.write(f"- NOISE_CANDIDATE: {hitl_counts.get('NOISE_CANDIDATE', 0)}\n")
+              f.write(f"- INFO_ONLY: {hitl_counts.get('INFO_ONLY', 0)}\n\n")
+              f.write(
+                  "Detailed repair guidance is available in "
+                  "`tasukeru_hitl_review.md` and machine-readable entries are "
+                  "available in `tasukeru_hitl_review.json`.\n\n"
+              )
+
+              if hitl_entries:
+                  f.write("### HITL / repair queue preview\n\n")
+                  f.write("| Level | Source | File | Line | Code | Suggested action |\n")
+                  f.write("|---|---|---|---:|---|---|\n")
+                  for entry in hitl_entries[:20]:
+                      f.write(
+                          "| "
+                          f"{md_cell(entry['level'])} | "
+                          f"{md_cell(entry['source'])} | "
+                          f"`{md_cell(entry['file'])}` | "
+                          f"{md_cell(entry['line'])} | "
+                          f"`{md_cell(entry['code'])}` | "
+                          f"{md_cell(entry['suggestion'])} |\n"
+                      )
+                  if len(hitl_entries) > 20:
+                      f.write(f"\n... and {len(hitl_entries) - 20} more entries.\n")
+                  f.write("\n")
 
               if ruff_count:
                   f.write("### Ruff: top files\n\n")
@@ -835,8 +1223,11 @@ jobs:
               github_summary = Path(github_summary_value)
               with github_summary.open("a", encoding="utf-8") as out:
                   out.write(summary_path.read_text(encoding="utf-8"))
+                  out.write("\n")
+                  out.write(hitl_md_path.read_text(encoding="utf-8"))
 
           print(summary_path.read_text(encoding="utf-8"))
+          print(hitl_md_path.read_text(encoding="utf-8"))
           PY
 
       - name: Upload advisory logs
@@ -847,6 +1238,8 @@ jobs:
           path: |
             tasukeru_logs/
             tasukeru_advisory_summary.md
+            tasukeru_hitl_review.md
+            tasukeru_hitl_review.json
           if-no-files-found: ignore
 
       - name: Complete advisory phase
