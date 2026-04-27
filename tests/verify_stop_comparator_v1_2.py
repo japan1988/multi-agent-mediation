@@ -5,8 +5,8 @@ verify_stop_comparator_v1_2.py
 A small reproducibility/packaging verifier for one or more Python files.
 
 Usage (repo root):
-    python tests/tools/verify_stop_comparator_v1_2.py path/to/stop_comparator_v1.py --hitl-approved
-    python tests/tools/verify_stop_comparator_v1_2.py path/to/stop_comparator_v1.py path/to/observed_bridge_exactmatch_v1_2.py --hitl-approved
+    python tests/verify_stop_comparator_v1_2.py path/to/stop_comparator_v1.py --hitl-approved
+    python tests/verify_stop_comparator_v1_2.py path/to/stop_comparator_v1.py path/to/observed_bridge_exactmatch_v1_2.py --hitl-approved
 
 What it does (per target file):
   1) SHA256 (byte-level)
@@ -24,6 +24,8 @@ Note:
   - This is NOT a pytest test file, so it should not clash with existing tests.
   - Running a target as __main__ starts a child Python process.
     That boundary is intentionally HITL / approval gated.
+  - The B603 suppression is narrow and attached only to the guarded
+    subprocess.run call.
 """
 
 from __future__ import annotations
@@ -32,11 +34,13 @@ import argparse
 import hashlib
 import importlib.util
 import os
+from pathlib import Path
 import py_compile
 import subprocess
 import sys
 import traceback
 from typing import List
+
 
 HITL_APPROVAL_ENV = "VERIFY_STOP_COMPARATOR_HITL_APPROVED"
 HITL_APPROVED_VALUES = {"1", "true", "yes", "y", "approved"}
@@ -52,10 +56,60 @@ def _env_hitl_approved() -> bool:
     return value.strip().lower() in HITL_APPROVED_VALUES
 
 
+def get_repo_root() -> Path:
+    """
+    Return the repository root for local path validation.
+
+    In normal execution, this file is under tests/.
+    If __file__ is unavailable in a pasted-code environment, fall back to cwd.
+    """
+    try:
+        return Path(__file__).resolve().parents[1]
+    except (NameError, IndexError):
+        return Path.cwd().resolve()
+
+
+REPO_ROOT = get_repo_root()
+
+
+def resolve_target_path(path: str) -> Path:
+    """
+    Resolve and validate a target Python file.
+
+    The verifier intentionally operates on local Python files only.
+    This prevents accidental execution of non-Python targets or paths outside
+    the repository when __main__ execution is enabled.
+    """
+    raw_path = Path(path)
+
+    if raw_path.is_absolute():
+        target_path = raw_path.resolve()
+    else:
+        target_path = (REPO_ROOT / raw_path).resolve()
+
+    if target_path.suffix != ".py":
+        raise ValueError(f"target must be a .py file: {path!r}")
+
+    if not target_path.exists():
+        raise FileNotFoundError(f"target file not found: {target_path}")
+
+    if not target_path.is_file():
+        raise ValueError(f"target must be a file: {target_path}")
+
+    try:
+        target_path.relative_to(REPO_ROOT)
+    except ValueError as exc:
+        raise ValueError(
+            f"target must be inside the repository root: {target_path}"
+        ) from exc
+
+    return target_path
+
+
 def require_hitl_approval_for_main_run(
     *,
     approved: bool,
-    target_path: str,
+    target_path: Path,
 ) -> None:
     """
     Require explicit approval before running a target file as __main__.
@@ -71,22 +125,22 @@ def require_hitl_approval_for_main_run(
         "HITL approval required before running target as __main__. "
         "Use --hitl-approved, set "
         f"{HITL_APPROVAL_ENV}=1, or use --no-main. "
-        f"target={target_path!r}"
+        f"target={str(target_path)!r}"
     )
 
 
-def sha256_file(path: str) -> str:
+def sha256_file(path: Path) -> str:
     """Return the SHA-256 digest of a file."""
     h = hashlib.sha256()
-    with open(path, "rb") as file_obj:
+    with path.open("rb") as file_obj:
         for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
 
 
-def import_from_path(mod_name: str, path: str):
+def import_from_path(mod_name: str, path: Path):
     """Import a Python module from a filesystem path."""
-    spec = importlib.util.spec_from_file_location(mod_name, path)
+    spec = importlib.util.spec_from_file_location(mod_name, str(path))
     if spec is None or spec.loader is None:
         raise RuntimeError(f"failed to build import spec for: {path}")
 
@@ -106,18 +160,21 @@ def run_one_target(
     hitl_approved: bool = False,
 ) -> int:
     """Run all verifier checks for one target file."""
-    path = os.path.abspath(path)
+    try:
+        target_path = resolve_target_path(path)
+    except Exception:
+        print("=" * 80)
+        print(f"[TARGET] {path}")
+        print("[FAIL] invalid target path")
+        traceback.print_exc()
+        return 2
 
     print("=" * 80)
-    print(f"[TARGET] {path}")
-
-    if not os.path.exists(path):
-        print("[FAIL] file not found")
-        return 2
+    print(f"[TARGET] {target_path}")
 
     # 1) SHA256
     try:
-        digest = sha256_file(path)
+        digest = sha256_file(target_path)
         print(f"[OK] sha256={digest}")
     except Exception:
         print("[FAIL] sha256")
@@ -126,7 +183,7 @@ def run_one_target(
 
     # 2) Syntax check
     try:
-        py_compile.compile(path, doraise=True)
+        py_compile.compile(str(target_path), doraise=True)
         print("[OK] py_compile")
     except Exception:
         print("[FAIL] py_compile")
@@ -135,8 +192,8 @@ def run_one_target(
 
     # 3) Import + _self_check if present
     try:
-        mod_name = f"_under_test_{os.path.basename(path).replace('.', '_')}"
-        mod = import_from_path(mod_name, path)
+        mod_name = f"_under_test_{target_path.name.replace('.', '_')}"
+        mod = import_from_path(mod_name, target_path)
         print("[OK] import")
 
         if hasattr(mod, "_self_check"):
@@ -155,11 +212,12 @@ def run_one_target(
         try:
             require_hitl_approval_for_main_run(
                 approved=hitl_approved,
-                target_path=path,
+                target_path=target_path,
             )
 
-            proc = subprocess.run(
-                [sys.executable, path],
+            proc = subprocess.run(  # nosec B603 - HITL-gated local Python verifier execution; shell=False.
+                [sys.executable, str(target_path)],
+                cwd=str(REPO_ROOT),
                 capture_output=True,
                 text=True,
                 check=False,
