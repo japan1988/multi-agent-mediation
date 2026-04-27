@@ -10,7 +10,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import ai_doc_orchestrator_kage3_v1_3_5 as mod
+import ai_doc_orchestrator_kage3_v1_3_5 as mod  # noqa: E402
 
 
 def _decision_counts_to_rates(
