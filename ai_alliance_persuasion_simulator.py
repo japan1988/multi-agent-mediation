@@ -187,6 +187,11 @@ def attempt_persuasion(
 
     Simple model:
     - success probability = (1 - threshold) * (0.5 + 0.5 * relativity)
+
+    Randomness note:
+    - rng is a deterministic simulation RNG supplied by run_simulation.
+    - It is not used for secrets, tokens, authentication, authorization,
+      or cryptography.
     """
     if persuader.status != "Active" or target.status != "Active":
         return False
@@ -195,7 +200,7 @@ def attempt_persuasion(
     base = 1.0 - threshold
     coop = 0.5 + 0.5 * _clamp01(float(persuader.relativity))
     p = _clamp01(base * coop)
-    roll = rng.random()
+    roll = rng.random()  # nosec B311 - deterministic simulation-only randomness; not used for secrets, tokens, auth, or cryptography.
     ok = roll < p
 
     log_event(
@@ -301,8 +306,13 @@ def run_simulation(
     Tests can monkeypatch:
       sim.CSV_PATH, sim.TXT_PATH
     before calling this function to redirect logs.
+
+    Randomness note:
+    - random.Random(seed) is used only to make this simulator reproducible.
+    - It is not used for secrets, tokens, authentication, authorization,
+      or cryptography.
     """
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 - deterministic simulation only; not used for secrets, tokens, auth, or cryptography.
     log_event("SIM_START", detail=f"rounds={rounds} seed={seed}")
 
     # Ensure CSV header exists early so tests that check file creation succeed.
