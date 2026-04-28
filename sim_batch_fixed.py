@@ -33,8 +33,9 @@ import csv
 import glob
 import hashlib
 import json
+import logging
 import os
-import subprocess
+import subprocess  # nosec B404 - subprocess execution is HITL-gated and uses shell=False.
 import sys
 import time
 from pathlib import Path
@@ -50,7 +51,22 @@ import pandas as pd
 
 # === Config ===================================================================
 
-BASE_DIR = Path(__file__).resolve().parent
+
+def get_base_dir() -> Path:
+    """
+    Return the directory of this script.
+
+    In normal script execution, __file__ is available.
+    In notebook / exec / pasted-code environments, __file__ may be undefined,
+    so fall back to the current working directory.
+    """
+    try:
+        return Path(__file__).resolve().parent
+    except NameError:
+        return Path.cwd().resolve()
+
+
+BASE_DIR = get_base_dir()
 LOGS_DIR = BASE_DIR / "logs"
 OUT_DIR_DEFAULT = BASE_DIR / "out"
 
@@ -73,6 +89,26 @@ STOP_EVENTS = {
 HITL_APPROVAL_ENV = "SIM_BATCH_HITL_APPROVED"
 HITL_APPROVED_VALUES = {"1", "true", "yes", "y", "approved"}
 
+CSV_READ_ERRORS = (
+    OSError,
+    ValueError,
+    pd.errors.EmptyDataError,
+    pd.errors.ParserError,
+)
+
+LOGGER = logging.getLogger(__name__)
+
+
+# === Logging ==================================================================
+
+
+def configure_logging() -> None:
+    """Configure compact logging for local and CI runs."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(levelname)s] %(message)s",
+    )
+
 
 # === HITL guard ================================================================
 
@@ -82,6 +118,7 @@ class HitlApprovalError(PermissionError):
 
 
 def _env_hitl_approved() -> bool:
+    """Return True when HITL approval is provided through the environment."""
     value = os.environ.get(HITL_APPROVAL_ENV, "")
     return value.strip().lower() in HITL_APPROVED_VALUES
 
@@ -166,6 +203,15 @@ def derive_seed(master_seed: int, trial_id: int, mode_index: int) -> int:
     return int.from_bytes(h.digest()[:4], "big")
 
 
+def read_csv_or_none(path: Path, *, purpose: str) -> pd.DataFrame | None:
+    """Read a CSV file, logging the reason when it cannot be read."""
+    try:
+        return pd.read_csv(path)
+    except CSV_READ_ERRORS as exc:
+        LOGGER.warning("failed to read CSV for %s: %s (%s)", purpose, path, exc)
+        return None
+
+
 def compute_first_stop_step(csv_path: Path) -> int:
     """
     Return the step of the first STOP_EVENTS in a log CSV.
@@ -175,19 +221,61 @@ def compute_first_stop_step(csv_path: Path) -> int:
     if not csv_path.exists():
         return -1
 
-    try:
-        df = pd.read_csv(csv_path)
-    except Exception:
+    df = read_csv_or_none(csv_path, purpose="first-stop detection")
+    if df is None:
         return -1
 
     if "step" not in df.columns or "event" not in df.columns:
+        LOGGER.warning("CSV missing required columns step/event: %s", csv_path)
         return -1
 
     hit = df[df["event"].isin(STOP_EVENTS)]
     if hit.empty:
         return -1
 
-    return int(hit.iloc[0]["step"])
+    try:
+        return int(hit.iloc[0]["step"])
+    except (TypeError, ValueError) as exc:
+        LOGGER.warning("invalid step value in CSV: %s (%s)", csv_path, exc)
+        return -1
+
+
+def write_error_trial_csv(
+    *,
+    out_trial_dir: Path,
+    mode_key: str,
+    trial_id: int,
+    seed: int,
+    error: Exception,
+) -> None:
+    """Write a small failure CSV for a trial/mode that could not complete."""
+    dst_csv = out_trial_dir / f"{mode_key}.csv"
+    with dst_csv.open("w", encoding="utf-8", newline="") as file_obj:
+        writer = csv.writer(file_obj)
+        writer.writerow(
+            [
+                "trial_id",
+                "mode",
+                "step",
+                "event",
+                "timestamp",
+                "seed",
+                "seal_flag",
+                "halt_reason",
+            ]
+        )
+        writer.writerow(
+            [
+                trial_id,
+                mode_key,
+                0,
+                f"error:{error}",
+                time.time(),
+                seed,
+                0,
+                "error",
+            ]
+        )
 
 
 def run_one_trial(
@@ -302,34 +390,21 @@ def run_one_trial(
                 attempt += 1
 
                 if attempt > retries:
-                    dst_csv = out_trial_dir / f"{mode_key}.csv"
-                    with dst_csv.open("w", encoding="utf-8", newline="") as file_obj:
-                        writer = csv.writer(file_obj)
-                        writer.writerow(
-                            [
-                                "trial_id",
-                                "mode",
-                                "step",
-                                "event",
-                                "timestamp",
-                                "seed",
-                                "seal_flag",
-                                "halt_reason",
-                            ]
-                        )
-                        writer.writerow(
-                            [
-                                trial_id,
-                                mode_key,
-                                0,
-                                f"error:{exc}",
-                                time.time(),
-                                seed,
-                                0,
-                                "error",
-                            ]
-                        )
-
+                    LOGGER.warning(
+                        "trial failed after retries: trial_id=%s mode=%s "
+                        "attempts=%s error=%s",
+                        trial_id,
+                        mode_key,
+                        attempt,
+                        exc,
+                    )
+                    write_error_trial_csv(
+                        out_trial_dir=out_trial_dir,
+                        mode_key=mode_key,
+                        trial_id=trial_id,
+                        seed=seed,
+                        error=exc,
+                    )
                     stats_rows.append(
                         {
                             "trial_id": trial_id,
@@ -341,6 +416,15 @@ def run_one_trial(
                     )
                     break
 
+                LOGGER.warning(
+                    "trial attempt failed; retrying: trial_id=%s mode=%s "
+                    "attempt=%s/%s error=%s",
+                    trial_id,
+                    mode_key,
+                    attempt,
+                    retries,
+                    exc,
+                )
                 time.sleep(0.3 * (2 ** (attempt - 1)))
 
     return stats_rows
@@ -362,9 +446,8 @@ def aggregate(outdir: Path, num_trials: int) -> None:
             if not path.exists():
                 continue
 
-            try:
-                df = pd.read_csv(path)
-            except Exception:
+            df = read_csv_or_none(path, purpose="aggregation")
+            if df is None:
                 continue
 
             steps = int(df.get("step", pd.Series([0])).max())
@@ -429,9 +512,9 @@ def aggregate(outdir: Path, num_trials: int) -> None:
             plt.tight_layout()
             plt.savefig(agg_dir / "sealed_ratio.png")
             plt.close()
-    except Exception:
-        # Chart generation failure is non-critical for batch aggregation.
-        pass
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("sealed_ratio chart generation skipped: %s", exc)
+        plt.close()
 
     try:
         plt.figure()
@@ -452,9 +535,9 @@ def aggregate(outdir: Path, num_trials: int) -> None:
         plt.tight_layout()
         plt.savefig(agg_dir / "hist_first_stop.png")
         plt.close()
-    except Exception:
-        # Chart generation failure is non-critical for batch aggregation.
-        pass
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("first_stop histogram generation skipped: %s", exc)
+        plt.close()
 
 
 def write_manifest(outdir: Path, meta: dict[str, object]) -> None:
@@ -493,6 +576,8 @@ def write_checksums(root: Path) -> None:
 
 
 def main() -> None:
+    configure_logging()
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--outdir",
