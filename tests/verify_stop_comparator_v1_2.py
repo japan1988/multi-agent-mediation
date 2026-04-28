@@ -24,6 +24,7 @@ Note:
   - This is NOT a pytest test file, so it should not clash with existing tests.
   - Running a target as __main__ starts a child Python process.
     That boundary is intentionally HITL / approval gated.
+  - The B404 suppression is narrow and attached only to the subprocess import.
   - The B603 suppression is narrow and attached only to the guarded
     subprocess.run call.
 """
@@ -36,7 +37,7 @@ import importlib.util
 import os
 from pathlib import Path
 import py_compile
-import subprocess
+import subprocess  # nosec B404 - used only for HITL-approved local Python target execution; shell=False.
 import sys
 import traceback
 from typing import List
