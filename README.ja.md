@@ -30,8 +30,8 @@
 
 Maestro Orchestrator は、マルチエージェント・ガバナンス、fail-closed 制御、HITL エスカレーション、チェックポイントによる再開、改ざん検知可能なシミュレーションワークフローを扱う研究向けオーケストレーション・フレームワークです。
 
-このリポジトリには複数のシミュレーター系列が含まれます。  
-一部のファイルは KAGE 的なゲート挙動やメディエーター分離に焦点を当て、別のファイルは文書タスクのバッチ実行、チェックポイント、監査整合性、成果物検証に焦点を当てています。
+このリポジトリには、複数のシミュレーター系列が含まれています。  
+一部のファイルは KAGE 的なゲート挙動やメディエーター分離に焦点を当て、別のファイルは文書タスクのバッチ実行、チェックポイント、監査整合性、artifact 検証に焦点を当てています。
 
 ---
 
@@ -46,10 +46,10 @@ Maestro Orchestrator は、マルチエージェント・ガバナンス、fail-
 - 法務・医療・金融・規制上の助言
 - 実在する個人情報や機密運用データの処理
 - 完全または普遍的な安全性保証の実証
-- 外部への自動送信・アップロード・提出・デプロイ
+- 外部への自動提出、アップロード、送信、デプロイ
 - 外部副作用に対する HITL レビューの回避
 
-このリポジトリの例は、以下として読むべきものです。
+このリポジトリの例は、以下として扱ってください。
 
 - 研究用シミュレーション
 - 教育用リファレンス
@@ -363,6 +363,54 @@ Hashing と HMAC は改ざん検知を提供します。
 
 ---
 
+### 3. Emergency Contract × KAGE integration simulator
+
+例：
+
+```text
+emergency_contract_kage_orchestrator_v1_0.py
+tests/test_emergency_contract_kage_orchestrator_v1_0.py
+```
+
+このシミュレーターは、Emergency Contract Case B シナリオと KAGE 型オーケストレーションフローを組み合わせたものです。
+
+これは小さな統合用の概念実証であり、本番用の契約システム、法的システム、または信号制御システムではありません。
+
+主な特徴：
+
+- Emergency Contract Case B シナリオ
+- KAGE 型ゲート順序
+- RFL の非封印挙動
+- 証拠検証と捏造証拠の検出
+- HITL 認証チェックポイント
+- ADMIN 最終承認チェックポイント
+- Ethics / ACC による sealed-stop 不変条件
+- 模擬契約ドラフト artifact の生成
+- HMAC 検証付きの改ざん検知可能な ARL 行
+- 実世界の信号制御なし
+- 法的効力なし
+- 外部提出、アップロード、送信、API 呼び出し、デプロイなし
+
+標準統合フロー：
+
+```text
+Meaning → Consistency → RFL → Evidence → HITL Auth → Draft
+→ Ethics → Draft Lint → ACC → ADMIN Finalize → Dispatch
+```
+
+このシミュレーターは以下の確認に有用です。
+
+- emergency-contract scenario handling
+- RFL による相対的優先順位評価
+- 捏造証拠による pause behavior
+- ACC による実世界制御の blocking
+- USER と ADMIN の HITL stop paths
+- simulated artifact dispatch のみを行う挙動
+- ARL/HMAC verification
+- 正常系および異常系にまたがる KAGE invariants
+
+---
+
 ## Batch execution and resume
 
 このリポジトリには、batch-style orchestration examples も含まれます。
@@ -537,6 +585,15 @@ Production-oriented Doc Orchestrator Simulator
 v1.2.6-hash-chain-checkpoint
 ```
 
+Emergency Contract × KAGE integration behavior を見る場合：
+
+```text
+emergency_contract_kage_orchestrator_v1_0.py
+tests/test_emergency_contract_kage_orchestrator_v1_0.py
+```
+
+この系列は、具体的な emergency-contract シナリオを、KAGE 型ゲート、HITL checkpoints、ARL/HMAC verification、実世界制御や法的効力を伴わない simulated artifact dispatch によってどのように評価できるかを学ぶのに有用です。
+
 挙動検証では、常に実装と対応する tests を合わせて読むことを推奨します。
 
 これは特に以下で重要です。
@@ -573,6 +630,11 @@ tests は以下を検証することがあります。
 - reproducibility expectations
 - batch-task behavior
 - CLI behavior
+- emergency-contract scenario flow
+- fabricated-evidence pause behavior
+- real-world control sealed-stop behavior
+- USER / ADMIN HITL rejection paths
+- ARL/HMAC tamper detection
 
 新しいバージョン番号が、常に primary recommended entry point を意味するとは限りません。  
 一部のファイルは、historical comparison、reproducibility、versioned experiments のために保持されています。
