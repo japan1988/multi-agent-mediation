@@ -469,8 +469,8 @@ jobs:
                       candidates.append(path)
 
               for path in candidates:
-                  with path.open("r", encoding="utf-8", errors="replace") as f:
-                      for idx, line in enumerate(f, start=1):
+                  with path.open("r", encoding="utf-8", errors="replace") as file_obj:
+                      for idx, line in enumerate(file_obj, start=1):
                           if idx > 5000:
                               break
                           line = line.strip()
@@ -985,6 +985,34 @@ jobs:
               f.write(f"  - Issue: {md_text(entry['message'])}\n")
               f.write(f"  - Suggested action: {md_text(entry['suggestion'])}\n")
 
+          def write_collapsible_entries(
+              f: Any,
+              *,
+              title: str,
+              entries: list[dict[str, Any]],
+              limit: int = 50,
+              opened: bool = False,
+          ) -> None:
+              """Write collapsible GitHub Step Summary entries."""
+              tag = "<details open>" if opened else "<details>"
+              f.write(f"{tag}\n")
+              f.write(f"<summary>{md_text(title)}</summary>\n\n")
+
+              if not entries:
+                  f.write("No entries.\n\n")
+              else:
+                  for entry in entries[:limit]:
+                      write_entry_bullet(f, entry)
+
+                  if len(entries) > limit:
+                      f.write(
+                          f"\n... and {len(entries) - limit} more entries. "
+                          "See `tasukeru_hitl_review.json` for the full list.\n"
+                      )
+                  f.write("\n")
+
+              f.write("</details>\n\n")
+
           def write_compact_step_summary(
               path: Path,
               *,
@@ -1000,6 +1028,24 @@ jobs:
                   entry
                   for entry in hitl_entries
                   if entry["level"] in {"HITL_REQUIRED", "FIX_RECOMMENDED"}
+              ]
+
+              review_entries = [
+                  entry
+                  for entry in hitl_entries
+                  if entry["level"] == "REVIEW_RECOMMENDED"
+              ]
+
+              noise_entries = [
+                  entry
+                  for entry in hitl_entries
+                  if entry["level"] == "NOISE_CANDIDATE"
+              ]
+
+              info_entries = [
+                  entry
+                  for entry in hitl_entries
+                  if entry["level"] == "INFO_ONLY"
               ]
 
               with path.open("a", encoding="utf-8") as out:
@@ -1022,8 +1068,8 @@ jobs:
                   out.write("- INFO_ONLY: ")
                   out.write(f"{hitl_counts.get('INFO_ONLY', 0)}\n\n")
 
+                  out.write("## Priority review queue\n\n")
                   if priority:
-                      out.write("## Priority review queue\n\n")
                       for entry in priority[:10]:
                           write_entry_bullet(out, entry)
                       if len(priority) > 10:
@@ -1032,8 +1078,34 @@ jobs:
                           )
                       out.write("\n")
                   else:
-                      out.write("## Priority review queue\n\n")
                       out.write("No HITL_REQUIRED or FIX_RECOMMENDED entries.\n\n")
+
+                  out.write("## Expandable details\n\n")
+
+                  write_collapsible_entries(
+                      out,
+                      title=f"REVIEW_RECOMMENDED details ({len(review_entries)})",
+                      entries=review_entries,
+                      limit=50,
+                      opened=False,
+                  )
+
+                  write_collapsible_entries(
+                      out,
+                      title=f"NOISE_CANDIDATE sample ({len(noise_entries)})",
+                      entries=noise_entries,
+                      limit=20,
+                      opened=False,
+                  )
+
+                  if info_entries:
+                      write_collapsible_entries(
+                          out,
+                          title=f"INFO_ONLY details ({len(info_entries)})",
+                          entries=info_entries,
+                          limit=20,
+                          opened=False,
+                      )
 
                   out.write("## Detailed artifacts\n\n")
                   out.write("- `tasukeru_advisory_summary.md`\n")
@@ -1041,8 +1113,8 @@ jobs:
                   out.write("- `tasukeru_hitl_review.json`\n\n")
                   out.write(
                       "Detailed guidance is uploaded as workflow artifacts. "
-                      "The GitHub step summary is intentionally compact to avoid "
-                      "large table rendering issues.\n"
+                      "The GitHub step summary keeps the main view compact and "
+                      "uses collapsible sections for optional detail review.\n"
                   )
 
           ruff_exit = read_exit("ruff.exit")
