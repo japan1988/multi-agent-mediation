@@ -770,6 +770,36 @@ jobs:
                   )
               )
 
+          def is_superseded_historical_path(path: str) -> bool:
+              """Return True for older versioned files kept for reproducibility."""
+              normalized = path.replace("\\", "/").lower()
+              name = normalized.rsplit("/", 1)[-1]
+
+              active_markers = (
+                  "v5_1_2",
+                  "v1_3_5",
+              )
+
+              historical_markers = (
+                  "_v1",
+                  "_v2",
+                  "_v3",
+                  "_v4",
+                  "_v5_0",
+                  "v1_",
+                  "v2_",
+                  "v3_",
+                  "v4_",
+                  "v5_0_",
+                  "fixed_regex",
+                  "full..",
+              )
+
+              if any(marker in name for marker in active_markers):
+                  return False
+
+              return any(marker in name for marker in historical_markers)
+
           def classify_ruff(item: dict[str, Any]) -> dict[str, str]:
               code = str(item.get("code", "RUFF"))
               filename = str(item.get("filename", "?"))
@@ -814,11 +844,18 @@ jobs:
                           "suggestion": "Usually keep as-is in tests. If noise is too high, add a narrow '# nosec B101' with a reason. In runtime code, replace assert with explicit error handling.",
                       }
 
+                  if is_superseded_historical_path(filename):
+                      return {
+                          "level": "INFO_ONLY",
+                          "reason": "This assert appears in a superseded historical simulator file kept for reproducibility. It is recorded as a historical warning, not an active repair target.",
+                          "suggestion": "No immediate fix is required while the file remains historical. If this file becomes an active entry point again, replace assert with explicit error handling.",
+                      }
+
                   if is_historical_version_path(filename):
                       return {
                           "level": "REVIEW_RECOMMENDED",
-                          "reason": "This assert appears in a historical or versioned simulator file. It may be preserved for reproducibility, but runtime safety semantics should still be reviewed.",
-                          "suggestion": "If the file is historical, keep as-is or add a narrow '# nosec B101' with a reason. If it is still an active entry point, replace assert with explicit error handling.",
+                          "reason": "This assert appears in a versioned simulator file. Confirm whether it is historical or still active.",
+                          "suggestion": "If historical, keep as a historical warning. If active, replace assert with explicit error handling.",
                       }
 
                   return {
@@ -833,6 +870,13 @@ jobs:
                           "level": "NOISE_CANDIDATE",
                           "reason": "Standard pseudo-random generators are usually acceptable for tests when they are not used for security-sensitive behavior.",
                           "suggestion": "Keep as-is for deterministic tests. If used for secrets, tokens, authentication, or authorization, replace with 'secrets'.",
+                      }
+
+                  if is_superseded_historical_path(filename):
+                      return {
+                          "level": "INFO_ONLY",
+                          "reason": "This pseudo-random usage appears in a superseded historical simulator file kept for reproducibility. It is recorded as a historical warning, not an active security finding.",
+                          "suggestion": "No immediate fix is required while the file remains historical. If reused for secrets, tokens, authentication, authorization, or active runtime behavior, replace with 'secrets' or document deterministic simulation use.",
                       }
 
                   if is_simulation_path(filename):
@@ -1036,6 +1080,15 @@ jobs:
                   if entry["level"] == "REVIEW_RECOMMENDED"
               ]
 
+              historical_entries = [
+                  entry
+                  for entry in hitl_entries
+                  if (
+                      entry["level"] == "INFO_ONLY"
+                      and "historical" in str(entry.get("reason", "")).lower()
+                  )
+              ]
+
               noise_entries = [
                   entry
                   for entry in hitl_entries
@@ -1045,7 +1098,10 @@ jobs:
               info_entries = [
                   entry
                   for entry in hitl_entries
-                  if entry["level"] == "INFO_ONLY"
+                  if (
+                      entry["level"] == "INFO_ONLY"
+                      and entry not in historical_entries
+                  )
               ]
 
               with path.open("a", encoding="utf-8") as out:
@@ -1086,6 +1142,14 @@ jobs:
                       out,
                       title=f"REVIEW_RECOMMENDED details ({len(review_entries)})",
                       entries=review_entries,
+                      limit=50,
+                      opened=False,
+                  )
+
+                  write_collapsible_entries(
+                      out,
+                      title=f"Historical version warnings ({len(historical_entries)})",
+                      entries=historical_entries,
                       limit=50,
                       opened=False,
                   )
@@ -1246,7 +1310,7 @@ jobs:
               f.write("- `FIX_RECOMMENDED`: a concrete fix is likely appropriate.\n")
               f.write("- `REVIEW_RECOMMENDED`: review the context before deciding.\n")
               f.write("- `NOISE_CANDIDATE`: likely acceptable in tests, demos, or research simulations.\n")
-              f.write("- `INFO_ONLY`: informational finding.\n\n")
+              f.write("- `INFO_ONLY`: informational finding, including historical-version warnings.\n\n")
 
               f.write("## Counts\n\n")
               for level in (
