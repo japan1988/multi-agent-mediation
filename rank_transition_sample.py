@@ -4,6 +4,9 @@ Hierarchy Rank Transition plotter
 
 Note:
 - For reproducibility, this script supports an optional RNG seed.
+- Randomness is deterministic simulation-only randomness.
+- It is not used for secrets, tokens, authentication, authorization,
+  or cryptography.
 """
 from __future__ import annotations
 
@@ -47,14 +50,16 @@ def run_simulation(
     Returns:
         List of rule-following rates at each step.
     """
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 - deterministic simulation only; not used for secrets, tokens, auth, or cryptography.
 
     agents = [
         AIAgent(
             agent_id=i,
-            is_rule_follower=(rng.random() < initial_follow_rate),
-            self_purpose=rng.uniform(0.0, 0.5),
-            adaptability=rng.uniform(0.1, 0.9),
+            is_rule_follower=(
+                rng.random() < initial_follow_rate  # nosec B311 - simulation-only randomness.
+            ),
+            self_purpose=rng.uniform(0.0, 0.5),  # nosec B311 - simulation-only randomness.
+            adaptability=rng.uniform(0.1, 0.9),  # nosec B311 - simulation-only randomness.
         )
         for i in range(n_agents)
     ]
@@ -86,15 +91,17 @@ def run_simulation(
             if mediated_step:
                 tendency += mediation_strength * 0.35
 
-            tendency += rng.uniform(-0.08, 0.08)
+            tendency += rng.uniform(-0.08, 0.08)  # nosec B311 - simulation-only randomness.
 
             probability_follow = _clip01(0.5 + tendency - 0.5 * defect_pressure)
-            next_states.append(rng.random() < probability_follow)
+            next_states.append(
+                rng.random() < probability_follow  # nosec B311 - simulation-only randomness.
+            )
 
         for agent, next_state in zip(agents, next_states):
             agent.is_rule_follower = next_state
 
-            drift = rng.uniform(-0.03, 0.03)
+            drift = rng.uniform(-0.03, 0.03)  # nosec B311 - simulation-only randomness.
             if mediated_step:
                 drift -= mediation_strength * 0.02
 
