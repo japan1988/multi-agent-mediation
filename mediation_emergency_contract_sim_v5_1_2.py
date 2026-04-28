@@ -974,8 +974,13 @@ def is_auth_request_expired(auth_request: Dict[str, Any], now_ts: Optional[str] 
 
 
 def generate_contract_draft(*, st: OrchestratorState) -> Dict[str, Any]:
-    assert st.auth_request is not None
-    ctx = st.auth_request["context"]
+    if st.auth_request is None:
+        raise RuntimeError(
+            "contract draft generation requires st.auth_request to be set"
+        )
+
+    auth_request = st.auth_request
+    ctx = auth_request["context"]
     draft_id = f"DRAFT#{st.run_id}"
     draft_md = f"""# Agreement Draft (Emergency Signal Priority)
 
@@ -984,8 +989,8 @@ def generate_contract_draft(*, st: OrchestratorState) -> Dict[str, Any]:
 **Policy**: {POLICY_PRIORITY}
 **Scenario**: {ctx.get("scenario")}
 **Location**: {ctx.get("location_id")}
-**Auth Request ID**: {st.auth_request.get("auth_request_id")}
-**Dummy Auth ID**: {st.auth_request.get("auth_id")}
+**Auth Request ID**: {auth_request.get("auth_request_id")}
+**Dummy Auth ID**: {auth_request.get("auth_id")}
 **Generated At**: {now_iso()}
 
 ---
@@ -1021,17 +1026,22 @@ This draft becomes effective only after the ADMIN approval event references this
         "content": draft_md,
         "generated_at": now_iso(),
         "refs": {
-            "auth_request_id": st.auth_request.get("auth_request_id"),
-            "auth_id": st.auth_request.get("auth_id"),
+            "auth_request_id": auth_request.get("auth_request_id"),
+            "auth_id": auth_request.get("auth_id"),
         },
     }
 
 
 def finalize_contract(*, st: OrchestratorState, admin_event: Dict[str, Any]) -> Dict[str, Any]:
-    assert st.draft is not None
+    if st.draft is None:
+        raise RuntimeError(
+            "contract finalization requires st.draft to be set"
+        )
+
+    draft = st.draft
     admin = admin_event["actor"]["id"]
     contract_id = f"CONTRACT#{st.run_id}"
-    contract_md = st.draft["content"] + f"""
+    contract_md = draft["content"] + f"""
 
 ---
 
@@ -1049,9 +1059,9 @@ def finalize_contract(*, st: OrchestratorState, admin_event: Dict[str, Any]) -> 
         "content": contract_md,
         "effective_at": now_iso(),
         "refs": {
-            "draft_id": st.draft["draft_id"],
-            "auth_request_id": st.draft["refs"]["auth_request_id"],
-            "auth_id": st.draft["refs"]["auth_id"],
+            "draft_id": draft["draft_id"],
+            "auth_request_id": draft["refs"]["auth_request_id"],
+            "auth_id": draft["refs"]["auth_id"],
         },
     }
 
