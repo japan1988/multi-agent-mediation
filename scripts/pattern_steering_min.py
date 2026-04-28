@@ -155,7 +155,7 @@ class RunParams(BaseModel):
 
 
 def run_pattern_steering_benchmark(params: RunParams) -> str:
-    rng = random.Random(int(params.seed))
+    rng = random.Random(int(params.seed))  # nosec B311 - deterministic simulation only; not used for secrets, tokens, auth, or cryptography.
     resolver = InMemoryResolver()
 
     rounds = max(1, int(params.rounds))
