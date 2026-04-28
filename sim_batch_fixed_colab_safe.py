@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-sim_batch_fixed_final.py
+sim_batch_fixed.py
 
 Batch runner:
 - Run N trials for two modes: raw / filtered
@@ -19,12 +19,13 @@ Supported environments:
 - local PC
 
 Usage:
-    python sim_batch_fixed_final.py --trials 5 --outdir aggregate
+    python sim_batch_fixed.py --trials 5 --outdir aggregate
 
 Notes:
 - This file uses plt.savefig() instead of plt.show().
 - The output directory is created automatically.
 - run_trial() is a dummy implementation.
+- This file intentionally does not call subprocess or any external simulator.
 - If a real external simulator is needed later, add an explicit HITL-gated
   launcher instead of silently starting an external process.
 """
@@ -33,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -54,25 +56,48 @@ STOP_EVENTS = {
     "inactive",
 }
 
+CSV_READ_ERRORS = (
+    OSError,
+    ValueError,
+    pd.errors.EmptyDataError,
+    pd.errors.ParserError,
+)
+
+LOGGER = logging.getLogger(__name__)
+
 
 # === Core functions ===========================================================
+
+
+def configure_logging() -> None:
+    """Configure compact console logging for local and CI runs."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(levelname)s] %(message)s",
+    )
 
 
 def compute_first_stop_step(csv_path: Path) -> int:
     """Return the first stop-event step from a CSV file, or -1 if not found."""
     try:
         df = pd.read_csv(csv_path)
-    except Exception:
+    except CSV_READ_ERRORS as exc:
+        LOGGER.warning("failed to read CSV for first-stop detection: %s (%s)", csv_path, exc)
         return -1
 
     if "step" not in df.columns or "event" not in df.columns:
+        LOGGER.warning("CSV missing required columns step/event: %s", csv_path)
         return -1
 
     hit = df[df["event"].isin(STOP_EVENTS)]
     if hit.empty:
         return -1
 
-    return int(hit.iloc[0]["step"])
+    try:
+        return int(hit.iloc[0]["step"])
+    except (TypeError, ValueError) as exc:
+        LOGGER.warning("invalid step value in CSV: %s (%s)", csv_path, exc)
+        return -1
 
 
 def run_trial(mode: str, trial_idx: int, out_dir: Path) -> Path:
@@ -102,7 +127,7 @@ def aggregate_results(csv_files: list[Path], out_file: Path) -> None:
     valid_steps = [step for step in steps if step >= 0]
 
     if not valid_steps:
-        print(f"[WARN] No valid results found for {out_file.name}")
+        LOGGER.warning("no valid results found for %s", out_file.name)
         return
 
     arr = np.asarray(valid_steps, dtype=float)
@@ -120,23 +145,27 @@ def aggregate_results(csv_files: list[Path], out_file: Path) -> None:
         for key, value in stats.items():
             writer.writerow([key, value])
 
-    print(f"[INFO] Aggregated -> {out_file}")
+    LOGGER.info("aggregated -> %s", out_file)
 
 
 def _read_mean_from_stats(path: Path) -> float:
     """Read the mean value from a metric/value statistics CSV."""
     try:
         df = pd.read_csv(path)
-    except Exception:
+    except CSV_READ_ERRORS as exc:
+        LOGGER.warning("failed to read stats CSV: %s (%s)", path, exc)
         return 0.0
 
-    if "metric" in df.columns and "value" in df.columns:
-        hit = df[df["metric"] == "mean"]
-        if not hit.empty:
-            return float(hit.iloc[0]["value"])
+    try:
+        if "metric" in df.columns and "value" in df.columns:
+            hit = df[df["metric"] == "mean"]
+            if not hit.empty:
+                return float(hit.iloc[0]["value"])
 
-    if "value" in df.columns and not df.empty:
-        return float(df.iloc[0]["value"])
+        if "value" in df.columns and not df.empty:
+            return float(df.iloc[0]["value"])
+    except (TypeError, ValueError) as exc:
+        LOGGER.warning("invalid mean value in stats CSV: %s (%s)", path, exc)
 
     return 0.0
 
@@ -154,7 +183,7 @@ def plot_results(raw_csv: Path, filtered_csv: Path, out_png: Path) -> None:
     plt.savefig(out_png)
     plt.close()
 
-    print(f"[INFO] Chart saved -> {out_png}")
+    LOGGER.info("chart saved -> %s", out_png)
 
 
 def run_trials_for_mode(
@@ -186,6 +215,8 @@ def run_trials_for_mode(
 
 
 def main() -> None:
+    configure_logging()
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--trials",
@@ -232,7 +263,7 @@ def main() -> None:
         out_dir / "comparison.png",
     )
 
-    print("[INFO] Batch completed successfully.")
+    LOGGER.info("batch completed successfully")
 
 
 if __name__ == "__main__":
