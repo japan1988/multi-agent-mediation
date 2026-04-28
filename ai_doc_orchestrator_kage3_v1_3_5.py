@@ -1,4 +1,4 @@
- # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 ai_doc_orchestrator_kage3_v1_3_5.py
 
@@ -274,7 +274,7 @@ def make_random_hitl_resolver(
     seed: int,
     p_continue: float,
 ) -> Callable[[Dict[str, Any]], HitlChoice]:
-    rng = random.Random(int(seed))
+    rng = random.Random(int(seed))  # nosec B311 - deterministic simulation only; not used for secrets, tokens, auth, or cryptography.
     threshold = max(0.0, min(1.0, float(p_continue)))
 
     def resolver(_ctx: Dict[str, Any]) -> HitlChoice:
@@ -324,7 +324,12 @@ def _normalize_decision(decision: str) -> str:
     return d or "UNKNOWN"
 
 
-def _coerce_benchmark_decision(*, prompt: str, result_decision: str, rows: List[Dict[str, Any]]) -> str:
+def _coerce_benchmark_decision(
+    *,
+    prompt: str,
+    result_decision: str,
+    rows: List[Dict[str, Any]],
+) -> str:
     decision = _normalize_decision(result_decision)
     if _is_ambiguous_prompt(prompt) and any(r.get("event") == "HITL_REQUESTED" for r in rows):
         return DECISION_STOPPED
@@ -950,8 +955,8 @@ def run_simulation(
 
 def assert_no_artifacts_for_blocked_tasks(result: SimulationResult) -> None:
     for task in result.tasks:
-        if task.decision != DECISION_RUN:
-            assert task.artifact_path is None, f"Blocked task wrote artifact: {task.task_id}"
+        if task.decision != DECISION_RUN and task.artifact_path is not None:
+            raise RuntimeError(f"Blocked task wrote artifact: {task.task_id}")
 
 
 def run_benchmark_suite(
