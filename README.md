@@ -105,6 +105,10 @@ The workflow is designed to improve maintainability, safety review, and
 developer usability without automatically treating every advisory finding as a
 blocking failure.
 
+Tasukeru Analysis does not aim to hide warnings. Instead, it separates active
+repair candidates, review-only findings, historical-version warnings, and likely
+noise so maintainers can focus on the right items first.
+
 ### HITL decision support
 
 Tasukeru Analysis classifies findings into review levels so maintainers can
@@ -116,10 +120,47 @@ Current review levels:
 - `FIX_RECOMMENDED`: a concrete fix is likely appropriate
 - `REVIEW_RECOMMENDED`: review the context before deciding
 - `NOISE_CANDIDATE`: likely acceptable in tests, demos, or research simulations
-- `INFO_ONLY`: informational finding
+- `INFO_ONLY`: informational finding, including historical-version warnings
 
 This classification is advisory by default. It helps maintainers decide whether
 to fix, document, suppress, or accept a finding.
+
+### Active review queue
+
+The main review queue is intended to stay compact.
+
+Findings that require immediate attention should appear as:
+
+- `HITL_REQUIRED`
+- `FIX_RECOMMENDED`
+- `REVIEW_RECOMMENDED`
+
+When these counts are zero, the repository has no active advisory items that
+Tasukeru currently recommends prioritizing for human repair or review.
+
+This does not mean the repository has no warnings. It means the remaining
+warnings are classified as either likely noise or historical/informational
+records.
+
+### Historical-version warnings
+
+Historical-version warnings are not fully excluded.
+
+Tasukeru Analysis keeps findings from superseded or historical simulator files
+visible as `INFO_ONLY` when they are useful for audit visibility but are not
+active repair targets.
+
+This keeps the active review queue focused on findings that currently require
+human attention, while preserving visibility into older versioned files kept for:
+
+- reproducibility
+- regression comparison
+- historical reference
+- versioned experiments
+- design comparison
+
+Historical warnings should be revisited if the file becomes an active entry
+point again.
 
 ### Typical classification examples
 
@@ -141,10 +182,26 @@ Examples:
   - usually `FIX_RECOMMENDED`
   - runtime `assert` statements can be removed under Python optimization flags
 
-- `B311` pseudo-random generator usage in simulations:
+- `B101` assert usage in superseded historical simulator files:
+  - usually `INFO_ONLY`
+  - kept visible as a historical-version warning instead of being fully excluded
+  - no immediate fix is required unless the file becomes an active entry point again
+
+- `B108` temporary path usage in tests:
+  - usually `NOISE_CANDIDATE` when using isolated pytest fixtures such as `tmp_path`
+  - should be reviewed if it uses a hard-coded shared path such as `/tmp/name`
+
+- `B311` pseudo-random generator usage in active simulations:
   - usually `REVIEW_RECOMMENDED`
   - deterministic simulation randomness may be acceptable when not used for
-    secrets, tokens, authentication, or authorization
+    secrets, tokens, authentication, authorization, or cryptography
+  - if accepted, the code should document that the randomness is simulation-only
+
+- `B311` pseudo-random generator usage in superseded historical simulator files:
+  - usually `INFO_ONLY`
+  - kept visible as a historical-version warning
+  - no immediate fix is required unless reused for security-sensitive behavior
+    or active runtime behavior
 
 - dependency vulnerabilities from `pip-audit`:
   - usually `FIX_RECOMMENDED`
@@ -185,6 +242,7 @@ It should help maintainers answer:
 - Why is the finding relevant?
 - What is the suggested fix?
 - Does this require HITL before merge?
+- Is this an active repair candidate or a historical-version warning?
 
 The workflow does not replace human review. It is a triage and documentation
 aid for safer repository maintenance.
