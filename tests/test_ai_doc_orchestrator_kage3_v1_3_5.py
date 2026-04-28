@@ -43,8 +43,8 @@ def _find_task(result: mod.SimulationResult, task_id: str) -> mod.TaskResult:
 
 
 def test_file_mode_events_and_artifacts(tmp_path: Path) -> None:
-    audit_path = tmp_path / "audit.jsonl"
-    artifact_dir = tmp_path / "artifacts"
+    audit_path = tmp_path / "audit.jsonl"  # nosec B108 - pytest tmp_path is an isolated temporary directory fixture.
+    artifact_dir = tmp_path / "artifacts"  # nosec B108 - pytest tmp_path is an isolated temporary directory fixture.
 
     resolver = mod.make_random_hitl_resolver(seed=123, p_continue=1.0)
     res = mod.run_simulation(
@@ -84,8 +84,8 @@ def test_file_mode_events_and_artifacts(tmp_path: Path) -> None:
 
 
 def test_hitl_stop_yields_stopped_decision(tmp_path: Path) -> None:
-    audit_path = tmp_path / "audit.jsonl"
-    artifact_dir = tmp_path / "artifacts"
+    audit_path = tmp_path / "audit.jsonl"  # nosec B108 - pytest tmp_path is an isolated temporary directory fixture.
+    artifact_dir = tmp_path / "artifacts"  # nosec B108 - pytest tmp_path is an isolated temporary directory fixture.
 
     resolver = mod.make_random_hitl_resolver(seed=999, p_continue=0.0)
     res = mod.run_simulation(
@@ -121,8 +121,8 @@ def test_hitl_stop_yields_stopped_decision(tmp_path: Path) -> None:
 
 
 def test_regen_pending_for_break_contract(tmp_path: Path) -> None:
-    audit_path = tmp_path / "audit.jsonl"
-    artifact_dir = tmp_path / "artifacts"
+    audit_path = tmp_path / "audit.jsonl"  # nosec B108 - pytest tmp_path is an isolated temporary directory fixture.
+    artifact_dir = tmp_path / "artifacts"  # nosec B108 - pytest tmp_path is an isolated temporary directory fixture.
 
     res = mod.run_simulation(
         prompt="WordとExcelとPPTを作って。",
@@ -236,8 +236,8 @@ def test_benchmark_suite_scorecard_passes() -> None:
 
 
 def test_ethics_sealed_task_never_writes_artifact(tmp_path: Path) -> None:
-    audit_path = tmp_path / "audit.jsonl"
-    artifact_dir = tmp_path / "artifacts"
+    audit_path = tmp_path / "audit.jsonl"  # nosec B108 - pytest tmp_path is an isolated temporary directory fixture.
+    artifact_dir = tmp_path / "artifacts"  # nosec B108 - pytest tmp_path is an isolated temporary directory fixture.
 
     resolver = mod.make_random_hitl_resolver(seed=1, p_continue=1.0)
     res = mod.run_simulation(
