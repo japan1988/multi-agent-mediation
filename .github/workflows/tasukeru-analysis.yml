@@ -892,6 +892,20 @@ jobs:
                       "suggestion": "Use the 'secrets' module for security-sensitive randomness. Keep 'random' only for deterministic simulation or test data.",
                   }
 
+              if code == "B108":
+                  if is_test_path(filename):
+                      return {
+                          "level": "NOISE_CANDIDATE",
+                          "reason": "Bandit flagged a temporary path pattern in a test file. Pytest tmp_path/tmpdir fixtures are isolated test directories and are normally acceptable.",
+                          "suggestion": "Keep as-is when the path is derived from pytest tmp_path/tmpdir. If the test uses a hard-coded shared path such as '/tmp/name', replace it with tmp_path.",
+                      }
+
+                  return {
+                      "level": "REVIEW_RECOMMENDED",
+                      "reason": "A hard-coded temporary file or directory can be unsafe if shared across users or processes.",
+                      "suggestion": "Use tempfile.TemporaryDirectory(), NamedTemporaryFile(), or pytest tmp_path instead of a hard-coded temporary path.",
+                  }
+
               if code == "B404":
                   return {
                       "level": "REVIEW_RECOMMENDED",
