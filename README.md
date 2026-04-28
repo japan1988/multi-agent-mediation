@@ -390,6 +390,56 @@ variable or protected key file and must not be committed to the repository.
 
 ---
 
+### 3. Emergency Contract × KAGE integration simulator
+
+Example:
+
+```text
+emergency_contract_kage_orchestrator_v1_0.py
+tests/test_emergency_contract_kage_orchestrator_v1_0.py
+```
+
+This simulator combines an Emergency Contract Case B scenario with a
+KAGE-style orchestration flow.
+
+It is intended as a small integration proof-of-concept, not as a production
+contracting, legal, or signal-control system.
+
+Core characteristics:
+
+- Emergency Contract Case B scenario
+- KAGE-style gate order
+- RFL non-sealing behavior
+- Evidence validation and fabricated-evidence detection
+- HITL auth checkpoint
+- ADMIN finalize checkpoint
+- Ethics / ACC sealed-stop invariants
+- simulated contract draft artifact generation
+- tamper-evident ARL rows with HMAC verification
+- no real-world signal control
+- no legal effect
+- no external submission, upload, send, API call, or deployment
+
+Canonical integration flow:
+
+```text
+Meaning → Consistency → RFL → Evidence → HITL Auth → Draft
+→ Ethics → Draft Lint → ACC → ADMIN Finalize → Dispatch
+```
+
+This simulator is useful for checking:
+
+- emergency-contract scenario handling
+- relative-priority evaluation through RFL
+- fabricated evidence pause behavior
+- real-world control blocking through ACC
+- USER and ADMIN HITL stop paths
+- simulated artifact dispatch only
+- ARL/HMAC verification
+- KAGE invariants across normal and abnormal paths
+
+---
+
 ## Batch execution and resume
 
 This repository also includes batch-style orchestration examples.
@@ -569,6 +619,17 @@ Production-oriented Doc Orchestrator Simulator
 v1.2.6-hash-chain-checkpoint
 ```
 
+For Emergency Contract × KAGE integration behavior:
+
+```text
+emergency_contract_kage_orchestrator_v1_0.py
+tests/test_emergency_contract_kage_orchestrator_v1_0.py
+```
+
+This path is useful for studying how a concrete emergency-contract scenario can
+be evaluated by KAGE-style gates, HITL checkpoints, ARL/HMAC verification, and
+simulated artifact dispatch without real-world control or legal effect.
+
 For behavior verification, always read the implementation together with the
 corresponding tests.
 
@@ -608,6 +669,11 @@ Tests may verify:
 - reproducibility expectations
 - batch-task behavior
 - CLI behavior
+- emergency-contract scenario flow
+- fabricated-evidence pause behavior
+- real-world control sealed-stop behavior
+- USER / ADMIN HITL rejection paths
+- ARL/HMAC tamper detection
 
 A newer version number does not always mean that the file is the primary
 recommended entry point. Some files are preserved for historical comparison,
