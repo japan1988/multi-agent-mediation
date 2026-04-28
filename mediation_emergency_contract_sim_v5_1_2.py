@@ -1858,7 +1858,7 @@ def run_simulation(
         if fabricate_rate is None:
             fabricate_this = bool(fabricate)
         else:
-            fabricate_this = random.random() < fabricate_rate
+            fabricate_this = random.random() < fabricate_rate  # nosec B311 - deterministic simulation-only fabrication mixing; not used for secrets, tokens, auth, or cryptography.
 
         t0 = datetime.now(timezone.utc).timestamp()
         st, audit, trust = simulate_run(
