@@ -155,6 +155,8 @@ jobs:
           pr_comment_path = Path("tasukeru_pr_comment.md")
           dradm_md_path = Path("tasukeru_dradm_draft.md")
           dradm_json_path = Path("tasukeru_dradm_draft.json")
+          confidence_md_path = Path("tasukeru_confidence_report.md")
+          confidence_json_path = Path("tasukeru_confidence_report.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -1472,7 +1474,7 @@ jobs:
                       after_lines,
                       fromfile=f"a/{file_path}",
                       tofile=f"b/{file_path}",
-                      lineterm="",
+                      lineterm="\n",
                   )
               )
               if not diff_lines:
@@ -1811,6 +1813,328 @@ jobs:
                               f.write("\n... full draft truncated in Markdown; see JSON artifact for full draft data.\n")
                           f.write("\n```\n\n")
 
+
+          def clamp_score(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+              return round(max(minimum, min(maximum, value)), 3)
+
+          def confidence_level(score: float) -> str:
+              if score >= 0.90:
+                  return "VERY_HIGH"
+              if score >= 0.75:
+                  return "HIGH"
+              if score >= 0.55:
+                  return "MEDIUM"
+              if score >= 0.35:
+                  return "LOW"
+              return "VERY_LOW"
+
+          def calculate_entry_confidence(entry: dict[str, Any]) -> dict[str, Any]:
+              """Score the confidence of Tasukeru's classification and suggestion.
+
+              This is not a safety guarantee and never authorizes auto-fix or auto-merge.
+              It estimates how well-supported the finding/classification/suggestion is by
+              evidence, rule profiles, path profiles, explanation, and verification status.
+              """
+              basis: list[str] = []
+              penalties: list[str] = []
+              components = {
+                  "evidence_quality": 0.0,
+                  "rule_profile_confidence": 0.0,
+                  "path_profile_confidence": 0.0,
+                  "classification_clarity": 0.0,
+                  "fix_prediction_clarity": 0.0,
+                  "fix_verification_status": 0.0,
+              }
+
+              evidence = entry.get("evidence", {}) if isinstance(entry.get("evidence"), dict) else {}
+              source = str(entry.get("source", ""))
+              rule_id = str(entry.get("rule_id", ""))
+              file_path = str(entry.get("file", ""))
+              line = entry.get("line")
+              snippet = str(entry.get("code_snippet", ""))
+              artifact = str(evidence.get("artifact", ""))
+              path_profile = str(entry.get("path_profile", ""))
+              classification_reason = str(entry.get("classification_reason", ""))
+              rule_profile = entry.get("rule_profile", {}) if isinstance(entry.get("rule_profile"), dict) else {}
+              fix_prediction = entry.get("fix_prediction", {}) if isinstance(entry.get("fix_prediction"), dict) else {}
+              fix_verification = entry.get("fix_verification", {}) if isinstance(entry.get("fix_verification"), dict) else {}
+
+              if source:
+                  components["evidence_quality"] += 0.05
+                  basis.append("source tool is recorded")
+              if rule_id:
+                  components["evidence_quality"] += 0.05
+                  basis.append("rule_id is recorded")
+              if file_path:
+                  components["evidence_quality"] += 0.05
+                  basis.append("target file is recorded")
+              if line or source in {"Documentation Review", "pip-audit"}:
+                  components["evidence_quality"] += 0.04
+                  basis.append("line or document-level scope is recorded")
+              if snippet or source in {"Documentation Review", "pip-audit"}:
+                  components["evidence_quality"] += 0.03
+                  basis.append("snippet or document-level evidence is available")
+              if artifact:
+                  components["evidence_quality"] += 0.03
+                  basis.append("artifact reference is recorded")
+              components["evidence_quality"] = min(0.25, components["evidence_quality"])
+
+              if rule_id in RULE_PROFILES:
+                  components["rule_profile_confidence"] = 0.20
+                  basis.append("rule_id has an explicit RULE_PROFILES entry")
+              elif source in {"Documentation Review", "Tasukeru Logic Review", "pip-audit"}:
+                  components["rule_profile_confidence"] = 0.16
+                  basis.append("source-specific repository policy handles this finding type")
+              elif rule_profile:
+                  components["rule_profile_confidence"] = 0.12
+                  basis.append("fallback rule profile is present")
+              else:
+                  components["rule_profile_confidence"] = 0.08
+                  penalties.append("rule_id is not explicitly profiled")
+
+              if path_profile and path_profile not in {"unknown", "general"}:
+                  components["path_profile_confidence"] = 0.20
+                  basis.append(f"path_profile is resolved as {path_profile}")
+              elif path_profile == "general":
+                  components["path_profile_confidence"] = 0.14
+                  basis.append("path_profile is general but explicitly resolved")
+              else:
+                  components["path_profile_confidence"] = 0.08
+                  penalties.append("path_profile is missing or unknown")
+
+              if classification_reason:
+                  components["classification_clarity"] = 0.15
+                  basis.append("classification_reason explains the decision")
+              else:
+                  components["classification_clarity"] = 0.07
+                  penalties.append("classification_reason is missing")
+
+              if fix_prediction.get("expected_effect_ja"):
+                  components["fix_prediction_clarity"] = 0.10
+                  basis.append("fix_prediction includes expected effect")
+              else:
+                  components["fix_prediction_clarity"] = 0.04
+                  penalties.append("fix_prediction is incomplete")
+
+              if fix_verification.get("verified") is True:
+                  components["fix_verification_status"] = 0.10
+                  basis.append("fix_verification is verified")
+              elif fix_verification:
+                  components["fix_verification_status"] = 0.02
+                  penalties.append("fix_verification is advisory-only and not verified")
+              else:
+                  components["fix_verification_status"] = 0.0
+                  penalties.append("fix_verification data is missing")
+
+              score = sum(components.values())
+
+              if source in {"Ruff", "Bandit"} and not line:
+                  score -= 0.03
+                  penalties.append("tool finding has no line number")
+              if source in {"Ruff", "Bandit"} and not snippet:
+                  score -= 0.03
+                  penalties.append("tool finding has no code snippet")
+              if entry.get("decision") == "HITL_REQUIRED" and fix_verification.get("verified") is not True:
+                  score -= 0.02
+                  penalties.append("critical finding still requires human review")
+
+              cap = 1.0 if fix_verification.get("verified") is True else 0.90
+              if cap < 1.0:
+                  basis.append("score is capped below 1.0 because fix_verification is not verified")
+              score = clamp_score(score, 0.0, cap)
+
+              return {
+                  "confidence_score": score,
+                  "confidence_level": confidence_level(score),
+                  "score_semantics": "Confidence in Tasukeru's classification/suggestion evidence, not a safety guarantee.",
+                  "components": {key: round(value, 3) for key, value in components.items()},
+                  "basis": basis,
+                  "penalties": penalties,
+                  "policy": {
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+              }
+
+          def attach_confidence_scores(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+              for entry in entries:
+                  assessment = calculate_entry_confidence(entry)
+                  entry["confidence_assessment"] = assessment
+                  entry["confidence_score"] = assessment["confidence_score"]
+                  entry["confidence_level"] = assessment["confidence_level"]
+              return entries
+
+          def build_file_confidence_summary(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+              grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+              for entry in entries:
+                  grouped[str(entry.get("file", "repository"))].append(entry)
+
+              summaries: list[dict[str, Any]] = []
+              for file_path, file_entries in sorted(grouped.items()):
+                  scores = [float(entry.get("confidence_score", 0.0)) for entry in file_entries]
+                  avg_score = clamp_score(sum(scores) / len(scores)) if scores else 0.0
+                  decision_counts = Counter(str(entry.get("decision", "UNKNOWN")) for entry in file_entries)
+                  reason_codes = sorted({str(entry.get("reason_code", "")) for entry in file_entries if entry.get("reason_code")})
+                  path_profiles = sorted({str(entry.get("path_profile", "")) for entry in file_entries if entry.get("path_profile")})
+                  basis = [
+                      f"{len(file_entries)} finding(s) grouped for this file",
+                      f"decision_counts={dict(decision_counts)}",
+                  ]
+                  if path_profiles:
+                      basis.append(f"path_profiles={path_profiles}")
+                  penalties: list[str] = []
+                  if any(entry.get("decision") in {"HITL_REQUIRED", "REVIEW_RECOMMENDED"} for entry in file_entries):
+                      penalties.append("file still contains findings that require human review or contextual review")
+                  if any(entry.get("fix_verification", {}).get("verified") is not True for entry in file_entries):
+                      penalties.append("one or more findings are not verified by fix_verification")
+                  summaries.append(
+                      {
+                          "file": file_path,
+                          "file_confidence_score": avg_score,
+                          "file_confidence_level": confidence_level(avg_score),
+                          "finding_count": len(file_entries),
+                          "decision_counts": dict(decision_counts),
+                          "reason_codes": reason_codes,
+                          "path_profiles": path_profiles,
+                          "basis": basis,
+                          "penalties": penalties,
+                      }
+                  )
+              return summaries
+
+          def build_total_confidence_summary(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+              scores = [float(entry.get("confidence_score", 0.0)) for entry in entries]
+              entry_average = sum(scores) / len(scores) if scores else 0.0
+              basis: list[str] = []
+              penalties: list[str] = []
+
+              structural_score = 0.70
+              if metadata.get("ruff_count", 0) == 0:
+                  structural_score += 0.05
+                  basis.append("Ruff findings are zero")
+              if metadata.get("pip_count", 0) == 0:
+                  structural_score += 0.05
+                  basis.append("pip-audit vulnerabilities are zero")
+              if metadata.get("logic_count", 0) == 0:
+                  structural_score += 0.05
+                  basis.append("Tasukeru logic review findings are zero")
+              if state.get("critical_count", 0) == 0:
+                  structural_score += 0.05
+                  basis.append("HITL_REQUIRED critical incidents are zero")
+              structural_score = clamp_score(structural_score)
+
+              total = (entry_average * 0.75) + (structural_score * 0.25)
+
+              if metadata.get("documentation_count", 0):
+                  penalties.append("documentation review still has findings")
+                  total -= 0.02
+              if state.get("critical_count", 0):
+                  penalties.append("HITL_REQUIRED incidents remain")
+                  total -= 0.08
+              if not any(entry.get("fix_verification", {}).get("verified") is True for entry in entries):
+                  penalties.append("no finding is fully verified by fix_verification; scores remain advisory")
+                  total = min(total, 0.90)
+              if not entries:
+                  penalties.append("no entries were available to score")
+
+              total = clamp_score(total)
+              return {
+                  "total_confidence_score": total,
+                  "total_confidence_level": confidence_level(total),
+                  "entry_average_score": clamp_score(entry_average),
+                  "structural_score": structural_score,
+                  "basis": basis,
+                  "penalties": penalties,
+                  "score_semantics": "Confidence in this Tasukeru review run's classification/suggestion evidence, not a guarantee that the repository is safe.",
+                  "policy": {
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+              }
+
+          def build_confidence_report_payload(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+              file_summaries = build_file_confidence_summary(entries)
+              total_summary = build_total_confidence_summary(entries, state, metadata)
+              return {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_confidence_scoring",
+                  "status": "ADVISORY_ONLY",
+                  "score_max": 1.0,
+                  "score_semantics": "Scores represent confidence in Tasukeru's evidence/classification/suggestion, not permission to auto-apply changes.",
+                  "total": total_summary,
+                  "files": file_summaries,
+                  "entries": [
+                      {
+                          "source": entry.get("source"),
+                          "decision": entry.get("decision"),
+                          "reason_code": entry.get("reason_code"),
+                          "file": entry.get("file"),
+                          "line": entry.get("line"),
+                          "confidence_score": entry.get("confidence_score"),
+                          "confidence_level": entry.get("confidence_level"),
+                          "confidence_basis": entry.get("confidence_assessment", {}).get("basis", []),
+                          "confidence_penalties": entry.get("confidence_assessment", {}).get("penalties", []),
+                          "classification_reason": entry.get("classification_reason"),
+                          "path_profile": entry.get("path_profile"),
+                      }
+                      for entry in entries
+                  ],
+                  "policy": {
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+              }
+
+          def write_confidence_report(payload: dict[str, Any]) -> None:
+              write_json(confidence_json_path, payload)
+              total = payload.get("total", {})
+              with confidence_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru Confidence Report\n\n")
+                  f.write("This report is advisory-only. Scores do not authorize auto-fix, auto-PR, auto-push, or auto-merge.\n\n")
+                  f.write("## Total confidence\n\n")
+                  f.write(f"- Score: `{total.get('total_confidence_score', 0.0)}` / `1.0`\n")
+                  f.write(f"- Level: `{total.get('total_confidence_level', 'UNKNOWN')}`\n")
+                  f.write(f"- Entry average: `{total.get('entry_average_score', 0.0)}`\n")
+                  f.write(f"- Structural score: `{total.get('structural_score', 0.0)}`\n\n")
+                  f.write("## Basis\n\n")
+                  for item in total.get("basis", []) or ["No positive basis recorded."]:
+                      f.write(f"- {item}\n")
+                  f.write("\n## Penalties / limitations\n\n")
+                  for item in total.get("penalties", []) or ["No penalties recorded."]:
+                      f.write(f"- {item}\n")
+                  f.write("\n## File confidence\n\n")
+                  files = payload.get("files", [])
+                  if not files:
+                      f.write("No file-level confidence entries.\n")
+                  else:
+                      for item in files[:100]:
+                          f.write(f"- `{item.get('file')}`: `{item.get('file_confidence_score')}` / `1.0` ({item.get('file_confidence_level')}); findings={item.get('finding_count')}\n")
+                      if len(files) > 100:
+                          f.write(f"\n... and {len(files) - 100} more files in `tasukeru_confidence_report.json`.\n")
+                  f.write("\n## Policy\n\n")
+                  f.write("- Auto branch creation: `false`\n")
+                  f.write("- Auto PR creation: `false`\n")
+                  f.write("- Auto commit: `false`\n")
+                  f.write("- Auto push: `false`\n")
+                  f.write("- Auto fix: `false`\n")
+                  f.write("- Auto merge: `false`\n")
+                  f.write("- Human decision required: `true`\n")
+
           def write_outputs(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> None:
               counts = Counter(entry["decision"] for entry in entries)
               path_profile_counts = Counter(str(entry.get("path_profile", "unknown")) for entry in entries)
@@ -1821,12 +2145,22 @@ jobs:
                   1 for entry in entries
                   if entry.get("autofix", {}).get("safe_autofix_candidate")
               )
+              confidence_payload = build_confidence_report_payload(entries, state, metadata)
+              write_confidence_report(confidence_payload)
               payload = {
                   "schema_version": "1.0",
                   "tool": "tasukeru_hitl_decision_support",
                   "counts": dict(counts),
                   "path_profile_counts": dict(path_profile_counts),
                   "metadata": metadata,
+                  "confidence": {
+                      "total": confidence_payload["total"],
+                      "file_count": len(confidence_payload["files"]),
+                      "report_artifacts": [
+                          "tasukeru_confidence_report.md",
+                          "tasukeru_confidence_report.json",
+                      ],
+                  },
                   "documentation_review": {
                       "count": sum(1 for entry in entries if entry.get("source") == "Documentation Review"),
                       "critical_count": sum(
@@ -1860,6 +2194,11 @@ jobs:
                   f.write("## Counts\n\n")
                   for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
                       f.write(f"- {level}: {counts.get(level, 0)}\n")
+                  total_confidence = confidence_payload["total"]
+                  f.write("\n## Confidence\n\n")
+                  f.write(f"- Total confidence: `{total_confidence['total_confidence_score']}` / `1.0`\n")
+                  f.write(f"- Level: `{total_confidence['total_confidence_level']}`\n")
+                  f.write("- Meaning: confidence in Tasukeru's classification/suggestion evidence; not a safety guarantee.\n")
                   f.write("\n## Path profiles\n\n")
                   for profile, count in sorted(path_profile_counts.items()):
                       f.write(f"- {profile}: {count}\n")
@@ -1894,6 +2233,12 @@ jobs:
                   f.write("## HITL decision support\n\n")
                   for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
                       f.write(f"- {level}: {counts.get(level, 0)}\n")
+                  total_confidence = confidence_payload["total"]
+                  f.write("\n## Confidence score\n\n")
+                  f.write(f"- Total confidence: `{total_confidence['total_confidence_score']}` / `1.0`\n")
+                  f.write(f"- Level: `{total_confidence['total_confidence_level']}`\n")
+                  f.write("- Scope: confidence in Tasukeru's evidence/classification/suggestion, not permission to auto-apply changes.\n")
+                  f.write("- Report: `tasukeru_confidence_report.md` / `tasukeru_confidence_report.json`\n")
                   f.write("\n## Path profile counts\n\n")
                   for profile, count in sorted(path_profile_counts.items()):
                       f.write(f"- {profile}: {count}\n")
@@ -1919,6 +2264,8 @@ jobs:
                   f.write("- `tasukeru_pr_comment.md`\n")
                   f.write("- `tasukeru_dradm_draft.md`\n")
                   f.write("- `tasukeru_dradm_draft.json`\n")
+                  f.write("- `tasukeru_confidence_report.md`\n")
+                  f.write("- `tasukeru_confidence_report.json`\n")
                   f.write("- `tasukeru_logs/`\n\n")
 
                   def collapsible(title: str, data: list[dict[str, Any]], limit: int = 30) -> None:
@@ -2010,6 +2357,7 @@ jobs:
 
           all_entries = ruff_entries + bandit_entries + pip_entries + logic_entries + doc_entries
           all_entries = assign_incidents(all_entries)
+          all_entries = attach_confidence_scores(all_entries)
           notification_state = build_notification_state(all_entries)
 
           metadata = {
@@ -2038,6 +2386,13 @@ jobs:
           for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
               print(f"{level}: {counts.get(level, 0)}")
           print("")
+          confidence_report = read_json(confidence_json_path, {})
+          total_confidence = (confidence_report.get("total") or {}) if isinstance(confidence_report, dict) else {}
+          if total_confidence:
+              print("Confidence")
+              print(f"Total confidence: {total_confidence.get('total_confidence_score')} / 1.0")
+              print(f"Confidence level: {total_confidence.get('total_confidence_level')}")
+              print("")
           print("Automation policy")
           print("Auto branch creation: false")
           print("Auto PR creation: false")
@@ -2282,6 +2637,8 @@ jobs:
             tasukeru_pr_comment.md
             tasukeru_dradm_draft.md
             tasukeru_dradm_draft.json
+            tasukeru_confidence_report.md
+            tasukeru_confidence_report.json
           if-no-files-found: ignore
 
       - name: Complete advisory phase
