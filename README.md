@@ -99,6 +99,7 @@ It runs static and repository-specific checks such as:
 - Bandit
 - pip-audit
 - Tasukeru logic review
+- documentation review
 - HITL decision support classification
 
 The workflow is designed to improve maintainability, safety review, and
@@ -109,6 +110,48 @@ Tasukeru Analysis does not aim to hide warnings. Instead, it separates active
 repair candidates, review-only findings, historical-version warnings, and likely
 noise so maintainers can focus on the right items first.
 
+### Advisory-only policy
+
+Tasukeru Analysis is an **advisory-only** review helper.
+
+It does not:
+
+- create branches automatically
+- create pull requests automatically
+- commit changes automatically
+- push changes automatically
+- apply fixes automatically
+- merge pull requests automatically
+
+Only `HITL_REQUIRED` findings may produce a PR comment.
+
+Other findings, including `FIX_RECOMMENDED`, `REVIEW_RECOMMENDED`,
+`NOISE_CANDIDATE`, and `INFO_ONLY`, are collected in the GitHub Step Summary
+and workflow artifacts for human review.
+
+Tasukeru Analysis is intended to reduce human review load, not to replace human
+decision-making.
+
+### Security review output policy
+
+Tasukeru Analysis is limited to defensive review and safe remediation guidance.
+
+Public PR comments should not include:
+
+- exploit payloads
+- attack commands
+- offensive reproduction steps
+- step-by-step exploitation instructions
+- third-party target exploitation details
+
+Security-related findings should focus on:
+
+- the affected file and line
+- the defensive reason for review
+- the expected safety impact
+- a safe remediation direction
+- whether human review is required
+
 ### HITL decision support
 
 Tasukeru Analysis classifies findings into review levels so maintainers can
@@ -116,7 +159,7 @@ separate actionable issues from expected noise.
 
 Current review levels:
 
-- `HITL_REQUIRED`: human review is recommended before merge
+- `HITL_REQUIRED`: human review is required before merge or further action
 - `FIX_RECOMMENDED`: a concrete fix is likely appropriate
 - `REVIEW_RECOMMENDED`: review the context before deciding
 - `NOISE_CANDIDATE`: likely acceptable in tests, demos, or research simulations
@@ -206,6 +249,23 @@ Examples:
 - dependency vulnerabilities from `pip-audit`:
   - usually `FIX_RECOMMENDED`
 
+### Evidence, explanation, and prediction
+
+Tasukeru Analysis may attach structured decision-support metadata to findings.
+
+This can include:
+
+- `evidence`: source tool, rule ID, file, line, snippet, and artifact reference
+- `explanation`: why the finding matters and why a remediation direction is suggested
+- `fix_prediction`: expected safety or maintainability effect of the suggested change
+- `fix_verification`: placeholder or result data for candidate verification
+
+`fix_prediction` is not a guarantee. It is a review aid.
+
+`fix_verification`, when enabled, must remain advisory-only. Candidate checks
+should use temporary or isolated files and must not modify repository files
+unless a human explicitly chooses to apply a change manually.
+
 ### Output artifacts
 
 Tasukeru Analysis may generate the following review artifacts:
@@ -214,6 +274,8 @@ Tasukeru Analysis may generate the following review artifacts:
 tasukeru_advisory_summary.md
 tasukeru_hitl_review.md
 tasukeru_hitl_review.json
+tasukeru_notification_state.json
+tasukeru_pr_comment.md
 ```
 
 `tasukeru_advisory_summary.md` provides a concise overview.
@@ -229,6 +291,12 @@ tasukeru_hitl_review.json
 
 `tasukeru_hitl_review.json` provides the same decision-support data in a
 machine-readable format.
+
+`tasukeru_notification_state.json` records critical-notification state,
+including fingerprint-based incident aggregation when applicable.
+
+`tasukeru_pr_comment.md` records the PR-comment body that would be used only
+when a `HITL_REQUIRED` incident qualifies for PR notification.
 
 ### Advisory behavior
 
