@@ -1202,7 +1202,15 @@ jobs:
                           "READMEに、Tasukeru Analysis は advisory-only のレビュー補助であり、自動修正・自動PR・自動マージを行わないと明記してください。",
                       )
 
-                  if "auto-merge" not in combined_readme and "自動マージ" not in f"{readme}\n{readme_ja}":
+                  combined_raw = f"{readme}\n{readme_ja}"
+                  auto_merge_policy_present = (
+                      "auto-merge" in combined_readme
+                      or "auto merge" in combined_readme
+                      or "merge pull requests automatically" in combined_readme
+                      or "merge prs automatically" in combined_readme
+                      or "自動マージ" in combined_raw
+                  )
+                  if not auto_merge_policy_present:
                       add_doc(
                           "REVIEW_RECOMMENDED",
                           "DOC_AUTO_MERGE_POLICY_MISSING",
@@ -1447,9 +1455,18 @@ jobs:
               before: str,
               after: str,
           ) -> str:
-              before_lines = before.splitlines(keepends=True)
-              after_lines = after.splitlines(keepends=True)
-              return "".join(
+              """Return a readable unified diff with valid line breaks.
+
+              splitlines(keepends=True) combined with lineterm="" can concatenate
+              diff headers such as `---`, `+++`, and `@@` when the diff is later
+              rendered as a plain string. Tasukeru stores the diff as an artifact,
+              so generate newline-separated diff lines explicitly.
+              """
+              if before == after:
+                  return ""
+              before_lines = before.splitlines()
+              after_lines = after.splitlines()
+              diff_lines = list(
                   difflib.unified_diff(
                       before_lines,
                       after_lines,
@@ -1458,6 +1475,9 @@ jobs:
                       lineterm="",
                   )
               )
+              if not diff_lines:
+                  return ""
+              return "\n".join(diff_lines) + "\n"
 
 
           def insert_after_marker_once(text: str, marker: str, addition: str) -> str:
@@ -1642,10 +1662,13 @@ jobs:
                       after = insert_after_marker_once(before, marker, addition_or_full)
                   else:
                       after = addition_or_full
+                  if before == after:
+                      continue
                   diff = make_unified_diff(file_path=target, before=before, after=after)
                   drafts.append(
                       {
                           "target_file": target,
+                          "draft_status": "DRAFT_READY",
                           "current_sha256": sha256_text(before),
                           "draft_sha256": sha256_text(after),
                           "unified_diff": diff,
@@ -1655,6 +1678,8 @@ jobs:
                           "human_decision_required": True,
                       }
                   )
+              if not drafts:
+                  return None
               return {"reason_code": reason_code, "source_file": file_path, "drafts": drafts}
 
 
@@ -1769,6 +1794,7 @@ jobs:
                       f.write("- Apply manually only if accepted by the human maintainer.\n\n")
                       for draft in item["proposal"]["drafts"]:
                           f.write(f"### Target file: `{draft['target_file']}`\n\n")
+                          f.write(f"- Draft status: `{draft.get('draft_status', 'DRAFT_READY')}`\n\n")
                           f.write("#### Hashes\n\n")
                           f.write(f"- Current SHA-256: `{draft['current_sha256']}`\n")
                           f.write(f"- Draft SHA-256: `{draft['draft_sha256']}`\n\n")
