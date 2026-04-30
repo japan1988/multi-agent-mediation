@@ -10,14 +10,24 @@ on:
       - "requirements*.txt"
       - ".github/workflows/tasukeru-analysis.yml"
       - "README*.md"
+      - "SECURITY.md"
       - "LICENSE*"
+      - "LICENSE_POLICY.md"
+      - "CONTRIBUTING.md"
+      - "CODE_OF_CONDUCT.md"
+      - "NOTICE"
+      - "TRADEMARKS.md"
       - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
       - "log_codebook*.json"
       - "**/*.jsonl"
   workflow_dispatch:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
@@ -68,7 +78,7 @@ jobs:
       - name: Run advisory tools
         run: |
           set -euo pipefail
-          mkdir -p tasukeru_logs
+          mkdir -p tasukeru_logs/fix_candidates
 
           set +e
 
@@ -116,27 +126,45 @@ jobs:
           echo "bandit_exit=${bandit_exit}"
           echo "pip_exit=${pip_exit}"
 
-      - name: Run Tasukeru logic review
+      - name: Generate Tasukeru advisory review
         if: always()
         run: |
           set -euo pipefail
-          mkdir -p tasukeru_logs
+          mkdir -p tasukeru_logs/fix_candidates
 
           python - <<'PY'
           from __future__ import annotations
 
+          import hashlib
           import json
+          import os
           import re
-          from collections import Counter
+          from collections import Counter, defaultdict
           from pathlib import Path
           from typing import Any
 
           repo = Path(".")
           log_dir = Path("tasukeru_logs")
-          out_json = log_dir / "logic-review.json"
-          out_md = log_dir / "logic-review.md"
 
-          skip_dirs = {
+          summary_path = Path("tasukeru_advisory_summary.md")
+          hitl_md_path = Path("tasukeru_hitl_review.md")
+          hitl_json_path = Path("tasukeru_hitl_review.json")
+          notification_state_path = Path("tasukeru_notification_state.json")
+          pr_comment_path = Path("tasukeru_pr_comment.md")
+
+          AUTO_FALSE = {
+              "auto_branch_allowed": False,
+              "auto_pr_creation_allowed": False,
+              "auto_commit_allowed": False,
+              "auto_push_allowed": False,
+              "auto_merge_allowed": False,
+              "autofix_allowed": False,
+              "human_decision_required": True,
+              "suggestion_only": True,
+              "verified": False,
+          }
+
+          SKIP_DIRS = {
               ".git",
               ".venv",
               "venv",
@@ -147,7 +175,7 @@ jobs:
               "archive",
           }
 
-          text_exts = {
+          TEXT_EXTS = {
               ".py",
               ".yml",
               ".yaml",
@@ -161,10 +189,10 @@ jobs:
               ".rst",
           }
 
-          allowed_decisions = {"RUN", "PAUSE_FOR_HITL", "STOPPED"}
-          ethics_or_acc_layers = {"ethics_gate", "acc_gate"}
-          rfl_layers = {"relativity_gate", "rfl", "RFL"}
-          required_arl_keys = {
+          ALLOWED_DECISIONS = {"RUN", "PAUSE_FOR_HITL", "STOPPED"}
+          ETHICS_OR_ACC_LAYERS = {"ethics_gate", "acc_gate"}
+          RFL_LAYERS = {"relativity_gate", "rfl", "RFL"}
+          REQUIRED_ARL_KEYS = {
               "run_id",
               "layer",
               "decision",
@@ -174,462 +202,16 @@ jobs:
               "reason_code",
           }
 
-          findings: list[dict[str, Any]] = []
-
-          def add(
-              severity: str,
-              category: str,
-              code: str,
-              message: str,
-              path: str = "",
-              line: int | None = None,
-              detail: dict[str, Any] | None = None,
-          ) -> None:
-              findings.append(
-                  {
-                      "severity": severity,
-                      "category": category,
-                      "code": code,
-                      "message": message,
-                      "path": path,
-                      "line": line,
-                      "detail": detail or {},
-                  }
-              )
-
-          def is_skipped(path: Path) -> bool:
-              return any(part in skip_dirs for part in path.parts)
-
-          def is_text_candidate(path: Path) -> bool:
-              if is_skipped(path):
-                  return False
-              if not path.is_file():
-                  return False
-              if path.stat().st_size > 2_000_000:
-                  return False
-              return path.suffix in text_exts or path.name in {"LICENSE", "NOTICE"}
-
-          def read_text(path: Path) -> str:
-              try:
-                  return path.read_text(encoding="utf-8")
-              except UnicodeDecodeError:
-                  return path.read_text(encoding="utf-8", errors="replace")
-              except Exception:
-                  return ""
-
-          def iter_text_files() -> list[Path]:
-              return sorted(path for path in repo.rglob("*") if is_text_candidate(path))
-
-          def check_conflict_markers(path: Path, text: str) -> None:
-              for idx, line in enumerate(text.splitlines(), start=1):
-                  stripped = line.strip()
-                  if (
-                      stripped.startswith("<<<<<<< ")
-                      or stripped == "======="
-                      or stripped.startswith(">>>>>>> ")
-                  ):
-                      add(
-                          "CRITICAL_ADVISORY",
-                          "repo_integrity",
-                          "MERGE_CONFLICT_MARKER",
-                          "Unresolved merge conflict marker was found.",
-                          str(path),
-                          idx,
-                      )
-
-          def check_license_consistency() -> None:
-              license_path = repo / "LICENSE"
-              policy_path = repo / "LICENSE_POLICY.md"
-              readme_path = repo / "README.md"
-              readme_ja_path = repo / "README.ja.md"
-
-              license_text = read_text(license_path) if license_path.exists() else ""
-              policy_text = read_text(policy_path) if policy_path.exists() else ""
-              readme_text = read_text(readme_path) if readme_path.exists() else ""
-              readme_ja_text = read_text(readme_ja_path) if readme_ja_path.exists() else ""
-
-              if license_text:
-                  has_apache = "Apache License" in license_text
-                  has_cc = "Creative Commons" in license_text or "CC BY-NC-SA" in license_text
-                  if has_apache and has_cc:
-                      add(
-                          "WARN",
-                          "license",
-                          "LICENSE_MIXED_APACHE_AND_CC",
-                          "LICENSE appears to contain both Apache and Creative Commons terms. Prefer Apache text in LICENSE and split policy in LICENSE_POLICY.md.",
-                          "LICENSE",
-                      )
-
-              combined_readme = f"{readme_text}\n{readme_ja_text}"
-              if "CC BY-NC-SA" in combined_readme and "LICENSE_POLICY.md" not in combined_readme:
-                  add(
-                      "WARN",
-                      "license",
-                      "README_CC_WITHOUT_POLICY_LINK",
-                      "README mentions CC BY-NC-SA but does not link to LICENSE_POLICY.md.",
-                      "README.md / README.ja.md",
-                  )
-
-              if policy_path.exists():
-                  if "Apache License" not in policy_text or "CC BY-NC-SA" not in policy_text:
-                      add(
-                          "WARN",
-                          "license",
-                          "LICENSE_POLICY_INCOMPLETE_SPLIT_LICENSE",
-                          "LICENSE_POLICY.md should mention both Apache License 2.0 and CC BY-NC-SA 4.0.",
-                          "LICENSE_POLICY.md",
-                      )
-
-          def collect_reason_codes(obj: Any, found: set[str]) -> None:
-              if isinstance(obj, dict):
-                  for key, value in obj.items():
-                      if key == "reason_code" and isinstance(value, str):
-                          found.add(value)
-                      elif key in {"reason_codes", "allowed_reason_codes"} and isinstance(value, list):
-                          for item in value:
-                              if isinstance(item, str):
-                                  found.add(item)
-                              elif isinstance(item, dict):
-                                  code = item.get("code") or item.get("reason_code")
-                                  if isinstance(code, str):
-                                      found.add(code)
-                      elif isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]+", value):
-                          if value.startswith(
-                              (
-                                  "REL_",
-                                  "EVIDENCE_",
-                                  "TRUST_",
-                                  "DRAFT_",
-                                  "FINALIZE_",
-                                  "ACC_",
-                                  "ETHICS_",
-                              )
-                          ):
-                              found.add(value)
-                      else:
-                          collect_reason_codes(value, found)
-              elif isinstance(obj, list):
-                  for item in obj:
-                      collect_reason_codes(item, found)
-
-          def check_codebook() -> None:
-              candidates = sorted(repo.glob("log_codebook*.json"))
-              required = {
-                  "REL_BOUNDARY_UNSTABLE",
-                  "REL_REF_MISSING",
-                  "REL_SYMMETRY_BREAK",
-              }
-
-              if not candidates:
-                  add(
-                      "WARN",
-                      "codebook",
-                      "CODEBOOK_NOT_FOUND",
-                      "No log_codebook*.json file was found.",
-                  )
-                  return
-
-              for path in candidates:
-                  try:
-                      data = json.loads(read_text(path))
-                  except Exception as err:
-                      add(
-                          "WARN",
-                          "codebook",
-                          "CODEBOOK_JSON_PARSE_FAILED",
-                          "Codebook JSON could not be parsed.",
-                          str(path),
-                          detail={"error": repr(err)},
-                      )
-                      continue
-
-                  found: set[str] = set()
-                  collect_reason_codes(data, found)
-                  raw_text = read_text(path)
-                  found.update(code for code in required if code in raw_text)
-
-                  missing = sorted(required - found)
-                  if missing:
-                      add(
-                          "CRITICAL_ADVISORY",
-                          "codebook",
-                          "REQUIRED_REASON_CODES_MISSING",
-                          "Required RFL reason codes are missing from the codebook.",
-                          str(path),
-                          detail={"missing": missing},
-                      )
-
-          def parse_bool(value: Any) -> bool:
-              if isinstance(value, bool):
-                  return value
-              if isinstance(value, str):
-                  return value.strip().lower() in {"true", "1", "yes", "y"}
-              return bool(value)
-
-          def check_arl_row(path: Path, line_no: int, row: dict[str, Any]) -> None:
-              missing = sorted(key for key in required_arl_keys if key not in row)
-              if missing:
-                  add(
-                      "WARN",
-                      "arl",
-                      "ARL_REQUIRED_KEYS_MISSING",
-                      "ARL row is missing required keys.",
-                      str(path),
-                      line_no,
-                      detail={"missing": missing},
-                  )
-
-              layer = str(row.get("layer", ""))
-              decision = str(row.get("decision", ""))
-              final_decider = str(row.get("final_decider", ""))
-              reason_code = str(row.get("reason_code", ""))
-              sealed = parse_bool(row.get("sealed", False))
-              overrideable = parse_bool(row.get("overrideable", False))
-
-              if decision and decision not in allowed_decisions:
-                  add(
-                      "WARN",
-                      "arl",
-                      "ARL_UNKNOWN_DECISION",
-                      "ARL decision is outside the canonical decision set.",
-                      str(path),
-                      line_no,
-                      detail={"decision": decision},
-                  )
-
-              if not reason_code:
-                  add(
-                      "WARN",
-                      "arl",
-                      "ARL_REASON_CODE_EMPTY",
-                      "ARL reason_code is empty.",
-                      str(path),
-                      line_no,
-                  )
-
-              if sealed and layer not in ethics_or_acc_layers:
-                  add(
-                      "CRITICAL_ADVISORY",
-                      "arl_invariant",
-                      "SEALED_LAYER_NOT_ETHICS_OR_ACC",
-                      "sealed=true is only allowed for ethics_gate or acc_gate.",
-                      str(path),
-                      line_no,
-                      detail={"layer": layer},
-                  )
-
-              if layer in rfl_layers and sealed:
-                  add(
-                      "CRITICAL_ADVISORY",
-                      "arl_invariant",
-                      "RFL_MUST_NOT_BE_SEALED",
-                      "RFL / relativity_gate rows must never be sealed.",
-                      str(path),
-                      line_no,
-                  )
-
-              if sealed and overrideable:
-                  add(
-                      "CRITICAL_ADVISORY",
-                      "arl_invariant",
-                      "SEALED_MUST_NOT_BE_OVERRIDEABLE",
-                      "sealed=true implies overrideable=false.",
-                      str(path),
-                      line_no,
-                  )
-
-              if sealed and final_decider != "SYSTEM":
-                  add(
-                      "CRITICAL_ADVISORY",
-                      "arl_invariant",
-                      "SEALED_FINAL_DECIDER_MUST_BE_SYSTEM",
-                      "sealed=true implies final_decider=SYSTEM.",
-                      str(path),
-                      line_no,
-                      detail={"final_decider": final_decider},
-                  )
-
-              if decision == "PAUSE_FOR_HITL" and sealed:
-                  add(
-                      "CRITICAL_ADVISORY",
-                      "arl_invariant",
-                      "PAUSE_FOR_HITL_MUST_NOT_BE_SEALED",
-                      "PAUSE_FOR_HITL must remain unsealed and overrideable.",
-                      str(path),
-                      line_no,
-                  )
-
-          def check_arl_jsonl_files() -> None:
-              candidates = []
-              for path in iter_text_files():
-                  name = path.name.lower()
-                  if path.suffix == ".jsonl" and (
-                      "arl" in name or "audit" in name or "incident" in name
-                  ):
-                      candidates.append(path)
-
-              for path in candidates:
-                  with path.open("r", encoding="utf-8", errors="replace") as file_obj:
-                      for idx, line in enumerate(file_obj, start=1):
-                          if idx > 5000:
-                              break
-                          line = line.strip()
-                          if not line:
-                              continue
-                          try:
-                              obj = json.loads(line)
-                          except Exception:
-                              add(
-                                  "WARN",
-                                  "arl",
-                                  "ARL_JSONL_PARSE_FAILED",
-                                  "A JSONL row could not be parsed.",
-                                  str(path),
-                                  idx,
-                              )
-                              continue
-                          if isinstance(obj, dict):
-                              check_arl_row(path, idx, obj)
-
-          def check_python_side_effect_patterns(path: Path, text: str) -> None:
-              if path.suffix != ".py":
-                  return
-
-              lowered = text.lower()
-              has_hitl_guard = (
-                  "hitl" in lowered
-                  or "pause_for_hitl" in lowered
-                  or "approval" in lowered
-              )
-
-              patterns = [
-                  ("EMAIL_SIDE_EFFECT", r"\b(smtplib|send_email|sendmail)\b"),
-                  ("HTTP_MUTATION_SIDE_EFFECT", r"\brequests\.(post|put|patch|delete)\b"),
-                  ("SUBPROCESS_SIDE_EFFECT", r"\bsubprocess\.(run|popen|call)\b"),
-                  ("FILE_DELETE_SIDE_EFFECT", r"\b(os\.remove|os\.unlink|shutil\.rmtree)\b"),
-                  ("DYNAMIC_EXECUTION", r"\b(eval|exec)\s*\("),
-              ]
-
-              for code, pattern in patterns:
-                  match = re.search(pattern, text)
-                  if match and not has_hitl_guard:
-                      line_no = text[: match.start()].count("\n") + 1
-                      add(
-                          "WARN",
-                          "side_effect",
-                          code,
-                          "Potential external side effect or risky dynamic execution without an obvious HITL guard in the same file.",
-                          str(path),
-                          line_no,
-                      )
-
-          def check_workflow_conflicts_and_hazards(path: Path, text: str) -> None:
-              if path.suffix not in {".yml", ".yaml"}:
-                  return
-              if ".github/workflows" not in str(path):
-                  return
-
-              reviewdog_dynamic_setup = "reviewdog/action-setup" + "@v1"
-
-              if reviewdog_dynamic_setup in text:
-                  add(
-                      "WARN",
-                      "workflow",
-                      "REVIEWDOG_DYNAMIC_SETUP_RISK",
-                      f"{reviewdog_dynamic_setup} may fail on network or upstream tag resolution. Prefer avoiding it in non-critical advisory workflows.",
-                      str(path),
-                  )
-
-          for file_path in iter_text_files():
-              content = read_text(file_path)
-              check_conflict_markers(file_path, content)
-              check_python_side_effect_patterns(file_path, content)
-              check_workflow_conflicts_and_hazards(file_path, content)
-
-          check_license_consistency()
-          check_codebook()
-          check_arl_jsonl_files()
-
-          severity_counts = Counter(str(item["severity"]) for item in findings)
-          category_counts = Counter(str(item["category"]) for item in findings)
-
-          result = {
-              "schema_version": "1.0",
-              "tool": "tasukeru_logic_review",
-              "findings_count": len(findings),
-              "severity_counts": dict(severity_counts),
-              "category_counts": dict(category_counts),
-              "findings": findings,
-          }
-
-          out_json.write_text(
-              json.dumps(result, ensure_ascii=False, indent=2) + "\n",
-              encoding="utf-8",
-          )
-
-          with out_md.open("w", encoding="utf-8") as f:
-              f.write("### Tasukeru logic review\n\n")
-              f.write(f"- Findings: {len(findings)}\n")
-              f.write(f"- Critical advisory: {severity_counts.get('CRITICAL_ADVISORY', 0)}\n")
-              f.write(f"- Warning: {severity_counts.get('WARN', 0)}\n")
-              f.write(f"- Info: {severity_counts.get('INFO', 0)}\n\n")
-
-              if category_counts:
-                  f.write("#### Categories\n\n")
-                  for category, count in category_counts.most_common():
-                      f.write(f"- `{category}`: {count}\n")
-                  f.write("\n")
-
-              if findings:
-                  f.write("#### First findings\n\n")
-                  for item in findings[:30]:
-                      location = item["path"] or "repository"
-                      if item.get("line"):
-                          location = f"{location}:{item['line']}"
-                      f.write(
-                          f"- **{item['severity']}** `{item['code']}` "
-                          f"at `{location}` — {item['message']}\n"
-                      )
-                  if len(findings) > 30:
-                      f.write(f"- ... and {len(findings) - 30} more\n")
-                  f.write("\n")
-              else:
-                  f.write("No Tasukeru logic review findings.\n\n")
-
-          print(out_md.read_text(encoding="utf-8"))
-          PY
-
-      - name: Generate advisory summary
-        if: always()
-        run: |
-          set -euo pipefail
-
-          python - <<'PY'
-          from __future__ import annotations
-
-          import json
-          import os
-          from collections import Counter
-          from pathlib import Path
-          from typing import Any
-
-          log_dir = Path("tasukeru_logs")
-          summary_path = Path.cwd() / "tasukeru_advisory_summary.md"
-          hitl_md_path = Path.cwd() / "tasukeru_hitl_review.md"
-          hitl_json_path = Path.cwd() / "tasukeru_hitl_review.json"
-
           def read_text(path: Path, default: str = "") -> str:
               try:
                   return path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  try:
+                      return path.read_text(encoding="utf-8", errors="replace")
+                  except Exception:
+                      return default
               except Exception:
                   return default
-
-          def read_exit(name: str) -> int:
-              text = read_text(log_dir / name, "0").strip()
-              try:
-                  return int(text)
-              except ValueError:
-                  return 0
 
           def read_json(path: Path, default: Any) -> Any:
               try:
@@ -639,6 +221,330 @@ jobs:
                   return json.loads(text)
               except Exception:
                   return default
+
+          def write_json(path: Path, obj: Any) -> None:
+              path.write_text(
+                  json.dumps(obj, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+
+          def read_exit(name: str) -> int:
+              text = read_text(log_dir / name, "0").strip()
+              try:
+                  return int(text)
+              except ValueError:
+                  return 0
+
+          def is_skipped(path: Path) -> bool:
+              return any(part in SKIP_DIRS for part in path.parts)
+
+          def is_text_candidate(path: Path) -> bool:
+              if is_skipped(path) or not path.is_file():
+                  return False
+              try:
+                  if path.stat().st_size > 2_000_000:
+                      return False
+              except OSError:
+                  return False
+              return path.suffix in TEXT_EXTS or path.name in {"LICENSE", "NOTICE"}
+
+          def iter_text_files() -> list[Path]:
+              return sorted(path for path in repo.rglob("*") if is_text_candidate(path))
+
+          def sha256_text(text: str) -> str:
+              return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+          def canonical_hash(obj: Any) -> str:
+              payload = json.dumps(
+                  obj,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              )
+              return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+          def normalize_path(path: str) -> str:
+              return path.replace("\\", "/").lstrip("./")
+
+          def normalized_message(message: str) -> str:
+              text = message.lower()
+              text = re.sub(r"\b\d+\b", "<num>", text)
+              text = re.sub(r"\s+", " ", text)
+              return text.strip()
+
+          def one_line(value: Any, limit: int = 240) -> str:
+              text = str(value).replace("\n", " ").strip()
+              if len(text) > limit:
+                  return text[: limit - 1] + "…"
+              return text
+
+          def safe_snippet(path: str, line: int | None, radius: int = 0) -> str:
+              if not path or path == "?":
+                  return ""
+              p = Path(path)
+              if not p.exists() or not p.is_file():
+                  return ""
+              try:
+                  lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+              except Exception:
+                  return ""
+              if not line or line < 1 or line > len(lines):
+                  return ""
+              start = max(1, line - radius)
+              end = min(len(lines), line + radius)
+              return "\n".join(lines[start - 1:end])[:1200]
+
+          def is_test_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              parts = normalized.split("/")
+              return (
+                  "tests" in parts
+                  or normalized.startswith("test_")
+                  or "/test_" in normalized
+                  or normalized.endswith("_test.py")
+              )
+
+          def is_active_mainline_or_metadata_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              active_names = {
+                  "readme.md",
+                  "readme.ja.md",
+                  "security.md",
+                  "license",
+                  "license_policy.md",
+                  "contributing.md",
+                  "code_of_conduct.md",
+                  "notice",
+                  "trademarks.md",
+                  "requirements.txt",
+                  "requirements-dev.txt",
+                  "pyproject.toml",
+                  "emergency_contract_kage_orchestrator_v1_0.py",
+                  "test_emergency_contract_kage_orchestrator_v1_0.py",
+                  "ai_doc_orchestrator_kage3_v1_3_5.py",
+                  "mediation_emergency_contract_sim_v5_1_2.py",
+                  "ai_doc_orchestrator_with_mediator_v1_0.py",
+              }
+              if name in active_names:
+                  return True
+              if normalized.startswith((".github/workflows/", "tests/", "docs/")):
+                  return True
+              return False
+
+          def is_superseded_historical_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              active_markers = ("v5_1_2", "v1_3_5")
+              historical_markers = (
+                  "_v1",
+                  "_v2",
+                  "_v3",
+                  "_v4",
+                  "_v5_0",
+                  "v1_",
+                  "v2_",
+                  "v3_",
+                  "v4_",
+                  "v5_0_",
+                  "fixed_regex",
+                  "full..",
+              )
+              if any(marker in name for marker in active_markers):
+                  return False
+              return any(marker in name for marker in historical_markers)
+
+          def classify_autofix_policy(entry: dict[str, Any]) -> dict[str, Any]:
+              level = str(entry.get("decision", entry.get("level", "")))
+              file_path = str(entry.get("file", ""))
+              source = str(entry.get("source", ""))
+              rule_id = str(entry.get("rule_id", entry.get("code", "")))
+
+              base = {
+                  "safe_autofix_candidate": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "policy": "AUTOFIX_BLOCKED",
+                  "reason": "Autofix is disabled by default.",
+              }
+
+              if level in {"HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED"}:
+                  return {
+                      **base,
+                      "policy": "HUMAN_REVIEW_REQUIRED",
+                      "reason": (
+                          "Active review queue findings must not be automatically "
+                          "modified."
+                      ),
+                  }
+
+              if is_active_mainline_or_metadata_path(file_path):
+                  return {
+                      **base,
+                      "policy": "BLOCKED_ACTIVE_MAINLINE",
+                      "reason": (
+                          "Active mainline code, tests, workflows, docs, or metadata "
+                          "must not be automatically modified."
+                      ),
+                  }
+
+              if not is_superseded_historical_path(file_path):
+                  return {
+                      **base,
+                      "policy": "BLOCKED_NOT_INACTIVE_HISTORICAL",
+                      "reason": (
+                          "Autofix candidates are limited to inactive "
+                          "historical/versioned files."
+                      ),
+                  }
+
+              if source == "Ruff" and rule_id in {"F401", "F841", "W291", "W293", "I001"}:
+                  return {
+                      **base,
+                      "safe_autofix_candidate": True,
+                      "policy": "SAFE_AUTOFIX_CANDIDATE",
+                      "reason": (
+                          "Inactive historical file with a low-risk mechanical "
+                          "Ruff finding. Human review is still required."
+                      ),
+                  }
+
+              if source == "Bandit" and rule_id == "B311":
+                  return {
+                      **base,
+                      "safe_autofix_candidate": True,
+                      "policy": "SAFE_AUTOFIX_CANDIDATE",
+                      "reason": (
+                          "Inactive historical simulator file with a low-risk "
+                          "advisory finding. Human review is still required."
+                      ),
+                  }
+
+              return base
+
+          def make_entry(
+              *,
+              source: str,
+              decision: str,
+              severity: str,
+              category: str,
+              reason_code: str,
+              rule_id: str,
+              file: str,
+              message: str,
+              suggestion: str,
+              why_problematic_ja: str,
+              why_fix_ja: str,
+              impact_ja: str,
+              line: int | None = None,
+              column: int | None = None,
+              confidence: str = "MEDIUM",
+              risk_type: str = "review",
+          ) -> dict[str, Any]:
+              code_snippet = safe_snippet(file, line)
+              fingerprint = {
+                  "rule_id": rule_id,
+                  "category": category,
+                  "reason_code": reason_code,
+                  "normalized_message": normalized_message(message),
+                  "normalized_file_path": normalize_path(file),
+                  "normalized_code_pattern": normalized_message(code_snippet or rule_id),
+                  "risk_type": risk_type,
+              }
+              fingerprint_hash = canonical_hash(fingerprint)
+
+              before_hash = ""
+              if file and Path(file).exists():
+                  before_hash = sha256_text(read_text(Path(file)))
+
+              entry = {
+                  "source": source,
+                  "decision": decision,
+                  "level": decision,
+                  "severity": severity,
+                  "category": category,
+                  "reason_code": reason_code,
+                  "rule_id": rule_id,
+                  "code": rule_id,
+                  "file": file,
+                  "line": line,
+                  "column": column,
+                  "message": one_line(message, 600),
+                  "code_snippet": code_snippet,
+                  "suggestion": suggestion,
+                  "fingerprint": fingerprint,
+                  "fingerprint_hash": fingerprint_hash,
+                  "incident_id": "",
+                  **AUTO_FALSE,
+                  "evidence": {
+                      "source": source,
+                      "rule_id": rule_id,
+                      "file": file,
+                      "line": line,
+                      "column": column,
+                      "code_snippet": code_snippet,
+                      "policy_reference": "Tasukeru Security Review Output Policy",
+                      "reason_code": reason_code,
+                      "artifact": f"tasukeru_logs/{source.lower().replace(' ', '-')}.json",
+                  },
+                  "explanation": {
+                      "why_problematic_ja": why_problematic_ja,
+                      "why_fix_ja": why_fix_ja,
+                      "human_review_checklist_ja": [
+                          "active mainline / tests / workflows / docs / safety invariant / HITL logic に関係するか確認する",
+                          "既存仕様への影響を確認する",
+                          "必要なら人間が手動で修正・コミット・PR作成・マージする",
+                      ],
+                  },
+                  "fix_prediction": {
+                      "expected_effect_ja": impact_ja,
+                      "expected_effect_en": (
+                          "This change may improve maintainability, traceability, "
+                          "or safety depending on the reviewed context."
+                      ),
+                      "risk_reduction_ja": (
+                          "対象リスクを下げる可能性がありますが、最終確認には "
+                          "人間レビューとテストが必要です。"
+                      ),
+                      "side_effects_to_check_ja": [
+                          "既存の正常系動作が変わらないこと",
+                          "ログや出力に秘密情報が含まれないこと",
+                          "修正が契約外の変更を含まないこと",
+                      ],
+                      "confidence": confidence,
+                      "verified": False,
+                  },
+                  "fix_verification": {
+                      "enabled": False,
+                      "mode": "ephemeral_candidate_only",
+                      "modifies_repository": False,
+                      "auto_commit_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_merge_allowed": False,
+                      "target_fingerprint_hash": fingerprint_hash,
+                      "before": {
+                          "file": file,
+                          "sha256": before_hash,
+                      },
+                      "after_candidate": {
+                          "file": file,
+                          "sha256": "",
+                      },
+                      "diff_artifact": "",
+                      "rescan_result": {
+                          "target_hitl_required_resolved": None,
+                          "remaining_hitl_required": None,
+                          "remaining_review_recommended": None,
+                      },
+                      "verified": False,
+                      "verification_note": (
+                          "No repository files were modified. Candidate verification "
+                          "is advisory-only."
+                      ),
+                  },
+              }
+              entry["autofix"] = classify_autofix_policy(entry)
+              return entry
 
           def normalize_ruff_items(raw: Any) -> list[dict[str, Any]]:
               if isinstance(raw, list):
@@ -671,22 +577,32 @@ jobs:
                           name = str(dep.get("name", "?"))
                           version = str(dep.get("version", "?"))
                           for vuln in dep.get("vulns", []) or []:
-                              if not isinstance(vuln, dict):
-                                  continue
-                              vulns.append(
-                                  {
-                                      "name": name,
-                                      "version": version,
-                                      "id": str(vuln.get("id", "?")),
-                                      "fix_versions": vuln.get("fix_versions", []) or [],
-                                  }
-                              )
+                              if isinstance(vuln, dict):
+                                  vulns.append(
+                                      {
+                                          "name": name,
+                                          "version": version,
+                                          "id": str(vuln.get("id", "?")),
+                                          "fix_versions": vuln.get("fix_versions", []) or [],
+                                      }
+                                  )
 
                   direct = raw.get("vulnerabilities")
                   if isinstance(direct, list):
                       for item in direct:
-                          if not isinstance(item, dict):
-                              continue
+                          if isinstance(item, dict):
+                              vulns.append(
+                                  {
+                                      "name": str(item.get("name", item.get("package", "?"))),
+                                      "version": str(item.get("version", "?")),
+                                      "id": str(item.get("id", "?")),
+                                      "fix_versions": item.get("fix_versions", []) or [],
+                                  }
+                              )
+
+              elif isinstance(raw, list):
+                  for item in raw:
+                      if isinstance(item, dict):
                           vulns.append(
                               {
                                   "name": str(item.get("name", item.get("package", "?"))),
@@ -696,816 +612,974 @@ jobs:
                               }
                           )
 
-              elif isinstance(raw, list):
-                  for item in raw:
-                      if not isinstance(item, dict):
-                          continue
-                      vulns.append(
-                          {
-                              "name": str(item.get("name", item.get("package", "?"))),
-                              "version": str(item.get("version", "?")),
-                              "id": str(item.get("id", "?")),
-                              "fix_versions": item.get("fix_versions", []) or [],
-                          }
-                      )
-
               return vulns
 
-          def md_text(value: Any) -> str:
-              return str(value).replace("\n", " ").strip()
+          def parse_bool(value: Any) -> bool:
+              if isinstance(value, bool):
+                  return value
+              if isinstance(value, str):
+                  return value.strip().lower() in {"true", "1", "yes", "y"}
+              return bool(value)
 
-          def md_cell(value: Any) -> str:
-              text = str(value)
-              text = text.replace("\n", "<br>")
-              text = text.replace("|", "\\|")
-              return text
+          def collect_reason_codes(obj: Any, found: set[str]) -> None:
+              if isinstance(obj, dict):
+                  for key, value in obj.items():
+                      if key == "reason_code" and isinstance(value, str):
+                          found.add(value)
+                      elif key in {"reason_codes", "allowed_reason_codes"} and isinstance(value, list):
+                          for item in value:
+                              if isinstance(item, str):
+                                  found.add(item)
+                              elif isinstance(item, dict):
+                                  code = item.get("code") or item.get("reason_code")
+                                  if isinstance(code, str):
+                                      found.add(code)
+                      else:
+                          collect_reason_codes(value, found)
+              elif isinstance(obj, list):
+                  for item in obj:
+                      collect_reason_codes(item, found)
 
-          def is_test_path(path: str) -> bool:
-              normalized = path.replace("\\", "/")
-              parts = normalized.split("/")
-              return (
-                  "tests" in parts
-                  or normalized.startswith("test_")
-                  or "/test_" in normalized
-                  or normalized.endswith("_test.py")
-              )
-
-          def is_simulation_path(path: str) -> bool:
-              lowered = path.lower()
-              return any(
-                  token in lowered
-                  for token in (
-                      "sim",
-                      "simulation",
-                      "simulator",
-                      "demo",
-                      "stress",
-                      "benchmark",
-                      "evaluation",
-                      "orchestrator",
-                      "mediation",
-                      "rank_transition",
-                      "pattern_steering",
-                      "kage",
-                  )
-              )
-
-          def is_historical_version_path(path: str) -> bool:
-              normalized = path.replace("\\", "/").lower()
-              name = normalized.rsplit("/", 1)[-1]
-              return any(
-                  marker in name
-                  for marker in (
-                      "_v1",
-                      "_v2",
-                      "_v3",
-                      "_v4",
-                      "_v5_0",
-                      "v1_",
-                      "v2_",
-                      "v3_",
-                      "v4_",
-                      "fixed_regex",
-                      "full..",
-                  )
-              )
-
-          def is_superseded_historical_path(path: str) -> bool:
-              """Return True for older versioned files kept for reproducibility."""
-              normalized = path.replace("\\", "/").lower()
-              name = normalized.rsplit("/", 1)[-1]
-
-              active_markers = (
-                  "v5_1_2",
-                  "v1_3_5",
-              )
-
-              historical_markers = (
-                  "_v1",
-                  "_v2",
-                  "_v3",
-                  "_v4",
-                  "_v5_0",
-                  "v1_",
-                  "v2_",
-                  "v3_",
-                  "v4_",
-                  "v5_0_",
-                  "fixed_regex",
-                  "full..",
-              )
-
-              if any(marker in name for marker in active_markers):
-                  return False
-
-              return any(marker in name for marker in historical_markers)
-
-          def classify_ruff(item: dict[str, Any]) -> dict[str, str]:
-              code = str(item.get("code", "RUFF"))
-              filename = str(item.get("filename", "?"))
-
-              if code in {"F401", "F841"}:
-                  return {
-                      "level": "FIX_RECOMMENDED",
-                      "reason": "Unused imports or variables usually reduce clarity and are safe to remove.",
-                      "suggestion": "Remove the unused symbol, or keep it only if it is part of a deliberate public re-export with an explicit comment.",
-                  }
-
-              if code == "E402":
-                  return {
-                      "level": "FIX_RECOMMENDED",
-                      "reason": "Module-level imports should usually stay at the top of the file for predictable import behavior.",
-                      "suggestion": "Move the import to the top of the file, or isolate path/bootstrap logic in a small helper before imports.",
-                  }
-
-              if is_test_path(filename):
-                  return {
-                      "level": "REVIEW_RECOMMENDED",
-                      "reason": "This Ruff finding is in a test file. It may be harmless but should still be reviewed.",
-                      "suggestion": "Fix if simple. If intentional, add a short comment or a narrow noqa suppression.",
-                  }
-
-              return {
-                  "level": "FIX_RECOMMENDED",
-                  "reason": "Ruff findings usually indicate style, import, or correctness issues that are cheap to fix.",
-                  "suggestion": "Apply Ruff's suggested fix when available, or edit the referenced line directly.",
-              }
-
-          def classify_bandit(item: dict[str, Any]) -> dict[str, str]:
-              code = str(item.get("test_id", "BANDIT"))
-              filename = str(item.get("filename", "?"))
-              issue = str(item.get("issue_text", ""))
-
-              if code == "B101":
-                  if is_test_path(filename):
-                      return {
-                          "level": "NOISE_CANDIDATE",
-                          "reason": "Bandit flags assert usage because Python can remove assert statements under optimization. In pytest tests, assert is normally expected.",
-                          "suggestion": "Usually keep as-is in tests. If noise is too high, add a narrow '# nosec B101' with a reason. In runtime code, replace assert with explicit error handling.",
-                      }
-
-                  if is_superseded_historical_path(filename):
-                      return {
-                          "level": "INFO_ONLY",
-                          "reason": "This assert appears in a superseded historical simulator file kept for reproducibility. It is recorded as a historical warning, not an active repair target.",
-                          "suggestion": "No immediate fix is required while the file remains historical. If this file becomes an active entry point again, replace assert with explicit error handling.",
-                      }
-
-                  if is_historical_version_path(filename):
-                      return {
-                          "level": "REVIEW_RECOMMENDED",
-                          "reason": "This assert appears in a versioned simulator file. Confirm whether it is historical or still active.",
-                          "suggestion": "If historical, keep as a historical warning. If active, replace assert with explicit error handling.",
-                      }
-
-                  return {
-                      "level": "FIX_RECOMMENDED",
-                      "reason": "Runtime assert statements can disappear when Python is run with optimization flags.",
-                      "suggestion": "Replace 'assert condition' with explicit validation, such as 'if not condition: raise ValueError(...)'.",
-                  }
-
-              if code == "B311":
-                  if is_test_path(filename):
-                      return {
-                          "level": "NOISE_CANDIDATE",
-                          "reason": "Standard pseudo-random generators are usually acceptable for tests when they are not used for security-sensitive behavior.",
-                          "suggestion": "Keep as-is for deterministic tests. If used for secrets, tokens, authentication, or authorization, replace with 'secrets'.",
-                      }
-
-                  if is_superseded_historical_path(filename):
-                      return {
-                          "level": "INFO_ONLY",
-                          "reason": "This pseudo-random usage appears in a superseded historical simulator file kept for reproducibility. It is recorded as a historical warning, not an active security finding.",
-                          "suggestion": "No immediate fix is required while the file remains historical. If reused for secrets, tokens, authentication, authorization, or active runtime behavior, replace with 'secrets' or document deterministic simulation use.",
-                      }
-
-                  if is_simulation_path(filename):
-                      return {
-                          "level": "REVIEW_RECOMMENDED",
-                          "reason": "Standard pseudo-random generators are often acceptable for deterministic simulations, but not for security-sensitive behavior.",
-                          "suggestion": "If simulation-only, document that the randomness is non-cryptographic. If used for secrets, tokens, authentication, or authorization, replace with 'secrets' or 'random.SystemRandom'.",
-                      }
-
-                  return {
-                      "level": "FIX_RECOMMENDED",
-                      "reason": "Standard pseudo-random generators are not appropriate for security-sensitive values.",
-                      "suggestion": "Use the 'secrets' module for security-sensitive randomness. Keep 'random' only for deterministic simulation or test data.",
-                  }
-
-              if code == "B108":
-                  if is_test_path(filename):
-                      return {
-                          "level": "NOISE_CANDIDATE",
-                          "reason": "Bandit flagged a temporary path pattern in a test file. Pytest tmp_path/tmpdir fixtures are isolated test directories and are normally acceptable.",
-                          "suggestion": "Keep as-is when the path is derived from pytest tmp_path/tmpdir. If the test uses a hard-coded shared path such as '/tmp/name', replace it with tmp_path.",
-                      }
-
-                  return {
-                      "level": "REVIEW_RECOMMENDED",
-                      "reason": "A hard-coded temporary file or directory can be unsafe if shared across users or processes.",
-                      "suggestion": "Use tempfile.TemporaryDirectory(), NamedTemporaryFile(), or pytest tmp_path instead of a hard-coded temporary path.",
-                  }
-
-              if code == "B404":
-                  return {
-                      "level": "REVIEW_RECOMMENDED",
-                      "reason": "Importing subprocess is not itself an external side effect, but files that import subprocess should be reviewed for actual execution sites.",
-                      "suggestion": "Check whether the file actually calls subprocess. If execution occurs, require HITL approval near the call site and prefer argument lists over shell=True.",
-                  }
-
-              if code in {"B602", "B603", "B604", "B605", "B606", "B607"}:
-                  return {
-                      "level": "HITL_REQUIRED",
-                      "reason": "Subprocess execution can produce external side effects or command-injection risk depending on inputs.",
-                      "suggestion": "Require an explicit HITL approval flag before execution. Prefer argument lists over shell=True and validate inputs.",
-                  }
-
-              if "subprocess" in issue.lower():
-                  return {
-                      "level": "REVIEW_RECOMMENDED",
-                      "reason": "The finding appears to involve subprocess. Review whether it is only an import warning or an actual execution path.",
-                      "suggestion": "If this is only an import warning, treat as review-only. If execution occurs, add a HITL approval gate near the call site.",
-                  }
-
-              if str(item.get("issue_severity", "")).upper() == "MEDIUM":
-                  return {
-                      "level": "REVIEW_RECOMMENDED",
-                      "reason": "Bandit marked this as medium severity. Context determines whether it is actionable or noise.",
-                      "suggestion": "Review the referenced file and either fix it, add a narrow suppression with a reason, or document why it is acceptable in this simulator.",
-                  }
-
-              return {
-                  "level": "NOISE_CANDIDATE" if is_test_path(filename) else "REVIEW_RECOMMENDED",
-                  "reason": "Bandit LOW findings are often advisory, especially in tests and research simulations.",
-                  "suggestion": "Review context. Suppress only with a narrow '# nosec' and a reason, otherwise fix if simple.",
-              }
-
-          def classify_pip_vuln(row: dict[str, Any]) -> dict[str, str]:
-              fixes = row.get("fix_versions", []) or []
-              fix_text = ", ".join(str(item) for item in fixes) if fixes else "the fixed version recommended by pip-audit"
-              return {
-                  "level": "FIX_RECOMMENDED",
-                  "reason": "Dependency vulnerabilities should normally be fixed by upgrading the affected package.",
-                  "suggestion": f"Update the dependency constraint to {fix_text}, then rerun pip-audit and tests.",
-              }
-
-          def classify_logic(item: dict[str, Any]) -> dict[str, str]:
-              severity = str(item.get("severity", ""))
-              category = str(item.get("category", ""))
-              code = str(item.get("code", ""))
-
-              if severity == "CRITICAL_ADVISORY":
-                  return {
-                      "level": "HITL_REQUIRED",
-                      "reason": "The custom logic review marked this as a critical advisory.",
-                      "suggestion": "Do not merge until a human reviews the finding and either fixes it or records an explicit rationale.",
-                  }
-
-              if category == "side_effect":
-                  return {
-                      "level": "HITL_REQUIRED",
-                      "reason": "The file appears to contain an external side effect or risky execution pattern without an obvious HITL guard.",
-                      "suggestion": "Add an explicit HITL approval flag or PAUSE_FOR_HITL path before the side effect. Include the affected file, operation, and reason_code.",
-                  }
-
-              if category == "license":
-                  return {
-                      "level": "FIX_RECOMMENDED",
-                      "reason": "License wording inconsistencies can confuse reuse conditions.",
-                      "suggestion": "Keep Apache-2.0 text in LICENSE, put split-license details in LICENSE_POLICY.md, and link that policy from README files.",
-                  }
-
-              if category == "workflow":
-                  return {
-                      "level": "REVIEW_RECOMMENDED",
-                      "reason": "Workflow warnings can be environmental or supply-chain related.",
-                      "suggestion": "Review whether the workflow dependency is necessary. Prefer pinned or first-party actions where possible.",
-                  }
-
-              if code.startswith("ARL_") or "SEALED" in code or "RFL" in code:
-                  return {
-                      "level": "HITL_REQUIRED",
-                      "reason": "The finding touches orchestration invariants or audit-row semantics.",
-                      "suggestion": "Review the ARL row or codebook entry. Preserve invariants: RFL must not be sealed; sealed rows must be SYSTEM-decided and non-overrideable.",
-                  }
-
-              return {
-                  "level": "REVIEW_RECOMMENDED",
-                  "reason": "The custom logic review found a repository-specific advisory.",
-                  "suggestion": "Review the location and either fix it, document it, or leave it as accepted advisory noise.",
-              }
-
-          def add_hitl_entry(
-              entries: list[dict[str, Any]],
-              *,
-              source: str,
-              level: str,
-              file: str,
-              line: Any,
-              code: str,
-              message: str,
-              reason: str,
-              suggestion: str,
-          ) -> None:
+          def add_logic_hitl(entries: list[dict[str, Any]], code: str, msg: str, file: str = "repository", line: int | None = None) -> None:
               entries.append(
-                  {
-                      "source": source,
-                      "level": level,
-                      "file": file,
-                      "line": line,
-                      "code": code,
-                      "message": message,
-                      "reason": reason,
-                      "suggestion": suggestion,
-                  }
+                  make_entry(
+                      source="Tasukeru Logic Review",
+                      decision="HITL_REQUIRED",
+                      severity="CRITICAL",
+                      category="safety_invariant_violation",
+                      reason_code=code,
+                      rule_id=code,
+                      file=file,
+                      line=line,
+                      message=msg,
+                      suggestion="人間が該当箇所を確認し、KAGE/Tasukeru 不変条件に従って手動修正してください。",
+                      why_problematic_ja="安全不変条件またはHITL境界に関わるため、自動判断で進めるべきではありません。",
+                      why_fix_ja="人間確認を挟むことで、sealed / overrideable / final_decider / reason_code の整合を維持できます。",
+                      impact_ja="人間確認により、HITL迂回や封印条件の破損を防ぎやすくなることが期待されます。",
+                      confidence="HIGH",
+                      risk_type="safety_invariant",
+                  )
               )
 
-          def level_sort_key(entry: dict[str, Any]) -> tuple[int, str, str]:
-              order = {
-                  "HITL_REQUIRED": 0,
-                  "FIX_RECOMMENDED": 1,
-                  "REVIEW_RECOMMENDED": 2,
-                  "NOISE_CANDIDATE": 3,
-                  "INFO_ONLY": 4,
+          def run_logic_review() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+              logic_entries: list[dict[str, Any]] = []
+
+              for path in iter_text_files():
+                  text = read_text(path)
+                  for idx, line in enumerate(text.splitlines(), start=1):
+                      stripped = line.strip()
+                      if stripped.startswith("<<<<<<< ") or stripped == "=======" or stripped.startswith(">>>>>>> "):
+                          add_logic_hitl(
+                              logic_entries,
+                              "MERGE_CONFLICT_MARKER",
+                              "Unresolved merge conflict marker was found.",
+                              str(path),
+                              idx,
+                          )
+
+              required_rfl = {"REL_BOUNDARY_UNSTABLE", "REL_REF_MISSING", "REL_SYMMETRY_BREAK"}
+              codebooks = sorted(repo.glob("log_codebook*.json"))
+              if codebooks:
+                  for path in codebooks:
+                      data = read_json(path, {})
+                      found: set[str] = set()
+                      collect_reason_codes(data, found)
+                      raw = read_text(path)
+                      found.update(code for code in required_rfl if code in raw)
+                      missing = sorted(required_rfl - found)
+                      if missing:
+                          add_logic_hitl(
+                              logic_entries,
+                              "REQUIRED_REASON_CODES_MISSING",
+                              f"Required RFL reason codes are missing from codebook: {', '.join(missing)}",
+                              str(path),
+                          )
+
+              for path in iter_text_files():
+                  name = path.name.lower()
+                  if path.suffix != ".jsonl" or not any(token in name for token in ("arl", "audit", "incident")):
+                      continue
+
+                  with path.open("r", encoding="utf-8", errors="replace") as file_obj:
+                      for idx, line in enumerate(file_obj, start=1):
+                          if idx > 5000:
+                              break
+                          line = line.strip()
+                          if not line:
+                              continue
+                          try:
+                              row = json.loads(line)
+                          except Exception:
+                              continue
+                          if not isinstance(row, dict):
+                              continue
+
+                          layer = str(row.get("layer", ""))
+                          decision = str(row.get("decision", ""))
+                          sealed = parse_bool(row.get("sealed", False))
+                          overrideable = parse_bool(row.get("overrideable", False))
+                          final_decider = str(row.get("final_decider", ""))
+
+                          missing = sorted(key for key in REQUIRED_ARL_KEYS if key not in row)
+                          if missing:
+                              logic_entries.append(
+                                  make_entry(
+                                      source="Tasukeru Logic Review",
+                                      decision="REVIEW_RECOMMENDED",
+                                      severity="MEDIUM",
+                                      category="arl",
+                                      reason_code="ARL_REQUIRED_KEYS_MISSING",
+                                      rule_id="ARL_REQUIRED_KEYS_MISSING",
+                                      file=str(path),
+                                      line=idx,
+                                      message=f"ARL row is missing required keys: {', '.join(missing)}",
+                                      suggestion="ARL必須キーを補い、監査行として一貫した形式にしてください。",
+                                      why_problematic_ja="必須キーが欠けると、後から停止理由や責任分界を追跡しにくくなります。",
+                                      why_fix_ja="必須キーを揃えることで、監査と再現確認がしやすくなります。",
+                                      impact_ja="ARLの追跡性が改善することが期待されます。",
+                                      confidence="MEDIUM",
+                                      risk_type="arl",
+                                  )
+                              )
+
+                          if decision and decision not in ALLOWED_DECISIONS:
+                              logic_entries.append(
+                                  make_entry(
+                                      source="Tasukeru Logic Review",
+                                      decision="REVIEW_RECOMMENDED",
+                                      severity="MEDIUM",
+                                      category="arl",
+                                      reason_code="ARL_UNKNOWN_DECISION",
+                                      rule_id="ARL_UNKNOWN_DECISION",
+                                      file=str(path),
+                                      line=idx,
+                                      message=f"ARL decision is outside canonical decision set: {decision}",
+                                      suggestion="decision を RUN / PAUSE_FOR_HITL / STOPPED のいずれかに揃えてください。",
+                                      why_problematic_ja="decision語彙が揺れると、CIや監査で判定しにくくなります。",
+                                      why_fix_ja="語彙を固定すると、集計・監査・テストが安定します。",
+                                      impact_ja="ログ解析の安定性が上がることが期待されます。",
+                                      confidence="MEDIUM",
+                                      risk_type="arl",
+                                  )
+                              )
+
+                          if sealed and layer not in ETHICS_OR_ACC_LAYERS:
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "SEALED_LAYER_NOT_ETHICS_OR_ACC",
+                                  "sealed=true is only allowed for ethics_gate or acc_gate.",
+                                  str(path),
+                                  idx,
+                              )
+
+                          if layer in RFL_LAYERS and sealed:
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "RFL_MUST_NOT_BE_SEALED",
+                                  "RFL / relativity_gate rows must never be sealed.",
+                                  str(path),
+                                  idx,
+                              )
+
+                          if sealed and overrideable:
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "SEALED_MUST_NOT_BE_OVERRIDEABLE",
+                                  "sealed=true implies overrideable=false.",
+                                  str(path),
+                                  idx,
+                              )
+
+                          if sealed and final_decider != "SYSTEM":
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "SEALED_FINAL_DECIDER_MUST_BE_SYSTEM",
+                                  "sealed=true implies final_decider=SYSTEM.",
+                                  str(path),
+                                  idx,
+                              )
+
+                          if decision == "PAUSE_FOR_HITL" and sealed:
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "PAUSE_FOR_HITL_MUST_NOT_BE_SEALED",
+                                  "PAUSE_FOR_HITL must remain unsealed.",
+                                  str(path),
+                                  idx,
+                              )
+
+              result = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_logic_review",
+                  "findings_count": len(logic_entries),
+                  "severity_counts": dict(Counter(entry["severity"] for entry in logic_entries)),
+                  "category_counts": dict(Counter(entry["category"] for entry in logic_entries)),
+                  "findings": logic_entries,
               }
-              return (
-                  order.get(str(entry.get("level", "")), 9),
-                  str(entry.get("file", "")),
-                  str(entry.get("line", "")),
-              )
+              write_json(log_dir / "logic-review.json", result)
 
-          def write_entry_bullet(f: Any, entry: dict[str, Any]) -> None:
-              location = f"{entry['file']}:{entry['line']}"
-              f.write(
-                  f"- `{entry['level']}` / {entry['source']} / "
-                  f"`{entry['code']}` at `{location}`\n"
-              )
-              f.write(f"  - Issue: {md_text(entry['message'])}\n")
-              f.write(f"  - Suggested action: {md_text(entry['suggestion'])}\n")
+              with (log_dir / "logic-review.md").open("w", encoding="utf-8") as f:
+                  f.write("### Tasukeru logic review\n\n")
+                  f.write(f"- Findings: {len(logic_entries)}\n")
+                  f.write(f"- HITL_REQUIRED: {sum(1 for e in logic_entries if e['decision'] == 'HITL_REQUIRED')}\n")
+                  f.write(f"- REVIEW_RECOMMENDED: {sum(1 for e in logic_entries if e['decision'] == 'REVIEW_RECOMMENDED')}\n\n")
 
-          def write_collapsible_entries(
-              f: Any,
-              *,
-              title: str,
-              entries: list[dict[str, Any]],
-              limit: int = 50,
-              opened: bool = False,
-          ) -> None:
-              """Write collapsible GitHub Step Summary entries."""
-              tag = "<details open>" if opened else "<details>"
-              f.write(f"{tag}\n")
-              f.write(f"<summary>{md_text(title)}</summary>\n\n")
+              return logic_entries, result
 
-              if not entries:
-                  f.write("No entries.\n\n")
-              else:
-                  for entry in entries[:limit]:
-                      write_entry_bullet(f, entry)
+          def run_documentation_review() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+              entries: list[dict[str, Any]] = []
+              readme = read_text(Path("README.md"))
+              readme_ja = read_text(Path("README.ja.md"))
+              security = read_text(Path("SECURITY.md"))
+              license_policy = read_text(Path("LICENSE_POLICY.md"))
+              combined_readme = f"{readme}\n{readme_ja}".lower()
 
-                  if len(entries) > limit:
-                      f.write(
-                          f"\n... and {len(entries) - limit} more entries. "
-                          "See `tasukeru_hitl_review.json` for the full list.\n"
+              def add_doc(decision: str, reason_code: str, file: str, message: str, suggestion: str) -> None:
+                  entries.append(
+                      make_entry(
+                          source="Documentation Review",
+                          decision=decision,
+                          severity="CRITICAL" if decision == "HITL_REQUIRED" else "MEDIUM",
+                          category="documentation_policy",
+                          reason_code=reason_code,
+                          rule_id=reason_code,
+                          file=file,
+                          message=message,
+                          suggestion=suggestion,
+                          why_problematic_ja="公開文書の説明と実装方針がずれると、利用者がTasukeruを自動修正Botまたは自動マージBotと誤解する可能性があります。",
+                          why_fix_ja="advisory-only、自動PRなし、自動修正なし、自動マージなしを明記すると、利用者の誤解と運用リスクを下げられます。",
+                          impact_ja="OSS利用者がプロジェクトの安全境界を理解しやすくなることが期待されます。",
+                          confidence="MEDIUM",
+                          risk_type="documentation",
                       )
+                  )
+
+              if readme or readme_ja:
+                  if "advisory-only" not in combined_readme and "review helper" not in combined_readme:
+                      add_doc(
+                          "REVIEW_RECOMMENDED",
+                          "DOC_ADVISORY_ONLY_NOT_CLEAR",
+                          "README.md / README.ja.md",
+                          "README does not clearly describe Tasukeru Analysis as advisory-only.",
+                          "READMEに、Tasukeru Analysis は advisory-only のレビュー補助であり、自動修正・自動PR・自動マージを行わないと明記してください。",
+                      )
+
+                  if "auto-merge" not in combined_readme and "自動マージ" not in f"{readme}\n{readme_ja}":
+                      add_doc(
+                          "REVIEW_RECOMMENDED",
+                          "DOC_AUTO_MERGE_POLICY_MISSING",
+                          "README.md / README.ja.md",
+                          "README may not clearly state that auto-merge is prohibited.",
+                          "READMEのTasukeru説明に Auto merge: false / 自動マージなし を追加してください。",
+                      )
+              else:
+                  add_doc(
+                      "FIX_RECOMMENDED",
+                      "DOC_POLICY_MISSING",
+                      "README.md",
+                      "README.md / README.ja.md was not found.",
+                      "プロジェクト目的、advisory-only、安全方針、ライセンス参照を含むREADMEを追加してください。",
+                  )
+
+              if not security:
+                  add_doc(
+                      "FIX_RECOMMENDED",
+                      "DOC_SECURITY_POLICY_MISSING",
+                      "SECURITY.md",
+                      "SECURITY.md was not found.",
+                      "SECURITY.mdを追加し、攻撃手段・payload・悪用手順を公開PRコメントに載せない方針を明記してください。",
+                  )
+
+              if not license_policy:
+                  add_doc(
+                      "REVIEW_RECOMMENDED",
+                      "DOC_LICENSE_POLICY_REFERENCE_MISSING",
+                      "LICENSE_POLICY.md",
+                      "LICENSE_POLICY.md was not found.",
+                      "必要であれば、コード・文書・名称の扱いを LICENSE_POLICY.md に分離して整理してください。",
+                  )
+
+              result = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_documentation_review",
+                  "findings_count": len(entries),
+                  "counts": dict(Counter(entry["decision"] for entry in entries)),
+                  "findings": entries,
+              }
+              write_json(log_dir / "documentation-review.json", result)
+
+              with (log_dir / "documentation-review.md").open("w", encoding="utf-8") as f:
+                  f.write("### Tasukeru documentation review\n\n")
+                  f.write(f"- Findings: {len(entries)}\n")
+                  for key, count in Counter(entry["decision"] for entry in entries).items():
+                      f.write(f"- {key}: {count}\n")
+
+              return entries, result
+
+          def entries_from_ruff(raw: Any) -> list[dict[str, Any]]:
+              items = normalize_ruff_items(raw)
+              entries: list[dict[str, Any]] = []
+
+              for item in items:
+                  rule_id = str(item.get("code", "RUFF"))
+                  file = str(item.get("filename", "?"))
+                  location = item.get("location") or {}
+                  line = location.get("row") if isinstance(location, dict) else None
+                  column = location.get("column") if isinstance(location, dict) else None
+                  message = str(item.get("message", "Ruff finding"))
+
+                  if rule_id in {"F401", "F841", "I001", "W291", "W293"}:
+                      decision = "FIX_RECOMMENDED"
+                      suggestion = "不要なimport/変数/整形差分を人間が確認し、必要なら手動修正してください。"
+                  elif is_test_path(file):
+                      decision = "REVIEW_RECOMMENDED"
+                      suggestion = "テスト意図を確認し、必要なら限定的に修正またはnoqa理由を追加してください。"
+                  else:
+                      decision = "FIX_RECOMMENDED"
+                      suggestion = "Ruffの指摘箇所を確認し、仕様に影響しない範囲で手動修正してください。"
+
+                  entries.append(
+                      make_entry(
+                          source="Ruff",
+                          decision=decision,
+                          severity="LOW",
+                          category="style_or_correctness",
+                          reason_code=f"RUFF_{rule_id}",
+                          rule_id=rule_id,
+                          file=file,
+                          line=line,
+                          column=column,
+                          message=message,
+                          suggestion=suggestion,
+                          why_problematic_ja="静的解析上、可読性・保守性・軽微な正しさに関わる可能性があります。",
+                          why_fix_ja="指摘箇所を整理すると、不要な差分や将来の誤読を減らしやすくなります。",
+                          impact_ja="コードの読みやすさとCI安定性が改善することが期待されます。",
+                          confidence="MEDIUM",
+                          risk_type="lint",
+                      )
+                  )
+
+              return entries
+
+          def entries_from_bandit(raw: Any) -> list[dict[str, Any]]:
+              items = normalize_bandit_items(raw)
+              entries: list[dict[str, Any]] = []
+
+              for item in items:
+                  rule_id = str(item.get("test_id", "BANDIT"))
+                  file = str(item.get("filename", "?"))
+                  line = item.get("line_number")
+                  message = str(item.get("issue_text", "Bandit finding"))
+                  bandit_severity = str(item.get("issue_severity", "LOW")).upper()
+
+                  if rule_id == "B101" and is_test_path(file):
+                      decision = "NOISE_CANDIDATE"
+                      suggestion = "pytestのassertなら通常はそのままでよいです。必要なら限定的なnosec理由を付けてください。"
+                  elif is_superseded_historical_path(file):
+                      decision = "INFO_ONLY"
+                      suggestion = "履歴ファイルとして保持する場合は即時修正不要です。active化する場合のみ人間が確認してください。"
+                  elif bandit_severity == "HIGH":
+                      decision = "HITL_REQUIRED"
+                      suggestion = "人間が該当箇所を確認し、防御目的の範囲で安全なAPI・入力検証・権限境界を検討してください。"
+                  elif bandit_severity == "MEDIUM" and is_active_mainline_or_metadata_path(file):
+                      decision = "REVIEW_RECOMMENDED"
+                      suggestion = "active領域のため、人間が文脈を確認してください。自動修正はしないでください。"
+                  else:
+                      decision = "NOISE_CANDIDATE"
+                      suggestion = "低リスクまたは文脈依存の可能性があります。詳細はartifactで確認してください。"
+
+                  entries.append(
+                      make_entry(
+                          source="Bandit",
+                          decision=decision,
+                          severity=bandit_severity,
+                          category="security_advisory",
+                          reason_code=f"BANDIT_{rule_id}",
+                          rule_id=rule_id,
+                          file=file,
+                          line=line,
+                          message=message,
+                          suggestion=suggestion,
+                          why_problematic_ja="このパターンは実行文脈によって安全性・保守性の確認が必要になる可能性があります。",
+                          why_fix_ja="入力検証、安全なAPI利用、明示的な例外処理などに寄せることで、想定外の副作用を抑えやすくなります。",
+                          impact_ja="防御上の確認ポイントが明確になり、レビュー漏れを減らせる可能性があります。",
+                          confidence="MEDIUM",
+                          risk_type="security",
+                      )
+                  )
+
+              return entries
+
+          def entries_from_pip_audit(raw: Any) -> list[dict[str, Any]]:
+              vulns = normalize_pip_vulns(raw)
+              entries: list[dict[str, Any]] = []
+
+              for vuln in vulns:
+                  package = vuln["name"]
+                  vuln_id = vuln["id"]
+                  fixes = ", ".join(map(str, vuln.get("fix_versions") or [])) or "not specified"
+                  entries.append(
+                      make_entry(
+                          source="pip-audit",
+                          decision="FIX_RECOMMENDED",
+                          severity="MEDIUM",
+                          category="dependency_vulnerability",
+                          reason_code="PIP_AUDIT_VULNERABILITY",
+                          rule_id=str(vuln_id),
+                          file="requirements.txt / requirements-dev.txt",
+                          message=f"Dependency vulnerability found: {package} {vuln.get('version')} ({vuln_id})",
+                          suggestion=f"依存更新候補を確認してください。fix_versions: {fixes}",
+                          why_problematic_ja="依存パッケージの既知脆弱性は、利用文脈によってリスクになる可能性があります。",
+                          why_fix_ja="修正版へ更新すると、既知の問題を避けられる可能性があります。",
+                          impact_ja="依存関係リスクを下げられることが期待されます。ただし互換性テストが必要です。",
+                          confidence="MEDIUM",
+                          risk_type="dependency",
+                      )
+                  )
+
+              return entries
+
+          def assign_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+              critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
+              by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
+              for entry in critical:
+                  by_hash[entry["fingerprint_hash"]].append(entry)
+
+              incident_for_hash = {
+                  fp_hash: f"INC#{idx:06d}"
+                  for idx, fp_hash in enumerate(sorted(by_hash.keys()), start=1)
+              }
+
+              for entry in entries:
+                  fp_hash = entry["fingerprint_hash"]
+                  if fp_hash in incident_for_hash:
+                      entry["incident_id"] = incident_for_hash[fp_hash]
+                      entry["fix_verification"]["target_incident_id"] = incident_for_hash[fp_hash]
+
+              return entries
+
+          def build_notification_state(entries: list[dict[str, Any]]) -> dict[str, Any]:
+              critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
+              by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
+              for entry in critical:
+                  by_hash[entry["fingerprint_hash"]].append(entry)
+
+              incidents: list[dict[str, Any]] = []
+              for fp_hash, grouped in sorted(by_hash.items()):
+                  rep = grouped[0]
+                  incidents.append(
+                      {
+                          "incident_id": rep.get("incident_id") or "",
+                          "fingerprint_hash": fp_hash,
+                          "decision": "HITL_REQUIRED",
+                          "severity": rep.get("severity", "CRITICAL"),
+                          "reason_code": rep.get("reason_code", ""),
+                          "category": rep.get("category", ""),
+                          "count": len(grouped),
+                          "representative_file": rep.get("file", ""),
+                          "representative_line": rep.get("line"),
+                          "notification_required": True,
+                          "already_notified": False,
+                      }
+                  )
+
+              counts = Counter(entry["decision"] for entry in entries)
+              safe_autofix = sum(
+                  1 for entry in entries
+                  if entry.get("autofix", {}).get("safe_autofix_candidate")
+              )
+
+              return {
+                  "schema_version": "1.0",
+                  "notification_policy": "critical_only",
+                  "critical_decision": "HITL_REQUIRED",
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "auto_merge_allowed": False,
+                  "autofix_allowed": False,
+                  "critical_count": counts.get("HITL_REQUIRED", 0),
+                  "noncritical_count": len(entries) - counts.get("HITL_REQUIRED", 0),
+                  "noise_count": counts.get("NOISE_CANDIDATE", 0),
+                  "safe_autofix_candidate_count": safe_autofix,
+                  "documentation_review_count": sum(
+                      1 for entry in entries if entry.get("source") == "Documentation Review"
+                  ),
+                  "fix_verification_count": sum(
+                      1 for entry in entries
+                      if entry.get("fix_verification", {}).get("enabled")
+                  ),
+                  "new_critical_incident_count": len(incidents),
+                  "suppressed_duplicate_critical_incident_count": max(0, len(critical) - len(incidents)),
+                  "incidents": incidents,
+              }
+
+          def write_entry_bullet(file_obj: Any, entry: dict[str, Any]) -> None:
+              location = entry.get("file") or "repository"
+              if entry.get("line"):
+                  location = f"{location}:{entry['line']}"
+              file_obj.write(f"- **{entry['decision']}** `{entry['reason_code']}` at `{location}`\n")
+              file_obj.write(f"  - Source: {entry['source']}\n")
+              file_obj.write(f"  - Message: {one_line(entry['message'], 260)}\n")
+              file_obj.write(f"  - Suggested action: {one_line(entry['suggestion'], 260)}\n")
+              file_obj.write(f"  - Autofix policy: `{entry.get('autofix', {}).get('policy', 'AUTOFIX_BLOCKED')}`\n")
+              file_obj.write(f"  - Fingerprint: `{entry['fingerprint_hash']}`\n")
+
+          def write_outputs(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> None:
+              counts = Counter(entry["decision"] for entry in entries)
+              autofix_policy_counts = Counter(
+                  entry.get("autofix", {}).get("policy", "UNKNOWN") for entry in entries
+              )
+              safe_autofix_count = sum(
+                  1 for entry in entries
+                  if entry.get("autofix", {}).get("safe_autofix_candidate")
+              )
+
+              payload = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_hitl_decision_support",
+                  "counts": dict(counts),
+                  "metadata": metadata,
+                  "documentation_review": {
+                      "count": sum(1 for entry in entries if entry.get("source") == "Documentation Review"),
+                      "critical_count": sum(
+                          1 for entry in entries
+                          if entry.get("source") == "Documentation Review"
+                          and entry.get("decision") == "HITL_REQUIRED"
+                      ),
+                  },
+                  "autofix_policy": {
+                      "safe_autofix_candidates": safe_autofix_count,
+                      "auto_merge_allowed": False,
+                      "policy_counts": dict(autofix_policy_counts),
+                      "rule": (
+                          "SAFE_AUTOFIX_CANDIDATE is decision-support metadata only. "
+                          "No file is automatically modified. Auto-merge is prohibited."
+                      ),
+                  },
+                  "entries": entries,
+              }
+
+              write_json(hitl_json_path, payload)
+              write_json(notification_state_path, state)
+
+              priority = [entry for entry in entries if entry["decision"] in {"HITL_REQUIRED", "FIX_RECOMMENDED"}]
+              review_entries = [entry for entry in entries if entry["decision"] == "REVIEW_RECOMMENDED"]
+              noise_entries = [entry for entry in entries if entry["decision"] == "NOISE_CANDIDATE"]
+              info_entries = [entry for entry in entries if entry["decision"] == "INFO_ONLY"]
+
+              with hitl_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru HITL review\n\n")
+                  f.write("This report is advisory-only. It does not create branches, create PRs, commit, push, auto-fix, or auto-merge.\n\n")
+
+                  f.write("## Counts\n\n")
+                  for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
+                      f.write(f"- {level}: {counts.get(level, 0)}\n")
+
+                  f.write("\n## Automation policy\n\n")
+                  f.write("- Auto branch creation: false\n")
+                  f.write("- Auto PR creation: false\n")
+                  f.write("- Auto commit: false\n")
+                  f.write("- Auto push: false\n")
+                  f.write("- Auto fix: false\n")
+                  f.write("- Auto merge: false\n")
+                  f.write("- Human decision required: true\n\n")
+
+                  f.write("## Autofix policy\n\n")
+                  f.write(f"- SAFE_AUTOFIX_CANDIDATE: {safe_autofix_count}\n")
+                  f.write("- Auto fix: false\n")
+                  f.write("- Auto merge: false\n")
+                  f.write("- Rule: safe candidates are manual decision-support metadata only.\n\n")
+
+                  f.write("## Priority review queue\n\n")
+                  if priority:
+                      for entry in priority[:80]:
+                          write_entry_bullet(f, entry)
+                  else:
+                      f.write("No HITL_REQUIRED or FIX_RECOMMENDED entries.\n")
                   f.write("\n")
 
-              f.write("</details>\n\n")
+              with summary_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru advisory summary\n\n")
+                  f.write(f"- Ruff findings: {metadata['ruff_count']}\n")
+                  f.write(f"- Bandit findings: {metadata['bandit_count']}\n")
+                  f.write(f"- pip-audit vulnerabilities: {metadata['pip_count']}\n")
+                  f.write(f"- Tasukeru logic review findings: {metadata['logic_count']}\n")
+                  f.write(f"- Documentation review findings: {metadata['documentation_count']}\n\n")
 
-          def write_compact_step_summary(
-              path: Path,
-              *,
-              ruff_count: int,
-              bandit_advisory_count: int,
-              pip_count: int,
-              logic_count: int,
-              logic_critical: int,
-              hitl_counts: Counter[str],
-              hitl_entries: list[dict[str, Any]],
-          ) -> None:
-              priority = [
-                  entry
-                  for entry in hitl_entries
-                  if entry["level"] in {"HITL_REQUIRED", "FIX_RECOMMENDED"}
-              ]
+                  f.write("## HITL decision support\n\n")
+                  for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
+                      f.write(f"- {level}: {counts.get(level, 0)}\n")
 
-              review_entries = [
-                  entry
-                  for entry in hitl_entries
-                  if entry["level"] == "REVIEW_RECOMMENDED"
-              ]
+                  f.write("\n## Critical notifications\n\n")
+                  f.write(f"- New critical incidents: {state['new_critical_incident_count']}\n")
+                  f.write(f"- Suppressed duplicate critical incidents: {state['suppressed_duplicate_critical_incident_count']}\n\n")
 
-              historical_entries = [
-                  entry
-                  for entry in hitl_entries
-                  if (
-                      entry["level"] == "INFO_ONLY"
-                      and "historical" in str(entry.get("reason", "")).lower()
-                  )
-              ]
+                  f.write("## Automation policy\n\n")
+                  f.write("- Auto branch creation: false\n")
+                  f.write("- Auto PR creation: false\n")
+                  f.write("- Auto commit: false\n")
+                  f.write("- Auto push: false\n")
+                  f.write("- Auto fix: false\n")
+                  f.write("- Auto merge: false\n\n")
 
-              noise_entries = [
-                  entry
-                  for entry in hitl_entries
-                  if entry["level"] == "NOISE_CANDIDATE"
-              ]
+                  f.write("## Security output policy\n\n")
+                  f.write("- Public PR comments must not include exploit payloads.\n")
+                  f.write("- Public PR comments must not include attack steps.\n")
+                  f.write("- Public PR comments must focus on detection and safe remediation.\n\n")
 
-              info_entries = [
-                  entry
-                  for entry in hitl_entries
-                  if (
-                      entry["level"] == "INFO_ONLY"
-                      and entry not in historical_entries
-                  )
-              ]
+                  f.write("## Detailed artifacts\n\n")
+                  f.write("- `tasukeru_hitl_review.md`\n")
+                  f.write("- `tasukeru_hitl_review.json`\n")
+                  f.write("- `tasukeru_advisory_summary.md`\n")
+                  f.write("- `tasukeru_notification_state.json`\n")
+                  f.write("- `tasukeru_pr_comment.md`\n")
+                  f.write("- `tasukeru_logs/`\n\n")
 
-              with path.open("a", encoding="utf-8") as out:
-                  out.write("# Tasukeru advisory summary\n\n")
-                  out.write(f"- Ruff findings: {ruff_count}\n")
-                  out.write(f"- Bandit LOW/MEDIUM findings: {bandit_advisory_count}\n")
-                  out.write(f"- pip-audit vulnerabilities: {pip_count}\n")
-                  out.write(f"- Tasukeru logic review findings: {logic_count}\n")
-                  out.write(f"- Tasukeru critical advisories: {logic_critical}\n\n")
+                  def collapsible(title: str, data: list[dict[str, Any]], limit: int = 30) -> None:
+                      f.write(f"<details>\n<summary>{title}</summary>\n\n")
+                      if not data:
+                          f.write("No entries.\n\n")
+                      else:
+                          for entry in data[:limit]:
+                              write_entry_bullet(f, entry)
+                          if len(data) > limit:
+                              f.write(f"\n... and {len(data) - limit} more entries in `tasukeru_hitl_review.json`.\n")
+                          f.write("\n")
+                      f.write("</details>\n\n")
 
-                  out.write("## HITL decision support\n\n")
-                  out.write("- HITL_REQUIRED: ")
-                  out.write(f"{hitl_counts.get('HITL_REQUIRED', 0)}\n")
-                  out.write("- FIX_RECOMMENDED: ")
-                  out.write(f"{hitl_counts.get('FIX_RECOMMENDED', 0)}\n")
-                  out.write("- REVIEW_RECOMMENDED: ")
-                  out.write(f"{hitl_counts.get('REVIEW_RECOMMENDED', 0)}\n")
-                  out.write("- NOISE_CANDIDATE: ")
-                  out.write(f"{hitl_counts.get('NOISE_CANDIDATE', 0)}\n")
-                  out.write("- INFO_ONLY: ")
-                  out.write(f"{hitl_counts.get('INFO_ONLY', 0)}\n\n")
+                  collapsible(f"REVIEW_RECOMMENDED details ({len(review_entries)})", review_entries, 50)
+                  collapsible(f"NOISE_CANDIDATE sample ({len(noise_entries)})", noise_entries, 20)
+                  collapsible(f"INFO_ONLY details ({len(info_entries)})", info_entries, 20)
 
-                  out.write("## Priority review queue\n\n")
-                  if priority:
-                      for entry in priority[:10]:
-                          write_entry_bullet(out, entry)
-                      if len(priority) > 10:
-                          out.write(
-                              f"\n... and {len(priority) - 10} more priority entries.\n"
-                          )
-                      out.write("\n")
-                  else:
-                      out.write("No HITL_REQUIRED or FIX_RECOMMENDED entries.\n\n")
+              with pr_comment_path.open("w", encoding="utf-8") as f:
+                  critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
+                  if not critical:
+                      f.write("<!-- tasukeru-analysis:no-critical -->\n")
+                      f.write("No HITL_REQUIRED incidents. No PR comment should be posted.\n")
+                      return
 
-                  out.write("## Expandable details\n\n")
+                  first = critical[0]
+                  f.write(f"<!-- tasukeru-analysis:critical fingerprint_hash={first['fingerprint_hash']} incident_id={first.get('incident_id') or ''} -->\n\n")
+                  f.write("## Tasukeru Analysis: 重大確認が必要です\n\n")
+                  f.write("### 判定\n\nHITL_REQUIRED\n\n")
+                  f.write("### 何が変わったか\n\n")
+                  f.write("このPRで、Tasukeru Analysis が重大確認対象の変更を検出しました。\n")
+                  f.write("単なるツール警告ではなく、HITLロジック、安全不変条件、主要ワークフロー、または公開文書方針に影響する可能性があります。\n\n")
+                  f.write("### 対象\n\n")
+                  f.write(f"- Incident: `{first.get('incident_id') or ''}`\n")
+                  f.write(f"- Reason code: `{first['reason_code']}`\n")
+                  f.write(f"- Category: `{first['category']}`\n")
+                  f.write(f"- File: `{first['file']}`\n")
+                  f.write(f"- Line: `{first.get('line') or ''}`\n")
+                  f.write(f"- Fingerprint: `{first['fingerprint_hash']}`\n\n")
+                  f.write("### エビデンス\n\n")
+                  f.write(f"- Source: `{first['evidence'].get('source')}`\n")
+                  f.write(f"- Rule: `{first['evidence'].get('rule_id')}`\n")
+                  f.write(f"- Artifact: `{first['evidence'].get('artifact')}`\n\n")
+                  f.write("### 問題\n\n")
+                  f.write(f"{first['message']}\n\n")
+                  f.write("### なぜ問題か\n\n")
+                  f.write(f"{first['explanation']['why_problematic_ja']}\n\n")
+                  f.write("### 推奨対応\n\n")
+                  f.write("- 該当箇所を人間が確認してください。\n")
+                  f.write("- 自動修正・自動PR作成・自動マージは行わないでください。\n")
+                  f.write("- 公開PRコメントには攻撃手段・悪用手順・payload は載せません。\n\n")
+                  f.write("### なぜこの修正案か\n\n")
+                  f.write(f"{first['explanation']['why_fix_ja']}\n\n")
+                  f.write("### 修正効果予測\n\n")
+                  f.write(f"{first['fix_prediction']['expected_effect_ja']}\n\n")
+                  f.write("注意: この効果は予測であり、最終確認には人間レビューとテストが必要です。\n\n")
+                  f.write("### 自動化制限\n\n")
+                  f.write("- Auto branch creation: `false`\n")
+                  f.write("- Auto PR creation: `false`\n")
+                  f.write("- Auto commit: `false`\n")
+                  f.write("- Auto push: `false`\n")
+                  f.write("- Auto fix: `false`\n")
+                  f.write("- Auto merge: `false`\n")
+                  f.write("- Human decision required: `true`\n\n")
+                  f.write("<details>\n<summary>English details</summary>\n\n")
+                  f.write("## Tasukeru Analysis: Critical review required\n\n")
+                  f.write("This PR introduced a change that may affect HITL logic, safety invariants, the review workflow, or public documentation policy.\n\n")
+                  f.write("Please review the affected file manually. Do not auto-fix, auto-create a PR, or auto-merge this change.\n\n")
+                  f.write("Security details are intentionally limited to defensive review and safe remediation guidance. Exploit payloads, attack steps, and offensive reproduction instructions must not be included in public PR comments.\n\n")
+                  f.write("Fix impact predictions are not guarantees. Human review and tests are still required.\n\n")
+                  f.write("</details>\n")
 
-                  write_collapsible_entries(
-                      out,
-                      title=f"REVIEW_RECOMMENDED details ({len(review_entries)})",
-                      entries=review_entries,
-                      limit=50,
-                      opened=False,
-                  )
+              github_summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
+              if github_summary:
+                  with Path(github_summary).open("a", encoding="utf-8") as out:
+                      out.write(summary_path.read_text(encoding="utf-8"))
 
-                  write_collapsible_entries(
-                      out,
-                      title=f"Historical version warnings ({len(historical_entries)})",
-                      entries=historical_entries,
-                      limit=50,
-                      opened=False,
-                  )
+          ruff_raw = read_json(log_dir / "ruff.json", [])
+          bandit_raw = read_json(log_dir / "bandit.json", {})
+          pip_raw = read_json(log_dir / "pip-audit.json", {})
 
-                  write_collapsible_entries(
-                      out,
-                      title=f"NOISE_CANDIDATE sample ({len(noise_entries)})",
-                      entries=noise_entries,
-                      limit=20,
-                      opened=False,
-                  )
+          ruff_entries = entries_from_ruff(ruff_raw)
+          bandit_entries = entries_from_bandit(bandit_raw)
+          pip_entries = entries_from_pip_audit(pip_raw)
+          logic_entries, _logic_result = run_logic_review()
+          doc_entries, _doc_result = run_documentation_review()
 
-                  if info_entries:
-                      write_collapsible_entries(
-                          out,
-                          title=f"INFO_ONLY details ({len(info_entries)})",
-                          entries=info_entries,
-                          limit=20,
-                          opened=False,
-                      )
+          all_entries = ruff_entries + bandit_entries + pip_entries + logic_entries + doc_entries
+          all_entries = assign_incidents(all_entries)
+          notification_state = build_notification_state(all_entries)
 
-                  out.write("## Detailed artifacts\n\n")
-                  out.write("- `tasukeru_advisory_summary.md`\n")
-                  out.write("- `tasukeru_hitl_review.md`\n")
-                  out.write("- `tasukeru_hitl_review.json`\n\n")
-                  out.write(
-                      "Detailed guidance is uploaded as workflow artifacts. "
-                      "The GitHub step summary keeps the main view compact and "
-                      "uses collapsible sections for optional detail review.\n"
-                  )
-
-          ruff_exit = read_exit("ruff.exit")
-          bandit_exit = read_exit("bandit.exit")
-          pip_exit = read_exit("pip-audit.exit")
-
-          ruff_items = normalize_ruff_items(read_json(log_dir / "ruff.json", []))
-          bandit_items = normalize_bandit_items(read_json(log_dir / "bandit.json", {}))
-          pip_vulns = normalize_pip_vulns(read_json(log_dir / "pip-audit.json", {}))
-          logic_review = read_json(log_dir / "logic-review.json", {})
-
-          bandit_advisory_results = [
-              item
-              for item in bandit_items
-              if str(item.get("issue_severity", "")).upper() in {"LOW", "MEDIUM"}
-          ]
-
-          ruff_count = len(ruff_items)
-          bandit_advisory_count = len(bandit_advisory_results)
-          pip_count = len(pip_vulns)
-
-          logic_findings = (
-              logic_review.get("findings", [])
-              if isinstance(logic_review, dict)
-              else []
-          )
-          logic_count = len(logic_findings) if isinstance(logic_findings, list) else 0
-          logic_severity_counts = (
-              logic_review.get("severity_counts", {})
-              if isinstance(logic_review, dict)
-              else {}
-          )
-          logic_critical = (
-              int(logic_severity_counts.get("CRITICAL_ADVISORY", 0))
-              if isinstance(logic_severity_counts, dict)
-              else 0
-          )
-
-          ruff_by_file = Counter(str(item.get("filename", "?")) for item in ruff_items)
-          bandit_by_file = Counter(
-              str(item.get("filename", "?")) for item in bandit_advisory_results
-          )
-
-          hitl_entries: list[dict[str, Any]] = []
-
-          for item in ruff_items:
-              cls = classify_ruff(item)
-              loc = item.get("location") or {}
-              add_hitl_entry(
-                  hitl_entries,
-                  source="Ruff",
-                  level=cls["level"],
-                  file=str(item.get("filename", "?")),
-                  line=loc.get("row", 1),
-                  code=str(item.get("code", "RUFF")),
-                  message=str(item.get("message", "")),
-                  reason=cls["reason"],
-                  suggestion=cls["suggestion"],
-              )
-
-          for item in bandit_advisory_results:
-              cls = classify_bandit(item)
-              add_hitl_entry(
-                  hitl_entries,
-                  source="Bandit",
-                  level=cls["level"],
-                  file=str(item.get("filename", "?")),
-                  line=item.get("line_number", 1),
-                  code=str(item.get("test_id", "BANDIT")),
-                  message=str(item.get("issue_text", "")),
-                  reason=cls["reason"],
-                  suggestion=cls["suggestion"],
-              )
-
-          for row in pip_vulns:
-              cls = classify_pip_vuln(row)
-              add_hitl_entry(
-                  hitl_entries,
-                  source="pip-audit",
-                  level=cls["level"],
-                  file=str(row.get("name", "?")),
-                  line="-",
-                  code=str(row.get("id", "PIP_AUDIT")),
-                  message=f"{row.get('name', '?')}=={row.get('version', '?')}",
-                  reason=cls["reason"],
-                  suggestion=cls["suggestion"],
-              )
-
-          if isinstance(logic_findings, list):
-              for item in logic_findings:
-                  if not isinstance(item, dict):
-                      continue
-                  cls = classify_logic(item)
-                  add_hitl_entry(
-                      hitl_entries,
-                      source="Tasukeru logic review",
-                      level=cls["level"],
-                      file=str(item.get("path", "repository") or "repository"),
-                      line=item.get("line") or "-",
-                      code=str(item.get("code", "LOGIC_REVIEW")),
-                      message=str(item.get("message", "")),
-                      reason=cls["reason"],
-                      suggestion=cls["suggestion"],
-                  )
-
-          hitl_entries = sorted(hitl_entries, key=level_sort_key)
-          hitl_counts = Counter(str(item["level"]) for item in hitl_entries)
-
-          hitl_payload = {
-              "schema_version": "1.0",
-              "tool": "tasukeru_hitl_decision_support",
-              "counts": dict(hitl_counts),
-              "entries": hitl_entries,
+          metadata = {
+              "ruff_count": len(ruff_entries),
+              "bandit_count": len(bandit_entries),
+              "pip_count": len(pip_entries),
+              "logic_count": len(logic_entries),
+              "documentation_count": len(doc_entries),
+              "ruff_exit": read_exit("ruff.exit"),
+              "bandit_exit": read_exit("bandit.exit"),
+              "pip_audit_exit": read_exit("pip-audit.exit"),
           }
 
-          hitl_json_path.write_text(
-              json.dumps(hitl_payload, ensure_ascii=False, indent=2) + "\n",
-              encoding="utf-8",
-          )
-
-          with hitl_md_path.open("w", encoding="utf-8") as f:
-              f.write("# Tasukeru HITL decision support\n\n")
-              f.write(
-                  "This report separates likely noise from findings that should be "
-                  "reviewed or fixed by a human maintainer.\n\n"
-              )
-              f.write("## Levels\n\n")
-              f.write("- `HITL_REQUIRED`: human review is recommended before merge.\n")
-              f.write("- `FIX_RECOMMENDED`: a concrete fix is likely appropriate.\n")
-              f.write("- `REVIEW_RECOMMENDED`: review the context before deciding.\n")
-              f.write("- `NOISE_CANDIDATE`: likely acceptable in tests, demos, or research simulations.\n")
-              f.write("- `INFO_ONLY`: informational finding, including historical-version warnings.\n\n")
-
-              f.write("## Counts\n\n")
-              for level in (
-                  "HITL_REQUIRED",
-                  "FIX_RECOMMENDED",
-                  "REVIEW_RECOMMENDED",
-                  "NOISE_CANDIDATE",
-                  "INFO_ONLY",
-              ):
-                  f.write(f"- {level}: {hitl_counts.get(level, 0)}\n")
-              f.write("\n")
-
-              if hitl_entries:
-                  f.write("## Review queue\n\n")
-                  for entry in hitl_entries[:80]:
-                      write_entry_bullet(f, entry)
-                  if len(hitl_entries) > 80:
-                      f.write(
-                          f"\nOnly the first 80 entries are shown. "
-                          f"{len(hitl_entries) - 80} additional entries are in "
-                          "`tasukeru_hitl_review.json`.\n"
-                      )
-                  f.write("\n")
-
-                  f.write("## Detailed repair guidance\n\n")
-                  for entry in hitl_entries[:25]:
-                      f.write(
-                          f"### {entry['level']}: {entry['code']} "
-                          f"at `{entry['file']}:{entry['line']}`\n\n"
-                      )
-                      f.write(f"- Source: {entry['source']}\n")
-                      f.write(f"- Issue: {entry['message']}\n")
-                      f.write(f"- Reason: {entry['reason']}\n")
-                      f.write(f"- Suggested fix: {entry['suggestion']}\n\n")
-              else:
-                  f.write("No HITL decision support entries were generated.\n\n")
-
-          with summary_path.open("w", encoding="utf-8") as f:
-              f.write("# Tasukeru advisory summary\n\n")
-              f.write(f"- Ruff findings: {ruff_count}\n")
-              f.write(f"- Bandit LOW/MEDIUM findings: {bandit_advisory_count}\n")
-              f.write(f"- pip-audit vulnerabilities: {pip_count}\n")
-              f.write(f"- Tasukeru logic review findings: {logic_count}\n")
-              f.write(f"- Tasukeru critical advisories: {logic_critical}\n\n")
-
-              f.write("## HITL decision support\n\n")
-              f.write(
-                  "This section separates likely noise from findings that should be "
-                  "reviewed or fixed. It is advisory by default and does not fail "
-                  "the workflow.\n\n"
-              )
-              f.write(f"- HITL_REQUIRED: {hitl_counts.get('HITL_REQUIRED', 0)}\n")
-              f.write(f"- FIX_RECOMMENDED: {hitl_counts.get('FIX_RECOMMENDED', 0)}\n")
-              f.write(f"- REVIEW_RECOMMENDED: {hitl_counts.get('REVIEW_RECOMMENDED', 0)}\n")
-              f.write(f"- NOISE_CANDIDATE: {hitl_counts.get('NOISE_CANDIDATE', 0)}\n")
-              f.write(f"- INFO_ONLY: {hitl_counts.get('INFO_ONLY', 0)}\n\n")
-              f.write(
-                  "Detailed repair guidance is available in "
-                  "`tasukeru_hitl_review.md` and machine-readable entries are "
-                  "available in `tasukeru_hitl_review.json`.\n\n"
-              )
-
-              if hitl_entries:
-                  f.write("### Priority review queue preview\n\n")
-                  priority = [
-                      entry
-                      for entry in hitl_entries
-                      if entry["level"] in {"HITL_REQUIRED", "FIX_RECOMMENDED"}
-                  ]
-                  if priority:
-                      for entry in priority[:20]:
-                          write_entry_bullet(f, entry)
-                      if len(priority) > 20:
-                          f.write(f"\n... and {len(priority) - 20} more priority entries.\n")
-                      f.write("\n")
-                  else:
-                      f.write("No HITL_REQUIRED or FIX_RECOMMENDED entries.\n\n")
-
-              if ruff_count:
-                  f.write("### Ruff: top files\n\n")
-                  for filename, count in ruff_by_file.most_common(10):
-                      f.write(f"- `{filename}`: {count}\n")
-                  f.write("\n")
-
-                  f.write("### Ruff: first findings\n\n")
-                  for item in ruff_items[:20]:
-                      loc = item.get("location") or {}
-                      f.write(
-                          f"- `{item.get('filename','?')}:{loc.get('row',1)}` "
-                          f"[{item.get('code','RUFF')}] {item.get('message','')}\n"
-                      )
-                  f.write("\n")
-
-              if bandit_advisory_count:
-                  f.write("### Bandit LOW/MEDIUM: top files\n\n")
-                  for filename, count in bandit_by_file.most_common(10):
-                      f.write(f"- `{filename}`: {count}\n")
-                  f.write("\n")
-
-                  f.write("### Bandit LOW/MEDIUM: first findings\n\n")
-                  for item in bandit_advisory_results[:20]:
-                      f.write(
-                          f"- `{item.get('filename','?')}:{item.get('line_number',1)}` "
-                          f"[{item.get('test_id','BANDIT')}] {item.get('issue_text','')}\n"
-                      )
-                  f.write("\n")
-
-              if pip_count:
-                  f.write("### pip-audit findings\n\n")
-                  for row in pip_vulns[:20]:
-                      fixes = ", ".join(row["fix_versions"]) if row["fix_versions"] else "none"
-                      f.write(
-                          f"- `{row['name']}=={row['version']}`: `{row['id']}` / fix: {fixes}\n"
-                      )
-                  if len(pip_vulns) > 20:
-                      f.write(f"- ... and {len(pip_vulns) - 20} more\n")
-                  f.write("\n")
-
-              logic_md = read_text(log_dir / "logic-review.md").strip()
-              if logic_md:
-                  f.write(logic_md)
-                  f.write("\n")
-
-              if ruff_exit > 1:
-                  f.write("### Ruff execution error\n\n")
-                  f.write(f"- exit code: {ruff_exit}\n\n")
-                  stderr = read_text(log_dir / "ruff.stderr").strip()
-                  if stderr:
-                      f.write("```text\n")
-                      f.write(stderr[:4000])
-                      f.write("\n```\n\n")
-
-              if bandit_exit > 1:
-                  f.write("### Bandit execution error\n\n")
-                  f.write(f"- exit code: {bandit_exit}\n\n")
-                  stderr = read_text(log_dir / "bandit.stderr").strip()
-                  if stderr:
-                      f.write("```text\n")
-                      f.write(stderr[:4000])
-                      f.write("\n```\n\n")
-
-              if pip_exit > 1 and pip_count == 0:
-                  f.write("### pip-audit execution error\n\n")
-                  f.write(f"- exit code: {pip_exit}\n\n")
-                  stderr = read_text(log_dir / "pip-audit.stderr").strip()
-                  if stderr:
-                      f.write("```text\n")
-                      f.write(stderr[:4000])
-                      f.write("\n```\n\n")
-
-          github_summary_value = os.environ.get("GITHUB_STEP_SUMMARY", "")
-          if github_summary_value:
-              write_compact_step_summary(
-                  Path(github_summary_value),
-                  ruff_count=ruff_count,
-                  bandit_advisory_count=bandit_advisory_count,
-                  pip_count=pip_count,
-                  logic_count=logic_count,
-                  logic_critical=logic_critical,
-                  hitl_counts=hitl_counts,
-                  hitl_entries=hitl_entries,
-              )
+          write_outputs(all_entries, notification_state, metadata)
 
           print("# Tasukeru advisory summary")
-          print(f"Ruff findings: {ruff_count}")
-          print(f"Bandit LOW/MEDIUM findings: {bandit_advisory_count}")
-          print(f"pip-audit vulnerabilities: {pip_count}")
-          print(f"Tasukeru logic review findings: {logic_count}")
-          print(f"Tasukeru critical advisories: {logic_critical}")
+          print(f"Ruff findings: {metadata['ruff_count']}")
+          print(f"Bandit findings: {metadata['bandit_count']}")
+          print(f"pip-audit vulnerabilities: {metadata['pip_count']}")
+          print(f"Tasukeru logic review findings: {metadata['logic_count']}")
+          print(f"Documentation review findings: {metadata['documentation_count']}")
           print("")
+          counts = Counter(entry["decision"] for entry in all_entries)
           print("HITL decision support")
-          print(f"HITL_REQUIRED: {hitl_counts.get('HITL_REQUIRED', 0)}")
-          print(f"FIX_RECOMMENDED: {hitl_counts.get('FIX_RECOMMENDED', 0)}")
-          print(f"REVIEW_RECOMMENDED: {hitl_counts.get('REVIEW_RECOMMENDED', 0)}")
-          print(f"NOISE_CANDIDATE: {hitl_counts.get('NOISE_CANDIDATE', 0)}")
-          print(f"INFO_ONLY: {hitl_counts.get('INFO_ONLY', 0)}")
+          for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
+              print(f"{level}: {counts.get(level, 0)}")
           print("")
-          print("Detailed artifacts written:")
-          print("- tasukeru_advisory_summary.md")
-          print("- tasukeru_hitl_review.md")
-          print("- tasukeru_hitl_review.json")
+          print("Automation policy")
+          print("Auto branch creation: false")
+          print("Auto PR creation: false")
+          print("Auto commit: false")
+          print("Auto push: false")
+          print("Auto fix: false")
+          print("Auto merge: false")
+          PY
+
+      - name: Post critical PR comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+          from typing import Any
+
+          state_path = Path("tasukeru_notification_state.json")
+          review_path = Path("tasukeru_hitl_review.json")
+
+          if not state_path.exists() or not review_path.exists():
+              print("Tasukeru notification state or review JSON not found; skipping comment.")
+              raise SystemExit(0)
+
+          event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+          token = os.environ.get("GITHUB_TOKEN", "")
+          repo_name = os.environ.get("GITHUB_REPOSITORY", "")
+
+          if not event_path or not token or not repo_name:
+              print("Missing GitHub event/token/repository context; skipping comment.")
+              raise SystemExit(0)
+
+          event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+          pull_request = event.get("pull_request")
+          if not isinstance(pull_request, dict):
+              print("No pull_request context; skipping comment.")
+              raise SystemExit(0)
+
+          pr_number = pull_request.get("number")
+          owner, repo = repo_name.split("/", 1)
+
+          state = json.loads(state_path.read_text(encoding="utf-8"))
+          review = json.loads(review_path.read_text(encoding="utf-8"))
+
+          entries_by_fp: dict[str, dict[str, Any]] = {}
+          for entry in review.get("entries", []):
+              if not isinstance(entry, dict):
+                  continue
+              fp_hash = str(entry.get("fingerprint_hash", ""))
+              if fp_hash and entry.get("decision") == "HITL_REQUIRED":
+                  entries_by_fp.setdefault(fp_hash, entry)
+
+          incidents = [
+              incident for incident in state.get("incidents", [])
+              if incident.get("notification_required")
+          ]
+
+          if not incidents:
+              print("No HITL_REQUIRED incidents; no PR comment posted.")
+              raise SystemExit(0)
+
+          api_root = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
+
+          def request_json(method: str, url: str, payload: dict[str, Any] | None = None) -> Any:
+              data = None
+              if payload is not None:
+                  data = json.dumps(payload).encode("utf-8")
+              req = urllib.request.Request(
+                  url,
+                  data=data,
+                  method=method,
+                  headers={
+                      "Authorization": f"Bearer {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "Content-Type": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  body = response.read().decode("utf-8")
+                  if not body:
+                      return None
+                  return json.loads(body)
+
+          try:
+              existing_comments = request_json("GET", api_root)
+          except urllib.error.HTTPError as err:
+              print(f"Could not list PR comments: HTTP {err.code}. Skipping comment.")
+              raise SystemExit(0)
+
+          existing_bodies = [
+              str(comment.get("body", ""))
+              for comment in existing_comments
+              if isinstance(comment, dict)
+          ]
+
+          def already_has_marker(fp_hash: str) -> bool:
+              marker = f"tasukeru-analysis:critical fingerprint_hash={fp_hash}"
+              return any(marker in body for body in existing_bodies)
+
+          def render_comment(entry: dict[str, Any], incident: dict[str, Any]) -> str:
+              fp_hash = str(entry.get("fingerprint_hash", ""))
+              incident_id = str(incident.get("incident_id", entry.get("incident_id", "")))
+              evidence = entry.get("evidence", {})
+              explanation = entry.get("explanation", {})
+              prediction = entry.get("fix_prediction", {})
+
+              return f"""<!-- tasukeru-analysis:critical fingerprint_hash={fp_hash} incident_id={incident_id} -->
+
+          ## Tasukeru Analysis: 重大確認が必要です
+
+          ### 判定
+
+          HITL_REQUIRED
+
+          ### 何が変わったか
+
+          このPRで、Tasukeru Analysis が重大確認対象の変更を検出しました。
+          HITLロジック、安全不変条件、主要ワークフロー、または公開文書方針に影響する可能性があります。
+
+          ### 対象
+
+          - Incident: `{incident_id}`
+          - Reason code: `{entry.get("reason_code", "")}`
+          - Category: `{entry.get("category", "")}`
+          - File: `{entry.get("file", "")}`
+          - Line: `{entry.get("line") or ""}`
+          - Fingerprint: `{fp_hash}`
+
+          ### エビデンス
+
+          - Source: `{evidence.get("source", entry.get("source", ""))}`
+          - Rule: `{evidence.get("rule_id", entry.get("rule_id", ""))}`
+          - Artifact: `{evidence.get("artifact", "")}`
+
+          ### 問題
+
+          {entry.get("message", "")}
+
+          ### なぜ問題か
+
+          {explanation.get("why_problematic_ja", "人間確認が必要です。")}
+
+          ### 推奨対応
+
+          - 該当箇所を人間が確認してください。
+          - 自動修正・自動PR作成・自動マージは行わないでください。
+          - 公開PRコメントには攻撃手段・悪用手順・payload は載せません。
+
+          ### なぜこの修正案か
+
+          {explanation.get("why_fix_ja", "安全側の判断を維持するためです。")}
+
+          ### 修正効果予測
+
+          {prediction.get("expected_effect_ja", "修正によりリスク低減が期待されます。")}
+
+          注意: この効果は予測であり、最終確認には人間レビューとテストが必要です。
+
+          ### 自動化制限
+
+          - Auto branch creation: `false`
+          - Auto PR creation: `false`
+          - Auto commit: `false`
+          - Auto push: `false`
+          - Auto fix: `false`
+          - Auto merge: `false`
+          - Human decision required: `true`
+
+          <details>
+          <summary>English details</summary>
+
+          ## Tasukeru Analysis: Critical review required
+
+          This PR introduced a change that may affect HITL logic, safety invariants, the review workflow, or public documentation policy.
+
+          Please review the affected file manually. Do not auto-fix, auto-create a PR, or auto-merge this change.
+
+          Security details are intentionally limited to defensive review and safe remediation guidance.
+          Exploit payloads, attack steps, and offensive reproduction instructions must not be included in public PR comments.
+
+          Fix impact predictions are not guarantees. Human review and tests are still required.
+
+          </details>
+          """
+
+          posted = 0
+          for incident in incidents:
+              fp_hash = str(incident.get("fingerprint_hash", ""))
+              if not fp_hash:
+                  continue
+
+              if already_has_marker(fp_hash):
+                  incident["already_notified"] = True
+                  print(f"Duplicate critical incident already commented: {fp_hash}")
+                  continue
+
+              entry = entries_by_fp.get(fp_hash)
+              if not entry:
+                  print(f"No representative entry for incident fingerprint: {fp_hash}")
+                  continue
+
+              try:
+                  request_json("POST", api_root, {"body": render_comment(entry, incident)})
+              except urllib.error.HTTPError as err:
+                  print(f"Could not post PR comment for {fp_hash}: HTTP {err.code}.")
+                  continue
+
+              incident["already_notified"] = False
+              posted += 1
+              print(f"Posted critical PR comment for {fp_hash}")
+
+          state["incidents"] = incidents
+          state_path.write_text(
+              json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(f"Posted comments: {posted}")
           PY
 
       - name: Upload advisory logs
@@ -1518,12 +1592,13 @@ jobs:
             tasukeru_advisory_summary.md
             tasukeru_hitl_review.md
             tasukeru_hitl_review.json
+            tasukeru_notification_state.json
+            tasukeru_pr_comment.md
           if-no-files-found: ignore
 
       - name: Complete advisory phase
         if: always()
-        shell: bash
         run: |
           set -euo pipefail
-          echo "workflow syntax block is present"
-          echo "Advisory analysis completed"
+          echo "Tasukeru advisory analysis completed."
+          echo "No branch, PR, commit, push, auto-fix, or auto-merge was performed."
