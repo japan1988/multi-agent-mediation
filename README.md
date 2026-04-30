@@ -1,4 +1,4 @@
-content = """# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
+ 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
 > Japanese: [README.ja.md](README.ja.md)
 
