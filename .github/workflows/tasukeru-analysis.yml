@@ -304,9 +304,68 @@ jobs:
                   or normalized.endswith("_test.py")
               )
 
-          def is_active_mainline_or_metadata_path(path: str) -> bool:
+          def is_workflow_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              return normalized.startswith(".github/workflows/")
+
+
+          def is_documentation_or_policy_path(path: str) -> bool:
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
+              protected_names = {
+                  "readme.md",
+                  "readme.ja.md",
+                  "security.md",
+                  "license",
+                  "license_policy.md",
+                  "contributing.md",
+                  "code_of_conduct.md",
+                  "notice",
+                  "trademarks.md",
+                  "pull_request_template.md",
+              }
+              return (
+                  normalized.startswith("docs/")
+                  or normalized.startswith(".github/issue_template/")
+                  or name in protected_names
+                  or name.startswith("readme")
+                  or name.startswith("license")
+              )
+
+
+          def is_safety_or_hitl_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              safety_markers = (
+                  "tasukeru",
+                  "kage",
+                  "orchestrator",
+                  "mediation",
+                  "hitl",
+                  "rfl",
+                  "arl",
+                  "ethics",
+                  "acc",
+                  "checkpoint",
+                  "audit",
+                  "codebook",
+                  "emergency_contract",
+                  "task_contract",
+              )
+              return any(marker in name or marker in normalized for marker in safety_markers)
+
+
+          def is_active_mainline_or_metadata_path(path: str) -> bool:
+              """Return True for paths that must not be treated as inactive history.
+
+              Priority rule:
+              active mainline / tests / workflows / docs / metadata / safety invariant /
+              HITL logic are protected before historical-version heuristics are applied.
+              """
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              parts = normalized.split("/")
+
               active_names = {
                   "readme.md",
                   "readme.ja.md",
@@ -326,16 +385,38 @@ jobs:
                   "mediation_emergency_contract_sim_v5_1_2.py",
                   "ai_doc_orchestrator_with_mediator_v1_0.py",
               }
+
               if name in active_names:
                   return True
-              if normalized.startswith((".github/workflows/", "tests/", "docs/")):
+              if "tests" in parts or is_test_path(path):
+                  return True
+              if is_workflow_path(path):
+                  return True
+              if is_documentation_or_policy_path(path):
+                  return True
+              if normalized.startswith(("log_codebook", ".github/")):
+                  return True
+              if is_safety_or_hitl_path(path):
                   return True
               return False
 
           def is_superseded_historical_path(path: str) -> bool:
+              """Return True only for inactive historical/versioned files.
+
+              Protected paths are checked first so tests/workflows/docs/mainline files are
+              never downgraded to INFO_ONLY simply because their names contain v1/v2/etc.
+              """
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
-              active_markers = ("v5_1_2", "v1_3_5")
+              parts = normalized.split("/")
+
+              if is_active_mainline_or_metadata_path(path):
+                  return False
+
+              if "archive" in parts or normalized.startswith("archive/"):
+                  return True
+
+              active_markers = ("v5_1_2", "v1_3_5", "v1_2_7")
               historical_markers = (
                   "_v1",
                   "_v2",
@@ -349,9 +430,14 @@ jobs:
                   "v5_0_",
                   "fixed_regex",
                   "full..",
+                  "legacy",
+                  "deprecated",
+                  "old",
               )
+
               if any(marker in name for marker in active_markers):
                   return False
+
               return any(marker in name for marker in historical_markers)
 
           def classify_autofix_policy(entry: dict[str, Any]) -> dict[str, Any]:
@@ -928,14 +1014,39 @@ jobs:
                   column = location.get("column") if isinstance(location, dict) else None
                   message = str(item.get("message", "Ruff finding"))
 
-                  if rule_id in {"F401", "F841", "I001", "W291", "W293"}:
+                  protected_path = is_active_mainline_or_metadata_path(file)
+                  historical_path = is_superseded_historical_path(file)
+                  mechanical_rule = rule_id in {"F401", "F841", "I001", "W291", "W293"}
+
+                  if protected_path:
+                      if is_test_path(file):
+                          decision = "REVIEW_RECOMMENDED"
+                          suggestion = (
+                              "テスト領域の指摘です。historical扱いに落とさず、テスト意図を人間が確認してください。"
+                          )
+                      elif is_workflow_path(file) or is_documentation_or_policy_path(file):
+                          decision = "REVIEW_RECOMMENDED"
+                          suggestion = (
+                              "workflow/docs/metadata は挙動・公開方針に影響するため、人間が確認してください。"
+                          )
+                      elif mechanical_rule:
+                          decision = "FIX_RECOMMENDED"
+                          suggestion = (
+                              "active領域の機械的修正候補です。自動修正せず、人間が差分を確認して手動修正してください。"
+                          )
+                      else:
+                          decision = "REVIEW_RECOMMENDED"
+                          suggestion = "active領域の指摘です。人間が仕様影響を確認してください。"
+                  elif historical_path:
+                      decision = "INFO_ONLY" if mechanical_rule else "NOISE_CANDIDATE"
+                      suggestion = (
+                          "inactive historical/versioned file の指摘として集約します。active化する場合のみ確認してください。"
+                      )
+                  elif mechanical_rule:
                       decision = "FIX_RECOMMENDED"
                       suggestion = "不要なimport/変数/整形差分を人間が確認し、必要なら手動修正してください。"
-                  elif is_test_path(file):
-                      decision = "REVIEW_RECOMMENDED"
-                      suggestion = "テスト意図を確認し、必要なら限定的に修正またはnoqa理由を追加してください。"
                   else:
-                      decision = "FIX_RECOMMENDED"
+                      decision = "REVIEW_RECOMMENDED"
                       suggestion = "Ruffの指摘箇所を確認し、仕様に影響しない範囲で手動修正してください。"
 
                   entries.append(
@@ -972,18 +1083,62 @@ jobs:
                   message = str(item.get("issue_text", "Bandit finding"))
                   bandit_severity = str(item.get("issue_severity", "LOW")).upper()
 
-                  if rule_id == "B101" and is_test_path(file):
-                      decision = "NOISE_CANDIDATE"
-                      suggestion = "pytestのassertなら通常はそのままでよいです。必要なら限定的なnosec理由を付けてください。"
-                  elif is_superseded_historical_path(file):
-                      decision = "INFO_ONLY"
-                      suggestion = "履歴ファイルとして保持する場合は即時修正不要です。active化する場合のみ人間が確認してください。"
-                  elif bandit_severity == "HIGH":
+                  protected_path = is_active_mainline_or_metadata_path(file)
+                  historical_path = is_superseded_historical_path(file)
+
+                  # Classification priority:
+                  # 1. CRITICAL/HIGH security in active or unknown context -> HITL_REQUIRED
+                  # 2. protected active paths are never downgraded by historical heuristics
+                  # 3. inactive historical files can be INFO/NOISE only when not protected
+                  if bandit_severity == "HIGH":
                       decision = "HITL_REQUIRED"
-                      suggestion = "人間が該当箇所を確認し、防御目的の範囲で安全なAPI・入力検証・権限境界を検討してください。"
-                  elif bandit_severity == "MEDIUM" and is_active_mainline_or_metadata_path(file):
+                      suggestion = (
+                          "人間が該当箇所を確認し、防御目的の範囲で安全なAPI・入力検証・権限境界を検討してください。"
+                      )
+                  elif protected_path:
+                      if rule_id == "B101" and is_test_path(file):
+                          decision = "NOISE_CANDIDATE"
+                          suggestion = (
+                              "pytest の assert として妥当な可能性があります。テスト意図だけ確認してください。"
+                          )
+                      elif is_test_path(file):
+                          decision = "REVIEW_RECOMMENDED"
+                          suggestion = (
+                              "tests 配下の security finding です。historical扱いに落とさず、人間がテスト意図を確認してください。"
+                          )
+                      elif is_workflow_path(file):
+                          decision = "REVIEW_RECOMMENDED"
+                          suggestion = (
+                              "workflow 配下の security finding です。CI権限・実行条件への影響を人間が確認してください。"
+                          )
+                      elif is_documentation_or_policy_path(file):
+                          decision = "REVIEW_RECOMMENDED"
+                          suggestion = (
+                              "docs/policy 領域の finding です。公開説明や安全方針への影響を人間が確認してください。"
+                          )
+                      elif bandit_severity == "MEDIUM":
+                          decision = "REVIEW_RECOMMENDED"
+                          suggestion = (
+                              "active領域の MEDIUM security finding です。自動修正せず、人間が文脈を確認してください。"
+                          )
+                      else:
+                          decision = "REVIEW_RECOMMENDED"
+                          suggestion = (
+                              "active領域の LOW security finding です。重大通知は不要ですが、artifact上で人間確認可能にします。"
+                          )
+                  elif historical_path:
+                      if rule_id == "B101":
+                          decision = "NOISE_CANDIDATE"
+                      else:
+                          decision = "INFO_ONLY"
+                      suggestion = (
+                          "inactive historical/versioned file の指摘です。即時修正不要です。active化する場合のみ人間が確認してください。"
+                      )
+                  elif bandit_severity == "MEDIUM":
                       decision = "REVIEW_RECOMMENDED"
-                      suggestion = "active領域のため、人間が文脈を確認してください。自動修正はしないでください。"
+                      suggestion = (
+                          "MEDIUM security finding です。公開PRコメントには攻撃手段を載せず、防御目的で人間が確認してください。"
+                      )
                   else:
                       decision = "NOISE_CANDIDATE"
                       suggestion = "低リスクまたは文脈依存の可能性があります。詳細はartifactで確認してください。"
