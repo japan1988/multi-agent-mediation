@@ -135,10 +135,12 @@ jobs:
           python - <<'PY'
           from __future__ import annotations
 
+          import difflib
           import hashlib
           import json
           import os
           import re
+          import textwrap
           from collections import Counter, defaultdict
           from pathlib import Path
           from typing import Any
@@ -151,6 +153,8 @@ jobs:
           hitl_json_path = Path("tasukeru_hitl_review.json")
           notification_state_path = Path("tasukeru_notification_state.json")
           pr_comment_path = Path("tasukeru_pr_comment.md")
+          dradm_md_path = Path("tasukeru_dradm_draft.md")
+          dradm_json_path = Path("tasukeru_dradm_draft.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -1437,6 +1441,350 @@ jobs:
               file_obj.write(f"  - Autofix policy: `{entry.get('autofix', {}).get('policy', 'AUTOFIX_BLOCKED')}`\n")
               file_obj.write(f"  - Fingerprint: `{entry['fingerprint_hash']}`\n")
 
+          def make_unified_diff(
+              *,
+              file_path: str,
+              before: str,
+              after: str,
+          ) -> str:
+              before_lines = before.splitlines(keepends=True)
+              after_lines = after.splitlines(keepends=True)
+              return "".join(
+                  difflib.unified_diff(
+                      before_lines,
+                      after_lines,
+                      fromfile=f"a/{file_path}",
+                      tofile=f"b/{file_path}",
+                      lineterm="",
+                  )
+              )
+
+
+          def insert_after_marker_once(text: str, marker: str, addition: str) -> str:
+              if addition.strip() in text:
+                  return text
+              index = text.find(marker)
+              if index == -1:
+                  suffix = "" if text.endswith("\n") else "\n"
+                  return text + suffix + "\n" + addition.strip() + "\n"
+              insert_at = index + len(marker)
+              return text[:insert_at] + "\n\n" + addition.strip() + text[insert_at:]
+
+
+          def build_readme_advisory_addition() -> str:
+              return textwrap.dedent(
+                  """
+                  ### Advisory-only policy
+
+                  Tasukeru Analysis is an **advisory-only** review helper.
+
+                  It does not:
+
+                  - create branches automatically
+                  - create pull requests automatically
+                  - commit changes automatically
+                  - push changes automatically
+                  - apply fixes automatically
+                  - merge pull requests automatically
+
+                  Only `HITL_REQUIRED` findings may produce a PR comment.
+
+                  Other findings, including `FIX_RECOMMENDED`, `REVIEW_RECOMMENDED`,
+                  `NOISE_CANDIDATE`, and `INFO_ONLY`, are collected in the GitHub Step Summary
+                  and workflow artifacts for human review.
+
+                  Tasukeru Analysis is intended to reduce human review load, not to replace human
+                  decision-making.
+                  """
+              ).strip()
+
+
+          def build_readme_ja_advisory_addition() -> str:
+              return textwrap.dedent(
+                  """
+                  ### Advisory-only 方針
+
+                  Tasukeru Analysis / 助ける君は **advisory-only のレビュー補助** です。
+
+                  以下は行いません。
+
+                  - ブランチの自動作成
+                  - Pull Request の自動作成
+                  - 自動 commit
+                  - 自動 push
+                  - 自動修正の適用
+                  - Pull Request の自動 merge
+
+                  PR comment の対象になり得るのは、原則として `HITL_REQUIRED` finding のみです。
+
+                  `FIX_RECOMMENDED`、`REVIEW_RECOMMENDED`、`NOISE_CANDIDATE`、`INFO_ONLY`
+                  などの finding は、GitHub Step Summary と workflow artifacts に集約され、
+                  人間が必要に応じて確認します。
+
+                  Tasukeru Analysis の目的は、人間の review 負荷を下げることであり、
+                  人間の判断を置き換えることではありません。
+                  """
+              ).strip()
+
+
+          def build_security_md_draft() -> str:
+              return textwrap.dedent(
+                  """
+                  # Security Policy
+
+                  ## Scope
+
+                  This repository is a research and educational project for orchestration,
+                  fail-closed behavior, HITL escalation, and defensive repository review.
+
+                  Tasukeru Analysis is advisory-only. It does not create branches, create pull
+                  requests, commit, push, apply fixes, or merge pull requests automatically.
+
+                  ## Reporting security issues
+
+                  If you find a security issue, report it in a way that avoids exposing exploit
+                  details publicly.
+
+                  Please include:
+
+                  - affected file or component
+                  - high-level impact
+                  - defensive context
+                  - safe remediation suggestion, if known
+
+                  Do not include in public issues or PR comments:
+
+                  - exploit payloads
+                  - attack commands
+                  - offensive reproduction steps
+                  - step-by-step exploitation instructions
+                  - third-party target details
+
+                  ## Defensive-use limitation
+
+                  Security findings should be used to improve safety, reliability, traceability,
+                  and governance. This project must not be used for unauthorized scanning,
+                  exploitation, credential harvesting, or bypassing access controls.
+
+                  ## Human review
+
+                  All security-sensitive changes require human review. Automation may generate
+                  advisory artifacts, summaries, or draft suggestions, but humans decide whether
+                  to apply, commit, push, or merge any change.
+                  """
+              ).strip() + "\n"
+
+
+          def build_license_policy_draft() -> str:
+              return textwrap.dedent(
+                  """
+                  # License Policy
+
+                  This repository uses a split-license model.
+
+                  ## Software code
+
+                  Software code is licensed under the Apache License 2.0 unless otherwise stated.
+                  See `LICENSE` for the full license text.
+
+                  ## Documentation, diagrams, and research materials
+
+                  Documentation, diagrams, explanatory materials, and research notes are licensed
+                  under CC BY-NC-SA 4.0 unless otherwise stated.
+
+                  ## Project names
+
+                  The names `Tasukeru Analysis`, `助ける君`, `KAGE`, and `Maestro Orchestrator`
+                  are used to describe project components, concepts, or research artifacts.
+                  Use of these names should not imply endorsement, certification, or production
+                  safety guarantees.
+
+                  ## No warranty
+
+                  This repository is provided for research and educational purposes only. It is
+                  provided without warranty and does not guarantee safe autonomous behavior,
+                  regulatory compliance, or suitability for high-stakes use.
+                  """
+              ).strip() + "\n"
+
+
+          def propose_documentation_full_draft(
+              *,
+              reason_code: str,
+              file_path: str,
+          ) -> dict[str, Any] | None:
+              candidates: list[tuple[str, str]] = []
+              if "README" in file_path or reason_code in {"DOC_ADVISORY_ONLY_NOT_CLEAR", "DOC_AUTO_MERGE_POLICY_MISSING"}:
+                  if Path("README.md").exists():
+                      candidates.append(("README.md", build_readme_advisory_addition()))
+                  if Path("README.ja.md").exists():
+                      candidates.append(("README.ja.md", build_readme_ja_advisory_addition()))
+              elif reason_code == "DOC_SECURITY_POLICY_MISSING":
+                  candidates.append(("SECURITY.md", build_security_md_draft()))
+              elif reason_code == "DOC_LICENSE_POLICY_REFERENCE_MISSING":
+                  candidates.append(("LICENSE_POLICY.md", build_license_policy_draft()))
+              else:
+                  return None
+
+              drafts: list[dict[str, Any]] = []
+              for target, addition_or_full in candidates:
+                  path = Path(target)
+                  before = read_text(path) if path.exists() else ""
+                  if target == "README.md":
+                      marker = (
+                          "Tasukeru Analysis does not aim to hide warnings. Instead, it separates active\n"
+                          "repair candidates, review-only findings, historical-version warnings, and likely\n"
+                          "noise so maintainers can focus on the right items first.\n"
+                      )
+                      after = insert_after_marker_once(before, marker, addition_or_full)
+                  elif target == "README.ja.md":
+                      marker = "Tasukeru Analysis は warning を隠すことを目的としていません。"
+                      after = insert_after_marker_once(before, marker, addition_or_full)
+                  else:
+                      after = addition_or_full
+                  diff = make_unified_diff(file_path=target, before=before, after=after)
+                  drafts.append(
+                      {
+                          "target_file": target,
+                          "current_sha256": sha256_text(before),
+                          "draft_sha256": sha256_text(after),
+                          "unified_diff": diff,
+                          "full_draft": after,
+                          "modifies_repository": False,
+                          "auto_apply_allowed": False,
+                          "human_decision_required": True,
+                      }
+                  )
+              return {"reason_code": reason_code, "source_file": file_path, "drafts": drafts}
+
+
+          def generate_dradm_draft_artifacts(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> None:
+              """Generate draft-only DRADM artifacts.
+
+              DRADM output is decision-support only. It contains proposed minimal
+              documentation diffs and full draft text, but it never writes those drafts
+              back to repository files.
+              """
+              doc_candidates = [
+                  entry for entry in entries
+                  if entry.get("source") == "Documentation Review"
+              ]
+              draft_items: list[dict[str, Any]] = []
+              for entry in doc_candidates:
+                  proposal = propose_documentation_full_draft(
+                      reason_code=str(entry.get("reason_code", "")),
+                      file_path=str(entry.get("file", "")),
+                  )
+                  if not proposal:
+                      continue
+                  draft_items.append(
+                      {
+                          "decision": "DRAFT_ONLY",
+                          "human_decision_required": True,
+                          "auto_branch_allowed": False,
+                          "auto_pr_creation_allowed": False,
+                          "auto_commit_allowed": False,
+                          "auto_push_allowed": False,
+                          "autofix_allowed": False,
+                          "auto_merge_allowed": False,
+                          "source_finding": {
+                              "decision": entry.get("decision"),
+                              "reason_code": entry.get("reason_code"),
+                              "file": entry.get("file"),
+                              "fingerprint_hash": entry.get("fingerprint_hash"),
+                              "message": entry.get("message"),
+                              "evidence": entry.get("evidence"),
+                              "explanation": entry.get("explanation"),
+                              "fix_prediction": entry.get("fix_prediction"),
+                          },
+                          "proposal": proposal,
+                      }
+                  )
+
+              payload = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_dradm_draft_generator",
+                  "status": "DRAFT_ONLY",
+                  "purpose": "Generate current-content-aware draft artifacts for human review.",
+                  "metadata": metadata,
+                  "notification_state_summary": {
+                      "critical_count": state.get("critical_count", 0),
+                      "new_critical_incident_count": state.get("new_critical_incident_count", 0),
+                  },
+                  "policy": {
+                      "modifies_repository": False,
+                      "auto_apply_allowed": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+                  "draft_count": len(draft_items),
+                  "drafts": draft_items,
+              }
+              write_json(dradm_json_path, payload)
+
+              with dradm_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru DRADM Draft\n\n")
+                  f.write("## Decision\n\n")
+                  f.write("- Status: `DRAFT_ONLY`\n")
+                  f.write("- Human decision required: `true`\n")
+                  f.write("- Auto apply: `false`\n")
+                  f.write("- Auto branch creation: `false`\n")
+                  f.write("- Auto PR creation: `false`\n")
+                  f.write("- Auto commit: `false`\n")
+                  f.write("- Auto push: `false`\n")
+                  f.write("- Auto fix: `false`\n")
+                  f.write("- Auto merge: `false`\n\n")
+                  f.write("This artifact contains draft-only documentation proposals. It does not modify repository files.\n\n")
+                  f.write("## Summary\n\n")
+                  f.write(f"- Draft proposals: {len(draft_items)}\n")
+                  f.write(f"- HITL_REQUIRED: {state.get('critical_count', 0)}\n")
+                  f.write(f"- Documentation findings: {metadata.get('documentation_count', 0)}\n\n")
+                  if not draft_items:
+                      f.write("No DRADM documentation drafts were generated.\n")
+                      return
+                  for index, item in enumerate(draft_items, start=1):
+                      finding = item["source_finding"]
+                      f.write(f"## Draft {index}: `{finding.get('reason_code')}`\n\n")
+                      f.write("### Source finding\n\n")
+                      f.write(f"- File: `{finding.get('file')}`\n")
+                      f.write(f"- Decision: `{finding.get('decision')}`\n")
+                      f.write(f"- Fingerprint: `{finding.get('fingerprint_hash')}`\n")
+                      f.write(f"- Message: {finding.get('message')}\n\n")
+                      f.write("### Why this draft exists\n\n")
+                      explanation = finding.get("explanation") or {}
+                      f.write(f"{explanation.get('why_problematic_ja', 'Documentation review suggested a human-readable draft.')}\n\n")
+                      f.write("### Human review checklist\n\n")
+                      f.write("- Confirm that the proposed text is accurate.\n")
+                      f.write("- Confirm that the change is minimal and does not overstate capabilities.\n")
+                      f.write("- Confirm that advisory-only, no auto-fix, and no auto-merge semantics remain clear.\n")
+                      f.write("- Apply manually only if accepted by the human maintainer.\n\n")
+                      for draft in item["proposal"]["drafts"]:
+                          f.write(f"### Target file: `{draft['target_file']}`\n\n")
+                          f.write("#### Hashes\n\n")
+                          f.write(f"- Current SHA-256: `{draft['current_sha256']}`\n")
+                          f.write(f"- Draft SHA-256: `{draft['draft_sha256']}`\n\n")
+                          f.write("#### Unified diff\n\n")
+                          f.write("```diff\n")
+                          f.write(draft["unified_diff"][:20000])
+                          if len(draft["unified_diff"]) > 20000:
+                              f.write("\n... diff truncated in Markdown; see JSON artifact for full draft data.\n")
+                          f.write("\n```\n\n")
+                          f.write("#### Full draft after proposed change\n\n")
+                          f.write("```markdown\n")
+                          f.write(draft["full_draft"][:30000])
+                          if len(draft["full_draft"]) > 30000:
+                              f.write("\n... full draft truncated in Markdown; see JSON artifact for full draft data.\n")
+                          f.write("\n```\n\n")
+
           def write_outputs(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> None:
               counts = Counter(entry["decision"] for entry in entries)
               path_profile_counts = Counter(str(entry.get("path_profile", "unknown")) for entry in entries)
@@ -1543,6 +1891,8 @@ jobs:
                   f.write("- `tasukeru_advisory_summary.md`\n")
                   f.write("- `tasukeru_notification_state.json`\n")
                   f.write("- `tasukeru_pr_comment.md`\n")
+                  f.write("- `tasukeru_dradm_draft.md`\n")
+                  f.write("- `tasukeru_dradm_draft.json`\n")
                   f.write("- `tasukeru_logs/`\n\n")
 
                   def collapsible(title: str, data: list[dict[str, Any]], limit: int = 30) -> None:
@@ -1648,6 +1998,7 @@ jobs:
           }
 
           write_outputs(all_entries, notification_state, metadata)
+          generate_dradm_draft_artifacts(all_entries, notification_state, metadata)
 
           print("# Tasukeru advisory summary")
           print(f"Ruff findings: {metadata['ruff_count']}")
@@ -1903,6 +2254,8 @@ jobs:
             tasukeru_hitl_review.json
             tasukeru_notification_state.json
             tasukeru_pr_comment.md
+            tasukeru_dradm_draft.md
+            tasukeru_dradm_draft.json
           if-no-files-found: ignore
 
       - name: Complete advisory phase
