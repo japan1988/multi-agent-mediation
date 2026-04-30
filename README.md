@@ -1,5 +1,3 @@
-from pathlib import Path
-
 content = """# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
 > Japanese: [README.ja.md](README.ja.md)
@@ -1660,3 +1658,5 @@ testing, and adapting the code before any real-world use.
 Do not use this repository to process real personal data, confidential
 operational data, or high-stakes decision workflows without independent review
 and appropriate safeguards.
+
+
