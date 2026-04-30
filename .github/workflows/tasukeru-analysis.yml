@@ -202,6 +202,57 @@ jobs:
               "reason_code",
           }
 
+          RULE_PROFILES: dict[str, dict[str, str]] = {
+              "B101": {
+                  "default_decision": "NOISE_CANDIDATE",
+                  "summary_ja": "pytest assert またはシミュレーション上の assert は、runtime safety gate でない限り通常はPR通知対象外です。",
+              },
+              "B108": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "一時ファイル/一時ディレクトリの扱いは、active path では文脈確認が必要です。",
+              },
+              "B110": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "try/except/pass は失敗を隠す可能性があるため、active path では確認対象です。",
+              },
+              "B311": {
+                  "default_decision": "NOISE_CANDIDATE",
+                  "summary_ja": "非暗号用途の random はシミュレーションでは許容される場合がありますが、秘密値・認証・セキュリティ用途では不可です。",
+              },
+              "B404": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "subprocess import は単体では直ちに危険ではありませんが、active path では使い方確認が必要です。",
+              },
+              "B603": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "subprocess 呼び出しは入力・shell指定・実行対象の確認が必要です。",
+              },
+              "B607": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "partial executable path はCI/環境依存の誤実行につながる可能性があるため確認対象です。",
+              },
+              "F401": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "未使用importは機械的修正候補ですが、自動修正はせず人間が確認します。",
+              },
+              "F841": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "未使用変数は機械的修正候補ですが、自動修正はせず人間が確認します。",
+              },
+              "I001": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "import順序の整形候補です。active path では人間確認後に手動修正します。",
+              },
+              "W291": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "末尾空白の整形候補です。inactive historical では通知対象外へ下げられます。",
+              },
+              "W293": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "空行の空白整形候補です。inactive historical では通知対象外へ下げられます。",
+              },
+          }
+
           def read_text(path: Path, default: str = "") -> str:
               try:
                   return path.read_text(encoding="utf-8")
@@ -308,7 +359,6 @@ jobs:
               normalized = normalize_path(path).lower()
               return normalized.startswith(".github/workflows/")
 
-
           def is_documentation_or_policy_path(path: str) -> bool:
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
@@ -332,7 +382,6 @@ jobs:
                   or name.startswith("license")
               )
 
-
           def is_safety_or_hitl_path(path: str) -> bool:
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
@@ -354,7 +403,6 @@ jobs:
               )
               return any(marker in name or marker in normalized for marker in safety_markers)
 
-
           def is_active_mainline_or_metadata_path(path: str) -> bool:
               """Return True for paths that must not be treated as inactive history.
 
@@ -364,8 +412,6 @@ jobs:
               """
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
-              parts = normalized.split("/")
-
               active_names = {
                   "readme.md",
                   "readme.ja.md",
@@ -382,13 +428,13 @@ jobs:
                   "emergency_contract_kage_orchestrator_v1_0.py",
                   "test_emergency_contract_kage_orchestrator_v1_0.py",
                   "ai_doc_orchestrator_kage3_v1_3_5.py",
+                  "ai_doc_orchestrator_kage3_v1_2_7_task_contract_dispatch.py",
                   "mediation_emergency_contract_sim_v5_1_2.py",
                   "ai_doc_orchestrator_with_mediator_v1_0.py",
               }
-
               if name in active_names:
                   return True
-              if "tests" in parts or is_test_path(path):
+              if is_test_path(path):
                   return True
               if is_workflow_path(path):
                   return True
@@ -409,10 +455,8 @@ jobs:
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
               parts = normalized.split("/")
-
               if is_active_mainline_or_metadata_path(path):
                   return False
-
               if "archive" in parts or normalized.startswith("archive/"):
                   return True
 
@@ -434,17 +478,201 @@ jobs:
                   "deprecated",
                   "old",
               )
-
               if any(marker in name for marker in active_markers):
                   return False
-
               return any(marker in name for marker in historical_markers)
+
+          def classify_path_profile(file_path: str) -> str:
+              normalized = normalize_path(file_path).lower()
+              if is_workflow_path(normalized):
+                  return "workflow"
+              if is_test_path(normalized):
+                  return "tests"
+              if is_documentation_or_policy_path(normalized):
+                  return "docs_or_policy"
+              if is_safety_or_hitl_path(normalized):
+                  return "safety_or_hitl"
+              if is_superseded_historical_path(normalized):
+                  return "historical"
+              if normalized.startswith("archive/") or "/archive/" in normalized:
+                  return "archive"
+              if is_active_mainline_or_metadata_path(normalized):
+                  return "active_mainline"
+              return "general"
+
+          def get_rule_profile(rule_id: str) -> dict[str, str]:
+              return RULE_PROFILES.get(
+                  rule_id,
+                  {
+                      "default_decision": "REVIEW_RECOMMENDED",
+                      "summary_ja": "明示プロファイル未定義のため、人間確認候補として扱います。",
+                  },
+              )
+
+          def classify_ruff_decision(rule_id: str, file_path: str, message: str) -> tuple[str, str, str]:
+              profile = get_rule_profile(rule_id)
+              path_profile = classify_path_profile(file_path)
+              mechanical_rule = rule_id in {"F401", "F841", "I001", "W291", "W293"}
+
+              if path_profile in {"workflow", "docs_or_policy", "safety_or_hitl", "active_mainline"}:
+                  if mechanical_rule:
+                      return (
+                          "FIX_RECOMMENDED",
+                          f"{rule_id} on {path_profile}: active/protected path; manual mechanical fix candidate.",
+                          "active/protected領域の機械的修正候補です。自動修正せず、人間が差分を確認してください。",
+                      )
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} on {path_profile}: protected path requires human review.",
+                      "active/protected領域の指摘です。仕様・公開方針・安全境界への影響を確認してください。",
+                  )
+
+              if path_profile == "tests":
+                  if mechanical_rule:
+                      return (
+                          "FIX_RECOMMENDED",
+                          f"{rule_id} in tests: mechanical fix candidate, but tests are protected from autofix.",
+                          "tests配下の機械的修正候補です。テスト意図を確認してから手動修正してください。",
+                      )
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} in tests: review test intent before changing.",
+                      "tests配下の指摘です。テスト意図を確認してください。",
+                  )
+
+              if path_profile in {"historical", "archive"}:
+                  if mechanical_rule:
+                      return (
+                          "INFO_ONLY",
+                          f"{rule_id} in inactive {path_profile}: stored as info; no PR notification.",
+                          "inactive historical/archive の機械的指摘です。即時対応せずartifactに集約します。",
+                      )
+                  return (
+                      "NOISE_CANDIDATE",
+                      f"{rule_id} in inactive {path_profile}: not active execution path.",
+                      "inactive historical/archive の指摘です。active化する場合のみ確認してください。",
+                  )
+
+              if mechanical_rule:
+                  return (
+                      "FIX_RECOMMENDED",
+                      f"{rule_id} default mechanical rule: manual fix recommended.",
+                      profile["summary_ja"],
+                  )
+
+              return (
+                  "REVIEW_RECOMMENDED",
+                  f"{rule_id} default: human review recommended.",
+                  profile["summary_ja"],
+              )
+
+          def classify_bandit_decision(
+              rule_id: str,
+              file_path: str,
+              message: str,
+              bandit_severity: str,
+          ) -> tuple[str, str, str]:
+              profile = get_rule_profile(rule_id)
+              path_profile = classify_path_profile(file_path)
+              severity = bandit_severity.upper()
+
+              if severity == "HIGH":
+                  return (
+                      "HITL_REQUIRED",
+                      f"{rule_id} severity HIGH: requires human review regardless of path profile {path_profile}.",
+                      "HIGH security finding です。防御目的の範囲で人間が確認してください。",
+                  )
+
+              if path_profile == "workflow":
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} in workflow: CI permissions/execution behavior may be affected.",
+                      "workflow配下のsecurity findingです。CI権限・実行条件への影響を確認してください。",
+                  )
+
+              if path_profile in {"docs_or_policy", "safety_or_hitl", "active_mainline"}:
+                  if severity == "MEDIUM":
+                      return (
+                          "REVIEW_RECOMMENDED",
+                          f"{rule_id} MEDIUM on {path_profile}: protected path requires human review.",
+                          "active/protected領域のMEDIUM security findingです。文脈確認が必要です。",
+                      )
+                  if rule_id == "B311":
+                      return (
+                          "NOISE_CANDIDATE",
+                          f"{rule_id} LOW on {path_profile}: likely acceptable for simulation if not used for secrets.",
+                          "非暗号用途のrandomであればPR通知不要ですが、秘密値・認証用途でないことをartifactで確認可能にします。",
+                      )
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} LOW on {path_profile}: protected path stays reviewable.",
+                      "active/protected領域のLOW security findingです。重大通知は不要ですが、確認候補に残します。",
+                  )
+
+              if path_profile == "tests":
+                  if rule_id == "B101":
+                      return (
+                          "NOISE_CANDIDATE",
+                          "B101 in tests: pytest assert is expected unless used as runtime safety gate.",
+                          "tests配下のpytest assertとして妥当な可能性が高いため、PR通知対象外にします。",
+                      )
+                  if rule_id == "B311":
+                      return (
+                          "NOISE_CANDIDATE",
+                          "B311 in tests: deterministic/randomized test data is usually acceptable.",
+                          "tests配下の非暗号randomは通常テストデータ用途のため、PR通知対象外にします。",
+                      )
+                  if rule_id == "B110":
+                      return (
+                          "REVIEW_RECOMMENDED",
+                          "B110 in tests: except/pass can hide broken tests and should remain reviewable.",
+                          "tests配下でも except/pass はテスト失敗を隠す可能性があるため確認候補に残します。",
+                      )
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} in tests: review test intent before changing.",
+                      "tests配下のsecurity findingです。テスト意図を確認してください。",
+                  )
+
+              if path_profile in {"historical", "archive"}:
+                  if rule_id in {"B101", "B311"}:
+                      return (
+                          "NOISE_CANDIDATE",
+                          f"{rule_id} in inactive {path_profile}: low-risk known pattern in non-active file.",
+                          "inactive historical/archive の低リスク既知パターンとしてPR通知対象外にします。",
+                      )
+                  return (
+                      "INFO_ONLY",
+                      f"{rule_id} in inactive {path_profile}: info-only unless file becomes active.",
+                      "inactive historical/archive の指摘です。active化する場合のみ確認してください。",
+                  )
+
+              if severity == "MEDIUM":
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} MEDIUM default: human review recommended.",
+                      profile["summary_ja"],
+                  )
+
+              if rule_id in {"B101", "B311"}:
+                  return (
+                      "NOISE_CANDIDATE",
+                      f"{rule_id} LOW default: likely acceptable in non-security context.",
+                      profile["summary_ja"],
+                  )
+
+              return (
+                  "NOISE_CANDIDATE",
+                  f"{rule_id} LOW default: stored in artifacts only.",
+                  profile["summary_ja"],
+              )
 
           def classify_autofix_policy(entry: dict[str, Any]) -> dict[str, Any]:
               level = str(entry.get("decision", entry.get("level", "")))
               file_path = str(entry.get("file", ""))
               source = str(entry.get("source", ""))
               rule_id = str(entry.get("rule_id", entry.get("code", "")))
+              path_profile = str(entry.get("path_profile", classify_path_profile(file_path)))
 
               base = {
                   "safe_autofix_candidate": False,
@@ -458,30 +686,21 @@ jobs:
                   return {
                       **base,
                       "policy": "HUMAN_REVIEW_REQUIRED",
-                      "reason": (
-                          "Active review queue findings must not be automatically "
-                          "modified."
-                      ),
+                      "reason": "Active review queue findings must not be automatically modified.",
                   }
 
-              if is_active_mainline_or_metadata_path(file_path):
+              if path_profile in {"workflow", "docs_or_policy", "safety_or_hitl", "active_mainline", "tests"}:
                   return {
                       **base,
-                      "policy": "BLOCKED_ACTIVE_MAINLINE",
-                      "reason": (
-                          "Active mainline code, tests, workflows, docs, or metadata "
-                          "must not be automatically modified."
-                      ),
+                      "policy": "BLOCKED_PROTECTED_PATH",
+                      "reason": "Protected paths must not be automatically modified.",
                   }
 
-              if not is_superseded_historical_path(file_path):
+              if path_profile not in {"historical", "archive"}:
                   return {
                       **base,
                       "policy": "BLOCKED_NOT_INACTIVE_HISTORICAL",
-                      "reason": (
-                          "Autofix candidates are limited to inactive "
-                          "historical/versioned files."
-                      ),
+                      "reason": "Autofix candidates are limited to inactive historical/archive files.",
                   }
 
               if source == "Ruff" and rule_id in {"F401", "F841", "W291", "W293", "I001"}:
@@ -489,10 +708,7 @@ jobs:
                       **base,
                       "safe_autofix_candidate": True,
                       "policy": "SAFE_AUTOFIX_CANDIDATE",
-                      "reason": (
-                          "Inactive historical file with a low-risk mechanical "
-                          "Ruff finding. Human review is still required."
-                      ),
+                      "reason": "Inactive historical/archive file with a low-risk mechanical Ruff finding. Human review is still required.",
                   }
 
               if source == "Bandit" and rule_id == "B311":
@@ -500,10 +716,7 @@ jobs:
                       **base,
                       "safe_autofix_candidate": True,
                       "policy": "SAFE_AUTOFIX_CANDIDATE",
-                      "reason": (
-                          "Inactive historical simulator file with a low-risk "
-                          "advisory finding. Human review is still required."
-                      ),
+                      "reason": "Inactive historical/archive simulator file with a low-risk advisory finding. Human review is still required.",
                   }
 
               return base
@@ -526,8 +739,13 @@ jobs:
               column: int | None = None,
               confidence: str = "MEDIUM",
               risk_type: str = "review",
+              classification_reason: str = "",
+              path_profile: str = "",
+              rule_profile: dict[str, str] | None = None,
           ) -> dict[str, Any]:
               code_snippet = safe_snippet(file, line)
+              resolved_path_profile = path_profile or classify_path_profile(file)
+              resolved_rule_profile = rule_profile or get_rule_profile(rule_id)
               fingerprint = {
                   "rule_id": rule_id,
                   "category": category,
@@ -536,6 +754,7 @@ jobs:
                   "normalized_file_path": normalize_path(file),
                   "normalized_code_pattern": normalized_message(code_snippet or rule_id),
                   "risk_type": risk_type,
+                  "path_profile": resolved_path_profile,
               }
               fingerprint_hash = canonical_hash(fingerprint)
 
@@ -558,6 +777,9 @@ jobs:
                   "message": one_line(message, 600),
                   "code_snippet": code_snippet,
                   "suggestion": suggestion,
+                  "classification_reason": classification_reason,
+                  "path_profile": resolved_path_profile,
+                  "rule_profile": resolved_rule_profile,
                   "fingerprint": fingerprint,
                   "fingerprint_hash": fingerprint_hash,
                   "incident_id": "",
@@ -571,11 +793,14 @@ jobs:
                       "code_snippet": code_snippet,
                       "policy_reference": "Tasukeru Security Review Output Policy",
                       "reason_code": reason_code,
+                      "classification_reason": classification_reason,
+                      "path_profile": resolved_path_profile,
                       "artifact": f"tasukeru_logs/{source.lower().replace(' ', '-')}.json",
                   },
                   "explanation": {
                       "why_problematic_ja": why_problematic_ja,
                       "why_fix_ja": why_fix_ja,
+                      "why_this_classification_ja": classification_reason or "分類理由は rule/path profile に基づきます。",
                       "human_review_checklist_ja": [
                           "active mainline / tests / workflows / docs / safety invariant / HITL logic に関係するか確認する",
                           "既存仕様への影響を確認する",
@@ -584,14 +809,8 @@ jobs:
                   },
                   "fix_prediction": {
                       "expected_effect_ja": impact_ja,
-                      "expected_effect_en": (
-                          "This change may improve maintainability, traceability, "
-                          "or safety depending on the reviewed context."
-                      ),
-                      "risk_reduction_ja": (
-                          "対象リスクを下げる可能性がありますが、最終確認には "
-                          "人間レビューとテストが必要です。"
-                      ),
+                      "expected_effect_en": "This change may improve maintainability, traceability, or safety depending on the reviewed context.",
+                      "risk_reduction_ja": "対象リスクを下げる可能性がありますが、最終確認には人間レビューとテストが必要です。",
                       "side_effects_to_check_ja": [
                           "既存の正常系動作が変わらないこと",
                           "ログや出力に秘密情報が含まれないこと",
@@ -623,10 +842,7 @@ jobs:
                           "remaining_review_recommended": None,
                       },
                       "verified": False,
-                      "verification_note": (
-                          "No repository files were modified. Candidate verification "
-                          "is advisory-only."
-                      ),
+                      "verification_note": "No repository files were modified. Candidate verification is advisory-only.",
                   },
               }
               entry["autofix"] = classify_autofix_policy(entry)
@@ -653,7 +869,6 @@ jobs:
 
           def normalize_pip_vulns(raw: Any) -> list[dict[str, Any]]:
               vulns: list[dict[str, Any]] = []
-
               if isinstance(raw, dict):
                   dependencies = raw.get("dependencies")
                   if isinstance(dependencies, list):
@@ -672,7 +887,6 @@ jobs:
                                           "fix_versions": vuln.get("fix_versions", []) or [],
                                       }
                                   )
-
                   direct = raw.get("vulnerabilities")
                   if isinstance(direct, list):
                       for item in direct:
@@ -685,7 +899,6 @@ jobs:
                                       "fix_versions": item.get("fix_versions", []) or [],
                                   }
                               )
-
               elif isinstance(raw, list):
                   for item in raw:
                       if isinstance(item, dict):
@@ -697,7 +910,6 @@ jobs:
                                   "fix_versions": item.get("fix_versions", []) or [],
                               }
                           )
-
               return vulns
 
           def parse_bool(value: Any) -> bool:
@@ -726,7 +938,13 @@ jobs:
                   for item in obj:
                       collect_reason_codes(item, found)
 
-          def add_logic_hitl(entries: list[dict[str, Any]], code: str, msg: str, file: str = "repository", line: int | None = None) -> None:
+          def add_logic_hitl(
+              entries: list[dict[str, Any]],
+              code: str,
+              msg: str,
+              file: str = "repository",
+              line: int | None = None,
+          ) -> None:
               entries.append(
                   make_entry(
                       source="Tasukeru Logic Review",
@@ -744,12 +962,12 @@ jobs:
                       impact_ja="人間確認により、HITL迂回や封印条件の破損を防ぎやすくなることが期待されます。",
                       confidence="HIGH",
                       risk_type="safety_invariant",
+                      classification_reason="Safety invariant violations always require HITL.",
                   )
               )
 
           def run_logic_review() -> tuple[list[dict[str, Any]], dict[str, Any]]:
               logic_entries: list[dict[str, Any]] = []
-
               for path in iter_text_files():
                   text = read_text(path)
                   for idx, line in enumerate(text.splitlines(), start=1):
@@ -785,7 +1003,6 @@ jobs:
                   name = path.name.lower()
                   if path.suffix != ".jsonl" or not any(token in name for token in ("arl", "audit", "incident")):
                       continue
-
                   with path.open("r", encoding="utf-8", errors="replace") as file_obj:
                       for idx, line in enumerate(file_obj, start=1):
                           if idx > 5000:
@@ -825,6 +1042,7 @@ jobs:
                                       impact_ja="ARLの追跡性が改善することが期待されます。",
                                       confidence="MEDIUM",
                                       risk_type="arl",
+                                      classification_reason="ARL schema inconsistency is reviewable but not critical unless core invariants are broken.",
                                   )
                               )
 
@@ -846,6 +1064,7 @@ jobs:
                                       impact_ja="ログ解析の安定性が上がることが期待されます。",
                                       confidence="MEDIUM",
                                       risk_type="arl",
+                                      classification_reason="Unknown ARL decisions reduce audit consistency.",
                                   )
                               )
 
@@ -857,7 +1076,6 @@ jobs:
                                   str(path),
                                   idx,
                               )
-
                           if layer in RFL_LAYERS and sealed:
                               add_logic_hitl(
                                   logic_entries,
@@ -866,7 +1084,6 @@ jobs:
                                   str(path),
                                   idx,
                               )
-
                           if sealed and overrideable:
                               add_logic_hitl(
                                   logic_entries,
@@ -875,7 +1092,6 @@ jobs:
                                   str(path),
                                   idx,
                               )
-
                           if sealed and final_decider != "SYSTEM":
                               add_logic_hitl(
                                   logic_entries,
@@ -884,7 +1100,6 @@ jobs:
                                   str(path),
                                   idx,
                               )
-
                           if decision == "PAUSE_FOR_HITL" and sealed:
                               add_logic_hitl(
                                   logic_entries,
@@ -903,13 +1118,11 @@ jobs:
                   "findings": logic_entries,
               }
               write_json(log_dir / "logic-review.json", result)
-
               with (log_dir / "logic-review.md").open("w", encoding="utf-8") as f:
                   f.write("### Tasukeru logic review\n\n")
                   f.write(f"- Findings: {len(logic_entries)}\n")
                   f.write(f"- HITL_REQUIRED: {sum(1 for e in logic_entries if e['decision'] == 'HITL_REQUIRED')}\n")
                   f.write(f"- REVIEW_RECOMMENDED: {sum(1 for e in logic_entries if e['decision'] == 'REVIEW_RECOMMENDED')}\n\n")
-
               return logic_entries, result
 
           def run_documentation_review() -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -937,6 +1150,7 @@ jobs:
                           impact_ja="OSS利用者がプロジェクトの安全境界を理解しやすくなることが期待されます。",
                           confidence="MEDIUM",
                           risk_type="documentation",
+                          classification_reason="Documentation review findings are advisory unless they create serious public safety or license ambiguity.",
                       )
                   )
 
@@ -993,19 +1207,16 @@ jobs:
                   "findings": entries,
               }
               write_json(log_dir / "documentation-review.json", result)
-
               with (log_dir / "documentation-review.md").open("w", encoding="utf-8") as f:
                   f.write("### Tasukeru documentation review\n\n")
                   f.write(f"- Findings: {len(entries)}\n")
                   for key, count in Counter(entry["decision"] for entry in entries).items():
                       f.write(f"- {key}: {count}\n")
-
               return entries, result
 
           def entries_from_ruff(raw: Any) -> list[dict[str, Any]]:
               items = normalize_ruff_items(raw)
               entries: list[dict[str, Any]] = []
-
               for item in items:
                   rule_id = str(item.get("code", "RUFF"))
                   file = str(item.get("filename", "?"))
@@ -1013,42 +1224,8 @@ jobs:
                   line = location.get("row") if isinstance(location, dict) else None
                   column = location.get("column") if isinstance(location, dict) else None
                   message = str(item.get("message", "Ruff finding"))
-
-                  protected_path = is_active_mainline_or_metadata_path(file)
-                  historical_path = is_superseded_historical_path(file)
-                  mechanical_rule = rule_id in {"F401", "F841", "I001", "W291", "W293"}
-
-                  if protected_path:
-                      if is_test_path(file):
-                          decision = "REVIEW_RECOMMENDED"
-                          suggestion = (
-                              "テスト領域の指摘です。historical扱いに落とさず、テスト意図を人間が確認してください。"
-                          )
-                      elif is_workflow_path(file) or is_documentation_or_policy_path(file):
-                          decision = "REVIEW_RECOMMENDED"
-                          suggestion = (
-                              "workflow/docs/metadata は挙動・公開方針に影響するため、人間が確認してください。"
-                          )
-                      elif mechanical_rule:
-                          decision = "FIX_RECOMMENDED"
-                          suggestion = (
-                              "active領域の機械的修正候補です。自動修正せず、人間が差分を確認して手動修正してください。"
-                          )
-                      else:
-                          decision = "REVIEW_RECOMMENDED"
-                          suggestion = "active領域の指摘です。人間が仕様影響を確認してください。"
-                  elif historical_path:
-                      decision = "INFO_ONLY" if mechanical_rule else "NOISE_CANDIDATE"
-                      suggestion = (
-                          "inactive historical/versioned file の指摘として集約します。active化する場合のみ確認してください。"
-                      )
-                  elif mechanical_rule:
-                      decision = "FIX_RECOMMENDED"
-                      suggestion = "不要なimport/変数/整形差分を人間が確認し、必要なら手動修正してください。"
-                  else:
-                      decision = "REVIEW_RECOMMENDED"
-                      suggestion = "Ruffの指摘箇所を確認し、仕様に影響しない範囲で手動修正してください。"
-
+                  decision, classification_reason, suggestion = classify_ruff_decision(rule_id, file, message)
+                  profile = get_rule_profile(rule_id)
                   entries.append(
                       make_entry(
                           source="Ruff",
@@ -1067,82 +1244,29 @@ jobs:
                           impact_ja="コードの読みやすさとCI安定性が改善することが期待されます。",
                           confidence="MEDIUM",
                           risk_type="lint",
+                          classification_reason=classification_reason,
+                          path_profile=classify_path_profile(file),
+                          rule_profile=profile,
                       )
                   )
-
               return entries
 
           def entries_from_bandit(raw: Any) -> list[dict[str, Any]]:
               items = normalize_bandit_items(raw)
               entries: list[dict[str, Any]] = []
-
               for item in items:
                   rule_id = str(item.get("test_id", "BANDIT"))
                   file = str(item.get("filename", "?"))
                   line = item.get("line_number")
                   message = str(item.get("issue_text", "Bandit finding"))
                   bandit_severity = str(item.get("issue_severity", "LOW")).upper()
-
-                  protected_path = is_active_mainline_or_metadata_path(file)
-                  historical_path = is_superseded_historical_path(file)
-
-                  # Classification priority:
-                  # 1. CRITICAL/HIGH security in active or unknown context -> HITL_REQUIRED
-                  # 2. protected active paths are never downgraded by historical heuristics
-                  # 3. inactive historical files can be INFO/NOISE only when not protected
-                  if bandit_severity == "HIGH":
-                      decision = "HITL_REQUIRED"
-                      suggestion = (
-                          "人間が該当箇所を確認し、防御目的の範囲で安全なAPI・入力検証・権限境界を検討してください。"
-                      )
-                  elif protected_path:
-                      if rule_id == "B101" and is_test_path(file):
-                          decision = "NOISE_CANDIDATE"
-                          suggestion = (
-                              "pytest の assert として妥当な可能性があります。テスト意図だけ確認してください。"
-                          )
-                      elif is_test_path(file):
-                          decision = "REVIEW_RECOMMENDED"
-                          suggestion = (
-                              "tests 配下の security finding です。historical扱いに落とさず、人間がテスト意図を確認してください。"
-                          )
-                      elif is_workflow_path(file):
-                          decision = "REVIEW_RECOMMENDED"
-                          suggestion = (
-                              "workflow 配下の security finding です。CI権限・実行条件への影響を人間が確認してください。"
-                          )
-                      elif is_documentation_or_policy_path(file):
-                          decision = "REVIEW_RECOMMENDED"
-                          suggestion = (
-                              "docs/policy 領域の finding です。公開説明や安全方針への影響を人間が確認してください。"
-                          )
-                      elif bandit_severity == "MEDIUM":
-                          decision = "REVIEW_RECOMMENDED"
-                          suggestion = (
-                              "active領域の MEDIUM security finding です。自動修正せず、人間が文脈を確認してください。"
-                          )
-                      else:
-                          decision = "REVIEW_RECOMMENDED"
-                          suggestion = (
-                              "active領域の LOW security finding です。重大通知は不要ですが、artifact上で人間確認可能にします。"
-                          )
-                  elif historical_path:
-                      if rule_id == "B101":
-                          decision = "NOISE_CANDIDATE"
-                      else:
-                          decision = "INFO_ONLY"
-                      suggestion = (
-                          "inactive historical/versioned file の指摘です。即時修正不要です。active化する場合のみ人間が確認してください。"
-                      )
-                  elif bandit_severity == "MEDIUM":
-                      decision = "REVIEW_RECOMMENDED"
-                      suggestion = (
-                          "MEDIUM security finding です。公開PRコメントには攻撃手段を載せず、防御目的で人間が確認してください。"
-                      )
-                  else:
-                      decision = "NOISE_CANDIDATE"
-                      suggestion = "低リスクまたは文脈依存の可能性があります。詳細はartifactで確認してください。"
-
+                  decision, classification_reason, suggestion = classify_bandit_decision(
+                      rule_id,
+                      file,
+                      message,
+                      bandit_severity,
+                  )
+                  profile = get_rule_profile(rule_id)
                   entries.append(
                       make_entry(
                           source="Bandit",
@@ -1160,15 +1284,16 @@ jobs:
                           impact_ja="防御上の確認ポイントが明確になり、レビュー漏れを減らせる可能性があります。",
                           confidence="MEDIUM",
                           risk_type="security",
+                          classification_reason=classification_reason,
+                          path_profile=classify_path_profile(file),
+                          rule_profile=profile,
                       )
                   )
-
               return entries
 
           def entries_from_pip_audit(raw: Any) -> list[dict[str, Any]]:
               vulns = normalize_pip_vulns(raw)
               entries: list[dict[str, Any]] = []
-
               for vuln in vulns:
                   package = vuln["name"]
                   vuln_id = vuln["id"]
@@ -1189,38 +1314,33 @@ jobs:
                           impact_ja="依存関係リスクを下げられることが期待されます。ただし互換性テストが必要です。",
                           confidence="MEDIUM",
                           risk_type="dependency",
+                          classification_reason="Dependency vulnerabilities are FIX_RECOMMENDED unless critical policy requires HITL.",
+                          path_profile="dependency",
                       )
                   )
-
               return entries
 
           def assign_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
               critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
               by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
-
               for entry in critical:
                   by_hash[entry["fingerprint_hash"]].append(entry)
-
               incident_for_hash = {
                   fp_hash: f"INC#{idx:06d}"
                   for idx, fp_hash in enumerate(sorted(by_hash.keys()), start=1)
               }
-
               for entry in entries:
                   fp_hash = entry["fingerprint_hash"]
                   if fp_hash in incident_for_hash:
                       entry["incident_id"] = incident_for_hash[fp_hash]
                       entry["fix_verification"]["target_incident_id"] = incident_for_hash[fp_hash]
-
               return entries
 
           def build_notification_state(entries: list[dict[str, Any]]) -> dict[str, Any]:
               critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
               by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
-
               for entry in critical:
                   by_hash[entry["fingerprint_hash"]].append(entry)
-
               incidents: list[dict[str, Any]] = []
               for fp_hash, grouped in sorted(by_hash.items()):
                   rep = grouped[0]
@@ -1239,13 +1359,11 @@ jobs:
                           "already_notified": False,
                       }
                   )
-
               counts = Counter(entry["decision"] for entry in entries)
               safe_autofix = sum(
                   1 for entry in entries
                   if entry.get("autofix", {}).get("safe_autofix_candidate")
               )
-
               return {
                   "schema_version": "1.0",
                   "notification_policy": "critical_only",
@@ -1279,12 +1397,15 @@ jobs:
               file_obj.write(f"- **{entry['decision']}** `{entry['reason_code']}` at `{location}`\n")
               file_obj.write(f"  - Source: {entry['source']}\n")
               file_obj.write(f"  - Message: {one_line(entry['message'], 260)}\n")
+              file_obj.write(f"  - Classification: {one_line(entry.get('classification_reason', ''), 260)}\n")
               file_obj.write(f"  - Suggested action: {one_line(entry['suggestion'], 260)}\n")
+              file_obj.write(f"  - Path profile: `{entry.get('path_profile', '')}`\n")
               file_obj.write(f"  - Autofix policy: `{entry.get('autofix', {}).get('policy', 'AUTOFIX_BLOCKED')}`\n")
               file_obj.write(f"  - Fingerprint: `{entry['fingerprint_hash']}`\n")
 
           def write_outputs(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> None:
               counts = Counter(entry["decision"] for entry in entries)
+              path_profile_counts = Counter(str(entry.get("path_profile", "unknown")) for entry in entries)
               autofix_policy_counts = Counter(
                   entry.get("autofix", {}).get("policy", "UNKNOWN") for entry in entries
               )
@@ -1292,11 +1413,11 @@ jobs:
                   1 for entry in entries
                   if entry.get("autofix", {}).get("safe_autofix_candidate")
               )
-
               payload = {
                   "schema_version": "1.0",
                   "tool": "tasukeru_hitl_decision_support",
                   "counts": dict(counts),
+                  "path_profile_counts": dict(path_profile_counts),
                   "metadata": metadata,
                   "documentation_review": {
                       "count": sum(1 for entry in entries if entry.get("source") == "Documentation Review"),
@@ -1317,7 +1438,6 @@ jobs:
                   },
                   "entries": entries,
               }
-
               write_json(hitl_json_path, payload)
               write_json(notification_state_path, state)
 
@@ -1329,11 +1449,12 @@ jobs:
               with hitl_md_path.open("w", encoding="utf-8") as f:
                   f.write("# Tasukeru HITL review\n\n")
                   f.write("This report is advisory-only. It does not create branches, create PRs, commit, push, auto-fix, or auto-merge.\n\n")
-
                   f.write("## Counts\n\n")
                   for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
                       f.write(f"- {level}: {counts.get(level, 0)}\n")
-
+                  f.write("\n## Path profiles\n\n")
+                  for profile, count in sorted(path_profile_counts.items()):
+                      f.write(f"- {profile}: {count}\n")
                   f.write("\n## Automation policy\n\n")
                   f.write("- Auto branch creation: false\n")
                   f.write("- Auto PR creation: false\n")
@@ -1342,13 +1463,11 @@ jobs:
                   f.write("- Auto fix: false\n")
                   f.write("- Auto merge: false\n")
                   f.write("- Human decision required: true\n\n")
-
                   f.write("## Autofix policy\n\n")
                   f.write(f"- SAFE_AUTOFIX_CANDIDATE: {safe_autofix_count}\n")
                   f.write("- Auto fix: false\n")
                   f.write("- Auto merge: false\n")
                   f.write("- Rule: safe candidates are manual decision-support metadata only.\n\n")
-
                   f.write("## Priority review queue\n\n")
                   if priority:
                       for entry in priority[:80]:
@@ -1364,15 +1483,15 @@ jobs:
                   f.write(f"- pip-audit vulnerabilities: {metadata['pip_count']}\n")
                   f.write(f"- Tasukeru logic review findings: {metadata['logic_count']}\n")
                   f.write(f"- Documentation review findings: {metadata['documentation_count']}\n\n")
-
                   f.write("## HITL decision support\n\n")
                   for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
                       f.write(f"- {level}: {counts.get(level, 0)}\n")
-
+                  f.write("\n## Path profile counts\n\n")
+                  for profile, count in sorted(path_profile_counts.items()):
+                      f.write(f"- {profile}: {count}\n")
                   f.write("\n## Critical notifications\n\n")
                   f.write(f"- New critical incidents: {state['new_critical_incident_count']}\n")
                   f.write(f"- Suppressed duplicate critical incidents: {state['suppressed_duplicate_critical_incident_count']}\n\n")
-
                   f.write("## Automation policy\n\n")
                   f.write("- Auto branch creation: false\n")
                   f.write("- Auto PR creation: false\n")
@@ -1380,12 +1499,10 @@ jobs:
                   f.write("- Auto push: false\n")
                   f.write("- Auto fix: false\n")
                   f.write("- Auto merge: false\n\n")
-
                   f.write("## Security output policy\n\n")
                   f.write("- Public PR comments must not include exploit payloads.\n")
                   f.write("- Public PR comments must not include attack steps.\n")
                   f.write("- Public PR comments must focus on detection and safe remediation.\n\n")
-
                   f.write("## Detailed artifacts\n\n")
                   f.write("- `tasukeru_hitl_review.md`\n")
                   f.write("- `tasukeru_hitl_review.json`\n")
@@ -1416,7 +1533,6 @@ jobs:
                       f.write("<!-- tasukeru-analysis:no-critical -->\n")
                       f.write("No HITL_REQUIRED incidents. No PR comment should be posted.\n")
                       return
-
                   first = critical[0]
                   f.write(f"<!-- tasukeru-analysis:critical fingerprint_hash={first['fingerprint_hash']} incident_id={first.get('incident_id') or ''} -->\n\n")
                   f.write("## Tasukeru Analysis: 重大確認が必要です\n\n")
@@ -1430,7 +1546,8 @@ jobs:
                   f.write(f"- Category: `{first['category']}`\n")
                   f.write(f"- File: `{first['file']}`\n")
                   f.write(f"- Line: `{first.get('line') or ''}`\n")
-                  f.write(f"- Fingerprint: `{first['fingerprint_hash']}`\n\n")
+                  f.write(f"- Fingerprint: `{first['fingerprint_hash']}`\n")
+                  f.write(f"- Path profile: `{first.get('path_profile', '')}`\n\n")
                   f.write("### エビデンス\n\n")
                   f.write(f"- Source: `{first['evidence'].get('source')}`\n")
                   f.write(f"- Rule: `{first['evidence'].get('rule_id')}`\n")
@@ -1439,6 +1556,8 @@ jobs:
                   f.write(f"{first['message']}\n\n")
                   f.write("### なぜ問題か\n\n")
                   f.write(f"{first['explanation']['why_problematic_ja']}\n\n")
+                  f.write("### なぜこの分類か\n\n")
+                  f.write(f"{first.get('classification_reason', '')}\n\n")
                   f.write("### 推奨対応\n\n")
                   f.write("- 該当箇所を人間が確認してください。\n")
                   f.write("- 自動修正・自動PR作成・自動マージは行わないでください。\n")
@@ -1645,6 +1764,7 @@ jobs:
           - File: `{entry.get("file", "")}`
           - Line: `{entry.get("line") or ""}`
           - Fingerprint: `{fp_hash}`
+          - Path profile: `{entry.get("path_profile", "")}`
 
           ### エビデンス
 
@@ -1659,6 +1779,10 @@ jobs:
           ### なぜ問題か
 
           {explanation.get("why_problematic_ja", "人間確認が必要です。")}
+
+          ### なぜこの分類か
+
+          {entry.get("classification_reason", "")}
 
           ### 推奨対応
 
@@ -1708,23 +1832,19 @@ jobs:
               fp_hash = str(incident.get("fingerprint_hash", ""))
               if not fp_hash:
                   continue
-
               if already_has_marker(fp_hash):
                   incident["already_notified"] = True
                   print(f"Duplicate critical incident already commented: {fp_hash}")
                   continue
-
               entry = entries_by_fp.get(fp_hash)
               if not entry:
                   print(f"No representative entry for incident fingerprint: {fp_hash}")
                   continue
-
               try:
                   request_json("POST", api_root, {"body": render_comment(entry, incident)})
               except urllib.error.HTTPError as err:
                   print(f"Could not post PR comment for {fp_hash}: HTTP {err.code}.")
                   continue
-
               incident["already_notified"] = False
               posted += 1
               print(f"Posted critical PR comment for {fp_hash}")
