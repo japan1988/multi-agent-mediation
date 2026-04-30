@@ -269,6 +269,8 @@ tasukeru_hitl_review.md
 tasukeru_hitl_review.json
 tasukeru_notification_state.json
 tasukeru_pr_comment.md
+tasukeru_dradm_draft.md
+tasukeru_dradm_draft.json
 ```
 
 `tasukeru_advisory_summary.md` は簡潔な overview を提供します。
@@ -290,6 +292,13 @@ critical-notification state を記録します。
 
 `tasukeru_pr_comment.md` は、`HITL_REQUIRED` incident が PR notification 条件を満たす場合にのみ使われる
 PR comment body を記録します。
+
+`tasukeru_dradm_draft.md` と `tasukeru_dradm_draft.json` は、human review 用に生成される
+draft-only の documentation proposal を含みます。
+
+これらの DRADM draft には、提案される最小差分、full draft text、hash、evidence、
+review checklist が含まれる場合があります。ただし、repository file は変更せず、
+自動適用してはいけません。
 
 ### Advisory behavior / advisory としての挙動
 
