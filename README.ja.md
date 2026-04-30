@@ -271,6 +271,8 @@ tasukeru_notification_state.json
 tasukeru_pr_comment.md
 tasukeru_dradm_draft.md
 tasukeru_dradm_draft.json
+tasukeru_confidence_report.md
+tasukeru_confidence_report.json
 ```
 
 `tasukeru_advisory_summary.md` は簡潔な overview を提供します。
@@ -299,6 +301,13 @@ draft-only の documentation proposal を含みます。
 これらの DRADM draft には、提案される最小差分、full draft text、hash、evidence、
 review checklist が含まれる場合があります。ただし、repository file は変更せず、
 自動適用してはいけません。
+
+`tasukeru_confidence_report.md` と `tasukeru_confidence_report.json` は、
+Tasukeru の classification、explanation、draft recommendation に対する
+confidence を要約します。
+
+confidence score は review 補助用の metadata です。finding を無視してよいという意味ではなく、
+自動修正、自動PR作成、自動commit、自動push、自動merge を有効化してはいけません。
 
 ### Advisory behavior / advisory としての挙動
 
