@@ -1,4 +1,4 @@
-name: Tasukeru Analysis
+  name: Tasukeru Analysis
 
 on:
   pull_request:
@@ -1508,7 +1508,7 @@ jobs:
               )
               return {
                   "schema_version": "1.0",
-                  "notification_policy": "critical_only_single_comment",
+                  "notification_policy": "pull_request_status_comment_create_or_update",
                   "critical_decision": "HITL_REQUIRED",
                   "auto_branch_allowed": False,
                   "auto_pr_creation_allowed": False,
@@ -2485,6 +2485,11 @@ jobs:
               )
               dradm_report = read_json(dradm_json_path, {})
               readme_refinement_report = read_json(readme_refinement_json_path, {})
+              readme_refinement_draft = (
+                  readme_refinement_report.get("draft", {})
+                  if isinstance(readme_refinement_report, dict)
+                  else {}
+              )
 
               automation_policy = {
                   "auto_branch_allowed": False,
@@ -2588,11 +2593,11 @@ jobs:
                   },
                   "drafts": {
                       "dradm_draft_count": dradm_report.get("draft_count") if isinstance(dradm_report, dict) else None,
-                      "readme_refinement_status": readme_refinement_report.get("draft_status")
-                      if isinstance(readme_refinement_report, dict)
+                      "readme_refinement_status": readme_refinement_draft.get("draft_status")
+                      if isinstance(readme_refinement_draft, dict)
                       else None,
-                      "readme_refinement_target": readme_refinement_report.get("target_file")
-                      if isinstance(readme_refinement_report, dict)
+                      "readme_refinement_target": readme_refinement_draft.get("target_file")
+                      if isinstance(readme_refinement_draft, dict)
                       else None,
                   },
                   "look_first": look_first,
@@ -3140,8 +3145,27 @@ jobs:
               with pr_comment_path.open("w", encoding="utf-8") as f:
                   critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
                   if not critical:
-                      f.write("<!-- tasukeru-analysis:no-critical -->\n")
-                      f.write("No HITL_REQUIRED incidents. No PR comment should be posted.\n")
+                      counts_for_comment = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
+                      f.write("<!-- tasukeru-analysis:announcement-summary -->\n\n")
+                      f.write("## Tasukeru Announcement\n\n")
+                      f.write("### Summary: `NO HITL_REQUIRED`\n\n")
+                      f.write("No `HITL_REQUIRED` findings were detected in this run.\n\n")
+                      f.write("このrunでは `HITL_REQUIRED` は検出されませんでした。\n")
+                      f.write("このコメントは advisory status summary であり、安全保証ではありません。\n\n")
+                      f.write("### Quick check\n\n")
+                      f.write("- HITL_REQUIRED: `0`\n")
+                      f.write(f"- FIX_RECOMMENDED: `{counts_for_comment.get('FIX_RECOMMENDED', 0)}`\n")
+                      f.write(f"- REVIEW_RECOMMENDED: `{counts_for_comment.get('REVIEW_RECOMMENDED', 0)}`\n")
+                      f.write("- Auto branch creation: `false`\n")
+                      f.write("- Auto PR creation: `false`\n")
+                      f.write("- Auto commit: `false`\n")
+                      f.write("- Auto push: `false`\n")
+                      f.write("- Auto fix: `false`\n")
+                      f.write("- Auto merge: `false`\n\n")
+                      f.write("<details>\n<summary>Details</summary>\n\n")
+                      f.write("See `tasukeru_announcement.md`, `tasukeru_arl_verify.json`, and `tasukeru_hitl_review.md` in the workflow artifacts for the full advisory summary.\n\n")
+                      f.write("This comment is advisory-only. It does not replace human review and does not authorize automatic fixes or merges.\n\n")
+                      f.write("</details>\n")
                       return
                   f.write("<!-- tasukeru-analysis:critical-summary -->\n\n")
                   f.write("## Tasukeru Analysis: 重大確認が必要です\n\n")
