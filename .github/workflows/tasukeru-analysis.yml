@@ -24,10 +24,10 @@ on:
       - "**/*.jsonl"
   workflow_dispatch:
 
+# Default to read-only. Write permission is granted only in the
+# post-critical-comment job, which does not checkout or execute PR code.
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 concurrency:
   group: tasukeru-${{ github.event.pull_request.number || github.run_id }}
@@ -37,6 +37,9 @@ jobs:
   advisory-analysis:
     name: advisory analysis
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -50,6 +53,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -207,6 +211,13 @@ jobs:
               "final_decider",
               "reason_code",
           }
+          CONTROL_BYPASS_PATTERNS = [
+              ("AUTO_MERGE_TRUE", re.compile(r"auto[_-]?merge[_-]?allowed\s*[:=]\s*true", re.IGNORECASE)),
+              ("AUTO_FIX_TRUE", re.compile(r"auto(?:fix|[_-]?fix)[_-]?allowed\s*[:=]\s*true", re.IGNORECASE)),
+              ("AUTO_PUSH_TRUE", re.compile(r"auto[_-]?push[_-]?allowed\s*[:=]\s*true", re.IGNORECASE)),
+              ("AUTO_PR_TRUE", re.compile(r"auto[_-]?pr[_-]?creation[_-]?allowed\s*[:=]\s*true", re.IGNORECASE)),
+              ("HITL_REQUIRED_FALSE", re.compile(r"human[_-]?decision[_-]?required\s*[:=]\s*false", re.IGNORECASE)),
+          ]
 
           RULE_PROFILES: dict[str, dict[str, str]] = {
               "B101": {
@@ -410,13 +421,6 @@ jobs:
               return any(marker in name or marker in normalized for marker in safety_markers)
 
           def is_active_safety_or_hitl_path(path: str) -> bool:
-              """Return True for currently active safety/HITL surfaces.
-
-              This is intentionally narrower than is_safety_or_hitl_path().
-              Older simulator/history files may contain words like mediation, kage,
-              emergency_contract, or hitl, but those names alone should not keep
-              their low-risk findings in REVIEW_RECOMMENDED forever.
-              """
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
               active_exact_names = {
@@ -442,12 +446,6 @@ jobs:
               return any(marker in name or marker in normalized for marker in active_markers)
 
           def is_active_mainline_or_metadata_path(path: str) -> bool:
-              """Return True for paths that must not be treated as inactive history.
-
-              Priority rule:
-              active mainline / tests / workflows / docs / metadata / safety invariant /
-              HITL logic are protected before historical-version heuristics are applied.
-              """
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
               active_names = {
@@ -485,11 +483,6 @@ jobs:
               return False
 
           def is_superseded_historical_path(path: str) -> bool:
-              """Return True only for inactive historical/versioned files.
-
-              Protected paths are checked first so tests/workflows/docs/mainline files are
-              never downgraded to INFO_ONLY simply because their names contain v1/v2/etc.
-              """
               normalized = normalize_path(path).lower()
               name = normalized.rsplit("/", 1)[-1]
               parts = normalized.split("/")
@@ -1006,6 +999,56 @@ jobs:
                   )
               )
 
+          def add_rfl_readability_review(
+              entries: list[dict[str, Any]],
+              code: str,
+              msg: str,
+              file: str,
+              line: int | None = None,
+          ) -> None:
+              entries.append(
+                  make_entry(
+                      source="Tasukeru RFL Review",
+                      decision="REVIEW_RECOMMENDED",
+                      severity="MEDIUM",
+                      category="relativity_human_readability",
+                      reason_code=code,
+                      rule_id=code,
+                      file=file,
+                      line=line,
+                      message=msg,
+                      suggestion="AIにとって処理しやすくても、人間が安全に読める形へ分割・命名・コメント補助を検討してください。",
+                      why_problematic_ja="AI向けに圧縮・抽象化されたコードは、人間の確認負荷を増やし、安全性・仕様・副作用の確認を難しくする可能性があります。",
+                      why_fix_ja="人間が読みやすい粒度に戻すことで、レビュー品質・保守性・HITL判断の信頼性を維持できます。",
+                      impact_ja="人間の可読性と保守性が改善し、AI側の最適化が人間側の負荷増につながるリスクを下げられる可能性があります。",
+                      confidence="MEDIUM",
+                      risk_type="human_readability",
+                      classification_reason="RFL human readability check: AI-readable code must not reduce human readability, maintainability, or reviewability.",
+                  )
+              )
+
+          def is_human_readability_risk_line(line: str) -> bool:
+              stripped = line.strip()
+              if not stripped or stripped.startswith("#"):
+                  return False
+              if "# noqa" in stripped or "# type: ignore" in stripped:
+                  return False
+              if len(stripped) < 180:
+                  return False
+              logic_markers = (
+                  " and ",
+                  " or ",
+                  " if ",
+                  " else ",
+                  " for ",
+                  " lambda ",
+                  " with ",
+              )
+              marker_score = sum(stripped.count(marker) for marker in logic_markers)
+              structure_score = sum(stripped.count(char) for char in "([{,")
+              chain_score = stripped.count(".") + stripped.count("[")
+              return marker_score >= 3 or structure_score >= 10 or chain_score >= 10
+
           def run_logic_review() -> tuple[list[dict[str, Any]], dict[str, Any]]:
               logic_entries: list[dict[str, Any]] = []
               for path in iter_text_files():
@@ -1021,7 +1064,41 @@ jobs:
                               idx,
                           )
 
-              required_rfl = {"REL_BOUNDARY_UNSTABLE", "REL_REF_MISSING", "REL_SYMMETRY_BREAK"}
+                  if normalize_path(str(path)) == ".github/workflows/tasukeru-analysis.yml":
+                      continue
+
+                  for code, pattern in CONTROL_BYPASS_PATTERNS:
+                      for match in pattern.finditer(text):
+                          line_no = text[: match.start()].count("\n") + 1
+                          add_logic_hitl(
+                              logic_entries,
+                              "CONTROL_BYPASS_ATTEMPT",
+                              f"Automation control-bypass pattern detected: {code}.",
+                              str(path),
+                              line_no,
+                          )
+
+                  if path.suffix == ".py" and not is_superseded_historical_path(str(path)):
+                      readability_hits = 0
+                      for idx, line in enumerate(text.splitlines(), start=1):
+                          if is_human_readability_risk_line(line):
+                              add_rfl_readability_review(
+                                  logic_entries,
+                                  "REL_HUMAN_READABILITY_LOST",
+                                  "AI-readable but human-readability-risky dense code pattern detected.",
+                                  str(path),
+                                  idx,
+                              )
+                              readability_hits += 1
+                              if readability_hits >= 3:
+                                  break
+
+              required_rfl = {
+                  "REL_BOUNDARY_UNSTABLE",
+                  "REL_REF_MISSING",
+                  "REL_SYMMETRY_BREAK",
+                  "REL_HUMAN_READABILITY_LOST",
+              }
               codebooks = sorted(repo.glob("log_codebook*.json"))
               if codebooks:
                   for path in codebooks:
@@ -1171,6 +1248,7 @@ jobs:
               readme_ja = read_text(Path("README.ja.md"))
               security = read_text(Path("SECURITY.md"))
               license_policy = read_text(Path("LICENSE_POLICY.md"))
+              contributing = read_text(Path("CONTRIBUTING.md"))
               combined_readme = f"{readme}\n{readme_ja}".lower()
 
               def add_doc(decision: str, reason_code: str, file: str, message: str, suggestion: str) -> None:
@@ -1245,6 +1323,15 @@ jobs:
                       "LICENSE_POLICY.md",
                       "LICENSE_POLICY.md was not found.",
                       "必要であれば、コード・文書・名称の扱いを LICENSE_POLICY.md に分離して整理してください。",
+                  )
+
+              if not contributing:
+                  add_doc(
+                      "REVIEW_RECOMMENDED",
+                      "DOC_CONTRIBUTING_POLICY_MISSING",
+                      "CONTRIBUTING.md",
+                      "CONTRIBUTING.md was not found.",
+                      "CONTRIBUTING.mdに、advisory-only、自動修正禁止、自動マージ禁止、HITL_REQUIREDの扱いを明記してください。",
                   )
 
               result = {
@@ -1414,7 +1501,7 @@ jobs:
               )
               return {
                   "schema_version": "1.0",
-                  "notification_policy": "critical_only",
+                  "notification_policy": "critical_only_single_comment",
                   "critical_decision": "HITL_REQUIRED",
                   "auto_branch_allowed": False,
                   "auto_pr_creation_allowed": False,
@@ -1457,13 +1544,6 @@ jobs:
               before: str,
               after: str,
           ) -> str:
-              """Return a readable unified diff with valid line breaks.
-
-              splitlines(keepends=True) combined with lineterm="" can concatenate
-              diff headers such as `---`, `+++`, and `@@` when the diff is later
-              rendered as a plain string. Tasukeru stores the diff as an artifact,
-              so generate newline-separated diff lines explicitly.
-              """
               if before == after:
                   return ""
               before_lines = before.splitlines()
@@ -1481,7 +1561,6 @@ jobs:
                   return ""
               return "\n".join(diff_lines) + "\n"
 
-
           def insert_after_marker_once(text: str, marker: str, addition: str) -> str:
               if addition.strip() in text:
                   return text
@@ -1491,7 +1570,6 @@ jobs:
                   return text + suffix + "\n" + addition.strip() + "\n"
               insert_at = index + len(marker)
               return text[:insert_at] + "\n\n" + addition.strip() + text[insert_at:]
-
 
           def build_readme_advisory_addition() -> str:
               return textwrap.dedent(
@@ -1520,7 +1598,6 @@ jobs:
                   """
               ).strip()
 
-
           def build_readme_ja_advisory_addition() -> str:
               return textwrap.dedent(
                   """
@@ -1547,7 +1624,6 @@ jobs:
                   人間の判断を置き換えることではありません。
                   """
               ).strip()
-
 
           def build_security_md_draft() -> str:
               return textwrap.dedent(
@@ -1596,7 +1672,6 @@ jobs:
                   """
               ).strip() + "\n"
 
-
           def build_license_policy_draft() -> str:
               return textwrap.dedent(
                   """
@@ -1628,7 +1703,6 @@ jobs:
                   regulatory compliance, or suitability for high-stakes use.
                   """
               ).strip() + "\n"
-
 
           def propose_documentation_full_draft(
               *,
@@ -1684,18 +1758,11 @@ jobs:
                   return None
               return {"reason_code": reason_code, "source_file": file_path, "drafts": drafts}
 
-
           def generate_dradm_draft_artifacts(
               entries: list[dict[str, Any]],
               state: dict[str, Any],
               metadata: dict[str, Any],
           ) -> None:
-              """Generate draft-only DRADM artifacts.
-
-              DRADM output is decision-support only. It contains proposed minimal
-              documentation diffs and full draft text, but it never writes those drafts
-              back to repository files.
-              """
               doc_candidates = [
                   entry for entry in entries
                   if entry.get("source") == "Documentation Review"
@@ -1813,7 +1880,6 @@ jobs:
                               f.write("\n... full draft truncated in Markdown; see JSON artifact for full draft data.\n")
                           f.write("\n```\n\n")
 
-
           def clamp_score(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
               return round(max(minimum, min(maximum, value)), 3)
 
@@ -1829,12 +1895,6 @@ jobs:
               return "VERY_LOW"
 
           def calculate_entry_confidence(entry: dict[str, Any]) -> dict[str, Any]:
-              """Score the confidence of Tasukeru's classification and suggestion.
-
-              This is not a safety guarantee and never authorizes auto-fix or auto-merge.
-              It estimates how well-supported the finding/classification/suggestion is by
-              evidence, rule profiles, path profiles, explanation, and verification status.
-              """
               basis: list[str] = []
               penalties: list[str] = []
               components = {
@@ -2290,40 +2350,25 @@ jobs:
                       f.write("<!-- tasukeru-analysis:no-critical -->\n")
                       f.write("No HITL_REQUIRED incidents. No PR comment should be posted.\n")
                       return
-                  first = critical[0]
-                  f.write(f"<!-- tasukeru-analysis:critical fingerprint_hash={first['fingerprint_hash']} incident_id={first.get('incident_id') or ''} -->\n\n")
+                  f.write("<!-- tasukeru-analysis:critical-summary -->\n\n")
                   f.write("## Tasukeru Analysis: 重大確認が必要です\n\n")
                   f.write("### 判定\n\nHITL_REQUIRED\n\n")
                   f.write("### 何が変わったか\n\n")
                   f.write("このPRで、Tasukeru Analysis が重大確認対象の変更を検出しました。\n")
-                  f.write("単なるツール警告ではなく、HITLロジック、安全不変条件、主要ワークフロー、または公開文書方針に影響する可能性があります。\n\n")
+                  f.write("HITLロジック、安全不変条件、主要ワークフロー、または公開文書方針に影響する可能性があります。\n\n")
                   f.write("### 対象\n\n")
-                  f.write(f"- Incident: `{first.get('incident_id') or ''}`\n")
-                  f.write(f"- Reason code: `{first['reason_code']}`\n")
-                  f.write(f"- Category: `{first['category']}`\n")
-                  f.write(f"- File: `{first['file']}`\n")
-                  f.write(f"- Line: `{first.get('line') or ''}`\n")
-                  f.write(f"- Fingerprint: `{first['fingerprint_hash']}`\n")
-                  f.write(f"- Path profile: `{first.get('path_profile', '')}`\n\n")
-                  f.write("### エビデンス\n\n")
-                  f.write(f"- Source: `{first['evidence'].get('source')}`\n")
-                  f.write(f"- Rule: `{first['evidence'].get('rule_id')}`\n")
-                  f.write(f"- Artifact: `{first['evidence'].get('artifact')}`\n\n")
-                  f.write("### 問題\n\n")
-                  f.write(f"{first['message']}\n\n")
-                  f.write("### なぜ問題か\n\n")
-                  f.write(f"{first['explanation']['why_problematic_ja']}\n\n")
-                  f.write("### なぜこの分類か\n\n")
-                  f.write(f"{first.get('classification_reason', '')}\n\n")
-                  f.write("### 推奨対応\n\n")
+                  for entry in critical[:10]:
+                      f.write(f"- `{entry.get('incident_id') or ''}` `{entry['reason_code']}` `{entry['file']}`")
+                      if entry.get("line"):
+                          f.write(f":{entry['line']}")
+                      f.write(f" — `{entry['fingerprint_hash']}`\n")
+                  if len(critical) > 10:
+                      f.write(f"- ... and {len(critical) - 10} more critical entries in artifacts.\n")
+                  f.write("\n### 推奨対応\n\n")
                   f.write("- 該当箇所を人間が確認してください。\n")
                   f.write("- 自動修正・自動PR作成・自動マージは行わないでください。\n")
-                  f.write("- 公開PRコメントには攻撃手段・悪用手順・payload は載せません。\n\n")
-                  f.write("### なぜこの修正案か\n\n")
-                  f.write(f"{first['explanation']['why_fix_ja']}\n\n")
-                  f.write("### 修正効果予測\n\n")
-                  f.write(f"{first['fix_prediction']['expected_effect_ja']}\n\n")
-                  f.write("注意: この効果は予測であり、最終確認には人間レビューとテストが必要です。\n\n")
+                  f.write("- 公開PRコメントには攻撃手段・悪用手順・payload は載せません。\n")
+                  f.write("- 詳細は `tasukeru_hitl_review.md` と `tasukeru_hitl_review.json` を確認してください。\n\n")
                   f.write("### 自動化制限\n\n")
                   f.write("- Auto branch creation: `false`\n")
                   f.write("- Auto PR creation: `false`\n")
@@ -2334,10 +2379,9 @@ jobs:
                   f.write("- Human decision required: `true`\n\n")
                   f.write("<details>\n<summary>English details</summary>\n\n")
                   f.write("## Tasukeru Analysis: Critical review required\n\n")
-                  f.write("This PR introduced a change that may affect HITL logic, safety invariants, the review workflow, or public documentation policy.\n\n")
-                  f.write("Please review the affected file manually. Do not auto-fix, auto-create a PR, or auto-merge this change.\n\n")
+                  f.write("This PR introduced one or more changes that may affect HITL logic, safety invariants, the review workflow, or public documentation policy.\n\n")
+                  f.write("Please review the affected files manually. Do not auto-fix, auto-create a PR, or auto-merge this change.\n\n")
                   f.write("Security details are intentionally limited to defensive review and safe remediation guidance. Exploit payloads, attack steps, and offensive reproduction instructions must not be included in public PR comments.\n\n")
-                  f.write("Fix impact predictions are not guarantees. Human review and tests are still required.\n\n")
                   f.write("</details>\n")
 
               github_summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
@@ -2402,8 +2446,56 @@ jobs:
           print("Auto merge: false")
           PY
 
+      - name: Upload advisory logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: tasukeru-advisory-logs
+          path: |
+            tasukeru_logs/
+            tasukeru_advisory_summary.md
+            tasukeru_hitl_review.md
+            tasukeru_hitl_review.json
+            tasukeru_notification_state.json
+            tasukeru_pr_comment.md
+            tasukeru_dradm_draft.md
+            tasukeru_dradm_draft.json
+            tasukeru_confidence_report.md
+            tasukeru_confidence_report.json
+          if-no-files-found: ignore
+
+      - name: Complete advisory phase
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "Tasukeru advisory analysis completed."
+          echo "No branch, PR, commit, push, auto-fix, or auto-merge was performed."
+
+  post-critical-comment:
+    name: post critical PR comment
+    runs-on: ubuntu-latest
+    needs: advisory-analysis
+    if: always() && github.event_name == 'pull_request'
+
+    permissions:
+      contents: read
+      issues: write
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Download advisory logs
+        uses: actions/download-artifact@v6
+        with:
+          name: tasukeru-advisory-logs
+          path: .
+
       - name: Post critical PR comment
-        if: always() && github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -2420,10 +2512,10 @@ jobs:
           from typing import Any
 
           state_path = Path("tasukeru_notification_state.json")
-          review_path = Path("tasukeru_hitl_review.json")
+          comment_path = Path("tasukeru_pr_comment.md")
 
-          if not state_path.exists() or not review_path.exists():
-              print("Tasukeru notification state or review JSON not found; skipping comment.")
+          if not state_path.exists() or not comment_path.exists():
+              print("Tasukeru notification state or comment Markdown not found; skipping comment.")
               raise SystemExit(0)
 
           event_path = os.environ.get("GITHUB_EVENT_PATH", "")
@@ -2442,17 +2534,8 @@ jobs:
 
           pr_number = pull_request.get("number")
           owner, repo = repo_name.split("/", 1)
-
           state = json.loads(state_path.read_text(encoding="utf-8"))
-          review = json.loads(review_path.read_text(encoding="utf-8"))
-
-          entries_by_fp: dict[str, dict[str, Any]] = {}
-          for entry in review.get("entries", []):
-              if not isinstance(entry, dict):
-                  continue
-              fp_hash = str(entry.get("fingerprint_hash", ""))
-              if fp_hash and entry.get("decision") == "HITL_REQUIRED":
-                  entries_by_fp.setdefault(fp_hash, entry)
+          comment_body = comment_path.read_text(encoding="utf-8")
 
           incidents = [
               incident for incident in state.get("incidents", [])
@@ -2461,6 +2544,10 @@ jobs:
 
           if not incidents:
               print("No HITL_REQUIRED incidents; no PR comment posted.")
+              raise SystemExit(0)
+
+          if "tasukeru-analysis:no-critical" in comment_body:
+              print("Generated comment says no critical incidents; skipping comment.")
               raise SystemExit(0)
 
           api_root = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
@@ -2492,158 +2579,25 @@ jobs:
               print(f"Could not list PR comments: HTTP {err.code}. Skipping comment.")
               raise SystemExit(0)
 
-          existing_bodies = [
-              str(comment.get("body", ""))
-              for comment in existing_comments
-              if isinstance(comment, dict)
-          ]
+          marker = "<!-- tasukeru-analysis:critical-summary -->"
+          existing = None
+          if isinstance(existing_comments, list):
+              for comment in existing_comments:
+                  if not isinstance(comment, dict):
+                      continue
+                  body = str(comment.get("body", ""))
+                  if marker in body:
+                      existing = comment
+                      break
 
-          def already_has_marker(fp_hash: str) -> bool:
-              marker = f"tasukeru-analysis:critical fingerprint_hash={fp_hash}"
-              return any(marker in body for body in existing_bodies)
-
-          def render_comment(entry: dict[str, Any], incident: dict[str, Any]) -> str:
-              fp_hash = str(entry.get("fingerprint_hash", ""))
-              incident_id = str(incident.get("incident_id", entry.get("incident_id", "")))
-              evidence = entry.get("evidence", {})
-              explanation = entry.get("explanation", {})
-              prediction = entry.get("fix_prediction", {})
-
-              return f"""<!-- tasukeru-analysis:critical fingerprint_hash={fp_hash} incident_id={incident_id} -->
-
-          ## Tasukeru Analysis: 重大確認が必要です
-
-          ### 判定
-
-          HITL_REQUIRED
-
-          ### 何が変わったか
-
-          このPRで、Tasukeru Analysis が重大確認対象の変更を検出しました。
-          HITLロジック、安全不変条件、主要ワークフロー、または公開文書方針に影響する可能性があります。
-
-          ### 対象
-
-          - Incident: `{incident_id}`
-          - Reason code: `{entry.get("reason_code", "")}`
-          - Category: `{entry.get("category", "")}`
-          - File: `{entry.get("file", "")}`
-          - Line: `{entry.get("line") or ""}`
-          - Fingerprint: `{fp_hash}`
-          - Path profile: `{entry.get("path_profile", "")}`
-
-          ### エビデンス
-
-          - Source: `{evidence.get("source", entry.get("source", ""))}`
-          - Rule: `{evidence.get("rule_id", entry.get("rule_id", ""))}`
-          - Artifact: `{evidence.get("artifact", "")}`
-
-          ### 問題
-
-          {entry.get("message", "")}
-
-          ### なぜ問題か
-
-          {explanation.get("why_problematic_ja", "人間確認が必要です。")}
-
-          ### なぜこの分類か
-
-          {entry.get("classification_reason", "")}
-
-          ### 推奨対応
-
-          - 該当箇所を人間が確認してください。
-          - 自動修正・自動PR作成・自動マージは行わないでください。
-          - 公開PRコメントには攻撃手段・悪用手順・payload は載せません。
-
-          ### なぜこの修正案か
-
-          {explanation.get("why_fix_ja", "安全側の判断を維持するためです。")}
-
-          ### 修正効果予測
-
-          {prediction.get("expected_effect_ja", "修正によりリスク低減が期待されます。")}
-
-          注意: この効果は予測であり、最終確認には人間レビューとテストが必要です。
-
-          ### 自動化制限
-
-          - Auto branch creation: `false`
-          - Auto PR creation: `false`
-          - Auto commit: `false`
-          - Auto push: `false`
-          - Auto fix: `false`
-          - Auto merge: `false`
-          - Human decision required: `true`
-
-          <details>
-          <summary>English details</summary>
-
-          ## Tasukeru Analysis: Critical review required
-
-          This PR introduced a change that may affect HITL logic, safety invariants, the review workflow, or public documentation policy.
-
-          Please review the affected file manually. Do not auto-fix, auto-create a PR, or auto-merge this change.
-
-          Security details are intentionally limited to defensive review and safe remediation guidance.
-          Exploit payloads, attack steps, and offensive reproduction instructions must not be included in public PR comments.
-
-          Fix impact predictions are not guarantees. Human review and tests are still required.
-
-          </details>
-          """
-
-          posted = 0
-          for incident in incidents:
-              fp_hash = str(incident.get("fingerprint_hash", ""))
-              if not fp_hash:
-                  continue
-              if already_has_marker(fp_hash):
-                  incident["already_notified"] = True
-                  print(f"Duplicate critical incident already commented: {fp_hash}")
-                  continue
-              entry = entries_by_fp.get(fp_hash)
-              if not entry:
-                  print(f"No representative entry for incident fingerprint: {fp_hash}")
-                  continue
-              try:
-                  request_json("POST", api_root, {"body": render_comment(entry, incident)})
-              except urllib.error.HTTPError as err:
-                  print(f"Could not post PR comment for {fp_hash}: HTTP {err.code}.")
-                  continue
-              incident["already_notified"] = False
-              posted += 1
-              print(f"Posted critical PR comment for {fp_hash}")
-
-          state["incidents"] = incidents
-          state_path.write_text(
-              json.dumps(state, ensure_ascii=False, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          print(f"Posted comments: {posted}")
+          try:
+              if existing and existing.get("url"):
+                  request_json("PATCH", str(existing["url"]), {"body": comment_body})
+                  print("Updated existing Tasukeru critical PR comment.")
+              else:
+                  request_json("POST", api_root, {"body": comment_body})
+                  print("Posted Tasukeru critical PR comment.")
+          except urllib.error.HTTPError as err:
+              print(f"Could not post/update PR comment: HTTP {err.code}. Skipping comment.")
+              raise SystemExit(0)
           PY
-
-      - name: Upload advisory logs
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: tasukeru-advisory-logs
-          path: |
-            tasukeru_logs/
-            tasukeru_advisory_summary.md
-            tasukeru_hitl_review.md
-            tasukeru_hitl_review.json
-            tasukeru_notification_state.json
-            tasukeru_pr_comment.md
-            tasukeru_dradm_draft.md
-            tasukeru_dradm_draft.json
-            tasukeru_confidence_report.md
-            tasukeru_confidence_report.json
-          if-no-files-found: ignore
-
-      - name: Complete advisory phase
-        if: always()
-        run: |
-          set -euo pipefail
-          echo "Tasukeru advisory analysis completed."
-          echo "No branch, PR, commit, push, auto-fix, or auto-merge was performed."
