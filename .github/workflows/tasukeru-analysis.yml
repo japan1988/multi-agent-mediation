@@ -3305,7 +3305,7 @@ jobs:
           name: tasukeru-advisory-logs
           path: .
 
-      - name: Post critical PR comment
+      - name: Post Tasukeru PR announcement
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -3322,10 +3322,12 @@ jobs:
           from typing import Any
 
           state_path = Path("tasukeru_notification_state.json")
-          comment_path = Path("tasukeru_pr_comment.md")
+          critical_comment_path = Path("tasukeru_pr_comment.md")
+          announcement_md_path = Path("tasukeru_announcement.md")
+          announcement_json_path = Path("tasukeru_announcement.json")
 
-          if not state_path.exists() or not comment_path.exists():
-              print("Tasukeru notification state or comment Markdown not found; skipping comment.")
+          if not state_path.exists():
+              print("Tasukeru notification state not found; skipping comment.")
               raise SystemExit(0)
 
           event_path = os.environ.get("GITHUB_EVENT_PATH", "")
@@ -3345,20 +3347,112 @@ jobs:
           pr_number = pull_request.get("number")
           owner, repo = repo_name.split("/", 1)
           state = json.loads(state_path.read_text(encoding="utf-8"))
-          comment_body = comment_path.read_text(encoding="utf-8")
+
+          def read_json_file(path: Path, default: Any) -> Any:
+              try:
+                  if not path.exists():
+                      return default
+                  text = path.read_text(encoding="utf-8").strip()
+                  if not text:
+                      return default
+                  return json.loads(text)
+              except Exception:
+                  return default
+
+          announcement = read_json_file(announcement_json_path, {})
+          announcement_md = (
+              announcement_md_path.read_text(encoding="utf-8")
+              if announcement_md_path.exists()
+              else "Tasukeru announcement artifact was not generated."
+          )
+          critical_comment = (
+              critical_comment_path.read_text(encoding="utf-8")
+              if critical_comment_path.exists()
+              else ""
+          )
+
+          review_queue = announcement.get("review_queue", {}) if isinstance(announcement, dict) else {}
+          arl = announcement.get("arl", {}) if isinstance(announcement, dict) else {}
+          confidence = announcement.get("confidence", {}) if isinstance(announcement, dict) else {}
+          policy = announcement.get("policy", {}) if isinstance(announcement, dict) else {}
+          conclusion_ja = str(
+              announcement.get("conclusion_ja")
+              or "Tasukeru announcement summary is unavailable. Check workflow artifacts."
+          )
+          mode = str(announcement.get("mode") or "UNKNOWN")
 
           incidents = [
               incident for incident in state.get("incidents", [])
               if incident.get("notification_required")
           ]
+          hitl_required = int(
+              review_queue.get("hitl_required")
+              if review_queue.get("hitl_required") is not None
+              else state.get("critical_count", 0)
+          )
+          arl_verified = arl.get("verified")
 
-          if not incidents:
-              print("No HITL_REQUIRED incidents; no PR comment posted.")
-              raise SystemExit(0)
+          if hitl_required > 0:
+              status_label = "REVIEW REQUIRED"
+              headline = "HITL_REQUIRED was detected. Human review is required before merge."
+          elif arl_verified is False:
+              status_label = "ARL VERIFY FAILED"
+              headline = "ARL verification failed. Check artifacts before using this summary for review."
+          else:
+              status_label = "NO HITL_REQUIRED"
+              headline = "No HITL_REQUIRED findings were detected in this run."
 
-          if "tasukeru-analysis:no-critical" in comment_body:
-              print("Generated comment says no critical incidents; skipping comment.")
-              raise SystemExit(0)
+          auto_policy_lines = [
+              f"- Auto branch creation: `{policy.get('auto_branch_allowed', False)}`",
+              f"- Auto PR creation: `{policy.get('auto_pr_creation_allowed', False)}`",
+              f"- Auto commit: `{policy.get('auto_commit_allowed', False)}`",
+              f"- Auto push: `{policy.get('auto_push_allowed', False)}`",
+              f"- Auto fix: `{policy.get('autofix_allowed', False)}`",
+              f"- Auto merge: `{policy.get('auto_merge_allowed', False)}`",
+          ]
+
+          details_parts = [announcement_md]
+          if hitl_required > 0 and critical_comment and "tasukeru-analysis:no-critical" not in critical_comment:
+              details_parts.append("\n---\n\n## Critical finding details\n\n" + critical_comment)
+
+          marker = "<!-- tasukeru-analysis:announcement-summary -->"
+          comment_body = "\n".join(
+              [
+                  marker,
+                  "",
+                  "## Tasukeru Announcement",
+                  "",
+                  f"### Summary: `{status_label}`",
+                  "",
+                  headline,
+                  "",
+                  conclusion_ja,
+                  "",
+                  "### Quick check",
+                  "",
+                  f"- Mode: `{mode}`",
+                  f"- HITL_REQUIRED: `{hitl_required}`",
+                  f"- ARL verified: `{arl_verified}`",
+                  f"- ARL rows: `{arl.get('row_count')}`",
+                  f"- ARL error count: `{arl.get('error_count')}`",
+                  f"- Confidence: `{confidence.get('score')}` / `1.0` ({confidence.get('level')})",
+                  f"- FIX_RECOMMENDED: `{review_queue.get('fix_recommended')}`",
+                  f"- REVIEW_RECOMMENDED: `{review_queue.get('review_recommended')}`",
+                  "",
+                  "### Automation policy",
+                  "",
+                  *auto_policy_lines,
+                  "",
+                  "<details>",
+                  "<summary>Details from Tasukeru announcement artifacts</summary>",
+                  "",
+                  "\n\n".join(details_parts),
+                  "",
+                  "</details>",
+                  "",
+                  "This comment is an advisory status summary only. It is not a safety guarantee and does not replace human review.",
+              ]
+          )
 
           api_root = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
 
@@ -3389,24 +3483,28 @@ jobs:
               print(f"Could not list PR comments: HTTP {err.code}. Skipping comment.")
               raise SystemExit(0)
 
-          marker = "<!-- tasukeru-analysis:critical-summary -->"
+          markers = (
+              "<!-- tasukeru-analysis:announcement-summary -->",
+              "<!-- tasukeru-analysis:critical-summary -->",
+              "<!-- tasukeru-analysis:no-critical -->",
+          )
           existing = None
           if isinstance(existing_comments, list):
               for comment in existing_comments:
                   if not isinstance(comment, dict):
                       continue
                   body = str(comment.get("body", ""))
-                  if marker in body:
+                  if any(existing_marker in body for existing_marker in markers):
                       existing = comment
                       break
 
           try:
               if existing and existing.get("url"):
                   request_json("PATCH", str(existing["url"]), {"body": comment_body})
-                  print("Updated existing Tasukeru critical PR comment.")
+                  print("Updated existing Tasukeru PR announcement comment.")
               else:
                   request_json("POST", api_root, {"body": comment_body})
-                  print("Posted Tasukeru critical PR comment.")
+                  print("Posted Tasukeru PR announcement comment.")
           except urllib.error.HTTPError as err:
               print(f"Could not post/update PR comment: HTTP {err.code}. Skipping comment.")
               raise SystemExit(0)
