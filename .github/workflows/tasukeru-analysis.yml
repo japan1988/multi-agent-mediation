@@ -166,6 +166,8 @@ jobs:
           readme_refinement_json_path = Path("tasukeru_readme_refinement_draft.json")
           arl_jsonl_path = Path("tasukeru_arl.jsonl")
           arl_verify_json_path = Path("tasukeru_arl_verify.json")
+          announcement_md_path = Path("tasukeru_announcement.md")
+          announcement_json_path = Path("tasukeru_announcement.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -2456,6 +2458,215 @@ jobs:
               write_json(arl_verify_json_path, verification)
               return verification
 
+          def build_tasukeru_announcement_payload(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Translate verified ARL/advisory outputs into a human-readable summary.
+
+              This announcer layer is read-only and advisory-only. It does not change
+              findings, clear HITL_REQUIRED, modify repository files, or authorize any
+              automatic action.
+              """
+              counts = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
+              arl_verified = bool(arl_verification.get("verified"))
+              critical_count = int(state.get("critical_count", counts.get("HITL_REQUIRED", 0)) or 0)
+              review_count = int(counts.get("FIX_RECOMMENDED", 0) + counts.get("REVIEW_RECOMMENDED", 0))
+              noise_count = int(counts.get("NOISE_CANDIDATE", 0))
+              info_count = int(counts.get("INFO_ONLY", 0))
+
+              confidence_report = read_json(confidence_json_path, {})
+              total_confidence = (
+                  confidence_report.get("total") or {}
+                  if isinstance(confidence_report, dict)
+                  else {}
+              )
+              dradm_report = read_json(dradm_json_path, {})
+              readme_refinement_report = read_json(readme_refinement_json_path, {})
+
+              automation_policy = {
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "human_decision_required": True,
+              }
+
+              if not arl_verified:
+                  conclusion_ja = (
+                      "ARLハッシュチェーンの検証に失敗したため、通常要約は制限されています。"
+                      "原因・主体・意図は推測せず、tasukeru_arl_verify.json を確認してください。"
+                  )
+                  mode = "ARL_VERIFY_FAILED_LIMITED_SUMMARY"
+                  recommended_next_actions = [
+                      "tasukeru_arl_verify.json を確認する",
+                      "tasukeru_arl.jsonl の欠損・破損・改ざん検知エラーを確認する",
+                      "ARL検証が回復するまで、この要約を最終判断に使わない",
+                  ]
+              elif critical_count:
+                  conclusion_ja = (
+                      "HITL_REQUIRED が検出されています。merge前に人間確認が必要です。"
+                      "ARLハッシュチェーンは検証済みです。"
+                  )
+                  mode = "HITL_REQUIRED_SUMMARY"
+                  recommended_next_actions = [
+                      "tasukeru_hitl_review.md を確認する",
+                      "tasukeru_hitl_review.json で対象reason_codeとfileを確認する",
+                      "必要に応じて該当artifactとARL行へ戻る",
+                      "人間が判断するまでmergeしない",
+                  ]
+              else:
+                  conclusion_ja = (
+                      "このrunでは HITL_REQUIRED はありません。"
+                      "ARLハッシュチェーンは検証済みです。"
+                      "自動PR・自動commit・自動push・自動fix・自動mergeは有効化されていません。"
+                  )
+                  mode = "NORMAL_HUMAN_SUMMARY"
+                  recommended_next_actions = [
+                      "tasukeru_advisory_summary.md を確認する",
+                      "必要に応じて tasukeru_dradm_draft.md と tasukeru_readme_refinement_draft.md を確認する",
+                      "FIX_RECOMMENDED / REVIEW_RECOMMENDED の残件を次の改善候補として扱う",
+                  ]
+
+              look_first = [
+                  "tasukeru_advisory_summary.md",
+                  "tasukeru_hitl_review.md",
+                  "tasukeru_hitl_review.json",
+                  "tasukeru_arl_verify.json",
+              ]
+              if dradm_report:
+                  look_first.append("tasukeru_dradm_draft.md")
+              if readme_refinement_report:
+                  look_first.append("tasukeru_readme_refinement_draft.md")
+              if confidence_report:
+                  look_first.append("tasukeru_confidence_report.md")
+
+              source_constraints = {
+                  "source_of_truth": "tasukeru_arl.jsonl + tasukeru_arl_verify.json + advisory artifacts",
+                  "arl_verified": arl_verified,
+                  "do_not_infer_actor_intent_or_cause": True,
+                  "do_not_claim_safety_guarantee": True,
+                  "unknowns_must_remain_unknown": True,
+                  "summary_is_not_final_decision": True,
+              }
+
+              return {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_announcer",
+                  "status": "ADVISORY_ONLY",
+                  "mode": mode,
+                  "generated": True,
+                  "purpose": "Translate verified Tasukeru ARL/advisory outputs into a concise human-readable summary.",
+                  "conclusion_ja": conclusion_ja,
+                  "metadata": metadata,
+                  "decision_counts": dict(counts),
+                  "review_queue": {
+                      "hitl_required": critical_count,
+                      "fix_recommended": int(counts.get("FIX_RECOMMENDED", 0)),
+                      "review_recommended": int(counts.get("REVIEW_RECOMMENDED", 0)),
+                      "noise_candidate": noise_count,
+                      "info_only": info_count,
+                      "remaining_review_items": review_count,
+                  },
+                  "arl": {
+                      "verified": arl_verified,
+                      "row_count": arl_verification.get("row_count"),
+                      "head_hash": arl_verification.get("head_hash"),
+                      "hmac_enabled": arl_verification.get("hmac_enabled"),
+                      "error_count": len(arl_verification.get("errors", []) or []),
+                      "verify_artifact": "tasukeru_arl_verify.json",
+                      "source_artifact": "tasukeru_arl.jsonl",
+                  },
+                  "confidence": {
+                      "score": total_confidence.get("total_confidence_score"),
+                      "level": total_confidence.get("total_confidence_level"),
+                      "scope": "classification/suggestion confidence only; not permission to auto-apply changes",
+                  },
+                  "drafts": {
+                      "dradm_draft_count": dradm_report.get("draft_count") if isinstance(dradm_report, dict) else None,
+                      "readme_refinement_status": readme_refinement_report.get("draft_status")
+                      if isinstance(readme_refinement_report, dict)
+                      else None,
+                      "readme_refinement_target": readme_refinement_report.get("target_file")
+                      if isinstance(readme_refinement_report, dict)
+                      else None,
+                  },
+                  "look_first": look_first,
+                  "recommended_next_actions": recommended_next_actions,
+                  "source_constraints": source_constraints,
+                  "policy": automation_policy,
+              }
+
+          def write_tasukeru_announcement(payload: dict[str, Any]) -> None:
+              write_json(announcement_json_path, payload)
+              review_queue = payload.get("review_queue", {}) if isinstance(payload, dict) else {}
+              arl = payload.get("arl", {}) if isinstance(payload, dict) else {}
+              confidence = payload.get("confidence", {}) if isinstance(payload, dict) else {}
+              drafts = payload.get("drafts", {}) if isinstance(payload, dict) else {}
+              policy = payload.get("policy", {}) if isinstance(payload, dict) else {}
+              source_constraints = payload.get("source_constraints", {}) if isinstance(payload, dict) else {}
+
+              with announcement_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru Announcement\n\n")
+                  f.write("This artifact is an announcer-style natural-language summary. ")
+                  f.write("It translates verified Tasukeru ARL/advisory outputs for human review and does not make decisions.\n\n")
+                  f.write("## 結論\n\n")
+                  f.write(str(payload.get("conclusion_ja", "No conclusion generated.")) + "\n\n")
+                  f.write("## 確認結果\n\n")
+                  f.write(f"- Mode: `{payload.get('mode')}`\n")
+                  f.write(f"- ARL verified: `{arl.get('verified')}`\n")
+                  f.write(f"- ARL rows: `{arl.get('row_count')}`\n")
+                  f.write(f"- ARL head hash: `{arl.get('head_hash')}`\n")
+                  f.write(f"- ARL HMAC enabled: `{arl.get('hmac_enabled')}`\n")
+                  f.write(f"- ARL error count: `{arl.get('error_count')}`\n")
+                  f.write(f"- HITL_REQUIRED: `{review_queue.get('hitl_required')}`\n")
+                  f.write(f"- FIX_RECOMMENDED: `{review_queue.get('fix_recommended')}`\n")
+                  f.write(f"- REVIEW_RECOMMENDED: `{review_queue.get('review_recommended')}`\n")
+                  f.write(f"- NOISE_CANDIDATE: `{review_queue.get('noise_candidate')}`\n")
+                  f.write(f"- INFO_ONLY: `{review_queue.get('info_only')}`\n")
+                  f.write(f"- Confidence: `{confidence.get('score')}` / `1.0` ({confidence.get('level')})\n")
+                  f.write(f"- DRADM draft count: `{drafts.get('dradm_draft_count')}`\n")
+                  f.write(f"- README refinement status: `{drafts.get('readme_refinement_status')}`\n\n")
+
+                  f.write("## 人間が先に見るもの\n\n")
+                  for item in payload.get("look_first", []) or []:
+                      f.write(f"- `{item}`\n")
+                  f.write("\n## 推奨される次の確認\n\n")
+                  for item in payload.get("recommended_next_actions", []) or []:
+                      f.write(f"- {item}\n")
+
+                  f.write("\n## 権限と制限\n\n")
+                  f.write("- This announcement does not clear `HITL_REQUIRED`.\n")
+                  f.write("- This announcement does not modify repository files.\n")
+                  f.write("- This announcement does not create branches, PRs, commits, pushes, fixes, or merges.\n")
+                  f.write(f"- Auto branch creation: `{policy.get('auto_branch_allowed')}`\n")
+                  f.write(f"- Auto PR creation: `{policy.get('auto_pr_creation_allowed')}`\n")
+                  f.write(f"- Auto commit: `{policy.get('auto_commit_allowed')}`\n")
+                  f.write(f"- Auto push: `{policy.get('auto_push_allowed')}`\n")
+                  f.write(f"- Auto fix: `{policy.get('autofix_allowed')}`\n")
+                  f.write(f"- Auto merge: `{policy.get('auto_merge_allowed')}`\n")
+                  f.write(f"- Human decision required: `{policy.get('human_decision_required')}`\n")
+
+                  f.write("\n## NCF / fact-boundary note\n\n")
+                  f.write("- This announcement only summarizes recorded ARL/advisory artifacts.\n")
+                  f.write("- It must not infer cause, actor, or intent beyond the logs.\n")
+                  f.write("- It must not claim production safety or compliance certification.\n")
+                  f.write(f"- Source of truth: `{source_constraints.get('source_of_truth')}`\n")
+
+          def generate_tasukeru_announcement(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+          ) -> dict[str, Any]:
+              payload = build_tasukeru_announcement_payload(entries, state, metadata, arl_verification)
+              write_tasukeru_announcement(payload)
+              return payload
+
           def clamp_score(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
               return round(max(minimum, min(maximum, value)), 3)
 
@@ -2904,6 +3115,8 @@ jobs:
                   f.write("- `tasukeru_confidence_report.json`\n")
                   f.write("- `tasukeru_readme_refinement_draft.md`\n")
                   f.write("- `tasukeru_readme_refinement_draft.json`\n")
+                  f.write("- `tasukeru_announcement.md`\n")
+                  f.write("- `tasukeru_announcement.json`\n")
                   f.write("- `tasukeru_arl.jsonl`\n")
                   f.write("- `tasukeru_arl_verify.json`\n")
                   f.write("- `tasukeru_logs/`\n\n")
@@ -2999,6 +3212,7 @@ jobs:
           generate_dradm_draft_artifacts(all_entries, notification_state, metadata)
           generate_readme_refinement_artifacts(metadata)
           arl_verification = generate_tasukeru_arl_hash_chain(all_entries, notification_state, metadata)
+          announcement = generate_tasukeru_announcement(all_entries, notification_state, metadata, arl_verification)
 
           print("# Tasukeru advisory summary")
           print(f"Ruff findings: {metadata['ruff_count']}")
@@ -3022,6 +3236,10 @@ jobs:
           print("ARL hash chain")
           print(f"ARL verified: {arl_verification.get('verified')}")
           print(f"ARL rows: {arl_verification.get('row_count')}")
+          print("")
+          print("Tasukeru announcement")
+          print(f"Announcement generated: {announcement.get('generated')}")
+          print(f"Announcement mode: {announcement.get('mode')}")
           print("")
           print("Automation policy")
           print("Auto branch creation: false")
@@ -3050,6 +3268,8 @@ jobs:
             tasukeru_confidence_report.json
             tasukeru_readme_refinement_draft.md
             tasukeru_readme_refinement_draft.json
+            tasukeru_announcement.md
+            tasukeru_announcement.json
             tasukeru_arl.jsonl
             tasukeru_arl_verify.json
           if-no-files-found: ignore
