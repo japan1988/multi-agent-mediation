@@ -33,6 +33,21 @@ Maestro Orchestrator is a research-oriented orchestration framework for multi-ag
 
 This repository contains multiple simulator lines. Some files focus on KAGE-like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
 
+## Beginner reading guide
+
+If you are new to this repository, start here.
+
+1. Read **Safety and scope** first.
+2. Read **Tasukeru Analysis** to understand the review helper.
+3. Read **Advisory-only policy** to understand what the workflow does not do.
+4. Read **HITL decision support** to understand when human review is required.
+5. Read **Current simulator lines** only after you understand the safety boundaries.
+
+This repository is a research and educational test bench.  
+The outputs are research artifacts, not production approvals or safety guarantees.
+
+When behavior is unclear, read the relevant implementation together with its tests before applying any change.
+
 ## Safety and scope
 
 This repository is a research prototype.
