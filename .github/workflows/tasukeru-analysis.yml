@@ -1,4 +1,4 @@
-  name: Tasukeru Analysis
+ name: Tasukeru Analysis
 
 on:
   pull_request:
@@ -1508,7 +1508,7 @@ jobs:
               )
               return {
                   "schema_version": "1.0",
-                  "notification_policy": "pull_request_status_comment_create_or_update",
+                  "notification_policy": "critical_only_single_comment",
                   "critical_decision": "HITL_REQUIRED",
                   "auto_branch_allowed": False,
                   "auto_pr_creation_allowed": False,
@@ -2485,11 +2485,13 @@ jobs:
               )
               dradm_report = read_json(dradm_json_path, {})
               readme_refinement_report = read_json(readme_refinement_json_path, {})
-              readme_refinement_draft = (
-                  readme_refinement_report.get("draft", {})
-                  if isinstance(readme_refinement_report, dict)
-                  else {}
-              )
+              readme_refinement_draft = {}
+              if isinstance(readme_refinement_report, dict):
+                  draft_obj = readme_refinement_report.get("draft")
+                  if isinstance(draft_obj, dict):
+                      readme_refinement_draft = draft_obj
+                  else:
+                      readme_refinement_draft = readme_refinement_report
 
               automation_policy = {
                   "auto_branch_allowed": False,
@@ -3145,12 +3147,12 @@ jobs:
               with pr_comment_path.open("w", encoding="utf-8") as f:
                   critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
                   if not critical:
-                      counts_for_comment = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
+                      counts_for_comment = Counter(entry["decision"] for entry in entries)
                       f.write("<!-- tasukeru-analysis:announcement-summary -->\n\n")
                       f.write("## Tasukeru Announcement\n\n")
                       f.write("### Summary: `NO HITL_REQUIRED`\n\n")
                       f.write("No `HITL_REQUIRED` findings were detected in this run.\n\n")
-                      f.write("このrunでは `HITL_REQUIRED` は検出されませんでした。\n")
+                      f.write("このrunでは `HITL_REQUIRED` はありません。\n")
                       f.write("このコメントは advisory status summary であり、安全保証ではありません。\n\n")
                       f.write("### Quick check\n\n")
                       f.write("- HITL_REQUIRED: `0`\n")
@@ -3436,7 +3438,45 @@ jobs:
               f"- Auto merge: `{policy.get('auto_merge_allowed', False)}`",
           ]
 
-          details_parts = [announcement_md]
+          look_first = announcement.get("look_first", []) if isinstance(announcement, dict) else []
+          recommended_next_actions = (
+              announcement.get("recommended_next_actions", [])
+              if isinstance(announcement, dict)
+              else []
+          )
+          source_constraints = (
+              announcement.get("source_constraints", {})
+              if isinstance(announcement, dict)
+              else {}
+          )
+
+          details_lines = [
+              "### Details from Tasukeru announcement artifacts",
+              "",
+              "This PR comment is intentionally compact. The full source of truth remains in the workflow artifacts.",
+              "",
+              "#### Look first",
+          ]
+          if look_first:
+              details_lines.extend(f"- `{item}`" for item in look_first)
+          else:
+              details_lines.append("- `tasukeru_announcement.md`")
+          details_lines.extend(["", "#### Recommended next actions"])
+          if recommended_next_actions:
+              details_lines.extend(f"- {item}" for item in recommended_next_actions)
+          else:
+              details_lines.append("- Check `tasukeru_advisory_summary.md` and `tasukeru_hitl_review.md`.")
+          details_lines.extend(
+              [
+                  "",
+                  "#### Fact-boundary note",
+                  f"- Source of truth: `{source_constraints.get('source_of_truth', 'tasukeru_arl.jsonl + tasukeru_arl_verify.json + advisory artifacts')}`",
+                  "- This comment must not infer cause, actor, or intent beyond the logs.",
+                  "- This comment is not a safety guarantee.",
+              ]
+          )
+
+          details_parts = ["\n".join(details_lines)]
           if hitl_required > 0 and critical_comment and "tasukeru-analysis:no-critical" not in critical_comment:
               details_parts.append("\n---\n\n## Critical finding details\n\n" + critical_comment)
 
