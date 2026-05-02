@@ -141,6 +141,7 @@ jobs:
 
           import difflib
           import hashlib
+          import hmac
           import json
           import os
           import re
@@ -163,6 +164,8 @@ jobs:
           confidence_json_path = Path("tasukeru_confidence_report.json")
           readme_refinement_md_path = Path("tasukeru_readme_refinement_draft.md")
           readme_refinement_json_path = Path("tasukeru_readme_refinement_draft.json")
+          arl_jsonl_path = Path("tasukeru_arl.jsonl")
+          arl_verify_json_path = Path("tasukeru_arl_verify.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -2137,6 +2140,322 @@ jobs:
                           f.write("\n... full draft truncated in Markdown; see JSON artifact for full draft data.\n")
                       f.write("\n```\n")
 
+          def sha256_file(path: Path) -> str:
+              try:
+                  h = hashlib.sha256()
+                  with path.open("rb") as f:
+                      for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                          h.update(chunk)
+                  return h.hexdigest()
+              except Exception:
+                  return ""
+
+          def canonical_json_bytes(obj: Any) -> bytes:
+              return json.dumps(
+                  obj,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              ).encode("utf-8")
+
+          def chain_hash(prev_hash: str, row_hash: str) -> str:
+              return hashlib.sha256(f"{prev_hash}:{row_hash}".encode("utf-8")).hexdigest()
+
+          def optional_hmac_sha256(value: str) -> str:
+              key = os.environ.get("TASUKERU_ARL_HMAC_KEY", "")
+              if not key:
+                  return ""
+              return hmac.new(key.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()
+
+          def build_arl_row(
+              *,
+              seq: int,
+              run_id: str,
+              layer: str,
+              decision: str,
+              sealed: bool,
+              overrideable: bool,
+              final_decider: str,
+              reason_code: str,
+              prev_hash: str,
+              evidence: dict[str, Any] | None = None,
+          ) -> dict[str, Any]:
+              row: dict[str, Any] = {
+                  "schema_version": "1.0",
+                  "seq": seq,
+                  "run_id": run_id,
+                  "layer": layer,
+                  "decision": decision,
+                  "sealed": sealed,
+                  "overrideable": overrideable,
+                  "final_decider": final_decider,
+                  "reason_code": reason_code,
+                  "prev_hash": prev_hash,
+                  "evidence": evidence or {},
+                  "modifies_repository": False,
+                  "auto_apply_allowed": False,
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "human_decision_required": True,
+              }
+              row_hash = hashlib.sha256(canonical_json_bytes(row)).hexdigest()
+              current_chain_hash = chain_hash(prev_hash, row_hash)
+              row["row_hash"] = row_hash
+              row["chain_hash"] = current_chain_hash
+              hmac_value = optional_hmac_sha256(current_chain_hash)
+              if hmac_value:
+                  row["hmac_sha256"] = hmac_value
+              return row
+
+          def verify_tasukeru_arl_hash_chain(path: Path) -> dict[str, Any]:
+              errors: list[dict[str, Any]] = []
+              prev_hash = "GENESIS"
+              row_count = 0
+              head_hash = "GENESIS"
+              hmac_key_present = bool(os.environ.get("TASUKERU_ARL_HMAC_KEY", ""))
+
+              if not path.exists():
+                  return {
+                      "schema_version": "1.0",
+                      "tool": "tasukeru_arl_hash_chain_verify",
+                      "verified": False,
+                      "row_count": 0,
+                      "head_hash": "",
+                      "hmac_enabled": hmac_key_present,
+                      "errors": [{"seq": None, "reason": "ARL file was not generated."}],
+                      "policy": {
+                          "modifies_repository": False,
+                          "auto_apply_allowed": False,
+                          "auto_branch_allowed": False,
+                          "auto_pr_creation_allowed": False,
+                          "auto_commit_allowed": False,
+                          "auto_push_allowed": False,
+                          "autofix_allowed": False,
+                          "auto_merge_allowed": False,
+                          "human_decision_required": True,
+                      },
+                  }
+
+              with path.open("r", encoding="utf-8", errors="replace") as f:
+                  for line_no, line in enumerate(f, start=1):
+                      line = line.strip()
+                      if not line:
+                          continue
+                      try:
+                          row = json.loads(line)
+                      except Exception as exc:
+                          errors.append({"line": line_no, "reason": f"invalid_json: {exc}"})
+                          continue
+                      if not isinstance(row, dict):
+                          errors.append({"line": line_no, "reason": "row is not an object"})
+                          continue
+
+                      row_count += 1
+                      seq = row.get("seq", row_count)
+                      expected_prev = row.get("prev_hash")
+                      actual_row_hash = row.get("row_hash")
+                      actual_chain_hash = row.get("chain_hash")
+                      row_for_hash = dict(row)
+                      row_for_hash.pop("row_hash", None)
+                      row_for_hash.pop("chain_hash", None)
+                      row_for_hash.pop("hmac_sha256", None)
+                      expected_row_hash = hashlib.sha256(canonical_json_bytes(row_for_hash)).hexdigest()
+                      expected_chain_hash = chain_hash(prev_hash, expected_row_hash)
+
+                      if expected_prev != prev_hash:
+                          errors.append(
+                              {
+                                  "seq": seq,
+                                  "reason": "prev_hash_mismatch",
+                                  "expected": prev_hash,
+                                  "actual": expected_prev,
+                              }
+                          )
+                      if actual_row_hash != expected_row_hash:
+                          errors.append(
+                              {
+                                  "seq": seq,
+                                  "reason": "row_hash_mismatch",
+                                  "expected": expected_row_hash,
+                                  "actual": actual_row_hash,
+                              }
+                          )
+                      if actual_chain_hash != expected_chain_hash:
+                          errors.append(
+                              {
+                                  "seq": seq,
+                                  "reason": "chain_hash_mismatch",
+                                  "expected": expected_chain_hash,
+                                  "actual": actual_chain_hash,
+                              }
+                          )
+                      if hmac_key_present:
+                          expected_hmac = optional_hmac_sha256(expected_chain_hash)
+                          actual_hmac = row.get("hmac_sha256")
+                          if actual_hmac != expected_hmac:
+                              errors.append(
+                                  {
+                                      "seq": seq,
+                                      "reason": "hmac_mismatch",
+                                      "expected": expected_hmac,
+                                      "actual": actual_hmac,
+                                  }
+                              )
+                      prev_hash = str(actual_chain_hash or expected_chain_hash)
+                      head_hash = prev_hash
+
+              return {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_arl_hash_chain_verify",
+                  "verified": not errors,
+                  "row_count": row_count,
+                  "head_hash": head_hash,
+                  "hmac_enabled": hmac_key_present,
+                  "errors": errors,
+                  "policy": {
+                      "modifies_repository": False,
+                      "auto_apply_allowed": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+              }
+
+          def generate_tasukeru_arl_hash_chain(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Generate an advisory-only ARL hash chain artifact.
+
+              This does not change repository files and does not influence the existing
+              finding classification. It records Tasukeru outputs as tamper-evident
+              audit rows for human review.
+              """
+              run_id = os.environ.get("GITHUB_RUN_ID") or os.environ.get("GITHUB_RUN_NUMBER") or "local"
+              seq = 1
+              prev_hash = "GENESIS"
+              rows: list[dict[str, Any]] = []
+
+              summary_decision = "PAUSE_FOR_HITL" if state.get("critical_count", 0) else "RUN"
+              summary_reason = "TASUKERU_HITL_REQUIRED_PRESENT" if state.get("critical_count", 0) else "TASUKERU_SUMMARY_RECORDED"
+              row = build_arl_row(
+                  seq=seq,
+                  run_id=run_id,
+                  layer="tasukeru_summary",
+                  decision=summary_decision,
+                  sealed=False,
+                  overrideable=summary_decision == "PAUSE_FOR_HITL",
+                  final_decider="SYSTEM",
+                  reason_code=summary_reason,
+                  prev_hash=prev_hash,
+                  evidence={
+                      "metadata": metadata,
+                      "notification_state_summary": {
+                          "critical_count": state.get("critical_count", 0),
+                          "new_critical_incident_count": state.get("new_critical_incident_count", 0),
+                          "suppressed_duplicate_critical_incident_count": state.get("suppressed_duplicate_critical_incident_count", 0),
+                      },
+                  },
+              )
+              rows.append(row)
+              prev_hash = row["chain_hash"]
+              seq += 1
+
+              for entry in entries:
+                  advisory_decision = str(entry.get("decision", ""))
+                  arl_decision = "PAUSE_FOR_HITL" if advisory_decision == "HITL_REQUIRED" else "RUN"
+                  row = build_arl_row(
+                      seq=seq,
+                      run_id=run_id,
+                      layer="tasukeru_finding",
+                      decision=arl_decision,
+                      sealed=False,
+                      overrideable=arl_decision == "PAUSE_FOR_HITL",
+                      final_decider="SYSTEM",
+                      reason_code=str(entry.get("reason_code", "TASUKERU_FINDING_RECORDED")),
+                      prev_hash=prev_hash,
+                      evidence={
+                          "source": entry.get("source"),
+                          "advisory_decision": advisory_decision,
+                          "severity": entry.get("severity"),
+                          "category": entry.get("category"),
+                          "rule_id": entry.get("rule_id"),
+                          "file": entry.get("file"),
+                          "line": entry.get("line"),
+                          "fingerprint_hash": entry.get("fingerprint_hash"),
+                          "path_profile": entry.get("path_profile"),
+                      },
+                  )
+                  rows.append(row)
+                  prev_hash = row["chain_hash"]
+                  seq += 1
+
+              artifact_paths = [
+                  summary_path,
+                  hitl_md_path,
+                  hitl_json_path,
+                  notification_state_path,
+                  pr_comment_path,
+                  dradm_md_path,
+                  dradm_json_path,
+                  confidence_md_path,
+                  confidence_json_path,
+                  readme_refinement_md_path,
+                  readme_refinement_json_path,
+                  log_dir / "logic-review.json",
+                  log_dir / "documentation-review.json",
+                  log_dir / "ruff.json",
+                  log_dir / "bandit.json",
+                  log_dir / "pip-audit.json",
+              ]
+              for artifact_path in artifact_paths:
+                  if not artifact_path.exists():
+                      continue
+                  artifact_sha256 = sha256_file(artifact_path)
+                  row = build_arl_row(
+                      seq=seq,
+                      run_id=run_id,
+                      layer="artifact_integrity",
+                      decision="RUN",
+                      sealed=False,
+                      overrideable=False,
+                      final_decider="SYSTEM",
+                      reason_code="TASUKERU_ARTIFACT_RECORDED",
+                      prev_hash=prev_hash,
+                      evidence={
+                          "artifact": str(artifact_path).replace("\\", "/"),
+                          "artifact_sha256": artifact_sha256,
+                          "size_bytes": artifact_path.stat().st_size,
+                      },
+                  )
+                  rows.append(row)
+                  prev_hash = row["chain_hash"]
+                  seq += 1
+
+              with arl_jsonl_path.open("w", encoding="utf-8") as f:
+                  for row in rows:
+                      f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+              verification = verify_tasukeru_arl_hash_chain(arl_jsonl_path)
+              verification.update(
+                  {
+                      "arl_path": str(arl_jsonl_path),
+                      "verify_path": str(arl_verify_json_path),
+                      "purpose": "Advisory-only tamper-evident record of Tasukeru outputs.",
+                  }
+              )
+              write_json(arl_verify_json_path, verification)
+              return verification
+
           def clamp_score(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
               return round(max(minimum, min(maximum, value)), 3)
 
@@ -2585,6 +2904,8 @@ jobs:
                   f.write("- `tasukeru_confidence_report.json`\n")
                   f.write("- `tasukeru_readme_refinement_draft.md`\n")
                   f.write("- `tasukeru_readme_refinement_draft.json`\n")
+                  f.write("- `tasukeru_arl.jsonl`\n")
+                  f.write("- `tasukeru_arl_verify.json`\n")
                   f.write("- `tasukeru_logs/`\n\n")
 
                   def collapsible(title: str, data: list[dict[str, Any]], limit: int = 30) -> None:
@@ -2677,6 +2998,7 @@ jobs:
           write_outputs(all_entries, notification_state, metadata)
           generate_dradm_draft_artifacts(all_entries, notification_state, metadata)
           generate_readme_refinement_artifacts(metadata)
+          arl_verification = generate_tasukeru_arl_hash_chain(all_entries, notification_state, metadata)
 
           print("# Tasukeru advisory summary")
           print(f"Ruff findings: {metadata['ruff_count']}")
@@ -2697,6 +3019,10 @@ jobs:
               print(f"Total confidence: {total_confidence.get('total_confidence_score')} / 1.0")
               print(f"Confidence level: {total_confidence.get('total_confidence_level')}")
               print("")
+          print("ARL hash chain")
+          print(f"ARL verified: {arl_verification.get('verified')}")
+          print(f"ARL rows: {arl_verification.get('row_count')}")
+          print("")
           print("Automation policy")
           print("Auto branch creation: false")
           print("Auto PR creation: false")
@@ -2724,6 +3050,8 @@ jobs:
             tasukeru_confidence_report.json
             tasukeru_readme_refinement_draft.md
             tasukeru_readme_refinement_draft.json
+            tasukeru_arl.jsonl
+            tasukeru_arl_verify.json
           if-no-files-found: ignore
 
       - name: Complete advisory phase
