@@ -161,6 +161,8 @@ jobs:
           dradm_json_path = Path("tasukeru_dradm_draft.json")
           confidence_md_path = Path("tasukeru_confidence_report.md")
           confidence_json_path = Path("tasukeru_confidence_report.json")
+          readme_refinement_md_path = Path("tasukeru_readme_refinement_draft.md")
+          readme_refinement_json_path = Path("tasukeru_readme_refinement_draft.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -1880,6 +1882,261 @@ jobs:
                               f.write("\n... full draft truncated in Markdown; see JSON artifact for full draft data.\n")
                           f.write("\n```\n\n")
 
+          def build_human_readability_policy_addition() -> str:
+              return textwrap.dedent(
+                  """
+                  ## Human readability policy
+
+                  Tasukeru Analysis prioritizes code that humans can safely read, review, and maintain.
+
+                  A change should not be treated as a good fix merely because it is easier for AI or automated tools to process. If a change may reduce human readability, reviewability, or maintainability, it should be routed back for human review.
+                  """
+              ).strip()
+
+          def discover_batch_script_lines() -> list[str]:
+              scripts_dir = Path("scripts")
+              if not scripts_dir.exists():
+                  return []
+              return [
+                  f"- `{normalize_path(str(path))}`"
+                  for path in sorted(scripts_dir.glob("*.bat"))
+                  if path.is_file()
+              ]
+
+          def build_batch_scripts_addition(script_lines: list[str]) -> str:
+              listed_scripts = "\n".join(script_lines) if script_lines else "- No `.bat` scripts were discovered under `scripts/` during this run."
+              return textwrap.dedent(
+                  f"""
+                  ## Batch scripts
+
+                  Batch scripts may be used as convenience wrappers for local simulation runs.
+
+                  Discovered batch scripts:
+
+                  {listed_scripts}
+
+                  These scripts should be treated as local developer utilities only.
+
+                  They should not:
+
+                  - embed production HMAC keys
+                  - upload or submit artifacts automatically
+                  - bypass HITL confirmation
+                  - delete files automatically
+                  - process real personal or confidential data
+                  - change license or safety semantics
+                  - weaken tests or gate invariants
+
+                  For local demonstrations, a demo key mode may be used only when the simulator explicitly supports it. Production-like runs should use an environment variable or a protected key file for HMAC keys.
+                  """
+              ).strip()
+
+          def build_beginner_reading_guide_addition() -> str:
+              return textwrap.dedent(
+                  """
+                  ## Beginner reading guide
+
+                  For a first pass, read this repository in the following order:
+
+                  1. Safety and scope
+                  2. Tasukeru Analysis
+                  3. Advisory-only policy
+                  4. HITL decision support
+                  5. Current simulator lines
+                  6. Gate and decision model
+                  7. Disclaimer
+
+                  Treat simulator outputs as research artifacts, not production approvals. When behavior is unclear, read the relevant implementation together with its tests before applying any change.
+                  """
+              ).strip()
+
+          def insert_before_heading_once(text: str, heading: str, addition: str) -> str:
+              if addition.strip() in text:
+                  return text
+              index = text.find(heading)
+              if index == -1:
+                  suffix = "" if text.endswith("\n") else "\n"
+                  return text + suffix + "\n" + addition.strip() + "\n"
+              return text[:index].rstrip() + "\n\n" + addition.strip() + "\n\n" + text[index:].lstrip()
+
+          def build_readme_refinement_result() -> dict[str, Any]:
+              target = "README.md"
+              path = Path(target)
+              before = read_text(path) if path.exists() else ""
+              after = before
+              additions: list[str] = []
+              notes: list[str] = []
+              checks: list[dict[str, Any]] = []
+
+              if not before.strip():
+                  notes.append("README.md was not found or was empty; no refinement draft was generated.")
+                  return {
+                      "target_file": target,
+                      "draft_status": "NO_README_FOUND",
+                      "current_sha256": sha256_text(before),
+                      "draft_sha256": sha256_text(after),
+                      "unified_diff": "",
+                      "full_draft": after,
+                      "modifies_repository": False,
+                      "auto_apply_allowed": False,
+                      "human_decision_required": True,
+                      "checks": checks,
+                      "notes": notes,
+                  }
+
+              lower = before.lower()
+
+              if "human readability policy" not in lower:
+                  addition = build_human_readability_policy_addition()
+                  after = insert_before_heading_once(after, "## Security review output policy", addition)
+                  additions.append("Human readability policy")
+                  checks.append(
+                      {
+                          "name": "human_readability_policy",
+                          "status": "DRAFT_ADDED",
+                          "reason": "README did not clearly state that human readability takes priority over AI/tool readability.",
+                      }
+                  )
+              else:
+                  checks.append({"name": "human_readability_policy", "status": "PRESENT"})
+
+              script_lines = discover_batch_script_lines()
+              if "## batch scripts" not in lower and script_lines:
+                  addition = build_batch_scripts_addition(script_lines)
+                  after = insert_before_heading_once(after, "## Recommended reading order", addition)
+                  additions.append("Batch scripts")
+                  checks.append(
+                      {
+                          "name": "batch_scripts",
+                          "status": "DRAFT_ADDED",
+                          "script_count": len(script_lines),
+                          "reason": "Batch scripts were discovered but README did not contain a Batch scripts section.",
+                      }
+                  )
+              elif "## batch scripts" in lower:
+                  checks.append({"name": "batch_scripts", "status": "PRESENT"})
+              else:
+                  checks.append(
+                      {
+                          "name": "batch_scripts",
+                          "status": "SKIPPED_NO_BATCH_FILES",
+                          "reason": "No .bat files were discovered under scripts/ during this run.",
+                      }
+                  )
+
+              if "beginner reading guide" not in lower:
+                  addition = build_beginner_reading_guide_addition()
+                  after = insert_before_heading_once(after, "## Current simulator lines", addition)
+                  additions.append("Beginner reading guide")
+                  checks.append(
+                      {
+                          "name": "beginner_reading_guide",
+                          "status": "DRAFT_ADDED",
+                          "reason": "README can be easier for first-time readers with a short reading path.",
+                      }
+                  )
+              else:
+                  checks.append({"name": "beginner_reading_guide", "status": "PRESENT"})
+
+              overclaim_patterns = [
+                  ("COMPLETE_SAFETY_CLAIM", re.compile(r"complete\s+AI\s+safety\s+coverage", re.IGNORECASE)),
+                  ("PRODUCTION_SAFETY_CLAIM", re.compile(r"production\s+safety\s+system", re.IGNORECASE)),
+                  ("GUARANTEE_SAFE_AUTONOMY", re.compile(r"guarantee\s+of\s+safe\s+autonomous\s+behavior", re.IGNORECASE)),
+              ]
+              for code, pattern in overclaim_patterns:
+                  if pattern.search(before):
+                      notes.append(
+                          f"{code}: phrase appears in README. Confirm it is used as a disclaimer/negative claim, not as a capability claim."
+                      )
+
+              diff = make_unified_diff(file_path=target, before=before, after=after)
+              return {
+                  "target_file": target,
+                  "draft_status": "DRAFT_READY" if diff else "NO_CHANGE_NEEDED",
+                  "added_sections": additions,
+                  "current_sha256": sha256_text(before),
+                  "draft_sha256": sha256_text(after),
+                  "unified_diff": diff,
+                  "full_draft": after,
+                  "modifies_repository": False,
+                  "auto_apply_allowed": False,
+                  "human_decision_required": True,
+                  "checks": checks,
+                  "notes": notes,
+              }
+
+          def generate_readme_refinement_artifacts(metadata: dict[str, Any]) -> None:
+              result = build_readme_refinement_result()
+              payload = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_readme_refinement_draft",
+                  "status": "DRAFT_ONLY",
+                  "purpose": "Generate a README refinement draft that is easier for humans to read without changing repository files.",
+                  "metadata": metadata,
+                  "policy": {
+                      "modifies_repository": False,
+                      "auto_apply_allowed": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+                  "draft": result,
+              }
+              write_json(readme_refinement_json_path, payload)
+
+              with readme_refinement_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru README Refinement Draft\n\n")
+                  f.write("## Decision\n\n")
+                  f.write("- Status: `DRAFT_ONLY`\n")
+                  f.write("- Human decision required: `true`\n")
+                  f.write("- Auto apply: `false`\n")
+                  f.write("- Auto branch creation: `false`\n")
+                  f.write("- Auto PR creation: `false`\n")
+                  f.write("- Auto commit: `false`\n")
+                  f.write("- Auto push: `false`\n")
+                  f.write("- Auto fix: `false`\n")
+                  f.write("- Auto merge: `false`\n\n")
+                  f.write("This artifact contains a draft-only README refinement proposal. It does not modify repository files.\n\n")
+                  f.write("## Summary\n\n")
+                  f.write(f"- Target file: `{result.get('target_file', 'README.md')}`\n")
+                  f.write(f"- Draft status: `{result.get('draft_status', 'UNKNOWN')}`\n")
+                  added_sections = result.get("added_sections") or []
+                  f.write(f"- Added sections: {len(added_sections)}\n")
+                  for section in added_sections:
+                      f.write(f"  - {section}\n")
+                  f.write("\n## Checks\n\n")
+                  checks = result.get("checks") or []
+                  if checks:
+                      for check in checks:
+                          f.write(f"- `{check.get('name', 'unknown')}`: `{check.get('status', 'UNKNOWN')}`\n")
+                          if check.get("reason"):
+                              f.write(f"  - Reason: {check.get('reason')}\n")
+                  else:
+                      f.write("No checks were recorded.\n")
+                  notes = result.get("notes") or []
+                  if notes:
+                      f.write("\n## Notes\n\n")
+                      for note in notes:
+                          f.write(f"- {note}\n")
+                  if result.get("unified_diff"):
+                      f.write("\n## Unified diff\n\n")
+                      f.write("```diff\n")
+                      f.write(str(result["unified_diff"])[:20000])
+                      if len(str(result["unified_diff"])) > 20000:
+                          f.write("\n... diff truncated in Markdown; see JSON artifact for full draft data.\n")
+                      f.write("\n```\n")
+                  if result.get("full_draft"):
+                      f.write("\n## Full draft\n\n")
+                      f.write("```markdown\n")
+                      f.write(str(result["full_draft"])[:30000])
+                      if len(str(result["full_draft"])) > 30000:
+                          f.write("\n... full draft truncated in Markdown; see JSON artifact for full draft data.\n")
+                      f.write("\n```\n")
+
           def clamp_score(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
               return round(max(minimum, min(maximum, value)), 3)
 
@@ -2326,6 +2583,8 @@ jobs:
                   f.write("- `tasukeru_dradm_draft.json`\n")
                   f.write("- `tasukeru_confidence_report.md`\n")
                   f.write("- `tasukeru_confidence_report.json`\n")
+                  f.write("- `tasukeru_readme_refinement_draft.md`\n")
+                  f.write("- `tasukeru_readme_refinement_draft.json`\n")
                   f.write("- `tasukeru_logs/`\n\n")
 
                   def collapsible(title: str, data: list[dict[str, Any]], limit: int = 30) -> None:
@@ -2417,6 +2676,7 @@ jobs:
 
           write_outputs(all_entries, notification_state, metadata)
           generate_dradm_draft_artifacts(all_entries, notification_state, metadata)
+          generate_readme_refinement_artifacts(metadata)
 
           print("# Tasukeru advisory summary")
           print(f"Ruff findings: {metadata['ruff_count']}")
@@ -2462,6 +2722,8 @@ jobs:
             tasukeru_dradm_draft.json
             tasukeru_confidence_report.md
             tasukeru_confidence_report.json
+            tasukeru_readme_refinement_draft.md
+            tasukeru_readme_refinement_draft.json
           if-no-files-found: ignore
 
       - name: Complete advisory phase
