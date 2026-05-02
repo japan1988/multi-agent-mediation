@@ -1,4 +1,4 @@
- name: Tasukeru Analysis
+name: Tasukeru Analysis
 
 on:
   pull_request:
@@ -3438,45 +3438,7 @@ jobs:
               f"- Auto merge: `{policy.get('auto_merge_allowed', False)}`",
           ]
 
-          look_first = announcement.get("look_first", []) if isinstance(announcement, dict) else []
-          recommended_next_actions = (
-              announcement.get("recommended_next_actions", [])
-              if isinstance(announcement, dict)
-              else []
-          )
-          source_constraints = (
-              announcement.get("source_constraints", {})
-              if isinstance(announcement, dict)
-              else {}
-          )
-
-          details_lines = [
-              "### Details from Tasukeru announcement artifacts",
-              "",
-              "This PR comment is intentionally compact. The full source of truth remains in the workflow artifacts.",
-              "",
-              "#### Look first",
-          ]
-          if look_first:
-              details_lines.extend(f"- `{item}`" for item in look_first)
-          else:
-              details_lines.append("- `tasukeru_announcement.md`")
-          details_lines.extend(["", "#### Recommended next actions"])
-          if recommended_next_actions:
-              details_lines.extend(f"- {item}" for item in recommended_next_actions)
-          else:
-              details_lines.append("- Check `tasukeru_advisory_summary.md` and `tasukeru_hitl_review.md`.")
-          details_lines.extend(
-              [
-                  "",
-                  "#### Fact-boundary note",
-                  f"- Source of truth: `{source_constraints.get('source_of_truth', 'tasukeru_arl.jsonl + tasukeru_arl_verify.json + advisory artifacts')}`",
-                  "- This comment must not infer cause, actor, or intent beyond the logs.",
-                  "- This comment is not a safety guarantee.",
-              ]
-          )
-
-          details_parts = ["\n".join(details_lines)]
+          details_parts = [announcement_md]
           if hitl_required > 0 and critical_comment and "tasukeru-analysis:no-critical" not in critical_comment:
               details_parts.append("\n---\n\n## Critical finding details\n\n" + critical_comment)
 
@@ -3573,4 +3535,4 @@ jobs:
           except urllib.error.HTTPError as err:
               print(f"Could not post/update PR comment: HTTP {err.code}. Skipping comment.")
               raise SystemExit(0)
-          PY
+          PY 
