@@ -1,4 +1,4 @@
-name: Tasukeru Analysis
+ name: Tasukeru Analysis
 
 on:
   pull_request:
@@ -268,20 +268,28 @@ jobs:
               ("HITL_REQUIRED_FALSE", re.compile(r'["\']?human[_-]?decision[_-]?required["\']?\s*[:=]\s*false', re.IGNORECASE)),
           ]
 
-          # Phase 1 abuse-pattern review.
+          # Phase 1.1 abuse-pattern review.
           #
-          # This is intentionally conservative and advisory-only:
-          # - no automatic fix
-          # - no CI job failure
-          # - active/protected paths become HITL_REQUIRED with gate_decision=STOPPED
-          # - public comments must not include exploit steps or payload details
+          # Purpose:
+          # - Detect likely unsafe external effects, credential transfer, destructive
+          #   side effects, and dynamic execution.
+          # - Do not fail the GitHub Actions job.
+          # - Stop on the Tasukeru side by emitting HITL_REQUIRED + gate_decision=STOPPED
+          #   for active/protected paths.
+          # - Keep public PR comments sanitized and folded.
+          #
+          # This is deliberately conservative and avoids known false positives:
+          # - workflow's own GitHub PR-comment API calls
+          # - *_TOKENS vocabulary constants
+          # - known state-store reset unlink calls
+          # - nosec + HITL-gated + shell=False subprocess calls
           ABUSE_NETWORK_SEND_PATTERNS = [
               re.compile(r"\brequests\.(post|put|patch|delete)\s*\(", re.IGNORECASE),
               re.compile(r"\burllib\.request\.urlopen\s*\(", re.IGNORECASE),
               re.compile(r"\bhttp\.client\.", re.IGNORECASE),
           ]
           ABUSE_CREDENTIAL_WORDS = re.compile(
-              r"(secret|token|api[_-]?key|password|credential|private[_-]?key)",
+              r"\b(secret|token|api[_-]?key|password|credential|private[_-]?key)\b",
               re.IGNORECASE,
           )
           ABUSE_DESTRUCTIVE_PATTERNS = [
@@ -295,6 +303,15 @@ jobs:
               re.compile(r"\bexec\s*\(", re.IGNORECASE),
               re.compile(r"\bsubprocess\.(run|Popen|call)\s*\(", re.IGNORECASE),
           ]
+          ABUSE_ALLOWED_SELF_WORKFLOW_PATHS = {
+              ".github/workflows/tasukeru-analysis.yml",
+              "github/workflows/tasukeru-analysis.yml",
+          }
+          ABUSE_KNOWN_STATE_RESET_MARKERS = {
+              "trust_store_path",
+              "grants_store_path",
+              "eval_state_path",
+          }
 
           RULE_PROFILES: dict[str, dict[str, str]] = {
               "B101": {
@@ -1076,7 +1093,7 @@ jobs:
                   )
               )
 
-          def add_abuse_pattern_stop(
+          def add_abuse_pattern_entry(
               entries: list[dict[str, Any]],
               code: str,
               msg: str,
@@ -1084,21 +1101,31 @@ jobs:
               line: int | None = None,
               *,
               path_profile: str = "",
+              decision: str | None = None,
+              severity: str | None = None,
+              gate_decision: str | None = None,
+              sealed: bool | None = None,
+              overrideable: bool | None = None,
               classification_reason: str = "",
           ) -> None:
               resolved_path_profile = path_profile or classify_path_profile(file)
-              if resolved_path_profile in {"tests", "historical", "archive"}:
-                  decision = "REVIEW_RECOMMENDED" if resolved_path_profile == "tests" else "INFO_ONLY"
-                  severity = "MEDIUM"
-                  gate_decision = "PAUSE_FOR_HITL"
-                  sealed = False
-                  overrideable = True
-              else:
-                  decision = "HITL_REQUIRED"
-                  severity = "CRITICAL"
-                  gate_decision = "STOPPED"
-                  sealed = True
-                  overrideable = False
+
+              if decision is None:
+                  if resolved_path_profile in {"tests"}:
+                      decision = "REVIEW_RECOMMENDED"
+                  elif resolved_path_profile in {"historical", "archive"}:
+                      decision = "INFO_ONLY"
+                  else:
+                      decision = "HITL_REQUIRED"
+
+              if gate_decision is None:
+                  gate_decision = "STOPPED" if decision == "HITL_REQUIRED" else "PAUSE_FOR_HITL"
+              if severity is None:
+                  severity = "CRITICAL" if decision == "HITL_REQUIRED" else "MEDIUM"
+              if sealed is None:
+                  sealed = decision == "HITL_REQUIRED"
+              if overrideable is None:
+                  overrideable = not sealed
 
               entry = make_entry(
                   source="Tasukeru Abuse Pattern Review",
@@ -1117,7 +1144,7 @@ jobs:
                   confidence="MEDIUM",
                   risk_type="abuse_pattern",
                   classification_reason=classification_reason
-                  or "Phase 1 abuse-pattern review detected a potentially unsafe code pattern.",
+                  or "Phase 1.1 abuse-pattern review detected a potentially unsafe code pattern.",
                   path_profile=resolved_path_profile,
               )
               entry.update(
@@ -1147,17 +1174,33 @@ jobs:
               return any(pattern.search(line) for pattern in ABUSE_DYNAMIC_EXEC_PATTERNS)
 
           def line_has_credential_reference(line: str) -> bool:
+              if "_tokens" in line.lower() or "side_effect_tokens" in line.lower():
+                  return False
               return bool(ABUSE_CREDENTIAL_WORDS.search(line))
 
+          def is_allowed_self_workflow_path(path: Path) -> bool:
+              normalized = normalize_path(str(path)).lower()
+              return normalized in ABUSE_ALLOWED_SELF_WORKFLOW_PATHS
+
+          def is_known_state_store_reset_line(line: str) -> bool:
+              lower = line.lower()
+              return ".unlink" in lower and any(marker in lower for marker in ABUSE_KNOWN_STATE_RESET_MARKERS)
+
+          def is_safe_hitl_gated_subprocess_line(line: str) -> bool:
+              lower = line.lower()
+              return (
+                  "subprocess.run" in lower
+                  and "nosec" in lower
+                  and "hitl-gated" in lower
+                  and "shell=false" in lower
+              )
+
           def should_skip_abuse_pattern_file(path: Path) -> bool:
-              normalized = normalize_path(str(path))
-              if normalized == ".github/workflows/tasukeru-analysis.yml":
-                  # Avoid self-triggering on the advisory workflow implementation.
-                  # Dedicated workflow self-review remains covered by control-bypass,
-                  # permissions, and HITL boundary checks.
+              if is_allowed_self_workflow_path(path):
+                  # Avoid self-triggering on the advisory workflow's own GitHub API
+                  # comment posting code. Dedicated self-review remains covered by
+                  # control-bypass, permissions, and HITL boundary checks.
                   return True
-              if is_superseded_historical_path(str(path)):
-                  return False
               return path.suffix not in {".py", ".yml", ".yaml"}
 
           def run_abuse_pattern_review_for_file(
@@ -1180,7 +1223,7 @@ jobs:
 
                   if line_has_network_send(stripped):
                       if "approved" not in lower and "hitl" not in lower and "allowlist" not in lower:
-                          add_abuse_pattern_stop(
+                          add_abuse_pattern_entry(
                               entries,
                               "ABUSE_UNAPPROVED_EXTERNAL_EFFECT",
                               "Potential unapproved external-effect code was detected.",
@@ -1197,7 +1240,7 @@ jobs:
                       or "upload" in lower
                       or "exfil" in lower
                   ):
-                      add_abuse_pattern_stop(
+                      add_abuse_pattern_entry(
                           entries,
                           "ABUSE_CREDENTIAL_ACCESS_PATTERN",
                           "Potential credential access combined with outbound or transfer behavior was detected.",
@@ -1209,8 +1252,24 @@ jobs:
                       hits += 1
 
                   if line_has_destructive_effect(stripped):
-                      if "tmp_path" not in lower and "temporary" not in lower and "test" not in lower:
-                          add_abuse_pattern_stop(
+                      if is_known_state_store_reset_line(stripped):
+                          add_abuse_pattern_entry(
+                              entries,
+                              "ABUSE_STATE_STORE_RESET_REVIEW",
+                              "Known state-store reset operation was detected and downgraded for review.",
+                              normalized_path,
+                              idx,
+                              path_profile=profile,
+                              decision="REVIEW_RECOMMENDED",
+                              severity="MEDIUM",
+                              gate_decision="PAUSE_FOR_HITL",
+                              sealed=False,
+                              overrideable=True,
+                              classification_reason="Known trust/grant/eval state-store reset path; reviewable but not a critical abuse stop.",
+                          )
+                          hits += 1
+                      elif "tmp_path" not in lower and "temporary" not in lower and "test" not in lower:
+                          add_abuse_pattern_entry(
                               entries,
                               "ABUSE_DESTRUCTIVE_SIDE_EFFECT_PATTERN",
                               "Potential destructive file-system side effect was detected.",
@@ -1222,8 +1281,24 @@ jobs:
                           hits += 1
 
                   if line_has_dynamic_execution(stripped):
-                      if "literal_eval" not in lower and "pytest" not in lower:
-                          add_abuse_pattern_stop(
+                      if is_safe_hitl_gated_subprocess_line(stripped):
+                          add_abuse_pattern_entry(
+                              entries,
+                              "ABUSE_DYNAMIC_EXECUTION_REVIEW_ONLY",
+                              "HITL-gated subprocess execution was detected and downgraded for review.",
+                              normalized_path,
+                              idx,
+                              path_profile=profile,
+                              decision="REVIEW_RECOMMENDED",
+                              severity="MEDIUM",
+                              gate_decision="PAUSE_FOR_HITL",
+                              sealed=False,
+                              overrideable=True,
+                              classification_reason="nosec + HITL-gated + shell=False subprocess line; reviewable but not a critical abuse stop.",
+                          )
+                          hits += 1
+                      elif "literal_eval" not in lower and "pytest" not in lower:
+                          add_abuse_pattern_entry(
                               entries,
                               "ABUSE_EVASION_OR_DYNAMIC_EXECUTION_PATTERN",
                               "Potential dynamic execution or command execution pattern was detected.",
@@ -3586,6 +3661,7 @@ jobs:
             
             state_path = Path("tasukeru_notification_state.json")
             critical_comment_path = Path("tasukeru_pr_comment.md")
+            hitl_json_path = Path("tasukeru_hitl_review.json")
             announcement_md_path = Path("tasukeru_announcement.md")
             announcement_json_path = Path("tasukeru_announcement.json")
             
@@ -3623,6 +3699,7 @@ jobs:
                     return default
             
             announcement = read_json_file(announcement_json_path, {})
+            hitl_review = read_json_file(hitl_json_path, {})
             announcement_md = (
                 announcement_md_path.read_text(encoding="utf-8")
                 if announcement_md_path.exists()
@@ -3684,6 +3761,75 @@ jobs:
                 f"- Auto merge: `{policy.get('auto_merge_allowed', False)}`",
             ]
             
+            def collect_hitl_entries(payload: Any) -> list[dict[str, Any]]:
+                if not isinstance(payload, dict):
+                    return []
+                candidates: list[Any] = []
+                for key in ("findings", "entries", "hitl_required", "items"):
+                    value = payload.get(key)
+                    if isinstance(value, list):
+                        candidates.extend(value)
+                # Some artifacts nest findings under review_queue or results.
+                for key in ("review_queue", "results"):
+                    value = payload.get(key)
+                    if isinstance(value, dict):
+                        nested = value.get("findings") or value.get("entries") or []
+                        if isinstance(nested, list):
+                            candidates.extend(nested)
+
+                hitl: list[dict[str, Any]] = []
+                for item in candidates:
+                    if not isinstance(item, dict):
+                        continue
+                    decision = str(item.get("decision", item.get("level", "")))
+                    if decision == "HITL_REQUIRED":
+                        hitl.append(item)
+                return hitl
+
+            def sanitize_for_public_comment(value: Any, limit: int = 220) -> str:
+                text = str(value or "").replace("\n", " ").strip()
+                text = text.replace("`", "'")
+                # Keep public comments detection-oriented. Detailed snippets stay in artifacts.
+                for token in ("payload", "exploit", "attack steps", "exfiltrate"):
+                    text = text.replace(token, "[redacted-detail]")
+                if len(text) > limit:
+                    return text[: limit - 1] + "…"
+                return text
+
+            hitl_entries = collect_hitl_entries(hitl_review)
+            folded_hitl_lines: list[str] = []
+            if hitl_required > 0:
+                folded_hitl_lines.extend(
+                    [
+                        "Sanitized HITL summary. Full details are in `tasukeru_hitl_review.md` and `tasukeru_hitl_review.json`.",
+                        "",
+                    ]
+                )
+                if hitl_entries:
+                    for index, entry in enumerate(hitl_entries[:10], start=1):
+                        location = str(entry.get("file") or "repository")
+                        if entry.get("line"):
+                            location = f"{location}:{entry.get('line')}"
+                        folded_hitl_lines.extend(
+                            [
+                                f"{index}. `{sanitize_for_public_comment(entry.get('reason_code'))}`",
+                                f"   - Source: `{sanitize_for_public_comment(entry.get('source'))}`",
+                                f"   - Location: `{sanitize_for_public_comment(location)}`",
+                                f"   - Gate: `{sanitize_for_public_comment(entry.get('gate_decision', ''))}`",
+                                f"   - Message: {sanitize_for_public_comment(entry.get('message'))}",
+                            ]
+                        )
+                    if len(hitl_entries) > 10:
+                        folded_hitl_lines.append(f"- ... {len(hitl_entries) - 10} more HITL entries are kept in artifacts.")
+                else:
+                    for index, incident in enumerate(incidents[:10], start=1):
+                        folded_hitl_lines.append(
+                            f"{index}. `{sanitize_for_public_comment(incident.get('reason_code'))}` "
+                            f"at `{sanitize_for_public_comment(incident.get('representative_file'))}`"
+                        )
+                    if not incidents:
+                        folded_hitl_lines.append("- HITL entries were not expanded; open the artifacts listed below.")
+
             artifact_names = [
                 "tasukeru_advisory_summary.md",
                 "tasukeru_hitl_review.md",
@@ -3743,6 +3889,19 @@ jobs:
                     "",
                     *auto_policy_lines,
                     "",
+                    *(
+                        [
+                            "<details>",
+                            f"<summary>Sanitized HITL_REQUIRED summary ({hitl_required})</summary>",
+                            "",
+                            "\n".join(folded_hitl_lines),
+                            "",
+                            "</details>",
+                            "",
+                        ]
+                        if hitl_required > 0
+                        else []
+                    ),
                     "<details>",
                     "<summary>Review artifacts and next checks</summary>",
                     "",
