@@ -100,20 +100,45 @@ jobs:
 
           printf '%s\n' "${changed_files[@]}" > tasukeru_logs/scanned-files.txt
 
+          # Split scan targets by tool responsibility.
+          #
+          # Ruff and Bandit must not receive Markdown or policy documents:
+          # - Ruff is for Python / notebook linting.
+          # - Bandit is for Python security scanning.
+          # - README / docs / LICENSE / SECURITY / CONTRIBUTING remain covered by
+          #   Tasukeru documentation review and logic review below.
+          ruff_files=()
+          py_files=()
+          doc_files=()
+          for f in "${changed_files[@]}"; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.py)
+                ruff_files+=("$f")
+                py_files+=("$f")
+                ;;
+              *.ipynb)
+                ruff_files+=("$f")
+                ;;
+              README*.md|SECURITY.md|LICENSE*|LICENSE_POLICY.md|CONTRIBUTING.md|CODE_OF_CONDUCT.md|NOTICE|TRADEMARKS.md|docs/*|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE.md)
+                doc_files+=("$f")
+                ;;
+            esac
+          done
+
+          printf '%s\n' "${ruff_files[@]}" > tasukeru_logs/ruff-scanned-files.txt
+          printf '%s\n' "${py_files[@]}" > tasukeru_logs/bandit-scanned-files.txt
+          printf '%s\n' "${doc_files[@]}" > tasukeru_logs/documentation-scanned-files.txt
+
           set +e
 
-          if [ "${#changed_files[@]}" -gt 0 ]; then
-            ruff check "${changed_files[@]}" --output-format=json > tasukeru_logs/ruff.json 2> tasukeru_logs/ruff.stderr
+          if [ "${#ruff_files[@]}" -gt 0 ]; then
+            ruff check "${ruff_files[@]}" --output-format=json > tasukeru_logs/ruff.json 2> tasukeru_logs/ruff.stderr
             ruff_exit=$?
           else
             echo "[]" > tasukeru_logs/ruff.json
             ruff_exit=0
           fi
-
-          py_files=()
-          for f in "${changed_files[@]}"; do
-            [[ "$f" == *.py ]] && py_files+=("$f")
-          done
 
           if [ "${#py_files[@]}" -gt 0 ]; then
             bandit "${py_files[@]}" -f json -o tasukeru_logs/bandit.json \
