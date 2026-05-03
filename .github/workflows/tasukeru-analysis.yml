@@ -24,6 +24,8 @@ on:
       - "**/*.jsonl"
   workflow_dispatch:
 
+# Default to read-only. Write permission is granted only in the
+# post-critical-comment job, which does not checkout or execute PR code.
 permissions:
   contents: read
 
@@ -61,58 +63,88 @@ jobs:
           cache-dependency-path: |
             pyproject.toml
 
-      - name: Install advisory tools only
+      - name: Detect changed files
+        id: changed
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+            | grep -E '(\.py$|\.ipynb$|^pyproject\.toml$|^requirements.*\.txt$|^README.*\.md$|^SECURITY\.md$|^LICENSE|^LICENSE_POLICY\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$|^NOTICE$|^TRADEMARKS\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE\.md$|^\.github/workflows/tasukeru-analysis\.yml$|^log_codebook.*\.json$|\.jsonl$)' \
+            > tasukeru_changed_files.txt || true
+
+          if [ ! -s tasukeru_changed_files.txt ]; then
+            echo "No relevant changed files."
+          fi
+
+      - name: Install advisory tools only
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p tasukeru_logs/fix_candidates
           python -m pip install --upgrade pip
           pip install "ruff==0.6.9" "bandit[toml]" "pip-audit"
 
       - name: Run advisory tools
+        if: always()
         run: |
           set -euo pipefail
           mkdir -p tasukeru_logs/fix_candidates
 
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ -s tasukeru_changed_files.txt ]; then
+            mapfile -t changed_files < tasukeru_changed_files.txt
+          else
+            mapfile -t changed_files < <(find . -type f \( -name '*.py' -o -name '*.ipynb' -o -name '*.md' -o -name '*.toml' \) \
+              -not -path './.git/*' -not -path './.venv/*' -not -path './venv/*' -not -path './archive/*')
+          fi
+
+          printf '%s\n' "${changed_files[@]}" > tasukeru_logs/scanned-files.txt
+
           set +e
 
-          ruff check . --output-format=json > tasukeru_logs/ruff.json 2> tasukeru_logs/ruff.stderr
-          ruff_exit=$?
-
-          bandit -r . \
-            -x "./.git,./.venv,./venv,./archive" \
-            -f json \
-            -o tasukeru_logs/bandit.json \
-            > tasukeru_logs/bandit.stdout \
-            2> tasukeru_logs/bandit.stderr
-          bandit_exit=$?
-
-          if [ -f requirements-dev.txt ]; then
-            python -m pip_audit \
-              -r requirements-dev.txt \
-              -f json \
-              -o tasukeru_logs/pip-audit.json \
-              > tasukeru_logs/pip-audit.stdout \
-              2> tasukeru_logs/pip-audit.stderr
-            pip_exit=$?
-          elif [ -f requirements.txt ]; then
-            python -m pip_audit \
-              -r requirements.txt \
-              -f json \
-              -o tasukeru_logs/pip-audit.json \
-              > tasukeru_logs/pip-audit.stdout \
-              2> tasukeru_logs/pip-audit.stderr
-            pip_exit=$?
+          if [ "${#changed_files[@]}" -gt 0 ]; then
+            ruff check "${changed_files[@]}" --output-format=json > tasukeru_logs/ruff.json 2> tasukeru_logs/ruff.stderr
+            ruff_exit=$?
           else
-            printf '{"dependencies":[],"vulnerabilities":[]}\n' > tasukeru_logs/pip-audit.json
-            printf 'No requirements.txt or requirements-dev.txt found; dependency audit skipped.\n' > tasukeru_logs/pip-audit.stdout
-            : > tasukeru_logs/pip-audit.stderr
-            pip_exit=0
+            echo "[]" > tasukeru_logs/ruff.json
+            ruff_exit=0
           fi
+
+          py_files=()
+          for f in "${changed_files[@]}"; do
+            [[ "$f" == *.py ]] && py_files+=("$f")
+          done
+
+          if [ "${#py_files[@]}" -gt 0 ]; then
+            bandit "${py_files[@]}" -f json -o tasukeru_logs/bandit.json \
+              > tasukeru_logs/bandit.stdout 2> tasukeru_logs/bandit.stderr
+            bandit_exit=$?
+          else
+            echo '{"results":[]}' > tasukeru_logs/bandit.json
+            bandit_exit=0
+          fi
+
+          echo '{"dependencies":[],"vulnerabilities":[]}' > tasukeru_logs/pip-audit.json
+          pip_exit=0
+
+          for req in requirements.txt requirements-dev.txt; do
+            if [ -f "$req" ]; then
+              python -m pip_audit -r "$req" -f json -o "tasukeru_logs/pip-audit-${req}.json" \
+                > "tasukeru_logs/pip-audit-${req}.stdout" \
+                2> "tasukeru_logs/pip-audit-${req}.stderr"
+              this_exit=$?
+              [ "$this_exit" -ne 0 ] && pip_exit=$this_exit
+            fi
+          done
 
           set -e
 
-          echo "${ruff_exit}" > tasukeru_logs/ruff.exit
-          echo "${bandit_exit}" > tasukeru_logs/bandit.exit
-          echo "${pip_exit}" > tasukeru_logs/pip-audit.exit
+          echo "$ruff_exit" > tasukeru_logs/ruff.exit
+          echo "$bandit_exit" > tasukeru_logs/bandit.exit
+          echo "$pip_exit" > tasukeru_logs/pip-audit.exit
 
           echo "ruff_exit=${ruff_exit}"
           echo "bandit_exit=${bandit_exit}"
@@ -124,31 +156,3144 @@ jobs:
           set -euo pipefail
           mkdir -p tasukeru_logs/fix_candidates
 
-          # Keep the existing embedded Python generator body here unchanged.
-          #
-          # The safety fix is intentionally outside the generator:
-          # - do not pip install PR-provided requirements
-          # - only audit dependency manifests
-          # - treat missing requirements as skipped, not environment audit
-          #
-          # Paste your existing Python block from:
-          #   from __future__ import annotations
-          # through:
-          #   PY
-          #
-          # No Tasukeru classification / ARL / announcement logic needs to change.
-
           python - <<'PY'
-          # PASTE THE EXISTING TASUKERU GENERATOR PYTHON HERE UNCHANGED.
-          #
-          # This placeholder is only here because the generator body you pasted is
-          # very large. The corrected workflow logic is in the surrounding YAML.
-          #
-          # If you want this as a literal single-file workflow, replace this block
-          # with your current generator body exactly as-is.
-          raise SystemExit(
-              "Replace this placeholder with the existing Tasukeru generator Python body."
-          )
+          from __future__ import annotations
+
+          import difflib
+          import hashlib
+          import hmac
+          import json
+          import os
+          import re
+          import textwrap
+          from collections import Counter, defaultdict
+          from pathlib import Path
+          from typing import Any
+
+          repo = Path(".")
+          log_dir = Path("tasukeru_logs")
+
+          summary_path = Path("tasukeru_advisory_summary.md")
+          hitl_md_path = Path("tasukeru_hitl_review.md")
+          hitl_json_path = Path("tasukeru_hitl_review.json")
+          notification_state_path = Path("tasukeru_notification_state.json")
+          pr_comment_path = Path("tasukeru_pr_comment.md")
+          dradm_md_path = Path("tasukeru_dradm_draft.md")
+          dradm_json_path = Path("tasukeru_dradm_draft.json")
+          confidence_md_path = Path("tasukeru_confidence_report.md")
+          confidence_json_path = Path("tasukeru_confidence_report.json")
+          readme_refinement_md_path = Path("tasukeru_readme_refinement_draft.md")
+          readme_refinement_json_path = Path("tasukeru_readme_refinement_draft.json")
+          arl_jsonl_path = Path("tasukeru_arl.jsonl")
+          arl_verify_json_path = Path("tasukeru_arl_verify.json")
+          announcement_md_path = Path("tasukeru_announcement.md")
+          announcement_json_path = Path("tasukeru_announcement.json")
+
+          AUTO_FALSE = {
+              "auto_branch_allowed": False,
+              "auto_pr_creation_allowed": False,
+              "auto_commit_allowed": False,
+              "auto_push_allowed": False,
+              "auto_merge_allowed": False,
+              "autofix_allowed": False,
+              "human_decision_required": True,
+              "suggestion_only": True,
+              "verified": False,
+          }
+
+          SKIP_DIRS = {
+              ".git",
+              ".venv",
+              "venv",
+              "__pycache__",
+              ".pytest_cache",
+              ".mypy_cache",
+              ".ruff_cache",
+              "archive",
+          }
+
+          TEXT_EXTS = {
+              ".py",
+              ".yml",
+              ".yaml",
+              ".md",
+              ".txt",
+              ".json",
+              ".jsonl",
+              ".toml",
+              ".cfg",
+              ".ini",
+              ".rst",
+          }
+
+          ALLOWED_DECISIONS = {"RUN", "PAUSE_FOR_HITL", "STOPPED"}
+          ETHICS_OR_ACC_LAYERS = {"ethics_gate", "acc_gate"}
+          RFL_LAYERS = {"relativity_gate", "rfl", "RFL"}
+          REQUIRED_ARL_KEYS = {
+              "run_id",
+              "layer",
+              "decision",
+              "sealed",
+              "overrideable",
+              "final_decider",
+              "reason_code",
+          }
+          CONTROL_BYPASS_PATTERNS = [
+              ("AUTO_MERGE_TRUE", re.compile(r'["\']?auto[_-]?merge[_-]?allowed["\']?\s*[:=]\s*true', re.IGNORECASE)),
+              ("AUTO_FIX_TRUE", re.compile(r'["\']?auto(?:fix|[_-]?fix)[_-]?allowed["\']?\s*[:=]\s*true', re.IGNORECASE)),
+              ("AUTO_PUSH_TRUE", re.compile(r'["\']?auto[_-]?push[_-]?allowed["\']?\s*[:=]\s*true', re.IGNORECASE)),
+              ("AUTO_PR_TRUE", re.compile(r'["\']?auto[_-]?pr[_-]?creation[_-]?allowed["\']?\s*[:=]\s*true', re.IGNORECASE)),
+              ("HITL_REQUIRED_FALSE", re.compile(r'["\']?human[_-]?decision[_-]?required["\']?\s*[:=]\s*false', re.IGNORECASE)),
+          ]
+
+          RULE_PROFILES: dict[str, dict[str, str]] = {
+              "B101": {
+                  "default_decision": "NOISE_CANDIDATE",
+                  "summary_ja": "pytest assert またはシミュレーション上の assert は、runtime safety gate でない限り通常はPR通知対象外です。",
+              },
+              "B108": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "一時ファイル/一時ディレクトリの扱いは、active path では文脈確認が必要です。",
+              },
+              "B110": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "try/except/pass は失敗を隠す可能性があるため、active path では確認対象です。",
+              },
+              "B311": {
+                  "default_decision": "NOISE_CANDIDATE",
+                  "summary_ja": "非暗号用途の random はシミュレーションでは許容される場合がありますが、秘密値・認証・セキュリティ用途では不可です。",
+              },
+              "B404": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "subprocess import は単体では直ちに危険ではありませんが、active path では使い方確認が必要です。",
+              },
+              "B603": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "subprocess 呼び出しは入力・shell指定・実行対象の確認が必要です。",
+              },
+              "B607": {
+                  "default_decision": "REVIEW_RECOMMENDED",
+                  "summary_ja": "partial executable path はCI/環境依存の誤実行につながる可能性があるため確認対象です。",
+              },
+              "F401": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "未使用importは機械的修正候補ですが、自動修正はせず人間が確認します。",
+              },
+              "F841": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "未使用変数は機械的修正候補ですが、自動修正はせず人間が確認します。",
+              },
+              "I001": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "import順序の整形候補です。active path では人間確認後に手動修正します。",
+              },
+              "W291": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "末尾空白の整形候補です。inactive historical では通知対象外へ下げられます。",
+              },
+              "W293": {
+                  "default_decision": "FIX_RECOMMENDED",
+                  "summary_ja": "空行の空白整形候補です。inactive historical では通知対象外へ下げられます。",
+              },
+          }
+
+          def read_text(path: Path, default: str = "") -> str:
+              try:
+                  return path.read_text(encoding="utf-8")
+              except UnicodeDecodeError:
+                  try:
+                      return path.read_text(encoding="utf-8", errors="replace")
+                  except Exception:
+                      return default
+              except Exception:
+                  return default
+
+          def read_json(path: Path, default: Any) -> Any:
+              try:
+                  text = path.read_text(encoding="utf-8").strip()
+                  if not text:
+                      return default
+                  return json.loads(text)
+              except Exception:
+                  return default
+
+          def write_json(path: Path, obj: Any) -> None:
+              path.write_text(
+                  json.dumps(obj, ensure_ascii=False, indent=2) + "\n",
+                  encoding="utf-8",
+              )
+
+          def read_exit(name: str) -> int:
+              text = read_text(log_dir / name, "0").strip()
+              try:
+                  return int(text)
+              except ValueError:
+                  return 0
+
+          def is_skipped(path: Path) -> bool:
+              return any(part in SKIP_DIRS for part in path.parts)
+
+          def is_text_candidate(path: Path) -> bool:
+              if is_skipped(path) or not path.is_file():
+                  return False
+              try:
+                  if path.stat().st_size > 2_000_000:
+                      return False
+              except OSError:
+                  return False
+              return path.suffix in TEXT_EXTS or path.name in {"LICENSE", "NOTICE"}
+
+          def iter_text_files() -> list[Path]:
+              return sorted(path for path in repo.rglob("*") if is_text_candidate(path))
+
+          def sha256_text(text: str) -> str:
+              return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+          def canonical_hash(obj: Any) -> str:
+              payload = json.dumps(
+                  obj,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              )
+              return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+          def normalize_path(path: str) -> str:
+              return path.replace("\\", "/").lstrip("./")
+
+          def normalized_message(message: str) -> str:
+              text = message.lower()
+              text = re.sub(r"\b\d+\b", "<num>", text)
+              text = re.sub(r"\s+", " ", text)
+              return text.strip()
+
+          def one_line(value: Any, limit: int = 240) -> str:
+              text = str(value).replace("\n", " ").strip()
+              if len(text) > limit:
+                  return text[: limit - 1] + "…"
+              return text
+
+          def safe_snippet(path: str, line: int | None, radius: int = 0) -> str:
+              if not path or path == "?":
+                  return ""
+              p = Path(path)
+              if not p.exists() or not p.is_file():
+                  return ""
+              try:
+                  lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+              except Exception:
+                  return ""
+              if not line or line < 1 or line > len(lines):
+                  return ""
+              start = max(1, line - radius)
+              end = min(len(lines), line + radius)
+              return "\n".join(lines[start - 1:end])[:1200]
+
+          def is_test_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              parts = normalized.split("/")
+              return (
+                  "tests" in parts
+                  or normalized.startswith("test_")
+                  or "/test_" in normalized
+                  or normalized.endswith("_test.py")
+              )
+
+          def is_workflow_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              return normalized.startswith(".github/workflows/")
+
+          def is_documentation_or_policy_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              protected_names = {
+                  "readme.md",
+                  "readme.ja.md",
+                  "security.md",
+                  "license",
+                  "license_policy.md",
+                  "contributing.md",
+                  "code_of_conduct.md",
+                  "notice",
+                  "trademarks.md",
+                  "pull_request_template.md",
+              }
+              return (
+                  normalized.startswith("docs/")
+                  or normalized.startswith(".github/issue_template/")
+                  or name in protected_names
+                  or name.startswith("readme")
+                  or name.startswith("license")
+              )
+
+          def is_safety_or_hitl_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              safety_markers = (
+                  "tasukeru",
+                  "kage",
+                  "orchestrator",
+                  "mediation",
+                  "hitl",
+                  "rfl",
+                  "arl",
+                  "ethics",
+                  "acc",
+                  "checkpoint",
+                  "audit",
+                  "codebook",
+                  "emergency_contract",
+                  "task_contract",
+              )
+              return any(marker in name or marker in normalized for marker in safety_markers)
+
+          def is_active_safety_or_hitl_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              active_exact_names = {
+                  "tasukeru-analysis.yml",
+                  "log_codebook.json",
+                  "log_codebook_demo.json",
+                  "emergency_contract_kage_orchestrator_v1_0.py",
+                  "test_emergency_contract_kage_orchestrator_v1_0.py",
+                  "ai_doc_orchestrator_kage3_v1_3_5.py",
+                  "ai_doc_orchestrator_kage3_v1_2_7_task_contract_dispatch.py",
+                  "mediation_emergency_contract_sim_v5_1_2.py",
+                  "ai_doc_orchestrator_with_mediator_v1_0.py",
+              }
+              active_markers = (
+                  "v5_1_2",
+                  "v1_3_5",
+                  "v1_2_7_task_contract_dispatch",
+                  "tasukeru-analysis",
+                  "log_codebook",
+              )
+              if name in active_exact_names:
+                  return True
+              return any(marker in name or marker in normalized for marker in active_markers)
+
+          def is_active_mainline_or_metadata_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              active_names = {
+                  "readme.md",
+                  "readme.ja.md",
+                  "security.md",
+                  "license",
+                  "license_policy.md",
+                  "contributing.md",
+                  "code_of_conduct.md",
+                  "notice",
+                  "trademarks.md",
+                  "requirements.txt",
+                  "requirements-dev.txt",
+                  "pyproject.toml",
+                  "emergency_contract_kage_orchestrator_v1_0.py",
+                  "test_emergency_contract_kage_orchestrator_v1_0.py",
+                  "ai_doc_orchestrator_kage3_v1_3_5.py",
+                  "ai_doc_orchestrator_kage3_v1_2_7_task_contract_dispatch.py",
+                  "mediation_emergency_contract_sim_v5_1_2.py",
+                  "ai_doc_orchestrator_with_mediator_v1_0.py",
+              }
+              if name in active_names:
+                  return True
+              if is_test_path(path):
+                  return True
+              if is_workflow_path(path):
+                  return True
+              if is_documentation_or_policy_path(path):
+                  return True
+              if normalized.startswith(("log_codebook", ".github/")):
+                  return True
+              if is_active_safety_or_hitl_path(path):
+                  return True
+              return False
+
+          def is_superseded_historical_path(path: str) -> bool:
+              normalized = normalize_path(path).lower()
+              name = normalized.rsplit("/", 1)[-1]
+              parts = normalized.split("/")
+              if is_active_mainline_or_metadata_path(path):
+                  return False
+              if "archive" in parts or normalized.startswith("archive/"):
+                  return True
+
+              active_markers = ("v5_1_2", "v1_3_5", "v1_2_7")
+              historical_markers = (
+                  "_v1",
+                  "_v2",
+                  "_v3",
+                  "_v4",
+                  "_v5_0",
+                  "v1_",
+                  "v2_",
+                  "v3_",
+                  "v4_",
+                  "v5_0_",
+                  "fixed_regex",
+                  "full..",
+                  "legacy",
+                  "deprecated",
+                  "old",
+              )
+              if any(marker in name for marker in active_markers):
+                  return False
+              return any(marker in name for marker in historical_markers)
+
+          def classify_path_profile(file_path: str) -> str:
+              normalized = normalize_path(file_path).lower()
+              if is_workflow_path(normalized):
+                  return "workflow"
+              if is_test_path(normalized):
+                  return "tests"
+              if is_documentation_or_policy_path(normalized):
+                  return "docs_or_policy"
+              if is_active_safety_or_hitl_path(normalized):
+                  return "safety_or_hitl"
+              if is_superseded_historical_path(normalized):
+                  return "historical"
+              if normalized.startswith("archive/") or "/archive/" in normalized:
+                  return "archive"
+              if is_safety_or_hitl_path(normalized):
+                  return "safety_or_hitl_inactive_candidate"
+              if is_active_mainline_or_metadata_path(normalized):
+                  return "active_mainline"
+              return "general"
+
+          def get_rule_profile(rule_id: str) -> dict[str, str]:
+              return RULE_PROFILES.get(
+                  rule_id,
+                  {
+                      "default_decision": "REVIEW_RECOMMENDED",
+                      "summary_ja": "明示プロファイル未定義のため、人間確認候補として扱います。",
+                  },
+              )
+
+          def classify_ruff_decision(rule_id: str, file_path: str, message: str) -> tuple[str, str, str]:
+              profile = get_rule_profile(rule_id)
+              path_profile = classify_path_profile(file_path)
+              mechanical_rule = rule_id in {"F401", "F841", "I001", "W291", "W293"}
+
+              if path_profile in {"workflow", "docs_or_policy", "safety_or_hitl", "active_mainline"}:
+                  if mechanical_rule:
+                      return (
+                          "FIX_RECOMMENDED",
+                          f"{rule_id} on {path_profile}: active/protected path; manual mechanical fix candidate.",
+                          "active/protected領域の機械的修正候補です。自動修正せず、人間が差分を確認してください。",
+                      )
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} on {path_profile}: protected path requires human review.",
+                      "active/protected領域の指摘です。仕様・公開方針・安全境界への影響を確認してください。",
+                  )
+
+              if path_profile == "tests":
+                  if mechanical_rule:
+                      return (
+                          "FIX_RECOMMENDED",
+                          f"{rule_id} in tests: mechanical fix candidate, but tests are protected from autofix.",
+                          "tests配下の機械的修正候補です。テスト意図を確認してから手動修正してください。",
+                      )
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} in tests: review test intent before changing.",
+                      "tests配下の指摘です。テスト意図を確認してください。",
+                  )
+
+              if path_profile in {"historical", "archive"}:
+                  if mechanical_rule:
+                      return (
+                          "INFO_ONLY",
+                          f"{rule_id} in inactive {path_profile}: stored as info; no PR notification.",
+                          "inactive historical/archive の機械的指摘です。即時対応せずartifactに集約します。",
+                      )
+                  return (
+                      "NOISE_CANDIDATE",
+                      f"{rule_id} in inactive {path_profile}: not active execution path.",
+                      "inactive historical/archive の指摘です。active化する場合のみ確認してください。",
+                  )
+
+              if mechanical_rule:
+                  return (
+                      "FIX_RECOMMENDED",
+                      f"{rule_id} default mechanical rule: manual fix recommended.",
+                      profile["summary_ja"],
+                  )
+
+              return (
+                  "REVIEW_RECOMMENDED",
+                  f"{rule_id} default: human review recommended.",
+                  profile["summary_ja"],
+              )
+
+          def classify_bandit_decision(
+              rule_id: str,
+              file_path: str,
+              message: str,
+              bandit_severity: str,
+          ) -> tuple[str, str, str]:
+              profile = get_rule_profile(rule_id)
+              path_profile = classify_path_profile(file_path)
+              severity = bandit_severity.upper()
+
+              if severity == "HIGH":
+                  return (
+                      "HITL_REQUIRED",
+                      f"{rule_id} severity HIGH: requires human review regardless of path profile {path_profile}.",
+                      "HIGH security finding です。防御目的の範囲で人間が確認してください。",
+                  )
+
+              if path_profile == "workflow":
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} in workflow: CI permissions/execution behavior may be affected.",
+                      "workflow配下のsecurity findingです。CI権限・実行条件への影響を確認してください。",
+                  )
+
+              if path_profile in {"docs_or_policy", "safety_or_hitl", "active_mainline"}:
+                  if severity == "MEDIUM":
+                      return (
+                          "REVIEW_RECOMMENDED",
+                          f"{rule_id} MEDIUM on {path_profile}: protected path requires human review.",
+                          "active/protected領域のMEDIUM security findingです。文脈確認が必要です。",
+                      )
+                  if rule_id == "B311":
+                      return (
+                          "NOISE_CANDIDATE",
+                          f"{rule_id} LOW on {path_profile}: likely acceptable for simulation if not used for secrets.",
+                          "非暗号用途のrandomであればPR通知不要ですが、秘密値・認証用途でないことをartifactで確認可能にします。",
+                      )
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} LOW on {path_profile}: protected path stays reviewable.",
+                      "active/protected領域のLOW security findingです。重大通知は不要ですが、確認候補に残します。",
+                  )
+
+              if path_profile == "tests":
+                  if rule_id == "B101":
+                      return (
+                          "NOISE_CANDIDATE",
+                          "B101 in tests: pytest assert is expected unless used as runtime safety gate.",
+                          "tests配下のpytest assertとして妥当な可能性が高いため、PR通知対象外にします。",
+                      )
+                  if rule_id == "B311":
+                      return (
+                          "NOISE_CANDIDATE",
+                          "B311 in tests: deterministic/randomized test data is usually acceptable.",
+                          "tests配下の非暗号randomは通常テストデータ用途のため、PR通知対象外にします。",
+                      )
+                  if rule_id == "B110":
+                      return (
+                          "REVIEW_RECOMMENDED",
+                          "B110 in tests: except/pass can hide broken tests and should remain reviewable.",
+                          "tests配下でも except/pass はテスト失敗を隠す可能性があるため確認候補に残します。",
+                      )
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} in tests: review test intent before changing.",
+                      "tests配下のsecurity findingです。テスト意図を確認してください。",
+                  )
+
+              if path_profile in {"historical", "archive"}:
+                  if rule_id in {"B101", "B311"}:
+                      return (
+                          "NOISE_CANDIDATE",
+                          f"{rule_id} in inactive {path_profile}: low-risk known pattern in non-active file.",
+                          "inactive historical/archive の低リスク既知パターンとしてPR通知対象外にします。",
+                      )
+                  return (
+                      "INFO_ONLY",
+                      f"{rule_id} in inactive {path_profile}: info-only unless file becomes active.",
+                      "inactive historical/archive の指摘です。active化する場合のみ確認してください。",
+                  )
+
+              if severity == "MEDIUM":
+                  return (
+                      "REVIEW_RECOMMENDED",
+                      f"{rule_id} MEDIUM default: human review recommended.",
+                      profile["summary_ja"],
+                  )
+
+              if rule_id in {"B101", "B311"}:
+                  return (
+                      "NOISE_CANDIDATE",
+                      f"{rule_id} LOW default: likely acceptable in non-security context.",
+                      profile["summary_ja"],
+                  )
+
+              return (
+                  "NOISE_CANDIDATE",
+                  f"{rule_id} LOW default: stored in artifacts only.",
+                  profile["summary_ja"],
+              )
+
+          def classify_autofix_policy(entry: dict[str, Any]) -> dict[str, Any]:
+              level = str(entry.get("decision", entry.get("level", "")))
+              file_path = str(entry.get("file", ""))
+              source = str(entry.get("source", ""))
+              rule_id = str(entry.get("rule_id", entry.get("code", "")))
+              path_profile = str(entry.get("path_profile", classify_path_profile(file_path)))
+
+              base = {
+                  "safe_autofix_candidate": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "policy": "AUTOFIX_BLOCKED",
+                  "reason": "Autofix is disabled by default.",
+              }
+
+              if level in {"HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED"}:
+                  return {
+                      **base,
+                      "policy": "HUMAN_REVIEW_REQUIRED",
+                      "reason": "Active review queue findings must not be automatically modified.",
+                  }
+
+              if path_profile in {"workflow", "docs_or_policy", "safety_or_hitl", "active_mainline", "tests"}:
+                  return {
+                      **base,
+                      "policy": "BLOCKED_PROTECTED_PATH",
+                      "reason": "Protected paths must not be automatically modified.",
+                  }
+
+              if path_profile not in {"historical", "archive"}:
+                  return {
+                      **base,
+                      "policy": "BLOCKED_NOT_INACTIVE_HISTORICAL",
+                      "reason": "Autofix candidates are limited to inactive historical/archive files.",
+                  }
+
+              if source == "Ruff" and rule_id in {"F401", "F841", "W291", "W293", "I001"}:
+                  return {
+                      **base,
+                      "safe_autofix_candidate": True,
+                      "policy": "SAFE_AUTOFIX_CANDIDATE",
+                      "reason": "Inactive historical/archive file with a low-risk mechanical Ruff finding. Human review is still required.",
+                  }
+
+              if source == "Bandit" and rule_id == "B311":
+                  return {
+                      **base,
+                      "safe_autofix_candidate": True,
+                      "policy": "SAFE_AUTOFIX_CANDIDATE",
+                      "reason": "Inactive historical/archive simulator file with a low-risk advisory finding. Human review is still required.",
+                  }
+
+              return base
+
+          def make_entry(
+              *,
+              source: str,
+              decision: str,
+              severity: str,
+              category: str,
+              reason_code: str,
+              rule_id: str,
+              file: str,
+              message: str,
+              suggestion: str,
+              why_problematic_ja: str,
+              why_fix_ja: str,
+              impact_ja: str,
+              line: int | None = None,
+              column: int | None = None,
+              confidence: str = "MEDIUM",
+              risk_type: str = "review",
+              classification_reason: str = "",
+              path_profile: str = "",
+              rule_profile: dict[str, str] | None = None,
+          ) -> dict[str, Any]:
+              code_snippet = safe_snippet(file, line)
+              resolved_path_profile = path_profile or classify_path_profile(file)
+              resolved_rule_profile = rule_profile or get_rule_profile(rule_id)
+              fingerprint = {
+                  "rule_id": rule_id,
+                  "category": category,
+                  "reason_code": reason_code,
+                  "normalized_message": normalized_message(message),
+                  "normalized_file_path": normalize_path(file),
+                  "normalized_code_pattern": normalized_message(code_snippet or rule_id),
+                  "risk_type": risk_type,
+                  "path_profile": resolved_path_profile,
+              }
+              fingerprint_hash = canonical_hash(fingerprint)
+
+              before_hash = ""
+              if file and Path(file).exists():
+                  before_hash = sha256_text(read_text(Path(file)))
+
+              entry = {
+                  "source": source,
+                  "decision": decision,
+                  "level": decision,
+                  "severity": severity,
+                  "category": category,
+                  "reason_code": reason_code,
+                  "rule_id": rule_id,
+                  "code": rule_id,
+                  "file": file,
+                  "line": line,
+                  "column": column,
+                  "message": one_line(message, 600),
+                  "code_snippet": code_snippet,
+                  "suggestion": suggestion,
+                  "classification_reason": classification_reason,
+                  "path_profile": resolved_path_profile,
+                  "rule_profile": resolved_rule_profile,
+                  "fingerprint": fingerprint,
+                  "fingerprint_hash": fingerprint_hash,
+                  "incident_id": "",
+                  **AUTO_FALSE,
+                  "evidence": {
+                      "source": source,
+                      "rule_id": rule_id,
+                      "file": file,
+                      "line": line,
+                      "column": column,
+                      "code_snippet": code_snippet,
+                      "policy_reference": "Tasukeru Security Review Output Policy",
+                      "reason_code": reason_code,
+                      "classification_reason": classification_reason,
+                      "path_profile": resolved_path_profile,
+                      "artifact": f"tasukeru_logs/{source.lower().replace(' ', '-')}.json",
+                  },
+                  "explanation": {
+                      "why_problematic_ja": why_problematic_ja,
+                      "why_fix_ja": why_fix_ja,
+                      "why_this_classification_ja": classification_reason or "分類理由は rule/path profile に基づきます。",
+                      "human_review_checklist_ja": [
+                          "active mainline / tests / workflows / docs / safety invariant / HITL logic に関係するか確認する",
+                          "既存仕様への影響を確認する",
+                          "必要なら人間が手動で修正・コミット・PR作成・マージする",
+                      ],
+                  },
+                  "fix_prediction": {
+                      "expected_effect_ja": impact_ja,
+                      "expected_effect_en": "This change may improve maintainability, traceability, or safety depending on the reviewed context.",
+                      "risk_reduction_ja": "対象リスクを下げる可能性がありますが、最終確認には人間レビューとテストが必要です。",
+                      "side_effects_to_check_ja": [
+                          "既存の正常系動作が変わらないこと",
+                          "ログや出力に秘密情報が含まれないこと",
+                          "修正が契約外の変更を含まないこと",
+                      ],
+                      "confidence": confidence,
+                      "verified": False,
+                  },
+                  "fix_verification": {
+                      "enabled": False,
+                      "mode": "ephemeral_candidate_only",
+                      "modifies_repository": False,
+                      "auto_commit_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_merge_allowed": False,
+                      "target_fingerprint_hash": fingerprint_hash,
+                      "before": {
+                          "file": file,
+                          "sha256": before_hash,
+                      },
+                      "after_candidate": {
+                          "file": file,
+                          "sha256": "",
+                      },
+                      "diff_artifact": "",
+                      "rescan_result": {
+                          "target_hitl_required_resolved": None,
+                          "remaining_hitl_required": None,
+                          "remaining_review_recommended": None,
+                      },
+                      "verified": False,
+                      "verification_note": "No repository files were modified. Candidate verification is advisory-only.",
+                  },
+              }
+              entry["autofix"] = classify_autofix_policy(entry)
+              return entry
+
+          def normalize_ruff_items(raw: Any) -> list[dict[str, Any]]:
+              if isinstance(raw, list):
+                  return [item for item in raw if isinstance(item, dict)]
+              if isinstance(raw, dict):
+                  for key in ("diagnostics", "results", "items"):
+                      value = raw.get(key)
+                      if isinstance(value, list):
+                          return [item for item in value if isinstance(item, dict)]
+              return []
+
+          def normalize_bandit_items(raw: Any) -> list[dict[str, Any]]:
+              if isinstance(raw, dict):
+                  value = raw.get("results")
+                  if isinstance(value, list):
+                      return [item for item in value if isinstance(item, dict)]
+              if isinstance(raw, list):
+                  return [item for item in raw if isinstance(item, dict)]
+              return []
+
+          def normalize_pip_vulns(raw: Any) -> list[dict[str, Any]]:
+              vulns: list[dict[str, Any]] = []
+              if isinstance(raw, dict):
+                  dependencies = raw.get("dependencies")
+                  if isinstance(dependencies, list):
+                      for dep in dependencies:
+                          if not isinstance(dep, dict):
+                              continue
+                          name = str(dep.get("name", "?"))
+                          version = str(dep.get("version", "?"))
+                          for vuln in dep.get("vulns", []) or []:
+                              if isinstance(vuln, dict):
+                                  vulns.append(
+                                      {
+                                          "name": name,
+                                          "version": version,
+                                          "id": str(vuln.get("id", "?")),
+                                          "fix_versions": vuln.get("fix_versions", []) or [],
+                                      }
+                                  )
+                  direct = raw.get("vulnerabilities")
+                  if isinstance(direct, list):
+                      for item in direct:
+                          if isinstance(item, dict):
+                              vulns.append(
+                                  {
+                                      "name": str(item.get("name", item.get("package", "?"))),
+                                      "version": str(item.get("version", "?")),
+                                      "id": str(item.get("id", "?")),
+                                      "fix_versions": item.get("fix_versions", []) or [],
+                                  }
+                              )
+              elif isinstance(raw, list):
+                  for item in raw:
+                      if isinstance(item, dict):
+                          vulns.append(
+                              {
+                                  "name": str(item.get("name", item.get("package", "?"))),
+                                  "version": str(item.get("version", "?")),
+                                  "id": str(item.get("id", "?")),
+                                  "fix_versions": item.get("fix_versions", []) or [],
+                              }
+                          )
+              return vulns
+
+          def parse_bool(value: Any) -> bool:
+              if isinstance(value, bool):
+                  return value
+              if isinstance(value, str):
+                  return value.strip().lower() in {"true", "1", "yes", "y"}
+              return bool(value)
+
+          def collect_reason_codes(obj: Any, found: set[str]) -> None:
+              if isinstance(obj, dict):
+                  for key, value in obj.items():
+                      if key == "reason_code" and isinstance(value, str):
+                          found.add(value)
+                      elif key in {"reason_codes", "allowed_reason_codes"} and isinstance(value, list):
+                          for item in value:
+                              if isinstance(item, str):
+                                  found.add(item)
+                              elif isinstance(item, dict):
+                                  code = item.get("code") or item.get("reason_code")
+                                  if isinstance(code, str):
+                                      found.add(code)
+                      else:
+                          collect_reason_codes(value, found)
+              elif isinstance(obj, list):
+                  for item in obj:
+                      collect_reason_codes(item, found)
+
+          def add_logic_hitl(
+              entries: list[dict[str, Any]],
+              code: str,
+              msg: str,
+              file: str = "repository",
+              line: int | None = None,
+          ) -> None:
+              entries.append(
+                  make_entry(
+                      source="Tasukeru Logic Review",
+                      decision="HITL_REQUIRED",
+                      severity="CRITICAL",
+                      category="safety_invariant_violation",
+                      reason_code=code,
+                      rule_id=code,
+                      file=file,
+                      line=line,
+                      message=msg,
+                      suggestion="人間が該当箇所を確認し、KAGE/Tasukeru 不変条件に従って手動修正してください。",
+                      why_problematic_ja="安全不変条件またはHITL境界に関わるため、自動判断で進めるべきではありません。",
+                      why_fix_ja="人間確認を挟むことで、sealed / overrideable / final_decider / reason_code の整合を維持できます。",
+                      impact_ja="人間確認により、HITL迂回や封印条件の破損を防ぎやすくなることが期待されます。",
+                      confidence="HIGH",
+                      risk_type="safety_invariant",
+                      classification_reason="Safety invariant violations always require HITL.",
+                  )
+              )
+
+          def add_rfl_readability_review(
+              entries: list[dict[str, Any]],
+              code: str,
+              msg: str,
+              file: str,
+              line: int | None = None,
+          ) -> None:
+              entries.append(
+                  make_entry(
+                      source="Tasukeru RFL Review",
+                      decision="REVIEW_RECOMMENDED",
+                      severity="MEDIUM",
+                      category="relativity_human_readability",
+                      reason_code=code,
+                      rule_id=code,
+                      file=file,
+                      line=line,
+                      message=msg,
+                      suggestion="AIにとって処理しやすくても、人間が安全に読める形へ分割・命名・コメント補助を検討してください。",
+                      why_problematic_ja="AI向けに圧縮・抽象化されたコードは、人間の確認負荷を増やし、安全性・仕様・副作用の確認を難しくする可能性があります。",
+                      why_fix_ja="人間が読みやすい粒度に戻すことで、レビュー品質・保守性・HITL判断の信頼性を維持できます。",
+                      impact_ja="人間の可読性と保守性が改善し、AI側の最適化が人間側の負荷増につながるリスクを下げられる可能性があります。",
+                      confidence="MEDIUM",
+                      risk_type="human_readability",
+                      classification_reason="RFL human readability check: AI-readable code must not reduce human readability, maintainability, or reviewability.",
+                  )
+              )
+
+          def is_human_readability_risk_line(line: str) -> bool:
+              stripped = line.strip()
+              if not stripped or stripped.startswith("#"):
+                  return False
+              if "# noqa" in stripped or "# type: ignore" in stripped:
+                  return False
+              if len(stripped) < 180:
+                  return False
+              logic_markers = (
+                  " and ",
+                  " or ",
+                  " if ",
+                  " else ",
+                  " for ",
+                  " lambda ",
+                  " with ",
+              )
+              marker_score = sum(stripped.count(marker) for marker in logic_markers)
+              structure_score = sum(stripped.count(char) for char in "([{,")
+              chain_score = stripped.count(".") + stripped.count("[")
+              return marker_score >= 3 or structure_score >= 10 or chain_score >= 10
+
+          def run_logic_review() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+              logic_entries: list[dict[str, Any]] = []
+              for path in iter_text_files():
+                  text = read_text(path)
+                  for idx, line in enumerate(text.splitlines(), start=1):
+                      stripped = line.strip()
+                      if stripped.startswith("<<<<<<< ") or stripped == "=======" or stripped.startswith(">>>>>>> "):
+                          add_logic_hitl(
+                              logic_entries,
+                              "MERGE_CONFLICT_MARKER",
+                              "Unresolved merge conflict marker was found.",
+                              str(path),
+                              idx,
+                          )
+
+                  if normalize_path(str(path)) == ".github/workflows/tasukeru-analysis.yml":
+                      continue
+
+                  for code, pattern in CONTROL_BYPASS_PATTERNS:
+                      for match in pattern.finditer(text):
+                          line_no = text[: match.start()].count("\n") + 1
+                          add_logic_hitl(
+                              logic_entries,
+                              "CONTROL_BYPASS_ATTEMPT",
+                              f"Automation control-bypass pattern detected: {code}.",
+                              str(path),
+                              line_no,
+                          )
+
+                  if path.suffix == ".py" and not is_superseded_historical_path(str(path)):
+                      readability_hits = 0
+                      for idx, line in enumerate(text.splitlines(), start=1):
+                          if is_human_readability_risk_line(line):
+                              add_rfl_readability_review(
+                                  logic_entries,
+                                  "REL_HUMAN_READABILITY_LOST",
+                                  "AI-readable but human-readability-risky dense code pattern detected.",
+                                  str(path),
+                                  idx,
+                              )
+                              readability_hits += 1
+                              if readability_hits >= 3:
+                                  break
+
+              required_rfl = {
+                  "REL_BOUNDARY_UNSTABLE",
+                  "REL_REF_MISSING",
+                  "REL_SYMMETRY_BREAK",
+                  "REL_HUMAN_READABILITY_LOST",
+              }
+              codebooks = sorted(repo.glob("log_codebook*.json"))
+              if codebooks:
+                  for path in codebooks:
+                      data = read_json(path, {})
+                      found: set[str] = set()
+                      collect_reason_codes(data, found)
+                      raw = read_text(path)
+                      found.update(code for code in required_rfl if code in raw)
+                      missing = sorted(required_rfl - found)
+                      if missing:
+                          add_logic_hitl(
+                              logic_entries,
+                              "REQUIRED_REASON_CODES_MISSING",
+                              f"Required RFL reason codes are missing from codebook: {', '.join(missing)}",
+                              str(path),
+                          )
+
+              for path in iter_text_files():
+                  name = path.name.lower()
+                  if path.suffix != ".jsonl" or not any(token in name for token in ("arl", "audit", "incident")):
+                      continue
+                  with path.open("r", encoding="utf-8", errors="replace") as file_obj:
+                      for idx, line in enumerate(file_obj, start=1):
+                          if idx > 5000:
+                              break
+                          line = line.strip()
+                          if not line:
+                              continue
+                          try:
+                              row = json.loads(line)
+                          except Exception:
+                              continue
+                          if not isinstance(row, dict):
+                              continue
+
+                          layer = str(row.get("layer", ""))
+                          decision = str(row.get("decision", ""))
+                          sealed = parse_bool(row.get("sealed", False))
+                          overrideable = parse_bool(row.get("overrideable", False))
+                          final_decider = str(row.get("final_decider", ""))
+
+                          missing = sorted(key for key in REQUIRED_ARL_KEYS if key not in row)
+                          if missing:
+                              logic_entries.append(
+                                  make_entry(
+                                      source="Tasukeru Logic Review",
+                                      decision="REVIEW_RECOMMENDED",
+                                      severity="MEDIUM",
+                                      category="arl",
+                                      reason_code="ARL_REQUIRED_KEYS_MISSING",
+                                      rule_id="ARL_REQUIRED_KEYS_MISSING",
+                                      file=str(path),
+                                      line=idx,
+                                      message=f"ARL row is missing required keys: {', '.join(missing)}",
+                                      suggestion="ARL必須キーを補い、監査行として一貫した形式にしてください。",
+                                      why_problematic_ja="必須キーが欠けると、後から停止理由や責任分界を追跡しにくくなります。",
+                                      why_fix_ja="必須キーを揃えることで、監査と再現確認がしやすくなります。",
+                                      impact_ja="ARLの追跡性が改善することが期待されます。",
+                                      confidence="MEDIUM",
+                                      risk_type="arl",
+                                      classification_reason="ARL schema inconsistency is reviewable but not critical unless core invariants are broken.",
+                                  )
+                              )
+
+                          if decision and decision not in ALLOWED_DECISIONS:
+                              logic_entries.append(
+                                  make_entry(
+                                      source="Tasukeru Logic Review",
+                                      decision="REVIEW_RECOMMENDED",
+                                      severity="MEDIUM",
+                                      category="arl",
+                                      reason_code="ARL_UNKNOWN_DECISION",
+                                      rule_id="ARL_UNKNOWN_DECISION",
+                                      file=str(path),
+                                      line=idx,
+                                      message=f"ARL decision is outside canonical decision set: {decision}",
+                                      suggestion="decision を RUN / PAUSE_FOR_HITL / STOPPED のいずれかに揃えてください。",
+                                      why_problematic_ja="decision語彙が揺れると、CIや監査で判定しにくくなります。",
+                                      why_fix_ja="語彙を固定すると、集計・監査・テストが安定します。",
+                                      impact_ja="ログ解析の安定性が上がることが期待されます。",
+                                      confidence="MEDIUM",
+                                      risk_type="arl",
+                                      classification_reason="Unknown ARL decisions reduce audit consistency.",
+                                  )
+                              )
+
+                          if sealed and layer not in ETHICS_OR_ACC_LAYERS:
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "SEALED_LAYER_NOT_ETHICS_OR_ACC",
+                                  "sealed=true is only allowed for ethics_gate or acc_gate.",
+                                  str(path),
+                                  idx,
+                              )
+                          if layer in RFL_LAYERS and sealed:
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "RFL_MUST_NOT_BE_SEALED",
+                                  "RFL / relativity_gate rows must never be sealed.",
+                                  str(path),
+                                  idx,
+                              )
+                          if sealed and overrideable:
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "SEALED_MUST_NOT_BE_OVERRIDEABLE",
+                                  "sealed=true implies overrideable=false.",
+                                  str(path),
+                                  idx,
+                              )
+                          if sealed and final_decider != "SYSTEM":
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "SEALED_FINAL_DECIDER_MUST_BE_SYSTEM",
+                                  "sealed=true implies final_decider=SYSTEM.",
+                                  str(path),
+                                  idx,
+                              )
+                          if decision == "PAUSE_FOR_HITL" and sealed:
+                              add_logic_hitl(
+                                  logic_entries,
+                                  "PAUSE_FOR_HITL_MUST_NOT_BE_SEALED",
+                                  "PAUSE_FOR_HITL must remain unsealed.",
+                                  str(path),
+                                  idx,
+                              )
+
+              result = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_logic_review",
+                  "findings_count": len(logic_entries),
+                  "severity_counts": dict(Counter(entry["severity"] for entry in logic_entries)),
+                  "category_counts": dict(Counter(entry["category"] for entry in logic_entries)),
+                  "findings": logic_entries,
+              }
+              write_json(log_dir / "logic-review.json", result)
+              with (log_dir / "logic-review.md").open("w", encoding="utf-8") as f:
+                  f.write("### Tasukeru logic review\n\n")
+                  f.write(f"- Findings: {len(logic_entries)}\n")
+                  f.write(f"- HITL_REQUIRED: {sum(1 for e in logic_entries if e['decision'] == 'HITL_REQUIRED')}\n")
+                  f.write(f"- REVIEW_RECOMMENDED: {sum(1 for e in logic_entries if e['decision'] == 'REVIEW_RECOMMENDED')}\n\n")
+              return logic_entries, result
+
+          def run_documentation_review() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+              entries: list[dict[str, Any]] = []
+              readme = read_text(Path("README.md"))
+              readme_ja = read_text(Path("README.ja.md"))
+              security = read_text(Path("SECURITY.md"))
+              license_policy = read_text(Path("LICENSE_POLICY.md"))
+              contributing = read_text(Path("CONTRIBUTING.md"))
+              combined_readme = f"{readme}\n{readme_ja}".lower()
+
+              def add_doc(decision: str, reason_code: str, file: str, message: str, suggestion: str) -> None:
+                  entries.append(
+                      make_entry(
+                          source="Documentation Review",
+                          decision=decision,
+                          severity="CRITICAL" if decision == "HITL_REQUIRED" else "MEDIUM",
+                          category="documentation_policy",
+                          reason_code=reason_code,
+                          rule_id=reason_code,
+                          file=file,
+                          message=message,
+                          suggestion=suggestion,
+                          why_problematic_ja="公開文書の説明と実装方針がずれると、利用者がTasukeruを自動修正Botまたは自動マージBotと誤解する可能性があります。",
+                          why_fix_ja="advisory-only、自動PRなし、自動修正なし、自動マージなしを明記すると、利用者の誤解と運用リスクを下げられます。",
+                          impact_ja="OSS利用者がプロジェクトの安全境界を理解しやすくなることが期待されます。",
+                          confidence="MEDIUM",
+                          risk_type="documentation",
+                          classification_reason="Documentation review findings are advisory unless they create serious public safety or license ambiguity.",
+                      )
+                  )
+
+              if readme or readme_ja:
+                  if "advisory-only" not in combined_readme and "review helper" not in combined_readme:
+                      add_doc(
+                          "REVIEW_RECOMMENDED",
+                          "DOC_ADVISORY_ONLY_NOT_CLEAR",
+                          "README.md / README.ja.md",
+                          "README does not clearly describe Tasukeru Analysis as advisory-only.",
+                          "READMEに、Tasukeru Analysis は advisory-only のレビュー補助であり、自動修正・自動PR・自動マージを行わないと明記してください。",
+                      )
+
+                  combined_raw = f"{readme}\n{readme_ja}"
+                  auto_merge_policy_present = (
+                      "auto-merge" in combined_readme
+                      or "auto merge" in combined_readme
+                      or "merge pull requests automatically" in combined_readme
+                      or "merge prs automatically" in combined_readme
+                      or "自動マージ" in combined_raw
+                  )
+                  if not auto_merge_policy_present:
+                      add_doc(
+                          "REVIEW_RECOMMENDED",
+                          "DOC_AUTO_MERGE_POLICY_MISSING",
+                          "README.md / README.ja.md",
+                          "README may not clearly state that auto-merge is prohibited.",
+                          "READMEのTasukeru説明に Auto merge: false / 自動マージなし を追加してください。",
+                      )
+              else:
+                  add_doc(
+                      "FIX_RECOMMENDED",
+                      "DOC_POLICY_MISSING",
+                      "README.md",
+                      "README.md / README.ja.md was not found.",
+                      "プロジェクト目的、advisory-only、安全方針、ライセンス参照を含むREADMEを追加してください。",
+                  )
+
+              if not security:
+                  add_doc(
+                      "FIX_RECOMMENDED",
+                      "DOC_SECURITY_POLICY_MISSING",
+                      "SECURITY.md",
+                      "SECURITY.md was not found.",
+                      "SECURITY.mdを追加し、攻撃手段・payload・悪用手順を公開PRコメントに載せない方針を明記してください。",
+                  )
+
+              if not license_policy:
+                  add_doc(
+                      "REVIEW_RECOMMENDED",
+                      "DOC_LICENSE_POLICY_REFERENCE_MISSING",
+                      "LICENSE_POLICY.md",
+                      "LICENSE_POLICY.md was not found.",
+                      "必要であれば、コード・文書・名称の扱いを LICENSE_POLICY.md に分離して整理してください。",
+                  )
+
+              if not contributing:
+                  add_doc(
+                      "REVIEW_RECOMMENDED",
+                      "DOC_CONTRIBUTING_POLICY_MISSING",
+                      "CONTRIBUTING.md",
+                      "CONTRIBUTING.md was not found.",
+                      "CONTRIBUTING.mdに、advisory-only、自動修正禁止、自動マージ禁止、HITL_REQUIREDの扱いを明記してください。",
+                  )
+
+              result = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_documentation_review",
+                  "findings_count": len(entries),
+                  "counts": dict(Counter(entry["decision"] for entry in entries)),
+                  "findings": entries,
+              }
+              write_json(log_dir / "documentation-review.json", result)
+              with (log_dir / "documentation-review.md").open("w", encoding="utf-8") as f:
+                  f.write("### Tasukeru documentation review\n\n")
+                  f.write(f"- Findings: {len(entries)}\n")
+                  for key, count in Counter(entry["decision"] for entry in entries).items():
+                      f.write(f"- {key}: {count}\n")
+              return entries, result
+
+          def entries_from_ruff(raw: Any) -> list[dict[str, Any]]:
+              items = normalize_ruff_items(raw)
+              entries: list[dict[str, Any]] = []
+              for item in items:
+                  rule_id = str(item.get("code", "RUFF"))
+                  file = str(item.get("filename", "?"))
+                  location = item.get("location") or {}
+                  line = location.get("row") if isinstance(location, dict) else None
+                  column = location.get("column") if isinstance(location, dict) else None
+                  message = str(item.get("message", "Ruff finding"))
+                  decision, classification_reason, suggestion = classify_ruff_decision(rule_id, file, message)
+                  profile = get_rule_profile(rule_id)
+                  entries.append(
+                      make_entry(
+                          source="Ruff",
+                          decision=decision,
+                          severity="LOW",
+                          category="style_or_correctness",
+                          reason_code=f"RUFF_{rule_id}",
+                          rule_id=rule_id,
+                          file=file,
+                          line=line,
+                          column=column,
+                          message=message,
+                          suggestion=suggestion,
+                          why_problematic_ja="静的解析上、可読性・保守性・軽微な正しさに関わる可能性があります。",
+                          why_fix_ja="指摘箇所を整理すると、不要な差分や将来の誤読を減らしやすくなります。",
+                          impact_ja="コードの読みやすさとCI安定性が改善することが期待されます。",
+                          confidence="MEDIUM",
+                          risk_type="lint",
+                          classification_reason=classification_reason,
+                          path_profile=classify_path_profile(file),
+                          rule_profile=profile,
+                      )
+                  )
+              return entries
+
+          def entries_from_bandit(raw: Any) -> list[dict[str, Any]]:
+              items = normalize_bandit_items(raw)
+              entries: list[dict[str, Any]] = []
+              for item in items:
+                  rule_id = str(item.get("test_id", "BANDIT"))
+                  file = str(item.get("filename", "?"))
+                  line = item.get("line_number")
+                  message = str(item.get("issue_text", "Bandit finding"))
+                  bandit_severity = str(item.get("issue_severity", "LOW")).upper()
+                  decision, classification_reason, suggestion = classify_bandit_decision(
+                      rule_id,
+                      file,
+                      message,
+                      bandit_severity,
+                  )
+                  profile = get_rule_profile(rule_id)
+                  entries.append(
+                      make_entry(
+                          source="Bandit",
+                          decision=decision,
+                          severity=bandit_severity,
+                          category="security_advisory",
+                          reason_code=f"BANDIT_{rule_id}",
+                          rule_id=rule_id,
+                          file=file,
+                          line=line,
+                          message=message,
+                          suggestion=suggestion,
+                          why_problematic_ja="このパターンは実行文脈によって安全性・保守性の確認が必要になる可能性があります。",
+                          why_fix_ja="入力検証、安全なAPI利用、明示的な例外処理などに寄せることで、想定外の副作用を抑えやすくなります。",
+                          impact_ja="防御上の確認ポイントが明確になり、レビュー漏れを減らせる可能性があります。",
+                          confidence="MEDIUM",
+                          risk_type="security",
+                          classification_reason=classification_reason,
+                          path_profile=classify_path_profile(file),
+                          rule_profile=profile,
+                      )
+                  )
+              return entries
+
+          def entries_from_pip_audit(raw: Any) -> list[dict[str, Any]]:
+              vulns = normalize_pip_vulns(raw)
+              entries: list[dict[str, Any]] = []
+              for vuln in vulns:
+                  package = vuln["name"]
+                  vuln_id = vuln["id"]
+                  fixes = ", ".join(map(str, vuln.get("fix_versions") or [])) or "not specified"
+                  entries.append(
+                      make_entry(
+                          source="pip-audit",
+                          decision="FIX_RECOMMENDED",
+                          severity="MEDIUM",
+                          category="dependency_vulnerability",
+                          reason_code="PIP_AUDIT_VULNERABILITY",
+                          rule_id=str(vuln_id),
+                          file="requirements.txt / requirements-dev.txt",
+                          message=f"Dependency vulnerability found: {package} {vuln.get('version')} ({vuln_id})",
+                          suggestion=f"依存更新候補を確認してください。fix_versions: {fixes}",
+                          why_problematic_ja="依存パッケージの既知脆弱性は、利用文脈によってリスクになる可能性があります。",
+                          why_fix_ja="修正版へ更新すると、既知の問題を避けられる可能性があります。",
+                          impact_ja="依存関係リスクを下げられることが期待されます。ただし互換性テストが必要です。",
+                          confidence="MEDIUM",
+                          risk_type="dependency",
+                          classification_reason="Dependency vulnerabilities are FIX_RECOMMENDED unless critical policy requires HITL.",
+                          path_profile="dependency",
+                      )
+                  )
+              return entries
+
+          def assign_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+              critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
+              by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
+              for entry in critical:
+                  by_hash[entry["fingerprint_hash"]].append(entry)
+              incident_for_hash = {
+                  fp_hash: f"INC#{idx:06d}"
+                  for idx, fp_hash in enumerate(sorted(by_hash.keys()), start=1)
+              }
+              for entry in entries:
+                  fp_hash = entry["fingerprint_hash"]
+                  if fp_hash in incident_for_hash:
+                      entry["incident_id"] = incident_for_hash[fp_hash]
+                      entry["fix_verification"]["target_incident_id"] = incident_for_hash[fp_hash]
+              return entries
+
+          def build_notification_state(entries: list[dict[str, Any]]) -> dict[str, Any]:
+              critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
+              by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
+              for entry in critical:
+                  by_hash[entry["fingerprint_hash"]].append(entry)
+              incidents: list[dict[str, Any]] = []
+              for fp_hash, grouped in sorted(by_hash.items()):
+                  rep = grouped[0]
+                  incidents.append(
+                      {
+                          "incident_id": rep.get("incident_id") or "",
+                          "fingerprint_hash": fp_hash,
+                          "decision": "HITL_REQUIRED",
+                          "severity": rep.get("severity", "CRITICAL"),
+                          "reason_code": rep.get("reason_code", ""),
+                          "category": rep.get("category", ""),
+                          "count": len(grouped),
+                          "representative_file": rep.get("file", ""),
+                          "representative_line": rep.get("line"),
+                          "notification_required": True,
+                          "already_notified": False,
+                      }
+                  )
+              counts = Counter(entry["decision"] for entry in entries)
+              safe_autofix = sum(
+                  1 for entry in entries
+                  if entry.get("autofix", {}).get("safe_autofix_candidate")
+              )
+              return {
+                  "schema_version": "1.0",
+                  "notification_policy": "critical_only_single_comment",
+                  "critical_decision": "HITL_REQUIRED",
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "auto_merge_allowed": False,
+                  "autofix_allowed": False,
+                  "critical_count": counts.get("HITL_REQUIRED", 0),
+                  "noncritical_count": len(entries) - counts.get("HITL_REQUIRED", 0),
+                  "noise_count": counts.get("NOISE_CANDIDATE", 0),
+                  "safe_autofix_candidate_count": safe_autofix,
+                  "documentation_review_count": sum(
+                      1 for entry in entries if entry.get("source") == "Documentation Review"
+                  ),
+                  "fix_verification_count": sum(
+                      1 for entry in entries
+                      if entry.get("fix_verification", {}).get("enabled")
+                  ),
+                  "new_critical_incident_count": len(incidents),
+                  "suppressed_duplicate_critical_incident_count": max(0, len(critical) - len(incidents)),
+                  "incidents": incidents,
+              }
+
+          def write_entry_bullet(file_obj: Any, entry: dict[str, Any]) -> None:
+              location = entry.get("file") or "repository"
+              if entry.get("line"):
+                  location = f"{location}:{entry['line']}"
+              file_obj.write(f"- **{entry['decision']}** `{entry['reason_code']}` at `{location}`\n")
+              file_obj.write(f"  - Source: {entry['source']}\n")
+              file_obj.write(f"  - Message: {one_line(entry['message'], 260)}\n")
+              file_obj.write(f"  - Classification: {one_line(entry.get('classification_reason', ''), 260)}\n")
+              file_obj.write(f"  - Suggested action: {one_line(entry['suggestion'], 260)}\n")
+              file_obj.write(f"  - Path profile: `{entry.get('path_profile', '')}`\n")
+              file_obj.write(f"  - Autofix policy: `{entry.get('autofix', {}).get('policy', 'AUTOFIX_BLOCKED')}`\n")
+              file_obj.write(f"  - Fingerprint: `{entry['fingerprint_hash']}`\n")
+
+          def make_unified_diff(
+              *,
+              file_path: str,
+              before: str,
+              after: str,
+          ) -> str:
+              if before == after:
+                  return ""
+              before_lines = before.splitlines()
+              after_lines = after.splitlines()
+              diff_lines = list(
+                  difflib.unified_diff(
+                      before_lines,
+                      after_lines,
+                      fromfile=f"a/{file_path}",
+                      tofile=f"b/{file_path}",
+                      lineterm="\n",
+                  )
+              )
+              if not diff_lines:
+                  return ""
+              return "\n".join(diff_lines) + "\n"
+
+          def insert_after_marker_once(text: str, marker: str, addition: str) -> str:
+              if addition.strip() in text:
+                  return text
+              index = text.find(marker)
+              if index == -1:
+                  suffix = "" if text.endswith("\n") else "\n"
+                  return text + suffix + "\n" + addition.strip() + "\n"
+              insert_at = index + len(marker)
+              return text[:insert_at] + "\n\n" + addition.strip() + text[insert_at:]
+
+          def build_readme_advisory_addition() -> str:
+              return textwrap.dedent(
+                  """
+                  ### Advisory-only policy
+
+                  Tasukeru Analysis is an **advisory-only** review helper.
+
+                  It does not:
+
+                  - create branches automatically
+                  - create pull requests automatically
+                  - commit changes automatically
+                  - push changes automatically
+                  - apply fixes automatically
+                  - merge pull requests automatically
+
+                  Only `HITL_REQUIRED` findings may produce a PR comment.
+
+                  Other findings, including `FIX_RECOMMENDED`, `REVIEW_RECOMMENDED`,
+                  `NOISE_CANDIDATE`, and `INFO_ONLY`, are collected in the GitHub Step Summary
+                  and workflow artifacts for human review.
+
+                  Tasukeru Analysis is intended to reduce human review load, not to replace human
+                  decision-making.
+                  """
+              ).strip()
+
+          def build_readme_ja_advisory_addition() -> str:
+              return textwrap.dedent(
+                  """
+                  ### Advisory-only 方針
+
+                  Tasukeru Analysis / 助ける君は **advisory-only のレビュー補助** です。
+
+                  以下は行いません。
+
+                  - ブランチの自動作成
+                  - Pull Request の自動作成
+                  - 自動 commit
+                  - 自動 push
+                  - 自動修正の適用
+                  - Pull Request の自動 merge
+
+                  PR comment の対象になり得るのは、原則として `HITL_REQUIRED` finding のみです。
+
+                  `FIX_RECOMMENDED`、`REVIEW_RECOMMENDED`、`NOISE_CANDIDATE`、`INFO_ONLY`
+                  などの finding は、GitHub Step Summary と workflow artifacts に集約され、
+                  人間が必要に応じて確認します。
+
+                  Tasukeru Analysis の目的は、人間の review 負荷を下げることであり、
+                  人間の判断を置き換えることではありません。
+                  """
+              ).strip()
+
+          def build_security_md_draft() -> str:
+              return textwrap.dedent(
+                  """
+                  # Security Policy
+
+                  ## Scope
+
+                  This repository is a research and educational project for orchestration,
+                  fail-closed behavior, HITL escalation, and defensive repository review.
+
+                  Tasukeru Analysis is advisory-only. It does not create branches, create pull
+                  requests, commit, push, apply fixes, or merge pull requests automatically.
+
+                  ## Reporting security issues
+
+                  If you find a security issue, report it in a way that avoids exposing exploit
+                  details publicly.
+
+                  Please include:
+
+                  - affected file or component
+                  - high-level impact
+                  - defensive context
+                  - safe remediation suggestion, if known
+
+                  Do not include in public issues or PR comments:
+
+                  - exploit payloads
+                  - attack commands
+                  - offensive reproduction steps
+                  - step-by-step exploitation instructions
+                  - third-party target details
+
+                  ## Defensive-use limitation
+
+                  Security findings should be used to improve safety, reliability, traceability,
+                  and governance. This project must not be used for unauthorized scanning,
+                  exploitation, credential harvesting, or bypassing access controls.
+
+                  ## Human review
+
+                  All security-sensitive changes require human review. Automation may generate
+                  advisory artifacts, summaries, or draft suggestions, but humans decide whether
+                  to apply, commit, push, or merge any change.
+                  """
+              ).strip() + "\n"
+
+          def build_license_policy_draft() -> str:
+              return textwrap.dedent(
+                  """
+                  # License Policy
+
+                  This repository uses a split-license model.
+
+                  ## Software code
+
+                  Software code is licensed under the Apache License 2.0 unless otherwise stated.
+                  See `LICENSE` for the full license text.
+
+                  ## Documentation, diagrams, and research materials
+
+                  Documentation, diagrams, explanatory materials, and research notes are licensed
+                  under CC BY-NC-SA 4.0 unless otherwise stated.
+
+                  ## Project names
+
+                  The names `Tasukeru Analysis`, `助ける君`, `KAGE`, and `Maestro Orchestrator`
+                  are used to describe project components, concepts, or research artifacts.
+                  Use of these names should not imply endorsement, certification, or production
+                  safety guarantees.
+
+                  ## No warranty
+
+                  This repository is provided for research and educational purposes only. It is
+                  provided without warranty and does not guarantee safe autonomous behavior,
+                  regulatory compliance, or suitability for high-stakes use.
+                  """
+              ).strip() + "\n"
+
+          def propose_documentation_full_draft(
+              *,
+              reason_code: str,
+              file_path: str,
+          ) -> dict[str, Any] | None:
+              candidates: list[tuple[str, str]] = []
+              if "README" in file_path or reason_code in {"DOC_ADVISORY_ONLY_NOT_CLEAR", "DOC_AUTO_MERGE_POLICY_MISSING"}:
+                  if Path("README.md").exists():
+                      candidates.append(("README.md", build_readme_advisory_addition()))
+                  if Path("README.ja.md").exists():
+                      candidates.append(("README.ja.md", build_readme_ja_advisory_addition()))
+              elif reason_code == "DOC_SECURITY_POLICY_MISSING":
+                  candidates.append(("SECURITY.md", build_security_md_draft()))
+              elif reason_code == "DOC_LICENSE_POLICY_REFERENCE_MISSING":
+                  candidates.append(("LICENSE_POLICY.md", build_license_policy_draft()))
+              else:
+                  return None
+
+              drafts: list[dict[str, Any]] = []
+              for target, addition_or_full in candidates:
+                  path = Path(target)
+                  before = read_text(path) if path.exists() else ""
+                  if target == "README.md":
+                      marker = (
+                          "Tasukeru Analysis does not aim to hide warnings. Instead, it separates active\n"
+                          "repair candidates, review-only findings, historical-version warnings, and likely\n"
+                          "noise so maintainers can focus on the right items first.\n"
+                      )
+                      after = insert_after_marker_once(before, marker, addition_or_full)
+                  elif target == "README.ja.md":
+                      marker = "Tasukeru Analysis は warning を隠すことを目的としていません。"
+                      after = insert_after_marker_once(before, marker, addition_or_full)
+                  else:
+                      after = addition_or_full
+                  if before == after:
+                      continue
+                  diff = make_unified_diff(file_path=target, before=before, after=after)
+                  drafts.append(
+                      {
+                          "target_file": target,
+                          "draft_status": "DRAFT_READY",
+                          "current_sha256": sha256_text(before),
+                          "draft_sha256": sha256_text(after),
+                          "unified_diff": diff,
+                          "full_draft": after,
+                          "modifies_repository": False,
+                          "auto_apply_allowed": False,
+                          "human_decision_required": True,
+                      }
+                  )
+              if not drafts:
+                  return None
+              return {"reason_code": reason_code, "source_file": file_path, "drafts": drafts}
+
+          def generate_dradm_draft_artifacts(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> None:
+              doc_candidates = [
+                  entry for entry in entries
+                  if entry.get("source") == "Documentation Review"
+              ]
+              draft_items: list[dict[str, Any]] = []
+              for entry in doc_candidates:
+                  proposal = propose_documentation_full_draft(
+                      reason_code=str(entry.get("reason_code", "")),
+                      file_path=str(entry.get("file", "")),
+                  )
+                  if not proposal:
+                      continue
+                  draft_items.append(
+                      {
+                          "decision": "DRAFT_ONLY",
+                          "human_decision_required": True,
+                          "auto_branch_allowed": False,
+                          "auto_pr_creation_allowed": False,
+                          "auto_commit_allowed": False,
+                          "auto_push_allowed": False,
+                          "autofix_allowed": False,
+                          "auto_merge_allowed": False,
+                          "source_finding": {
+                              "decision": entry.get("decision"),
+                              "reason_code": entry.get("reason_code"),
+                              "file": entry.get("file"),
+                              "fingerprint_hash": entry.get("fingerprint_hash"),
+                              "message": entry.get("message"),
+                              "evidence": entry.get("evidence"),
+                              "explanation": entry.get("explanation"),
+                              "fix_prediction": entry.get("fix_prediction"),
+                          },
+                          "proposal": proposal,
+                      }
+                  )
+
+              payload = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_dradm_draft_generator",
+                  "status": "DRAFT_ONLY",
+                  "purpose": "Generate current-content-aware draft artifacts for human review.",
+                  "metadata": metadata,
+                  "notification_state_summary": {
+                      "critical_count": state.get("critical_count", 0),
+                      "new_critical_incident_count": state.get("new_critical_incident_count", 0),
+                  },
+                  "policy": {
+                      "modifies_repository": False,
+                      "auto_apply_allowed": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+                  "draft_count": len(draft_items),
+                  "drafts": draft_items,
+              }
+              write_json(dradm_json_path, payload)
+
+              with dradm_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru DRADM Draft\n\n")
+                  f.write("## Decision\n\n")
+                  f.write("- Status: `DRAFT_ONLY`\n")
+                  f.write("- Human decision required: `true`\n")
+                  f.write("- Auto apply: `false`\n")
+                  f.write("- Auto branch creation: `false`\n")
+                  f.write("- Auto PR creation: `false`\n")
+                  f.write("- Auto commit: `false`\n")
+                  f.write("- Auto push: `false`\n")
+                  f.write("- Auto fix: `false`\n")
+                  f.write("- Auto merge: `false`\n\n")
+                  f.write("This artifact contains draft-only documentation proposals. It does not modify repository files.\n\n")
+                  f.write("## Summary\n\n")
+                  f.write(f"- Draft proposals: {len(draft_items)}\n")
+                  f.write(f"- HITL_REQUIRED: {state.get('critical_count', 0)}\n")
+                  f.write(f"- Documentation findings: {metadata.get('documentation_count', 0)}\n\n")
+                  if not draft_items:
+                      f.write("No DRADM documentation drafts were generated.\n")
+                      return
+                  for index, item in enumerate(draft_items, start=1):
+                      finding = item["source_finding"]
+                      f.write(f"## Draft {index}: `{finding.get('reason_code')}`\n\n")
+                      f.write("### Source finding\n\n")
+                      f.write(f"- File: `{finding.get('file')}`\n")
+                      f.write(f"- Decision: `{finding.get('decision')}`\n")
+                      f.write(f"- Fingerprint: `{finding.get('fingerprint_hash')}`\n")
+                      f.write(f"- Message: {finding.get('message')}\n\n")
+                      f.write("### Why this draft exists\n\n")
+                      explanation = finding.get("explanation") or {}
+                      f.write(f"{explanation.get('why_problematic_ja', 'Documentation review suggested a human-readable draft.')}\n\n")
+                      f.write("### Human review checklist\n\n")
+                      f.write("- Confirm that the proposed text is accurate.\n")
+                      f.write("- Confirm that the change is minimal and does not overstate capabilities.\n")
+                      f.write("- Confirm that advisory-only, no auto-fix, and no auto-merge semantics remain clear.\n")
+                      f.write("- Apply manually only if accepted by the human maintainer.\n\n")
+                      for draft in item["proposal"]["drafts"]:
+                          f.write(f"### Target file: `{draft['target_file']}`\n\n")
+                          f.write(f"- Draft status: `{draft.get('draft_status', 'DRAFT_READY')}`\n\n")
+                          f.write("#### Hashes\n\n")
+                          f.write(f"- Current SHA-256: `{draft['current_sha256']}`\n")
+                          f.write(f"- Draft SHA-256: `{draft['draft_sha256']}`\n\n")
+                          f.write("#### Unified diff\n\n")
+                          f.write("```diff\n")
+                          f.write(draft["unified_diff"][:20000])
+                          if len(draft["unified_diff"]) > 20000:
+                              f.write("\n... diff truncated in Markdown; see JSON artifact for full draft data.\n")
+                          f.write("\n```\n\n")
+                          f.write("#### Full draft after proposed change\n\n")
+                          f.write("```markdown\n")
+                          f.write(draft["full_draft"][:30000])
+                          if len(draft["full_draft"]) > 30000:
+                              f.write("\n... full draft truncated in Markdown; see JSON artifact for full draft data.\n")
+                          f.write("\n```\n\n")
+
+          def build_human_readability_policy_addition() -> str:
+              return textwrap.dedent(
+                  """
+                  ## Human readability policy
+
+                  Tasukeru Analysis prioritizes code that humans can safely read, review, and maintain.
+
+                  A change should not be treated as a good fix merely because it is easier for AI or automated tools to process. If a change may reduce human readability, reviewability, or maintainability, it should be routed back for human review.
+                  """
+              ).strip()
+
+          def discover_batch_script_lines() -> list[str]:
+              scripts_dir = Path("scripts")
+              if not scripts_dir.exists():
+                  return []
+              return [
+                  f"- `{normalize_path(str(path))}`"
+                  for path in sorted(scripts_dir.glob("*.bat"))
+                  if path.is_file()
+              ]
+
+          def build_batch_scripts_addition(script_lines: list[str]) -> str:
+              listed_scripts = "\n".join(script_lines) if script_lines else "- No `.bat` scripts were discovered under `scripts/` during this run."
+              return textwrap.dedent(
+                  f"""
+                  ## Batch scripts
+
+                  Batch scripts may be used as convenience wrappers for local simulation runs.
+
+                  Discovered batch scripts:
+
+                  {listed_scripts}
+
+                  These scripts should be treated as local developer utilities only.
+
+                  They should not:
+
+                  - embed production HMAC keys
+                  - upload or submit artifacts automatically
+                  - bypass HITL confirmation
+                  - delete files automatically
+                  - process real personal or confidential data
+                  - change license or safety semantics
+                  - weaken tests or gate invariants
+
+                  For local demonstrations, a demo key mode may be used only when the simulator explicitly supports it. Production-like runs should use an environment variable or a protected key file for HMAC keys.
+                  """
+              ).strip()
+
+          def build_beginner_reading_guide_addition() -> str:
+              return textwrap.dedent(
+                  """
+                  ## Beginner reading guide
+
+                  For a first pass, read this repository in the following order:
+
+                  1. Safety and scope
+                  2. Tasukeru Analysis
+                  3. Advisory-only policy
+                  4. HITL decision support
+                  5. Current simulator lines
+                  6. Gate and decision model
+                  7. Disclaimer
+
+                  Treat simulator outputs as research artifacts, not production approvals. When behavior is unclear, read the relevant implementation together with its tests before applying any change.
+                  """
+              ).strip()
+
+          def insert_before_heading_once(text: str, heading: str, addition: str) -> str:
+              if addition.strip() in text:
+                  return text
+              index = text.find(heading)
+              if index == -1:
+                  suffix = "" if text.endswith("\n") else "\n"
+                  return text + suffix + "\n" + addition.strip() + "\n"
+              return text[:index].rstrip() + "\n\n" + addition.strip() + "\n\n" + text[index:].lstrip()
+
+          def build_readme_refinement_result() -> dict[str, Any]:
+              target = "README.md"
+              path = Path(target)
+              before = read_text(path) if path.exists() else ""
+              after = before
+              additions: list[str] = []
+              notes: list[str] = []
+              checks: list[dict[str, Any]] = []
+
+              if not before.strip():
+                  notes.append("README.md was not found or was empty; no refinement draft was generated.")
+                  return {
+                      "target_file": target,
+                      "draft_status": "NO_README_FOUND",
+                      "current_sha256": sha256_text(before),
+                      "draft_sha256": sha256_text(after),
+                      "unified_diff": "",
+                      "full_draft": after,
+                      "modifies_repository": False,
+                      "auto_apply_allowed": False,
+                      "human_decision_required": True,
+                      "checks": checks,
+                      "notes": notes,
+                  }
+
+              lower = before.lower()
+
+              if "human readability policy" not in lower:
+                  addition = build_human_readability_policy_addition()
+                  after = insert_before_heading_once(after, "## Security review output policy", addition)
+                  additions.append("Human readability policy")
+                  checks.append(
+                      {
+                          "name": "human_readability_policy",
+                          "status": "DRAFT_ADDED",
+                          "reason": "README did not clearly state that human readability takes priority over AI/tool readability.",
+                      }
+                  )
+              else:
+                  checks.append({"name": "human_readability_policy", "status": "PRESENT"})
+
+              script_lines = discover_batch_script_lines()
+              if "## batch scripts" not in lower and script_lines:
+                  addition = build_batch_scripts_addition(script_lines)
+                  after = insert_before_heading_once(after, "## Recommended reading order", addition)
+                  additions.append("Batch scripts")
+                  checks.append(
+                      {
+                          "name": "batch_scripts",
+                          "status": "DRAFT_ADDED",
+                          "script_count": len(script_lines),
+                          "reason": "Batch scripts were discovered but README did not contain a Batch scripts section.",
+                      }
+                  )
+              elif "## batch scripts" in lower:
+                  checks.append({"name": "batch_scripts", "status": "PRESENT"})
+              else:
+                  checks.append(
+                      {
+                          "name": "batch_scripts",
+                          "status": "SKIPPED_NO_BATCH_FILES",
+                          "reason": "No .bat files were discovered under scripts/ during this run.",
+                      }
+                  )
+
+              if "beginner reading guide" not in lower:
+                  addition = build_beginner_reading_guide_addition()
+                  after = insert_before_heading_once(after, "## Current simulator lines", addition)
+                  additions.append("Beginner reading guide")
+                  checks.append(
+                      {
+                          "name": "beginner_reading_guide",
+                          "status": "DRAFT_ADDED",
+                          "reason": "README can be easier for first-time readers with a short reading path.",
+                      }
+                  )
+              else:
+                  checks.append({"name": "beginner_reading_guide", "status": "PRESENT"})
+
+              overclaim_patterns = [
+                  ("COMPLETE_SAFETY_CLAIM", re.compile(r"complete\s+AI\s+safety\s+coverage", re.IGNORECASE)),
+                  ("PRODUCTION_SAFETY_CLAIM", re.compile(r"production\s+safety\s+system", re.IGNORECASE)),
+                  ("GUARANTEE_SAFE_AUTONOMY", re.compile(r"guarantee\s+of\s+safe\s+autonomous\s+behavior", re.IGNORECASE)),
+              ]
+              for code, pattern in overclaim_patterns:
+                  if pattern.search(before):
+                      notes.append(
+                          f"{code}: phrase appears in README. Confirm it is used as a disclaimer/negative claim, not as a capability claim."
+                      )
+
+              diff = make_unified_diff(file_path=target, before=before, after=after)
+              return {
+                  "target_file": target,
+                  "draft_status": "DRAFT_READY" if diff else "NO_CHANGE_NEEDED",
+                  "added_sections": additions,
+                  "current_sha256": sha256_text(before),
+                  "draft_sha256": sha256_text(after),
+                  "unified_diff": diff,
+                  "full_draft": after,
+                  "modifies_repository": False,
+                  "auto_apply_allowed": False,
+                  "human_decision_required": True,
+                  "checks": checks,
+                  "notes": notes,
+              }
+
+          def generate_readme_refinement_artifacts(metadata: dict[str, Any]) -> None:
+              result = build_readme_refinement_result()
+              payload = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_readme_refinement_draft",
+                  "status": "DRAFT_ONLY",
+                  "purpose": "Generate a README refinement draft that is easier for humans to read without changing repository files.",
+                  "metadata": metadata,
+                  "policy": {
+                      "modifies_repository": False,
+                      "auto_apply_allowed": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+                  "draft": result,
+              }
+              write_json(readme_refinement_json_path, payload)
+
+              with readme_refinement_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru README Refinement Draft\n\n")
+                  f.write("## Decision\n\n")
+                  f.write("- Status: `DRAFT_ONLY`\n")
+                  f.write("- Human decision required: `true`\n")
+                  f.write("- Auto apply: `false`\n")
+                  f.write("- Auto branch creation: `false`\n")
+                  f.write("- Auto PR creation: `false`\n")
+                  f.write("- Auto commit: `false`\n")
+                  f.write("- Auto push: `false`\n")
+                  f.write("- Auto fix: `false`\n")
+                  f.write("- Auto merge: `false`\n\n")
+                  f.write("This artifact contains a draft-only README refinement proposal. It does not modify repository files.\n\n")
+                  f.write("## Summary\n\n")
+                  f.write(f"- Target file: `{result.get('target_file', 'README.md')}`\n")
+                  f.write(f"- Draft status: `{result.get('draft_status', 'UNKNOWN')}`\n")
+                  added_sections = result.get("added_sections") or []
+                  f.write(f"- Added sections: {len(added_sections)}\n")
+                  for section in added_sections:
+                      f.write(f"  - {section}\n")
+                  f.write("\n## Checks\n\n")
+                  checks = result.get("checks") or []
+                  if checks:
+                      for check in checks:
+                          f.write(f"- `{check.get('name', 'unknown')}`: `{check.get('status', 'UNKNOWN')}`\n")
+                          if check.get("reason"):
+                              f.write(f"  - Reason: {check.get('reason')}\n")
+                  else:
+                      f.write("No checks were recorded.\n")
+                  notes = result.get("notes") or []
+                  if notes:
+                      f.write("\n## Notes\n\n")
+                      for note in notes:
+                          f.write(f"- {note}\n")
+                  if result.get("unified_diff"):
+                      f.write("\n## Unified diff\n\n")
+                      f.write("```diff\n")
+                      f.write(str(result["unified_diff"])[:20000])
+                      if len(str(result["unified_diff"])) > 20000:
+                          f.write("\n... diff truncated in Markdown; see JSON artifact for full draft data.\n")
+                      f.write("\n```\n")
+                  if result.get("full_draft"):
+                      f.write("\n## Full draft\n\n")
+                      f.write("```markdown\n")
+                      f.write(str(result["full_draft"])[:30000])
+                      if len(str(result["full_draft"])) > 30000:
+                          f.write("\n... full draft truncated in Markdown; see JSON artifact for full draft data.\n")
+                      f.write("\n```\n")
+
+          def sha256_file(path: Path) -> str:
+              try:
+                  h = hashlib.sha256()
+                  with path.open("rb") as f:
+                      for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                          h.update(chunk)
+                  return h.hexdigest()
+              except Exception:
+                  return ""
+
+          def canonical_json_bytes(obj: Any) -> bytes:
+              return json.dumps(
+                  obj,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              ).encode("utf-8")
+
+          def chain_hash(prev_hash: str, row_hash: str) -> str:
+              return hashlib.sha256(f"{prev_hash}:{row_hash}".encode("utf-8")).hexdigest()
+
+          def optional_hmac_sha256(value: str) -> str:
+              key = os.environ.get("TASUKERU_ARL_HMAC_KEY", "")
+              if not key:
+                  return ""
+              return hmac.new(key.encode("utf-8"), value.encode("utf-8"), hashlib.sha256).hexdigest()
+
+          def build_arl_row(
+              *,
+              seq: int,
+              run_id: str,
+              layer: str,
+              decision: str,
+              sealed: bool,
+              overrideable: bool,
+              final_decider: str,
+              reason_code: str,
+              prev_hash: str,
+              evidence: dict[str, Any] | None = None,
+          ) -> dict[str, Any]:
+              row: dict[str, Any] = {
+                  "schema_version": "1.0",
+                  "seq": seq,
+                  "run_id": run_id,
+                  "layer": layer,
+                  "decision": decision,
+                  "sealed": sealed,
+                  "overrideable": overrideable,
+                  "final_decider": final_decider,
+                  "reason_code": reason_code,
+                  "prev_hash": prev_hash,
+                  "evidence": evidence or {},
+                  "modifies_repository": False,
+                  "auto_apply_allowed": False,
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "human_decision_required": True,
+              }
+              row_hash = hashlib.sha256(canonical_json_bytes(row)).hexdigest()
+              current_chain_hash = chain_hash(prev_hash, row_hash)
+              row["row_hash"] = row_hash
+              row["chain_hash"] = current_chain_hash
+              hmac_value = optional_hmac_sha256(current_chain_hash)
+              if hmac_value:
+                  row["hmac_sha256"] = hmac_value
+              return row
+
+          def verify_tasukeru_arl_hash_chain(path: Path) -> dict[str, Any]:
+              errors: list[dict[str, Any]] = []
+              prev_hash = "GENESIS"
+              row_count = 0
+              head_hash = "GENESIS"
+              hmac_key_present = bool(os.environ.get("TASUKERU_ARL_HMAC_KEY", ""))
+
+              if not path.exists():
+                  return {
+                      "schema_version": "1.0",
+                      "tool": "tasukeru_arl_hash_chain_verify",
+                      "verified": False,
+                      "row_count": 0,
+                      "head_hash": "",
+                      "hmac_enabled": hmac_key_present,
+                      "errors": [{"seq": None, "reason": "ARL file was not generated."}],
+                      "policy": {
+                          "modifies_repository": False,
+                          "auto_apply_allowed": False,
+                          "auto_branch_allowed": False,
+                          "auto_pr_creation_allowed": False,
+                          "auto_commit_allowed": False,
+                          "auto_push_allowed": False,
+                          "autofix_allowed": False,
+                          "auto_merge_allowed": False,
+                          "human_decision_required": True,
+                      },
+                  }
+
+              with path.open("r", encoding="utf-8", errors="replace") as f:
+                  for line_no, line in enumerate(f, start=1):
+                      line = line.strip()
+                      if not line:
+                          continue
+                      try:
+                          row = json.loads(line)
+                      except Exception as exc:
+                          errors.append({"line": line_no, "reason": f"invalid_json: {exc}"})
+                          continue
+                      if not isinstance(row, dict):
+                          errors.append({"line": line_no, "reason": "row is not an object"})
+                          continue
+
+                      row_count += 1
+                      seq = row.get("seq", row_count)
+                      expected_prev = row.get("prev_hash")
+                      actual_row_hash = row.get("row_hash")
+                      actual_chain_hash = row.get("chain_hash")
+                      row_for_hash = dict(row)
+                      row_for_hash.pop("row_hash", None)
+                      row_for_hash.pop("chain_hash", None)
+                      row_for_hash.pop("hmac_sha256", None)
+                      expected_row_hash = hashlib.sha256(canonical_json_bytes(row_for_hash)).hexdigest()
+                      expected_chain_hash = chain_hash(prev_hash, expected_row_hash)
+
+                      if expected_prev != prev_hash:
+                          errors.append(
+                              {
+                                  "seq": seq,
+                                  "reason": "prev_hash_mismatch",
+                                  "expected": prev_hash,
+                                  "actual": expected_prev,
+                              }
+                          )
+                      if actual_row_hash != expected_row_hash:
+                          errors.append(
+                              {
+                                  "seq": seq,
+                                  "reason": "row_hash_mismatch",
+                                  "expected": expected_row_hash,
+                                  "actual": actual_row_hash,
+                              }
+                          )
+                      if actual_chain_hash != expected_chain_hash:
+                          errors.append(
+                              {
+                                  "seq": seq,
+                                  "reason": "chain_hash_mismatch",
+                                  "expected": expected_chain_hash,
+                                  "actual": actual_chain_hash,
+                              }
+                          )
+                      if hmac_key_present:
+                          expected_hmac = optional_hmac_sha256(expected_chain_hash)
+                          actual_hmac = row.get("hmac_sha256")
+                          if actual_hmac != expected_hmac:
+                              errors.append(
+                                  {
+                                      "seq": seq,
+                                      "reason": "hmac_mismatch",
+                                      "expected": expected_hmac,
+                                      "actual": actual_hmac,
+                                  }
+                              )
+                      prev_hash = str(actual_chain_hash or expected_chain_hash)
+                      head_hash = prev_hash
+
+              return {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_arl_hash_chain_verify",
+                  "verified": not errors,
+                  "row_count": row_count,
+                  "head_hash": head_hash,
+                  "hmac_enabled": hmac_key_present,
+                  "errors": errors,
+                  "policy": {
+                      "modifies_repository": False,
+                      "auto_apply_allowed": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+              }
+
+          def generate_tasukeru_arl_hash_chain(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Generate an advisory-only ARL hash chain artifact.
+
+              This does not change repository files and does not influence the existing
+              finding classification. It records Tasukeru outputs as tamper-evident
+              audit rows for human review.
+              """
+              run_id = os.environ.get("GITHUB_RUN_ID") or os.environ.get("GITHUB_RUN_NUMBER") or "local"
+              seq = 1
+              prev_hash = "GENESIS"
+              rows: list[dict[str, Any]] = []
+
+              summary_decision = "PAUSE_FOR_HITL" if state.get("critical_count", 0) else "RUN"
+              summary_reason = "TASUKERU_HITL_REQUIRED_PRESENT" if state.get("critical_count", 0) else "TASUKERU_SUMMARY_RECORDED"
+              row = build_arl_row(
+                  seq=seq,
+                  run_id=run_id,
+                  layer="tasukeru_summary",
+                  decision=summary_decision,
+                  sealed=False,
+                  overrideable=summary_decision == "PAUSE_FOR_HITL",
+                  final_decider="SYSTEM",
+                  reason_code=summary_reason,
+                  prev_hash=prev_hash,
+                  evidence={
+                      "metadata": metadata,
+                      "notification_state_summary": {
+                          "critical_count": state.get("critical_count", 0),
+                          "new_critical_incident_count": state.get("new_critical_incident_count", 0),
+                          "suppressed_duplicate_critical_incident_count": state.get("suppressed_duplicate_critical_incident_count", 0),
+                      },
+                  },
+              )
+              rows.append(row)
+              prev_hash = row["chain_hash"]
+              seq += 1
+
+              for entry in entries:
+                  advisory_decision = str(entry.get("decision", ""))
+                  arl_decision = "PAUSE_FOR_HITL" if advisory_decision == "HITL_REQUIRED" else "RUN"
+                  row = build_arl_row(
+                      seq=seq,
+                      run_id=run_id,
+                      layer="tasukeru_finding",
+                      decision=arl_decision,
+                      sealed=False,
+                      overrideable=arl_decision == "PAUSE_FOR_HITL",
+                      final_decider="SYSTEM",
+                      reason_code=str(entry.get("reason_code", "TASUKERU_FINDING_RECORDED")),
+                      prev_hash=prev_hash,
+                      evidence={
+                          "source": entry.get("source"),
+                          "advisory_decision": advisory_decision,
+                          "severity": entry.get("severity"),
+                          "category": entry.get("category"),
+                          "rule_id": entry.get("rule_id"),
+                          "file": entry.get("file"),
+                          "line": entry.get("line"),
+                          "fingerprint_hash": entry.get("fingerprint_hash"),
+                          "path_profile": entry.get("path_profile"),
+                      },
+                  )
+                  rows.append(row)
+                  prev_hash = row["chain_hash"]
+                  seq += 1
+
+              artifact_paths = [
+                  summary_path,
+                  hitl_md_path,
+                  hitl_json_path,
+                  notification_state_path,
+                  pr_comment_path,
+                  dradm_md_path,
+                  dradm_json_path,
+                  confidence_md_path,
+                  confidence_json_path,
+                  readme_refinement_md_path,
+                  readme_refinement_json_path,
+                  log_dir / "logic-review.json",
+                  log_dir / "documentation-review.json",
+                  log_dir / "ruff.json",
+                  log_dir / "bandit.json",
+                  log_dir / "pip-audit.json",
+              ]
+              for artifact_path in artifact_paths:
+                  if not artifact_path.exists():
+                      continue
+                  artifact_sha256 = sha256_file(artifact_path)
+                  row = build_arl_row(
+                      seq=seq,
+                      run_id=run_id,
+                      layer="artifact_integrity",
+                      decision="RUN",
+                      sealed=False,
+                      overrideable=False,
+                      final_decider="SYSTEM",
+                      reason_code="TASUKERU_ARTIFACT_RECORDED",
+                      prev_hash=prev_hash,
+                      evidence={
+                          "artifact": str(artifact_path).replace("\\", "/"),
+                          "artifact_sha256": artifact_sha256,
+                          "size_bytes": artifact_path.stat().st_size,
+                      },
+                  )
+                  rows.append(row)
+                  prev_hash = row["chain_hash"]
+                  seq += 1
+
+              with arl_jsonl_path.open("w", encoding="utf-8") as f:
+                  for row in rows:
+                      f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+              verification = verify_tasukeru_arl_hash_chain(arl_jsonl_path)
+              verification.update(
+                  {
+                      "arl_path": str(arl_jsonl_path),
+                      "verify_path": str(arl_verify_json_path),
+                      "purpose": "Advisory-only tamper-evident record of Tasukeru outputs.",
+                  }
+              )
+              write_json(arl_verify_json_path, verification)
+              return verification
+
+          def build_tasukeru_announcement_payload(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Translate verified ARL/advisory outputs into a human-readable summary.
+
+              This announcer layer is read-only and advisory-only. It does not change
+              findings, clear HITL_REQUIRED, modify repository files, or authorize any
+              automatic action.
+              """
+              counts = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
+              arl_verified = bool(arl_verification.get("verified"))
+              critical_count = int(state.get("critical_count", counts.get("HITL_REQUIRED", 0)) or 0)
+              review_count = int(counts.get("FIX_RECOMMENDED", 0) + counts.get("REVIEW_RECOMMENDED", 0))
+              noise_count = int(counts.get("NOISE_CANDIDATE", 0))
+              info_count = int(counts.get("INFO_ONLY", 0))
+
+              confidence_report = read_json(confidence_json_path, {})
+              total_confidence = (
+                  confidence_report.get("total") or {}
+                  if isinstance(confidence_report, dict)
+                  else {}
+              )
+              dradm_report = read_json(dradm_json_path, {})
+              readme_refinement_report = read_json(readme_refinement_json_path, {})
+              readme_refinement_draft = {}
+              if isinstance(readme_refinement_report, dict):
+                  draft_obj = readme_refinement_report.get("draft")
+                  if isinstance(draft_obj, dict):
+                      readme_refinement_draft = draft_obj
+                  else:
+                      readme_refinement_draft = readme_refinement_report
+
+              automation_policy = {
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "human_decision_required": True,
+              }
+
+              if not arl_verified:
+                  conclusion_ja = (
+                      "ARLハッシュチェーンの検証に失敗したため、通常要約は制限されています。"
+                      "原因・主体・意図は推測せず、tasukeru_arl_verify.json を確認してください。"
+                  )
+                  mode = "ARL_VERIFY_FAILED_LIMITED_SUMMARY"
+                  recommended_next_actions = [
+                      "tasukeru_arl_verify.json を確認する",
+                      "tasukeru_arl.jsonl の欠損・破損・改ざん検知エラーを確認する",
+                      "ARL検証が回復するまで、この要約を最終判断に使わない",
+                  ]
+              elif critical_count:
+                  conclusion_ja = (
+                      "HITL_REQUIRED が検出されています。merge前に人間確認が必要です。"
+                      "ARLハッシュチェーンは検証済みです。"
+                  )
+                  mode = "HITL_REQUIRED_SUMMARY"
+                  recommended_next_actions = [
+                      "tasukeru_hitl_review.md を確認する",
+                      "tasukeru_hitl_review.json で対象reason_codeとfileを確認する",
+                      "必要に応じて該当artifactとARL行へ戻る",
+                      "人間が判断するまでmergeしない",
+                  ]
+              else:
+                  conclusion_ja = (
+                      "このrunでは HITL_REQUIRED はありません。"
+                      "ARLハッシュチェーンは検証済みです。"
+                      "自動PR・自動commit・自動push・自動fix・自動mergeは有効化されていません。"
+                  )
+                  mode = "NORMAL_HUMAN_SUMMARY"
+                  recommended_next_actions = [
+                      "tasukeru_advisory_summary.md を確認する",
+                      "必要に応じて tasukeru_dradm_draft.md と tasukeru_readme_refinement_draft.md を確認する",
+                      "FIX_RECOMMENDED / REVIEW_RECOMMENDED の残件を次の改善候補として扱う",
+                  ]
+
+              look_first = [
+                  "tasukeru_advisory_summary.md",
+                  "tasukeru_hitl_review.md",
+                  "tasukeru_hitl_review.json",
+                  "tasukeru_arl_verify.json",
+              ]
+              if dradm_report:
+                  look_first.append("tasukeru_dradm_draft.md")
+              if readme_refinement_report:
+                  look_first.append("tasukeru_readme_refinement_draft.md")
+              if confidence_report:
+                  look_first.append("tasukeru_confidence_report.md")
+
+              source_constraints = {
+                  "source_of_truth": "tasukeru_arl.jsonl + tasukeru_arl_verify.json + advisory artifacts",
+                  "arl_verified": arl_verified,
+                  "do_not_infer_actor_intent_or_cause": True,
+                  "do_not_claim_safety_guarantee": True,
+                  "unknowns_must_remain_unknown": True,
+                  "summary_is_not_final_decision": True,
+              }
+
+              return {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_announcer",
+                  "status": "ADVISORY_ONLY",
+                  "mode": mode,
+                  "generated": True,
+                  "purpose": "Translate verified Tasukeru ARL/advisory outputs into a concise human-readable summary.",
+                  "conclusion_ja": conclusion_ja,
+                  "metadata": metadata,
+                  "decision_counts": dict(counts),
+                  "review_queue": {
+                      "hitl_required": critical_count,
+                      "fix_recommended": int(counts.get("FIX_RECOMMENDED", 0)),
+                      "review_recommended": int(counts.get("REVIEW_RECOMMENDED", 0)),
+                      "noise_candidate": noise_count,
+                      "info_only": info_count,
+                      "remaining_review_items": review_count,
+                  },
+                  "arl": {
+                      "verified": arl_verified,
+                      "row_count": arl_verification.get("row_count"),
+                      "head_hash": arl_verification.get("head_hash"),
+                      "hmac_enabled": arl_verification.get("hmac_enabled"),
+                      "error_count": len(arl_verification.get("errors", []) or []),
+                      "verify_artifact": "tasukeru_arl_verify.json",
+                      "source_artifact": "tasukeru_arl.jsonl",
+                  },
+                  "confidence": {
+                      "score": total_confidence.get("total_confidence_score"),
+                      "level": total_confidence.get("total_confidence_level"),
+                      "scope": "classification/suggestion confidence only; not permission to auto-apply changes",
+                  },
+                  "drafts": {
+                      "dradm_draft_count": dradm_report.get("draft_count") if isinstance(dradm_report, dict) else None,
+                      "readme_refinement_status": readme_refinement_draft.get("draft_status")
+                      if isinstance(readme_refinement_draft, dict)
+                      else None,
+                      "readme_refinement_target": readme_refinement_draft.get("target_file")
+                      if isinstance(readme_refinement_draft, dict)
+                      else None,
+                  },
+                  "look_first": look_first,
+                  "recommended_next_actions": recommended_next_actions,
+                  "source_constraints": source_constraints,
+                  "policy": automation_policy,
+              }
+
+          def write_tasukeru_announcement(payload: dict[str, Any]) -> None:
+              write_json(announcement_json_path, payload)
+              review_queue = payload.get("review_queue", {}) if isinstance(payload, dict) else {}
+              arl = payload.get("arl", {}) if isinstance(payload, dict) else {}
+              confidence = payload.get("confidence", {}) if isinstance(payload, dict) else {}
+              drafts = payload.get("drafts", {}) if isinstance(payload, dict) else {}
+              policy = payload.get("policy", {}) if isinstance(payload, dict) else {}
+              source_constraints = payload.get("source_constraints", {}) if isinstance(payload, dict) else {}
+
+              with announcement_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru Announcement\n\n")
+                  f.write("This artifact is an announcer-style natural-language summary. ")
+                  f.write("It translates verified Tasukeru ARL/advisory outputs for human review and does not make decisions.\n\n")
+                  f.write("## 結論\n\n")
+                  f.write(str(payload.get("conclusion_ja", "No conclusion generated.")) + "\n\n")
+                  f.write("## 確認結果\n\n")
+                  f.write(f"- Mode: `{payload.get('mode')}`\n")
+                  f.write(f"- ARL verified: `{arl.get('verified')}`\n")
+                  f.write(f"- ARL rows: `{arl.get('row_count')}`\n")
+                  f.write(f"- ARL head hash: `{arl.get('head_hash')}`\n")
+                  f.write(f"- ARL HMAC enabled: `{arl.get('hmac_enabled')}`\n")
+                  f.write(f"- ARL error count: `{arl.get('error_count')}`\n")
+                  f.write(f"- HITL_REQUIRED: `{review_queue.get('hitl_required')}`\n")
+                  f.write(f"- FIX_RECOMMENDED: `{review_queue.get('fix_recommended')}`\n")
+                  f.write(f"- REVIEW_RECOMMENDED: `{review_queue.get('review_recommended')}`\n")
+                  f.write(f"- NOISE_CANDIDATE: `{review_queue.get('noise_candidate')}`\n")
+                  f.write(f"- INFO_ONLY: `{review_queue.get('info_only')}`\n")
+                  f.write(f"- Confidence: `{confidence.get('score')}` / `1.0` ({confidence.get('level')})\n")
+                  f.write(f"- DRADM draft count: `{drafts.get('dradm_draft_count')}`\n")
+                  f.write(f"- README refinement status: `{drafts.get('readme_refinement_status')}`\n\n")
+
+                  f.write("## 人間が先に見るもの\n\n")
+                  for item in payload.get("look_first", []) or []:
+                      f.write(f"- `{item}`\n")
+                  f.write("\n## 推奨される次の確認\n\n")
+                  for item in payload.get("recommended_next_actions", []) or []:
+                      f.write(f"- {item}\n")
+
+                  f.write("\n## 権限と制限\n\n")
+                  f.write("- This announcement does not clear `HITL_REQUIRED`.\n")
+                  f.write("- This announcement does not modify repository files.\n")
+                  f.write("- This announcement does not create branches, PRs, commits, pushes, fixes, or merges.\n")
+                  f.write(f"- Auto branch creation: `{policy.get('auto_branch_allowed')}`\n")
+                  f.write(f"- Auto PR creation: `{policy.get('auto_pr_creation_allowed')}`\n")
+                  f.write(f"- Auto commit: `{policy.get('auto_commit_allowed')}`\n")
+                  f.write(f"- Auto push: `{policy.get('auto_push_allowed')}`\n")
+                  f.write(f"- Auto fix: `{policy.get('autofix_allowed')}`\n")
+                  f.write(f"- Auto merge: `{policy.get('auto_merge_allowed')}`\n")
+                  f.write(f"- Human decision required: `{policy.get('human_decision_required')}`\n")
+
+                  f.write("\n## NCF / fact-boundary note\n\n")
+                  f.write("- This announcement only summarizes recorded ARL/advisory artifacts.\n")
+                  f.write("- It must not infer cause, actor, or intent beyond the logs.\n")
+                  f.write("- It must not claim production safety or compliance certification.\n")
+                  f.write(f"- Source of truth: `{source_constraints.get('source_of_truth')}`\n")
+
+          def generate_tasukeru_announcement(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+          ) -> dict[str, Any]:
+              payload = build_tasukeru_announcement_payload(entries, state, metadata, arl_verification)
+              write_tasukeru_announcement(payload)
+              return payload
+
+          def clamp_score(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+              return round(max(minimum, min(maximum, value)), 3)
+
+          def confidence_level(score: float) -> str:
+              if score >= 0.90:
+                  return "VERY_HIGH"
+              if score >= 0.75:
+                  return "HIGH"
+              if score >= 0.55:
+                  return "MEDIUM"
+              if score >= 0.35:
+                  return "LOW"
+              return "VERY_LOW"
+
+          def calculate_entry_confidence(entry: dict[str, Any]) -> dict[str, Any]:
+              basis: list[str] = []
+              penalties: list[str] = []
+              components = {
+                  "evidence_quality": 0.0,
+                  "rule_profile_confidence": 0.0,
+                  "path_profile_confidence": 0.0,
+                  "classification_clarity": 0.0,
+                  "fix_prediction_clarity": 0.0,
+                  "fix_verification_status": 0.0,
+              }
+
+              evidence = entry.get("evidence", {}) if isinstance(entry.get("evidence"), dict) else {}
+              source = str(entry.get("source", ""))
+              rule_id = str(entry.get("rule_id", ""))
+              file_path = str(entry.get("file", ""))
+              line = entry.get("line")
+              snippet = str(entry.get("code_snippet", ""))
+              artifact = str(evidence.get("artifact", ""))
+              path_profile = str(entry.get("path_profile", ""))
+              classification_reason = str(entry.get("classification_reason", ""))
+              rule_profile = entry.get("rule_profile", {}) if isinstance(entry.get("rule_profile"), dict) else {}
+              fix_prediction = entry.get("fix_prediction", {}) if isinstance(entry.get("fix_prediction"), dict) else {}
+              fix_verification = entry.get("fix_verification", {}) if isinstance(entry.get("fix_verification"), dict) else {}
+
+              if source:
+                  components["evidence_quality"] += 0.05
+                  basis.append("source tool is recorded")
+              if rule_id:
+                  components["evidence_quality"] += 0.05
+                  basis.append("rule_id is recorded")
+              if file_path:
+                  components["evidence_quality"] += 0.05
+                  basis.append("target file is recorded")
+              if line or source in {"Documentation Review", "pip-audit"}:
+                  components["evidence_quality"] += 0.04
+                  basis.append("line or document-level scope is recorded")
+              if snippet or source in {"Documentation Review", "pip-audit"}:
+                  components["evidence_quality"] += 0.03
+                  basis.append("snippet or document-level evidence is available")
+              if artifact:
+                  components["evidence_quality"] += 0.03
+                  basis.append("artifact reference is recorded")
+              components["evidence_quality"] = min(0.25, components["evidence_quality"])
+
+              if rule_id in RULE_PROFILES:
+                  components["rule_profile_confidence"] = 0.20
+                  basis.append("rule_id has an explicit RULE_PROFILES entry")
+              elif source in {"Documentation Review", "Tasukeru Logic Review", "pip-audit"}:
+                  components["rule_profile_confidence"] = 0.16
+                  basis.append("source-specific repository policy handles this finding type")
+              elif rule_profile:
+                  components["rule_profile_confidence"] = 0.12
+                  basis.append("fallback rule profile is present")
+              else:
+                  components["rule_profile_confidence"] = 0.08
+                  penalties.append("rule_id is not explicitly profiled")
+
+              if path_profile and path_profile not in {"unknown", "general"}:
+                  components["path_profile_confidence"] = 0.20
+                  basis.append(f"path_profile is resolved as {path_profile}")
+              elif path_profile == "general":
+                  components["path_profile_confidence"] = 0.14
+                  basis.append("path_profile is general but explicitly resolved")
+              else:
+                  components["path_profile_confidence"] = 0.08
+                  penalties.append("path_profile is missing or unknown")
+
+              if classification_reason:
+                  components["classification_clarity"] = 0.15
+                  basis.append("classification_reason explains the decision")
+              else:
+                  components["classification_clarity"] = 0.07
+                  penalties.append("classification_reason is missing")
+
+              if fix_prediction.get("expected_effect_ja"):
+                  components["fix_prediction_clarity"] = 0.10
+                  basis.append("fix_prediction includes expected effect")
+              else:
+                  components["fix_prediction_clarity"] = 0.04
+                  penalties.append("fix_prediction is incomplete")
+
+              if fix_verification.get("verified") is True:
+                  components["fix_verification_status"] = 0.10
+                  basis.append("fix_verification is verified")
+              elif fix_verification:
+                  components["fix_verification_status"] = 0.02
+                  penalties.append("fix_verification is advisory-only and not verified")
+              else:
+                  components["fix_verification_status"] = 0.0
+                  penalties.append("fix_verification data is missing")
+
+              score = sum(components.values())
+
+              if source in {"Ruff", "Bandit"} and not line:
+                  score -= 0.03
+                  penalties.append("tool finding has no line number")
+              if source in {"Ruff", "Bandit"} and not snippet:
+                  score -= 0.03
+                  penalties.append("tool finding has no code snippet")
+              if entry.get("decision") == "HITL_REQUIRED" and fix_verification.get("verified") is not True:
+                  score -= 0.02
+                  penalties.append("critical finding still requires human review")
+
+              cap = 1.0 if fix_verification.get("verified") is True else 0.90
+              if cap < 1.0:
+                  basis.append("score is capped below 1.0 because fix_verification is not verified")
+              score = clamp_score(score, 0.0, cap)
+
+              return {
+                  "confidence_score": score,
+                  "confidence_level": confidence_level(score),
+                  "score_semantics": "Confidence in Tasukeru's classification/suggestion evidence, not a safety guarantee.",
+                  "components": {key: round(value, 3) for key, value in components.items()},
+                  "basis": basis,
+                  "penalties": penalties,
+                  "policy": {
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+              }
+
+          def attach_confidence_scores(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+              for entry in entries:
+                  assessment = calculate_entry_confidence(entry)
+                  entry["confidence_assessment"] = assessment
+                  entry["confidence_score"] = assessment["confidence_score"]
+                  entry["confidence_level"] = assessment["confidence_level"]
+              return entries
+
+          def build_file_confidence_summary(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+              grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+              for entry in entries:
+                  grouped[str(entry.get("file", "repository"))].append(entry)
+
+              summaries: list[dict[str, Any]] = []
+              for file_path, file_entries in sorted(grouped.items()):
+                  scores = [float(entry.get("confidence_score", 0.0)) for entry in file_entries]
+                  avg_score = clamp_score(sum(scores) / len(scores)) if scores else 0.0
+                  decision_counts = Counter(str(entry.get("decision", "UNKNOWN")) for entry in file_entries)
+                  reason_codes = sorted({str(entry.get("reason_code", "")) for entry in file_entries if entry.get("reason_code")})
+                  path_profiles = sorted({str(entry.get("path_profile", "")) for entry in file_entries if entry.get("path_profile")})
+                  basis = [
+                      f"{len(file_entries)} finding(s) grouped for this file",
+                      f"decision_counts={dict(decision_counts)}",
+                  ]
+                  if path_profiles:
+                      basis.append(f"path_profiles={path_profiles}")
+                  penalties: list[str] = []
+                  if any(entry.get("decision") in {"HITL_REQUIRED", "REVIEW_RECOMMENDED"} for entry in file_entries):
+                      penalties.append("file still contains findings that require human review or contextual review")
+                  if any(entry.get("fix_verification", {}).get("verified") is not True for entry in file_entries):
+                      penalties.append("one or more findings are not verified by fix_verification")
+                  summaries.append(
+                      {
+                          "file": file_path,
+                          "file_confidence_score": avg_score,
+                          "file_confidence_level": confidence_level(avg_score),
+                          "finding_count": len(file_entries),
+                          "decision_counts": dict(decision_counts),
+                          "reason_codes": reason_codes,
+                          "path_profiles": path_profiles,
+                          "basis": basis,
+                          "penalties": penalties,
+                      }
+                  )
+              return summaries
+
+          def build_total_confidence_summary(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+              scores = [float(entry.get("confidence_score", 0.0)) for entry in entries]
+              entry_average = sum(scores) / len(scores) if scores else 0.0
+              basis: list[str] = []
+              penalties: list[str] = []
+
+              structural_score = 0.70
+              if metadata.get("ruff_count", 0) == 0:
+                  structural_score += 0.05
+                  basis.append("Ruff findings are zero")
+              if metadata.get("pip_count", 0) == 0:
+                  structural_score += 0.05
+                  basis.append("pip-audit vulnerabilities are zero")
+              if metadata.get("logic_count", 0) == 0:
+                  structural_score += 0.05
+                  basis.append("Tasukeru logic review findings are zero")
+              if state.get("critical_count", 0) == 0:
+                  structural_score += 0.05
+                  basis.append("HITL_REQUIRED critical incidents are zero")
+              structural_score = clamp_score(structural_score)
+
+              total = (entry_average * 0.75) + (structural_score * 0.25)
+
+              if metadata.get("documentation_count", 0):
+                  penalties.append("documentation review still has findings")
+                  total -= 0.02
+              if state.get("critical_count", 0):
+                  penalties.append("HITL_REQUIRED incidents remain")
+                  total -= 0.08
+              if not any(entry.get("fix_verification", {}).get("verified") is True for entry in entries):
+                  penalties.append("no finding is fully verified by fix_verification; scores remain advisory")
+                  total = min(total, 0.90)
+              if not entries:
+                  penalties.append("no entries were available to score")
+
+              total = clamp_score(total)
+              return {
+                  "total_confidence_score": total,
+                  "total_confidence_level": confidence_level(total),
+                  "entry_average_score": clamp_score(entry_average),
+                  "structural_score": structural_score,
+                  "basis": basis,
+                  "penalties": penalties,
+                  "score_semantics": "Confidence in this Tasukeru review run's classification/suggestion evidence, not a guarantee that the repository is safe.",
+                  "policy": {
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+              }
+
+          def build_confidence_report_payload(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+              file_summaries = build_file_confidence_summary(entries)
+              total_summary = build_total_confidence_summary(entries, state, metadata)
+              return {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_confidence_scoring",
+                  "status": "ADVISORY_ONLY",
+                  "score_max": 1.0,
+                  "score_semantics": "Scores represent confidence in Tasukeru's evidence/classification/suggestion, not permission to auto-apply changes.",
+                  "total": total_summary,
+                  "files": file_summaries,
+                  "entries": [
+                      {
+                          "source": entry.get("source"),
+                          "decision": entry.get("decision"),
+                          "reason_code": entry.get("reason_code"),
+                          "file": entry.get("file"),
+                          "line": entry.get("line"),
+                          "confidence_score": entry.get("confidence_score"),
+                          "confidence_level": entry.get("confidence_level"),
+                          "confidence_basis": entry.get("confidence_assessment", {}).get("basis", []),
+                          "confidence_penalties": entry.get("confidence_assessment", {}).get("penalties", []),
+                          "classification_reason": entry.get("classification_reason"),
+                          "path_profile": entry.get("path_profile"),
+                      }
+                      for entry in entries
+                  ],
+                  "policy": {
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required": True,
+                  },
+              }
+
+          def write_confidence_report(payload: dict[str, Any]) -> None:
+              write_json(confidence_json_path, payload)
+              total = payload.get("total", {})
+              with confidence_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru Confidence Report\n\n")
+                  f.write("This report is advisory-only. Scores do not authorize auto-fix, auto-PR, auto-push, or auto-merge.\n\n")
+                  f.write("## Total confidence\n\n")
+                  f.write(f"- Score: `{total.get('total_confidence_score', 0.0)}` / `1.0`\n")
+                  f.write(f"- Level: `{total.get('total_confidence_level', 'UNKNOWN')}`\n")
+                  f.write(f"- Entry average: `{total.get('entry_average_score', 0.0)}`\n")
+                  f.write(f"- Structural score: `{total.get('structural_score', 0.0)}`\n\n")
+                  f.write("## Basis\n\n")
+                  for item in total.get("basis", []) or ["No positive basis recorded."]:
+                      f.write(f"- {item}\n")
+                  f.write("\n## Penalties / limitations\n\n")
+                  for item in total.get("penalties", []) or ["No penalties recorded."]:
+                      f.write(f"- {item}\n")
+                  f.write("\n## File confidence\n\n")
+                  files = payload.get("files", [])
+                  if not files:
+                      f.write("No file-level confidence entries.\n")
+                  else:
+                      for item in files[:100]:
+                          f.write(f"- `{item.get('file')}`: `{item.get('file_confidence_score')}` / `1.0` ({item.get('file_confidence_level')}); findings={item.get('finding_count')}\n")
+                      if len(files) > 100:
+                          f.write(f"\n... and {len(files) - 100} more files in `tasukeru_confidence_report.json`.\n")
+                  f.write("\n## Policy\n\n")
+                  f.write("- Auto branch creation: `false`\n")
+                  f.write("- Auto PR creation: `false`\n")
+                  f.write("- Auto commit: `false`\n")
+                  f.write("- Auto push: `false`\n")
+                  f.write("- Auto fix: `false`\n")
+                  f.write("- Auto merge: `false`\n")
+                  f.write("- Human decision required: `true`\n")
+
+          def write_outputs(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> None:
+              counts = Counter(entry["decision"] for entry in entries)
+              path_profile_counts = Counter(str(entry.get("path_profile", "unknown")) for entry in entries)
+              autofix_policy_counts = Counter(
+                  entry.get("autofix", {}).get("policy", "UNKNOWN") for entry in entries
+              )
+              safe_autofix_count = sum(
+                  1 for entry in entries
+                  if entry.get("autofix", {}).get("safe_autofix_candidate")
+              )
+              confidence_payload = build_confidence_report_payload(entries, state, metadata)
+              write_confidence_report(confidence_payload)
+              payload = {
+                  "schema_version": "1.0",
+                  "tool": "tasukeru_hitl_decision_support",
+                  "counts": dict(counts),
+                  "path_profile_counts": dict(path_profile_counts),
+                  "metadata": metadata,
+                  "confidence": {
+                      "total": confidence_payload["total"],
+                      "file_count": len(confidence_payload["files"]),
+                      "report_artifacts": [
+                          "tasukeru_confidence_report.md",
+                          "tasukeru_confidence_report.json",
+                      ],
+                  },
+                  "documentation_review": {
+                      "count": sum(1 for entry in entries if entry.get("source") == "Documentation Review"),
+                      "critical_count": sum(
+                          1 for entry in entries
+                          if entry.get("source") == "Documentation Review"
+                          and entry.get("decision") == "HITL_REQUIRED"
+                      ),
+                  },
+                  "autofix_policy": {
+                      "safe_autofix_candidates": safe_autofix_count,
+                      "auto_merge_allowed": False,
+                      "policy_counts": dict(autofix_policy_counts),
+                      "rule": (
+                          "SAFE_AUTOFIX_CANDIDATE is decision-support metadata only. "
+                          "No file is automatically modified. Auto-merge is prohibited."
+                      ),
+                  },
+                  "entries": entries,
+              }
+              write_json(hitl_json_path, payload)
+              write_json(notification_state_path, state)
+
+              priority = [entry for entry in entries if entry["decision"] in {"HITL_REQUIRED", "FIX_RECOMMENDED"}]
+              review_entries = [entry for entry in entries if entry["decision"] == "REVIEW_RECOMMENDED"]
+              noise_entries = [entry for entry in entries if entry["decision"] == "NOISE_CANDIDATE"]
+              info_entries = [entry for entry in entries if entry["decision"] == "INFO_ONLY"]
+
+              with hitl_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru HITL review\n\n")
+                  f.write("This report is advisory-only. It does not create branches, create PRs, commit, push, auto-fix, or auto-merge.\n\n")
+                  f.write("## Counts\n\n")
+                  for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
+                      f.write(f"- {level}: {counts.get(level, 0)}\n")
+                  total_confidence = confidence_payload["total"]
+                  f.write("\n## Confidence\n\n")
+                  f.write(f"- Total confidence: `{total_confidence['total_confidence_score']}` / `1.0`\n")
+                  f.write(f"- Level: `{total_confidence['total_confidence_level']}`\n")
+                  f.write("- Meaning: confidence in Tasukeru's classification/suggestion evidence; not a safety guarantee.\n")
+                  f.write("\n## Path profiles\n\n")
+                  for profile, count in sorted(path_profile_counts.items()):
+                      f.write(f"- {profile}: {count}\n")
+                  f.write("\n## Automation policy\n\n")
+                  f.write("- Auto branch creation: false\n")
+                  f.write("- Auto PR creation: false\n")
+                  f.write("- Auto commit: false\n")
+                  f.write("- Auto push: false\n")
+                  f.write("- Auto fix: false\n")
+                  f.write("- Auto merge: false\n")
+                  f.write("- Human decision required: true\n\n")
+                  f.write("## Autofix policy\n\n")
+                  f.write(f"- SAFE_AUTOFIX_CANDIDATE: {safe_autofix_count}\n")
+                  f.write("- Auto fix: false\n")
+                  f.write("- Auto merge: false\n")
+                  f.write("- Rule: safe candidates are manual decision-support metadata only.\n\n")
+                  f.write("## Priority review queue\n\n")
+                  if priority:
+                      for entry in priority[:80]:
+                          write_entry_bullet(f, entry)
+                  else:
+                      f.write("No HITL_REQUIRED or FIX_RECOMMENDED entries.\n")
+                  f.write("\n")
+
+              with summary_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru advisory summary\n\n")
+                  f.write(f"- Ruff findings: {metadata['ruff_count']}\n")
+                  f.write(f"- Bandit findings: {metadata['bandit_count']}\n")
+                  f.write(f"- pip-audit vulnerabilities: {metadata['pip_count']}\n")
+                  f.write(f"- Tasukeru logic review findings: {metadata['logic_count']}\n")
+                  f.write(f"- Documentation review findings: {metadata['documentation_count']}\n\n")
+                  f.write("## HITL decision support\n\n")
+                  for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
+                      f.write(f"- {level}: {counts.get(level, 0)}\n")
+                  total_confidence = confidence_payload["total"]
+                  f.write("\n## Confidence score\n\n")
+                  f.write(f"- Total confidence: `{total_confidence['total_confidence_score']}` / `1.0`\n")
+                  f.write(f"- Level: `{total_confidence['total_confidence_level']}`\n")
+                  f.write("- Scope: confidence in Tasukeru's evidence/classification/suggestion, not permission to auto-apply changes.\n")
+                  f.write("- Report: `tasukeru_confidence_report.md` / `tasukeru_confidence_report.json`\n")
+                  f.write("\n## Path profile counts\n\n")
+                  for profile, count in sorted(path_profile_counts.items()):
+                      f.write(f"- {profile}: {count}\n")
+                  f.write("\n## Critical notifications\n\n")
+                  f.write(f"- New critical incidents: {state['new_critical_incident_count']}\n")
+                  f.write(f"- Suppressed duplicate critical incidents: {state['suppressed_duplicate_critical_incident_count']}\n\n")
+                  f.write("## Automation policy\n\n")
+                  f.write("- Auto branch creation: false\n")
+                  f.write("- Auto PR creation: false\n")
+                  f.write("- Auto commit: false\n")
+                  f.write("- Auto push: false\n")
+                  f.write("- Auto fix: false\n")
+                  f.write("- Auto merge: false\n\n")
+                  f.write("## Security output policy\n\n")
+                  f.write("- Public PR comments must not include exploit payloads.\n")
+                  f.write("- Public PR comments must not include attack steps.\n")
+                  f.write("- Public PR comments must focus on detection and safe remediation.\n\n")
+                  f.write("## Detailed artifacts\n\n")
+                  f.write("- `tasukeru_hitl_review.md`\n")
+                  f.write("- `tasukeru_hitl_review.json`\n")
+                  f.write("- `tasukeru_advisory_summary.md`\n")
+                  f.write("- `tasukeru_notification_state.json`\n")
+                  f.write("- `tasukeru_pr_comment.md`\n")
+                  f.write("- `tasukeru_dradm_draft.md`\n")
+                  f.write("- `tasukeru_dradm_draft.json`\n")
+                  f.write("- `tasukeru_confidence_report.md`\n")
+                  f.write("- `tasukeru_confidence_report.json`\n")
+                  f.write("- `tasukeru_readme_refinement_draft.md`\n")
+                  f.write("- `tasukeru_readme_refinement_draft.json`\n")
+                  f.write("- `tasukeru_announcement.md`\n")
+                  f.write("- `tasukeru_announcement.json`\n")
+                  f.write("- `tasukeru_arl.jsonl`\n")
+                  f.write("- `tasukeru_arl_verify.json`\n")
+                  f.write("- `tasukeru_logs/`\n\n")
+
+                  def collapsible(title: str, data: list[dict[str, Any]], limit: int = 30) -> None:
+                      f.write(f"<details>\n<summary>{title}</summary>\n\n")
+                      if not data:
+                          f.write("No entries.\n\n")
+                      else:
+                          for entry in data[:limit]:
+                              write_entry_bullet(f, entry)
+                          if len(data) > limit:
+                              f.write(f"\n... and {len(data) - limit} more entries in `tasukeru_hitl_review.json`.\n")
+                          f.write("\n")
+                      f.write("</details>\n\n")
+
+                  collapsible(f"REVIEW_RECOMMENDED details ({len(review_entries)})", review_entries, 50)
+                  collapsible(f"NOISE_CANDIDATE sample ({len(noise_entries)})", noise_entries, 20)
+                  collapsible(f"INFO_ONLY details ({len(info_entries)})", info_entries, 20)
+
+              with pr_comment_path.open("w", encoding="utf-8") as f:
+                  critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
+                  if not critical:
+                      counts_for_comment = Counter(entry["decision"] for entry in entries)
+                      f.write("<!-- tasukeru-analysis:announcement-summary -->\n\n")
+                      f.write("## Tasukeru Announcement\n\n")
+                      f.write("### Summary: `NO HITL_REQUIRED`\n\n")
+                      f.write("No `HITL_REQUIRED` findings were detected in this run.\n\n")
+                      f.write("このrunでは `HITL_REQUIRED` はありません。\n")
+                      f.write("このコメントは advisory status summary であり、安全保証ではありません。\n\n")
+                      f.write("### Quick check\n\n")
+                      f.write("- HITL_REQUIRED: `0`\n")
+                      f.write(f"- FIX_RECOMMENDED: `{counts_for_comment.get('FIX_RECOMMENDED', 0)}`\n")
+                      f.write(f"- REVIEW_RECOMMENDED: `{counts_for_comment.get('REVIEW_RECOMMENDED', 0)}`\n")
+                      f.write("- Auto branch creation: `false`\n")
+                      f.write("- Auto PR creation: `false`\n")
+                      f.write("- Auto commit: `false`\n")
+                      f.write("- Auto push: `false`\n")
+                      f.write("- Auto fix: `false`\n")
+                      f.write("- Auto merge: `false`\n\n")
+                      f.write("<details>\n<summary>Details</summary>\n\n")
+                      f.write("See `tasukeru_announcement.md`, `tasukeru_arl_verify.json`, and `tasukeru_hitl_review.md` in the workflow artifacts for the full advisory summary.\n\n")
+                      f.write("This comment is advisory-only. It does not replace human review and does not authorize automatic fixes or merges.\n\n")
+                      f.write("</details>\n")
+                      return
+                  f.write("<!-- tasukeru-analysis:critical-summary -->\n\n")
+                  f.write("## Tasukeru Analysis: 重大確認が必要です\n\n")
+                  f.write("### 判定\n\nHITL_REQUIRED\n\n")
+                  f.write("### 何が変わったか\n\n")
+                  f.write("このPRで、Tasukeru Analysis が重大確認対象の変更を検出しました。\n")
+                  f.write("HITLロジック、安全不変条件、主要ワークフロー、または公開文書方針に影響する可能性があります。\n\n")
+                  f.write("### 対象\n\n")
+                  for entry in critical[:10]:
+                      f.write(f"- `{entry.get('incident_id') or ''}` `{entry['reason_code']}` `{entry['file']}`")
+                      if entry.get("line"):
+                          f.write(f":{entry['line']}")
+                      f.write(f" — `{entry['fingerprint_hash']}`\n")
+                  if len(critical) > 10:
+                      f.write(f"- ... and {len(critical) - 10} more critical entries in artifacts.\n")
+                  f.write("\n### 推奨対応\n\n")
+                  f.write("- 該当箇所を人間が確認してください。\n")
+                  f.write("- 自動修正・自動PR作成・自動マージは行わないでください。\n")
+                  f.write("- 公開PRコメントには攻撃手段・悪用手順・payload は載せません。\n")
+                  f.write("- 詳細は `tasukeru_hitl_review.md` と `tasukeru_hitl_review.json` を確認してください。\n\n")
+                  f.write("### 自動化制限\n\n")
+                  f.write("- Auto branch creation: `false`\n")
+                  f.write("- Auto PR creation: `false`\n")
+                  f.write("- Auto commit: `false`\n")
+                  f.write("- Auto push: `false`\n")
+                  f.write("- Auto fix: `false`\n")
+                  f.write("- Auto merge: `false`\n")
+                  f.write("- Human decision required: `true`\n\n")
+                  f.write("<details>\n<summary>English details</summary>\n\n")
+                  f.write("## Tasukeru Analysis: Critical review required\n\n")
+                  f.write("This PR introduced one or more changes that may affect HITL logic, safety invariants, the review workflow, or public documentation policy.\n\n")
+                  f.write("Please review the affected files manually. Do not auto-fix, auto-create a PR, or auto-merge this change.\n\n")
+                  f.write("Security details are intentionally limited to defensive review and safe remediation guidance. Exploit payloads, attack steps, and offensive reproduction instructions must not be included in public PR comments.\n\n")
+                  f.write("</details>\n")
+
+              github_summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
+              if github_summary:
+                  with Path(github_summary).open("a", encoding="utf-8") as out:
+                      out.write(summary_path.read_text(encoding="utf-8"))
+
+          ruff_raw = read_json(log_dir / "ruff.json", [])
+          bandit_raw = read_json(log_dir / "bandit.json", {})
+          pip_raw = read_json(log_dir / "pip-audit.json", {})
+
+          ruff_entries = entries_from_ruff(ruff_raw)
+          bandit_entries = entries_from_bandit(bandit_raw)
+          pip_entries = entries_from_pip_audit(pip_raw)
+          logic_entries, _logic_result = run_logic_review()
+          doc_entries, _doc_result = run_documentation_review()
+
+          all_entries = ruff_entries + bandit_entries + pip_entries + logic_entries + doc_entries
+          all_entries = assign_incidents(all_entries)
+          all_entries = attach_confidence_scores(all_entries)
+          notification_state = build_notification_state(all_entries)
+
+          metadata = {
+              "ruff_count": len(ruff_entries),
+              "bandit_count": len(bandit_entries),
+              "pip_count": len(pip_entries),
+              "logic_count": len(logic_entries),
+              "documentation_count": len(doc_entries),
+              "ruff_exit": read_exit("ruff.exit"),
+              "bandit_exit": read_exit("bandit.exit"),
+              "pip_audit_exit": read_exit("pip-audit.exit"),
+          }
+
+          write_outputs(all_entries, notification_state, metadata)
+          generate_dradm_draft_artifacts(all_entries, notification_state, metadata)
+          generate_readme_refinement_artifacts(metadata)
+          arl_verification = generate_tasukeru_arl_hash_chain(all_entries, notification_state, metadata)
+          announcement = generate_tasukeru_announcement(all_entries, notification_state, metadata, arl_verification)
+
+          print("# Tasukeru advisory summary")
+          print(f"Ruff findings: {metadata['ruff_count']}")
+          print(f"Bandit findings: {metadata['bandit_count']}")
+          print(f"pip-audit vulnerabilities: {metadata['pip_count']}")
+          print(f"Tasukeru logic review findings: {metadata['logic_count']}")
+          print(f"Documentation review findings: {metadata['documentation_count']}")
+          print("")
+          counts = Counter(entry["decision"] for entry in all_entries)
+          print("HITL decision support")
+          for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
+              print(f"{level}: {counts.get(level, 0)}")
+          print("")
+          confidence_report = read_json(confidence_json_path, {})
+          total_confidence = (confidence_report.get("total") or {}) if isinstance(confidence_report, dict) else {}
+          if total_confidence:
+              print("Confidence")
+              print(f"Total confidence: {total_confidence.get('total_confidence_score')} / 1.0")
+              print(f"Confidence level: {total_confidence.get('total_confidence_level')}")
+              print("")
+          print("ARL hash chain")
+          print(f"ARL verified: {arl_verification.get('verified')}")
+          print(f"ARL rows: {arl_verification.get('row_count')}")
+          print("")
+          print("Tasukeru announcement")
+          print(f"Announcement generated: {announcement.get('generated')}")
+          print(f"Announcement mode: {announcement.get('mode')}")
+          print("")
+          print("Automation policy")
+          print("Auto branch creation: false")
+          print("Auto PR creation: false")
+          print("Auto commit: false")
+          print("Auto push: false")
+          print("Auto fix: false")
+          print("Auto merge: false")
           PY
 
       - name: Upload advisory logs
@@ -207,28 +3352,46 @@ jobs:
           name: tasukeru-advisory-logs
           path: .
 
-      - name: Post Tasukeru critical PR comment
+      - name: Post Tasukeru PR announcement
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POST_SCRIPT: |
             from __future__ import annotations
-
+            
             import json
             import os
             import urllib.error
             import urllib.request
             from pathlib import Path
             from typing import Any
-
+            
             state_path = Path("tasukeru_notification_state.json")
             critical_comment_path = Path("tasukeru_pr_comment.md")
             announcement_md_path = Path("tasukeru_announcement.md")
             announcement_json_path = Path("tasukeru_announcement.json")
-
+            
             if not state_path.exists():
                 print("Tasukeru notification state not found; skipping comment.")
                 raise SystemExit(0)
-
+            
+            event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+            token = os.environ.get("GITHUB_TOKEN", "")
+            repo_name = os.environ.get("GITHUB_REPOSITORY", "")
+            
+            if not event_path or not token or not repo_name:
+                print("Missing GitHub event/token/repository context; skipping comment.")
+                raise SystemExit(0)
+            
+            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+            pull_request = event.get("pull_request")
+            if not isinstance(pull_request, dict):
+                print("No pull_request context; skipping comment.")
+                raise SystemExit(0)
+            
+            pr_number = pull_request.get("number")
+            owner, repo = repo_name.split("/", 1)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            
             def read_json_file(path: Path, default: Any) -> Any:
                 try:
                     if not path.exists():
@@ -239,43 +3402,8 @@ jobs:
                     return json.loads(text)
                 except Exception:
                     return default
-
-            state = read_json_file(state_path, {})
+            
             announcement = read_json_file(announcement_json_path, {})
-
-            review_queue = announcement.get("review_queue", {}) if isinstance(announcement, dict) else {}
-            arl = announcement.get("arl", {}) if isinstance(announcement, dict) else {}
-
-            hitl_required = int(
-                review_queue.get("hitl_required")
-                if review_queue.get("hitl_required") is not None
-                else state.get("critical_count", 0)
-            )
-            arl_verified = arl.get("verified")
-
-            # Keep PR noise low and keep policy consistent:
-            # comment only when human intervention is required, or when ARL verification failed.
-            if hitl_required <= 0 and arl_verified is not False:
-                print("No HITL_REQUIRED findings and ARL verification did not fail; skipping PR comment.")
-                raise SystemExit(0)
-
-            event_path = os.environ.get("GITHUB_EVENT_PATH", "")
-            token = os.environ.get("GITHUB_TOKEN", "")
-            repo_name = os.environ.get("GITHUB_REPOSITORY", "")
-
-            if not event_path or not token or not repo_name:
-                print("Missing GitHub event/token/repository context; skipping comment.")
-                raise SystemExit(0)
-
-            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-            pull_request = event.get("pull_request")
-            if not isinstance(pull_request, dict):
-                print("No pull_request context; skipping comment.")
-                raise SystemExit(0)
-
-            pr_number = pull_request.get("number")
-            owner, repo = repo_name.split("/", 1)
-
             announcement_md = (
                 announcement_md_path.read_text(encoding="utf-8")
                 if announcement_md_path.exists()
@@ -286,22 +3414,48 @@ jobs:
                 if critical_comment_path.exists()
                 else ""
             )
-
+            
+            review_queue = announcement.get("review_queue", {}) if isinstance(announcement, dict) else {}
+            arl = announcement.get("arl", {}) if isinstance(announcement, dict) else {}
             confidence = announcement.get("confidence", {}) if isinstance(announcement, dict) else {}
             policy = announcement.get("policy", {}) if isinstance(announcement, dict) else {}
+            drafts = announcement.get("drafts", {}) if isinstance(announcement, dict) else {}
+            look_first = announcement.get("look_first", []) if isinstance(announcement, dict) else []
+            recommended_next_actions = (
+                announcement.get("recommended_next_actions", [])
+                if isinstance(announcement, dict)
+                else []
+            )
             conclusion_ja = str(
                 announcement.get("conclusion_ja")
                 or "Tasukeru announcement summary is unavailable. Check workflow artifacts."
             )
             mode = str(announcement.get("mode") or "UNKNOWN")
-
+            
+            incidents = [
+                incident for incident in state.get("incidents", [])
+                if incident.get("notification_required")
+            ]
+            hitl_required = int(
+                review_queue.get("hitl_required")
+                if review_queue.get("hitl_required") is not None
+                else state.get("critical_count", 0)
+            )
+            arl_verified = arl.get("verified")
+            
+            # Keep PR noise low and keep policy consistent:
+            # comment only when human intervention is required, or when ARL verification failed.
+            if hitl_required <= 0 and arl_verified is not False:
+                print("No HITL_REQUIRED findings and ARL verification did not fail; skipping PR comment.")
+                raise SystemExit(0)
+            
             if hitl_required > 0:
                 status_label = "REVIEW REQUIRED"
                 headline = "HITL_REQUIRED was detected. Human review is required before merge."
             else:
                 status_label = "ARL VERIFY FAILED"
                 headline = "ARL verification failed. Check artifacts before using this summary for review."
-
+            
             auto_policy_lines = [
                 f"- Auto branch creation: `{policy.get('auto_branch_allowed', False)}`",
                 f"- Auto PR creation: `{policy.get('auto_pr_creation_allowed', False)}`",
@@ -310,17 +3464,43 @@ jobs:
                 f"- Auto fix: `{policy.get('autofix_allowed', False)}`",
                 f"- Auto merge: `{policy.get('auto_merge_allowed', False)}`",
             ]
-
-            details_parts = [announcement_md]
-            if hitl_required > 0 and critical_comment:
-                details_parts.append("\n---\n\n## Critical finding details\n\n" + critical_comment)
-
+            
+            artifact_names = [
+                "tasukeru_advisory_summary.md",
+                "tasukeru_hitl_review.md",
+                "tasukeru_hitl_review.json",
+                "tasukeru_arl_verify.json",
+                "tasukeru_dradm_draft.md",
+                "tasukeru_readme_refinement_draft.md",
+                "tasukeru_confidence_report.md",
+            ]
+            detail_lines = [
+                "Full details are kept in workflow artifacts, not expanded in this PR comment.",
+                "",
+                "Review artifacts:",
+                *[f"- `{name}`" for name in artifact_names],
+            ]
+            if recommended_next_actions:
+                detail_lines.extend(["", "Recommended next checks:"])
+                detail_lines.extend(f"- {item}" for item in recommended_next_actions)
+            if look_first:
+                detail_lines.extend(["", "Look first:"])
+                detail_lines.extend(f"- `{item}`" for item in look_first)
+            if hitl_required > 0 and critical_comment and "tasukeru-analysis:no-critical" not in critical_comment:
+                detail_lines.extend(
+                    [
+                        "",
+                        "Critical finding details were generated in `tasukeru_pr_comment.md`.",
+                        "Open the artifact before taking action.",
+                    ]
+                )
+            
             marker = "<!-- tasukeru-analysis:critical-summary -->"
             comment_body = "\n".join(
                 [
                     marker,
                     "",
-                    "## Tasukeru Analysis",
+                    "## Tasukeru Announcement",
                     "",
                     f"### Summary: `{status_label}`",
                     "",
@@ -338,28 +3518,27 @@ jobs:
                     f"- Confidence: `{confidence.get('score')}` / `1.0` ({confidence.get('level')})",
                     f"- FIX_RECOMMENDED: `{review_queue.get('fix_recommended')}`",
                     f"- REVIEW_RECOMMENDED: `{review_queue.get('review_recommended')}`",
+                    f"- README refinement: `{drafts.get('readme_refinement_status')}`",
                     "",
                     "### Automation policy",
                     "",
                     *auto_policy_lines,
                     "",
                     "<details>",
-                    "<summary>Details from Tasukeru artifacts</summary>",
+                    "<summary>Review artifacts and next checks</summary>",
                     "",
-                    "\n\n".join(details_parts),
+                    "\n".join(detail_lines),
                     "",
                     "</details>",
                     "",
-                    "This comment is advisory-only. It is not a safety guarantee and does not replace human review.",
+                    "This comment is an advisory status summary only. It is not a safety guarantee and does not replace human review.",
                 ]
             )
-
-            api_root = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
-
+            
+            api_root = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100"
+            
             def request_json(method: str, url: str, payload: dict[str, Any] | None = None) -> Any:
-                data = None
-                if payload is not None:
-                    data = json.dumps(payload).encode("utf-8")
+                data = json.dumps(payload).encode("utf-8") if payload is not None else None
                 req = urllib.request.Request(
                     url,
                     data=data,
@@ -373,39 +3552,59 @@ jobs:
                 )
                 with urllib.request.urlopen(req, timeout=20) as response:
                     body = response.read().decode("utf-8")
-                    if not body:
-                        return None
-                    return json.loads(body)
-
+                    return json.loads(body) if body else None
+            
             try:
-                existing_comments = request_json("GET", api_root)
+                comments: list[dict[str, Any]] = []
+                next_url: str | None = api_root
+
+                while next_url:
+                    req = urllib.request.Request(
+                        next_url,
+                        method="GET",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Accept": "application/vnd.github+json",
+                            "X-GitHub-Api-Version": "2022-11-28",
+                        },
+                    )
+                    with urllib.request.urlopen(req, timeout=20) as response:
+                        page = json.loads(response.read().decode("utf-8"))
+                        if isinstance(page, list):
+                            comments.extend(page)
+
+                        link = response.headers.get("Link", "")
+                        next_url = None
+                        for part in link.split(","):
+                            if 'rel="next"' in part:
+                                next_url = part[part.find("<") + 1 : part.find(">")]
+                                break
             except urllib.error.HTTPError as err:
                 print(f"Could not list PR comments: HTTP {err.code}. Skipping comment.")
                 raise SystemExit(0)
-
+            
             markers = (
                 "<!-- tasukeru-analysis:announcement-summary -->",
                 "<!-- tasukeru-analysis:critical-summary -->",
                 "<!-- tasukeru-analysis:no-critical -->",
             )
-
             existing = None
-            if isinstance(existing_comments, list):
-                for comment in existing_comments:
-                    if not isinstance(comment, dict):
-                        continue
-                    body = str(comment.get("body", ""))
-                    if any(existing_marker in body for existing_marker in markers):
-                        existing = comment
-                        break
-
+            for comment in comments:
+                if not isinstance(comment, dict):
+                    continue
+                body = str(comment.get("body", ""))
+                user = comment.get("user") or {}
+                if user.get("login") == "github-actions[bot]" and any(marker in body for marker in markers):
+                    existing = comment
+                    break
+            
             try:
                 if existing and existing.get("url"):
                     request_json("PATCH", str(existing["url"]), {"body": comment_body})
-                    print("Updated existing Tasukeru PR comment.")
+                    print("Updated existing Tasukeru PR announcement comment.")
                 else:
                     request_json("POST", api_root, {"body": comment_body})
-                    print("Posted Tasukeru PR comment.")
+                    print("Posted Tasukeru PR announcement comment.")
             except urllib.error.HTTPError as err:
                 print(f"Could not post/update PR comment: HTTP {err.code}. Skipping comment.")
                 raise SystemExit(0)
