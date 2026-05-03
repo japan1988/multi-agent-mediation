@@ -268,6 +268,34 @@ jobs:
               ("HITL_REQUIRED_FALSE", re.compile(r'["\']?human[_-]?decision[_-]?required["\']?\s*[:=]\s*false', re.IGNORECASE)),
           ]
 
+          # Phase 1 abuse-pattern review.
+          #
+          # This is intentionally conservative and advisory-only:
+          # - no automatic fix
+          # - no CI job failure
+          # - active/protected paths become HITL_REQUIRED with gate_decision=STOPPED
+          # - public comments must not include exploit steps or payload details
+          ABUSE_NETWORK_SEND_PATTERNS = [
+              re.compile(r"\brequests\.(post|put|patch|delete)\s*\(", re.IGNORECASE),
+              re.compile(r"\burllib\.request\.urlopen\s*\(", re.IGNORECASE),
+              re.compile(r"\bhttp\.client\.", re.IGNORECASE),
+          ]
+          ABUSE_CREDENTIAL_WORDS = re.compile(
+              r"(secret|token|api[_-]?key|password|credential|private[_-]?key)",
+              re.IGNORECASE,
+          )
+          ABUSE_DESTRUCTIVE_PATTERNS = [
+              re.compile(r"\bshutil\.rmtree\s*\(", re.IGNORECASE),
+              re.compile(r"\bos\.(remove|unlink|rmdir)\s*\(", re.IGNORECASE),
+              re.compile(r"\.unlink\s*\(", re.IGNORECASE),
+              re.compile(r"\brm\s+-rf\b", re.IGNORECASE),
+          ]
+          ABUSE_DYNAMIC_EXEC_PATTERNS = [
+              re.compile(r"\beval\s*\(", re.IGNORECASE),
+              re.compile(r"\bexec\s*\(", re.IGNORECASE),
+              re.compile(r"\bsubprocess\.(run|Popen|call)\s*\(", re.IGNORECASE),
+          ]
+
           RULE_PROFILES: dict[str, dict[str, str]] = {
               "B101": {
                   "default_decision": "NOISE_CANDIDATE",
@@ -1048,6 +1076,167 @@ jobs:
                   )
               )
 
+          def add_abuse_pattern_stop(
+              entries: list[dict[str, Any]],
+              code: str,
+              msg: str,
+              file: str,
+              line: int | None = None,
+              *,
+              path_profile: str = "",
+              classification_reason: str = "",
+          ) -> None:
+              resolved_path_profile = path_profile or classify_path_profile(file)
+              if resolved_path_profile in {"tests", "historical", "archive"}:
+                  decision = "REVIEW_RECOMMENDED" if resolved_path_profile == "tests" else "INFO_ONLY"
+                  severity = "MEDIUM"
+                  gate_decision = "PAUSE_FOR_HITL"
+                  sealed = False
+                  overrideable = True
+              else:
+                  decision = "HITL_REQUIRED"
+                  severity = "CRITICAL"
+                  gate_decision = "STOPPED"
+                  sealed = True
+                  overrideable = False
+
+              entry = make_entry(
+                  source="Tasukeru Abuse Pattern Review",
+                  decision=decision,
+                  severity=severity,
+                  category="offensive_or_abuse_pattern",
+                  reason_code=code,
+                  rule_id=code,
+                  file=file,
+                  line=line,
+                  message=msg,
+                  suggestion="安全な防御・テスト目的か、未承認の外部送信・破壊的副作用・HITL迂回がないかを人間が確認してください。",
+                  why_problematic_ja="攻撃的または悪用可能な意図を持つコードに見える場合、通常のOK判定として通すべきではありません。",
+                  why_fix_ja="人間確認へ戻すことで、危険な副作用や未承認の外部効果を通常経路から排除できます。",
+                  impact_ja="検知時にTasukeru上で停止し、詳細はartifactに残すことで、CIを失敗させずに人間確認へ戻せます。",
+                  confidence="MEDIUM",
+                  risk_type="abuse_pattern",
+                  classification_reason=classification_reason
+                  or "Phase 1 abuse-pattern review detected a potentially unsafe code pattern.",
+                  path_profile=resolved_path_profile,
+              )
+              entry.update(
+                  {
+                      "gate_decision": gate_decision,
+                      "layer": "acc_gate",
+                      "sealed": sealed,
+                      "overrideable": overrideable,
+                      "final_decider": "SYSTEM",
+                      "failure_mode": "tasukeru_stopped_not_ci_failed",
+                      "public_output_policy": {
+                          "include_exploit_payloads": False,
+                          "include_attack_steps": False,
+                          "focus": "detection_and_safe_remediation",
+                      },
+                  }
+              )
+              entries.append(entry)
+
+          def line_has_network_send(line: str) -> bool:
+              return any(pattern.search(line) for pattern in ABUSE_NETWORK_SEND_PATTERNS)
+
+          def line_has_destructive_effect(line: str) -> bool:
+              return any(pattern.search(line) for pattern in ABUSE_DESTRUCTIVE_PATTERNS)
+
+          def line_has_dynamic_execution(line: str) -> bool:
+              return any(pattern.search(line) for pattern in ABUSE_DYNAMIC_EXEC_PATTERNS)
+
+          def line_has_credential_reference(line: str) -> bool:
+              return bool(ABUSE_CREDENTIAL_WORDS.search(line))
+
+          def should_skip_abuse_pattern_file(path: Path) -> bool:
+              normalized = normalize_path(str(path))
+              if normalized == ".github/workflows/tasukeru-analysis.yml":
+                  # Avoid self-triggering on the advisory workflow implementation.
+                  # Dedicated workflow self-review remains covered by control-bypass,
+                  # permissions, and HITL boundary checks.
+                  return True
+              if is_superseded_historical_path(str(path)):
+                  return False
+              return path.suffix not in {".py", ".yml", ".yaml"}
+
+          def run_abuse_pattern_review_for_file(
+              entries: list[dict[str, Any]],
+              path: Path,
+              text: str,
+          ) -> None:
+              if should_skip_abuse_pattern_file(path):
+                  return
+
+              normalized_path = normalize_path(str(path))
+              profile = classify_path_profile(normalized_path)
+              hits = 0
+
+              for idx, line in enumerate(text.splitlines(), start=1):
+                  stripped = line.strip()
+                  if not stripped or stripped.startswith("#"):
+                      continue
+                  lower = stripped.lower()
+
+                  if line_has_network_send(stripped):
+                      if "approved" not in lower and "hitl" not in lower and "allowlist" not in lower:
+                          add_abuse_pattern_stop(
+                              entries,
+                              "ABUSE_UNAPPROVED_EXTERNAL_EFFECT",
+                              "Potential unapproved external-effect code was detected.",
+                              normalized_path,
+                              idx,
+                              path_profile=profile,
+                              classification_reason="Network send/update pattern without an obvious approval/HITL marker.",
+                          )
+                          hits += 1
+
+                  if line_has_credential_reference(stripped) and (
+                      line_has_network_send(stripped)
+                      or "send" in lower
+                      or "upload" in lower
+                      or "exfil" in lower
+                  ):
+                      add_abuse_pattern_stop(
+                          entries,
+                          "ABUSE_CREDENTIAL_ACCESS_PATTERN",
+                          "Potential credential access combined with outbound or transfer behavior was detected.",
+                          normalized_path,
+                          idx,
+                          path_profile=profile,
+                          classification_reason="Credential-like term appears near outbound/transfer behavior.",
+                      )
+                      hits += 1
+
+                  if line_has_destructive_effect(stripped):
+                      if "tmp_path" not in lower and "temporary" not in lower and "test" not in lower:
+                          add_abuse_pattern_stop(
+                              entries,
+                              "ABUSE_DESTRUCTIVE_SIDE_EFFECT_PATTERN",
+                              "Potential destructive file-system side effect was detected.",
+                              normalized_path,
+                              idx,
+                              path_profile=profile,
+                              classification_reason="Destructive file operation without an obvious test/temporary context.",
+                          )
+                          hits += 1
+
+                  if line_has_dynamic_execution(stripped):
+                      if "literal_eval" not in lower and "pytest" not in lower:
+                          add_abuse_pattern_stop(
+                              entries,
+                              "ABUSE_EVASION_OR_DYNAMIC_EXECUTION_PATTERN",
+                              "Potential dynamic execution or command execution pattern was detected.",
+                              normalized_path,
+                              idx,
+                              path_profile=profile,
+                              classification_reason="Dynamic execution can bypass static review or hide unsafe behavior.",
+                          )
+                          hits += 1
+
+                  if hits >= 5:
+                      break
+
           def add_rfl_readability_review(
               entries: list[dict[str, Any]],
               code: str,
@@ -1126,6 +1315,8 @@ jobs:
                               str(path),
                               line_no,
                           )
+
+                  run_abuse_pattern_review_for_file(logic_entries, path, text)
 
                   if path.suffix == ".py" and not is_superseded_historical_path(str(path)):
                       readability_hits = 0
@@ -1564,6 +1755,12 @@ jobs:
                   "safe_autofix_candidate_count": safe_autofix,
                   "documentation_review_count": sum(
                       1 for entry in entries if entry.get("source") == "Documentation Review"
+                  ),
+                  "abuse_pattern_review_count": sum(
+                      1 for entry in entries if entry.get("source") == "Tasukeru Abuse Pattern Review"
+                  ),
+                  "stopped_gate_count": sum(
+                      1 for entry in entries if entry.get("gate_decision") == "STOPPED"
                   ),
                   "fix_verification_count": sum(
                       1 for entry in entries
