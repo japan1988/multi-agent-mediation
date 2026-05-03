@@ -1,4 +1,4 @@
- name: Tasukeru Analysis
+name: Tasukeru Analysis
 
 on:
   pull_request:
