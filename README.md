@@ -379,6 +379,10 @@ Example:
 - `ai_doc_orchestrator_with_mediator_v1_0.py`
 - `tests/test_doc_orchestrator_with_mediator_v1_0.py`
 
+Plain-language guide:
+
+- Japanese: [`docs/mediator_orchestrator_plain_guide.ja.md`](docs/mediator_orchestrator_plain_guide.ja.md)
+
 This simulator focuses on the following flow:
 
 ```text
