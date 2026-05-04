@@ -21,6 +21,8 @@ on:
       - ".github/ISSUE_TEMPLATE/**"
       - ".github/PULL_REQUEST_TEMPLATE.md"
       - "log_codebook*.json"
+      - "tasukeru_self_definition*.json"
+      - "tasukeru_self_definition_chain*.jsonl"
       - "**/*.jsonl"
   workflow_dispatch:
 
@@ -70,7 +72,7 @@ jobs:
           set -euo pipefail
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            | grep -E '(\.py$|\.ipynb$|^pyproject\.toml$|^requirements.*\.txt$|^README.*\.md$|^SECURITY\.md$|^LICENSE|^LICENSE_POLICY\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$|^NOTICE$|^TRADEMARKS\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE\.md$|^\.github/workflows/tasukeru-analysis\.yml$|^log_codebook.*\.json$|\.jsonl$)' \
+            | grep -E '(\.py$|\.ipynb$|^pyproject\.toml$|^requirements.*\.txt$|^README.*\.md$|^SECURITY\.md$|^LICENSE|^LICENSE_POLICY\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$|^NOTICE$|^TRADEMARKS\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE\.md$|^\.github/workflows/tasukeru-analysis\.yml$|^log_codebook.*\.json$|^tasukeru_self_definition.*\.json$|^tasukeru_self_definition_chain.*\.jsonl$|\.jsonl$)' \
             > tasukeru_changed_files.txt || true
 
           if [ ! -s tasukeru_changed_files.txt ]; then
@@ -208,6 +210,10 @@ jobs:
           readme_refinement_json_path = Path("tasukeru_readme_refinement_draft.json")
           arl_jsonl_path = Path("tasukeru_arl.jsonl")
           arl_verify_json_path = Path("tasukeru_arl_verify.json")
+          self_definition_source_path = Path("tasukeru_self_definition.json")
+          self_definition_effective_path = Path("tasukeru_self_definition_effective.json")
+          self_definition_chain_path = Path("tasukeru_self_definition_chain.jsonl")
+          self_definition_verify_path = Path("tasukeru_self_definition_verify.json")
           announcement_md_path = Path("tasukeru_announcement.md")
           announcement_json_path = Path("tasukeru_announcement.json")
 
@@ -221,6 +227,65 @@ jobs:
               "human_decision_required": True,
               "suggestion_only": True,
               "verified": False,
+          }
+
+          DEFAULT_SELF_DEFINITION: dict[str, Any] = {
+              "schema_version": "self-definition-v1",
+              "identity": (
+                  "Tasukeru Analysis is an advisory-only review assistant. "
+                  "It detects, classifies, records, summarizes, and escalates findings for human review, "
+                  "but does not act as an autonomous change agent."
+              ),
+              "must_not": {
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "self_definition_auto_update_allowed": False,
+                  "rule_auto_tuning_allowed": False,
+                  "workflow_auto_edit_allowed": False,
+              },
+              "must": {
+                  "hitl_required_must_require_human_review": True,
+                  "public_comments_must_not_include_payloads": True,
+                  "public_comments_must_not_include_attack_steps": True,
+                  "rfl_must_not_be_sealed": True,
+                  "pause_for_hitl_must_not_be_sealed": True,
+                  "sealed_only_by_ethics_or_acc": True,
+                  "self_definition_change_requires_hitl": True,
+                  "self_definition_change_must_be_recorded": True,
+              },
+              "allowed_actions": [
+                  "read",
+                  "detect",
+                  "classify",
+                  "summarize",
+                  "record_artifacts",
+                  "verify_hash_chains",
+                  "generate_draft_only_suggestions",
+                  "request_hitl_review",
+              ],
+              "prohibited_actions": [
+                  "auto_create_branch",
+                  "auto_create_pull_request",
+                  "auto_commit",
+                  "auto_push",
+                  "auto_fix",
+                  "auto_merge",
+                  "auto_update_self_definition",
+                  "auto_tune_rules_from_history",
+                  "publish_exploit_payloads_or_attack_steps",
+              ],
+              "change_policy": {
+                  "read_only_verify_allowed": True,
+                  "change_detection_decision": "HITL_REQUIRED",
+                  "change_gate_decision": "STOPPED",
+                  "change_layer": "acc_gate",
+                  "auto_apply_allowed": False,
+                  "human_decision_required": True,
+              },
           }
 
           SKIP_DIRS = {
@@ -1770,6 +1835,330 @@ jobs:
                   )
               return entries
 
+          def stable_json_text(obj: Any) -> str:
+              return json.dumps(
+                  obj,
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              )
+
+          def self_definition_sha256(definition: dict[str, Any]) -> str:
+              return hashlib.sha256(stable_json_text(definition).encode("utf-8")).hexdigest()
+
+          def load_effective_self_definition() -> tuple[dict[str, Any], str]:
+              if self_definition_source_path.exists():
+                  loaded = read_json(self_definition_source_path, {})
+                  if isinstance(loaded, dict) and loaded:
+                      return loaded, "repository"
+              return dict(DEFAULT_SELF_DEFINITION), "embedded_default"
+
+          def changed_files_set() -> set[str]:
+              changed_path = Path("tasukeru_changed_files.txt")
+              if not changed_path.exists():
+                  return set()
+              return {
+                  normalize_path(line.strip())
+                  for line in changed_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                  if line.strip()
+              }
+
+          def validate_self_definition_contract(definition: dict[str, Any]) -> list[str]:
+              errors: list[str] = []
+              must_not = definition.get("must_not")
+              must = definition.get("must")
+              change_policy = definition.get("change_policy")
+
+              if not isinstance(must_not, dict):
+                  errors.append("must_not_missing_or_invalid")
+                  must_not = {}
+              if not isinstance(must, dict):
+                  errors.append("must_missing_or_invalid")
+                  must = {}
+              if not isinstance(change_policy, dict):
+                  errors.append("change_policy_missing_or_invalid")
+                  change_policy = {}
+
+              required_false = {
+                  "auto_branch_allowed",
+                  "auto_pr_creation_allowed",
+                  "auto_commit_allowed",
+                  "auto_push_allowed",
+                  "autofix_allowed",
+                  "auto_merge_allowed",
+                  "self_definition_auto_update_allowed",
+                  "rule_auto_tuning_allowed",
+                  "workflow_auto_edit_allowed",
+              }
+              required_true = {
+                  "hitl_required_must_require_human_review",
+                  "public_comments_must_not_include_payloads",
+                  "public_comments_must_not_include_attack_steps",
+                  "rfl_must_not_be_sealed",
+                  "pause_for_hitl_must_not_be_sealed",
+                  "sealed_only_by_ethics_or_acc",
+                  "self_definition_change_requires_hitl",
+                  "self_definition_change_must_be_recorded",
+              }
+
+              for key in sorted(required_false):
+                  if must_not.get(key) is not False:
+                      errors.append(f"must_not.{key}_must_be_false")
+              for key in sorted(required_true):
+                  if must.get(key) is not True:
+                      errors.append(f"must.{key}_must_be_true")
+
+              if change_policy.get("auto_apply_allowed") is not False:
+                  errors.append("change_policy.auto_apply_allowed_must_be_false")
+              if change_policy.get("human_decision_required") is not True:
+                  errors.append("change_policy.human_decision_required_must_be_true")
+              if change_policy.get("change_detection_decision") != "HITL_REQUIRED":
+                  errors.append("change_policy.change_detection_decision_must_be_HITL_REQUIRED")
+              if change_policy.get("change_gate_decision") != "STOPPED":
+                  errors.append("change_policy.change_gate_decision_must_be_STOPPED")
+
+              identity = str(definition.get("identity", "")).lower()
+              if "advisory-only" not in identity or "review assistant" not in identity:
+                  errors.append("identity_must_state_advisory_only_review_assistant")
+
+              return errors
+
+          def build_self_definition_chain_row(
+              *,
+              seq: int,
+              event: str,
+              definition_hash: str,
+              source: str,
+              previous_definition_hash: str,
+              decision: str,
+              gate_decision: str,
+              reason_code: str,
+              prev_hash: str,
+              evidence: dict[str, Any],
+          ) -> dict[str, Any]:
+              row = {
+                  "seq": seq,
+                  "event": event,
+                  "definition_sha256": definition_hash,
+                  "previous_definition_sha256": previous_definition_hash,
+                  "source": source,
+                  "decision": decision,
+                  "gate_decision": gate_decision,
+                  "layer": "self_definition_guard",
+                  "sealed": gate_decision == "STOPPED",
+                  "overrideable": gate_decision != "STOPPED",
+                  "final_decider": "SYSTEM",
+                  "reason_code": reason_code,
+                  "auto_apply_allowed": False,
+                  "human_decision_required": True,
+                  "prev_hash": prev_hash,
+                  "evidence": evidence,
+              }
+              payload = {
+                  key: value
+                  for key, value in row.items()
+                  if key != "chain_hash"
+              }
+              row["chain_hash"] = canonical_hash({"prev_hash": prev_hash, "row": payload})
+              return row
+
+          def read_existing_self_definition_chain() -> tuple[list[dict[str, Any]], list[dict[str, Any]], str, str]:
+              rows: list[dict[str, Any]] = []
+              errors: list[dict[str, Any]] = []
+              prev_hash = "GENESIS"
+              head_hash = "GENESIS"
+              previous_definition_hash = ""
+              if not self_definition_chain_path.exists():
+                  return rows, errors, head_hash, previous_definition_hash
+
+              for seq, line in enumerate(self_definition_chain_path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+                  if not line.strip():
+                      continue
+                  try:
+                      row = json.loads(line)
+                  except Exception as exc:
+                      errors.append({"seq": seq, "reason": "json_decode_failed", "error": str(exc)})
+                      continue
+                  if not isinstance(row, dict):
+                      errors.append({"seq": seq, "reason": "row_not_object"})
+                      continue
+                  actual = row.get("chain_hash")
+                  payload = {
+                      key: value
+                      for key, value in row.items()
+                      if key != "chain_hash"
+                  }
+                  expected = canonical_hash({"prev_hash": row.get("prev_hash", prev_hash), "row": payload})
+                  if row.get("prev_hash") != prev_hash:
+                      errors.append({"seq": seq, "reason": "prev_hash_mismatch", "expected": prev_hash, "actual": row.get("prev_hash")})
+                  if actual != expected:
+                      errors.append({"seq": seq, "reason": "chain_hash_mismatch", "expected": expected, "actual": actual})
+                  prev_hash = str(actual or expected)
+                  head_hash = prev_hash
+                  if row.get("definition_sha256"):
+                      previous_definition_hash = str(row.get("definition_sha256"))
+                  rows.append(row)
+              return rows, errors, head_hash, previous_definition_hash
+
+          def add_self_definition_hitl(
+              entries: list[dict[str, Any]],
+              reason_code: str,
+              message: str,
+              evidence: dict[str, Any],
+          ) -> None:
+              entry = make_entry(
+                  source="Tasukeru Self-Definition Guard",
+                  decision="HITL_REQUIRED",
+                  severity="CRITICAL",
+                  category="self_definition",
+                  reason_code=reason_code,
+                  rule_id=reason_code,
+                  file=str(self_definition_source_path),
+                  message=message,
+                  suggestion="自己定義は助ける君の境界条件です。変更・破損・契約違反が意図したものかを人間が確認してください。",
+                  why_problematic_ja="自己定義がズレると、HITL、自動化禁止、公開コメント制限、RFL/ACC境界の意味が静かに変わる可能性があります。",
+                  why_fix_ja="自己定義変更をHITLで止め、ハッシュチェーンに記録することで、サイレントエロージョンと自己修正化を抑制できます。",
+                  impact_ja="人間確認により、助ける君が補助AIの範囲を超えないことを確認できます。",
+                  confidence="HIGH",
+                  risk_type="self_definition",
+                  classification_reason="Self-definition changes or contract violations are non-automatic HITL events.",
+                  path_profile="safety_or_hitl",
+              )
+              entry.update(
+                  {
+                      "gate_decision": "STOPPED",
+                      "layer": "acc_gate",
+                      "sealed": True,
+                      "overrideable": False,
+                      "final_decider": "SYSTEM",
+                      "self_definition_evidence": evidence,
+                  }
+              )
+              entries.append(entry)
+
+          def run_self_definition_guard() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+              entries: list[dict[str, Any]] = []
+              definition, source = load_effective_self_definition()
+              definition_hash = self_definition_sha256(definition)
+              contract_errors = validate_self_definition_contract(definition)
+              existing_rows, chain_errors, existing_head, previous_definition_hash = read_existing_self_definition_chain()
+              changed = normalize_path(str(self_definition_source_path)) in changed_files_set()
+              change_detected = bool(previous_definition_hash and previous_definition_hash != definition_hash)
+              first_registration = not previous_definition_hash
+
+              event = "SELF_DEFINITION_VERIFIED"
+              reason_code = "SELF_DEFINITION_VERIFIED"
+              decision = "RUN"
+              gate_decision = "RUN"
+
+              if first_registration:
+                  event = "SELF_DEFINITION_REGISTERED"
+                  reason_code = "SELF_DEFINITION_REGISTERED"
+
+              if changed or change_detected:
+                  event = "SELF_DEFINITION_CHANGE_DETECTED"
+                  reason_code = "SELF_DEFINITION_CHANGE_REQUIRES_HITL"
+                  decision = "HITL_REQUIRED"
+                  gate_decision = "STOPPED"
+                  add_self_definition_hitl(
+                      entries,
+                      reason_code,
+                      "Self-definition file was changed or differs from the previous recorded definition hash.",
+                      {
+                          "definition_source": source,
+                          "definition_sha256": definition_hash,
+                          "previous_definition_sha256": previous_definition_hash,
+                          "changed_in_pr": changed,
+                          "change_detected_from_chain": change_detected,
+                      },
+                  )
+
+              if contract_errors:
+                  event = "SELF_DEFINITION_CONTRACT_VIOLATION"
+                  reason_code = "SELF_DEFINITION_CONTRACT_VIOLATION"
+                  decision = "HITL_REQUIRED"
+                  gate_decision = "STOPPED"
+                  add_self_definition_hitl(
+                      entries,
+                      reason_code,
+                      "Self-definition contract violation was detected.",
+                      {
+                          "definition_source": source,
+                          "definition_sha256": definition_hash,
+                          "contract_errors": contract_errors,
+                      },
+                  )
+
+              if chain_errors:
+                  event = "SELF_DEFINITION_CHAIN_VERIFY_FAILED"
+                  reason_code = "SELF_DEFINITION_CHAIN_VERIFY_FAILED"
+                  decision = "HITL_REQUIRED"
+                  gate_decision = "STOPPED"
+                  add_self_definition_hitl(
+                      entries,
+                      reason_code,
+                      "Self-definition hash chain verification failed.",
+                      {
+                          "definition_source": source,
+                          "definition_sha256": definition_hash,
+                          "chain_errors": chain_errors,
+                      },
+                  )
+
+              output_rows = list(existing_rows)
+              prev_hash = existing_head if existing_rows else "GENESIS"
+              row = build_self_definition_chain_row(
+                  seq=len(output_rows) + 1,
+                  event=event,
+                  definition_hash=definition_hash,
+                  source=source,
+                  previous_definition_hash=previous_definition_hash,
+                  decision=decision,
+                  gate_decision=gate_decision,
+                  reason_code=reason_code,
+                  prev_hash=prev_hash,
+                  evidence={
+                      "contract_errors": contract_errors,
+                      "changed_in_pr": changed,
+                      "change_detected_from_chain": change_detected,
+                      "existing_chain_error_count": len(chain_errors),
+                      "auto_apply_allowed": False,
+                  },
+              )
+              output_rows.append(row)
+
+              write_json(self_definition_effective_path, definition)
+              with self_definition_chain_path.open("w", encoding="utf-8") as file_obj:
+                  for item in output_rows:
+                      file_obj.write(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n")
+
+              verify = {
+                  "schema_version": "self-definition-verify-v1",
+                  "verified": not contract_errors and not chain_errors,
+                  "source": source,
+                  "definition_sha256": definition_hash,
+                  "previous_definition_sha256": previous_definition_hash,
+                  "chain_head": row["chain_hash"],
+                  "row_count": len(output_rows),
+                  "changed_in_pr": changed,
+                  "change_detected_from_chain": change_detected,
+                  "contract_errors": contract_errors,
+                  "chain_errors": chain_errors,
+                  "policy": {
+                      "read_only_verify_allowed": True,
+                      "auto_apply_allowed": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required_for_change": True,
+                  },
+              }
+              write_json(self_definition_verify_path, verify)
+              return entries, verify
+
           def assign_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
               critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
               by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -1833,6 +2222,9 @@ jobs:
                   ),
                   "abuse_pattern_review_count": sum(
                       1 for entry in entries if entry.get("source") == "Tasukeru Abuse Pattern Review"
+                  ),
+                  "self_definition_guard_count": sum(
+                      1 for entry in entries if entry.get("source") == "Tasukeru Self-Definition Guard"
                   ),
                   "stopped_gate_count": sum(
                       1 for entry in entries if entry.get("gate_decision") == "STOPPED"
@@ -2727,6 +3119,9 @@ jobs:
                   confidence_json_path,
                   readme_refinement_md_path,
                   readme_refinement_json_path,
+                  self_definition_effective_path,
+                  self_definition_chain_path,
+                  self_definition_verify_path,
                   log_dir / "logic-review.json",
                   log_dir / "documentation-review.json",
                   log_dir / "ruff.json",
@@ -2919,6 +3314,7 @@ jobs:
                   "look_first": look_first,
                   "recommended_next_actions": recommended_next_actions,
                   "source_constraints": source_constraints,
+                  "self_definition": metadata.get("self_definition", {}),
                   "policy": automation_policy,
               }
 
@@ -2951,7 +3347,13 @@ jobs:
                   f.write(f"- INFO_ONLY: `{review_queue.get('info_only')}`\n")
                   f.write(f"- Confidence: `{confidence.get('score')}` / `1.0` ({confidence.get('level')})\n")
                   f.write(f"- DRADM draft count: `{drafts.get('dradm_draft_count')}`\n")
-                  f.write(f"- README refinement status: `{drafts.get('readme_refinement_status')}`\n\n")
+                  f.write(f"- README refinement status: `{drafts.get('readme_refinement_status')}`\n")
+                  self_definition = payload.get("self_definition", {}) if isinstance(payload, dict) else {}
+                  if isinstance(self_definition, dict) and self_definition:
+                      f.write(f"- Self-definition verified: `{self_definition.get('verified')}`\n")
+                      f.write(f"- Self-definition hash: `{self_definition.get('definition_sha256')}`\n")
+                      f.write(f"- Self-definition chain head: `{self_definition.get('chain_head')}`\n")
+                  f.write("\n")
 
                   f.write("## 人間が先に見るもの\n\n")
                   for item in payload.get("look_first", []) or []:
@@ -3531,8 +3933,16 @@ jobs:
           pip_entries = entries_from_pip_audit(pip_raw)
           logic_entries, _logic_result = run_logic_review()
           doc_entries, _doc_result = run_documentation_review()
+          self_definition_entries, self_definition_result = run_self_definition_guard()
 
-          all_entries = ruff_entries + bandit_entries + pip_entries + logic_entries + doc_entries
+          all_entries = (
+              ruff_entries
+              + bandit_entries
+              + pip_entries
+              + logic_entries
+              + doc_entries
+              + self_definition_entries
+          )
           all_entries = assign_incidents(all_entries)
           all_entries = attach_confidence_scores(all_entries)
           notification_state = build_notification_state(all_entries)
@@ -3543,6 +3953,8 @@ jobs:
               "pip_count": len(pip_entries),
               "logic_count": len(logic_entries),
               "documentation_count": len(doc_entries),
+              "self_definition_count": len(self_definition_entries),
+              "self_definition": self_definition_result,
               "ruff_exit": read_exit("ruff.exit"),
               "bandit_exit": read_exit("bandit.exit"),
               "pip_audit_exit": read_exit("pip-audit.exit"),
@@ -3560,6 +3972,7 @@ jobs:
           print(f"pip-audit vulnerabilities: {metadata['pip_count']}")
           print(f"Tasukeru logic review findings: {metadata['logic_count']}")
           print(f"Documentation review findings: {metadata['documentation_count']}")
+          print(f"Self-definition guard findings: {metadata['self_definition_count']}")
           print("")
           counts = Counter(entry["decision"] for entry in all_entries)
           print("HITL decision support")
@@ -3576,6 +3989,11 @@ jobs:
           print("ARL hash chain")
           print(f"ARL verified: {arl_verification.get('verified')}")
           print(f"ARL rows: {arl_verification.get('row_count')}")
+          print("")
+          print("Self-definition guard")
+          print(f"Self-definition verified: {self_definition_result.get('verified')}")
+          print(f"Self-definition hash: {self_definition_result.get('definition_sha256')}")
+          print(f"Self-definition chain head: {self_definition_result.get('chain_head')}")
           print("")
           print("Tasukeru announcement")
           print(f"Announcement generated: {announcement.get('generated')}")
@@ -3610,6 +4028,9 @@ jobs:
             tasukeru_readme_refinement_draft.json
             tasukeru_announcement.md
             tasukeru_announcement.json
+            tasukeru_self_definition_effective.json
+            tasukeru_self_definition_chain.jsonl
+            tasukeru_self_definition_verify.json
             tasukeru_arl.jsonl
             tasukeru_arl_verify.json
           if-no-files-found: ignore
@@ -3880,6 +4301,7 @@ jobs:
                     f"- ARL verified: `{arl_verified}`",
                     f"- ARL rows: `{arl.get('row_count')}`",
                     f"- ARL error count: `{arl.get('error_count')}`",
+                    f"- Self-definition verified: `{(announcement.get('self_definition') or {}).get('verified') if isinstance(announcement, dict) else None}`",
                     f"- Confidence: `{confidence.get('score')}` / `1.0` ({confidence.get('level')})",
                     f"- FIX_RECOMMENDED: `{review_queue.get('fix_recommended')}`",
                     f"- REVIEW_RECOMMENDED: `{review_queue.get('review_recommended')}`",
