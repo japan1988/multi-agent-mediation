@@ -796,6 +796,12 @@ This repository uses a split-license model:
 
 See `LICENSE_POLICY.md` for details.
 
+## Project policies
+
+- [Security Policy](SECURITY.md)
+- [License Policy](LICENSE_POLICY.md)
+- [Contributing Guide](CONTRIBUTING.md)
+
 ## Disclaimer
 
 This repository is provided for research and educational purposes only.
