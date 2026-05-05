@@ -29,9 +29,6 @@
 Maestro Orchestrator is a research-oriented orchestration framework for multi-agent governance, fail-closed control, HITL escalation, checkpoint-based resume, and tamper-evident simulation workflows.
 
 This repository contains multiple simulator lines. Some files focus on KAGE-like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
-Maestro Orchestrator is a research-oriented orchestration framework for multi-agent governance, fail-closed control, HITL escalation, checkpoint-based resume, and tamper-evident simulation workflows.
-
-This repository contains multiple simulator lines. Some files focus on KAGE-like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
 
 ## Beginner reading guide
 
@@ -106,6 +103,16 @@ It runs static and repository-specific checks such as:
 The workflow is designed to improve maintainability, safety review, and developer usability without automatically treating every advisory finding as a blocking failure.
 
 Tasukeru Analysis does not aim to hide warnings. Instead, it separates active repair candidates, review-only findings, historical-version warnings, and likely noise so maintainers can focus on the right items first.
+
+Tasukeru Analysis also includes a result consistency audit layer.
+
+Earlier checks focus on whether the review process, logs, gates, and classifications look suspicious or inconsistent. The result consistency auditor additionally checks whether the generated outputs match the recorded process state.
+
+It compares process records with generated artifacts such as summaries, HITL review data, announcement data, ARL verification data, gate adoption data, and self-definition verification data.
+
+This helps detect cases where the internal process and the published result disagree, for example when a count, verification status, gate adoption result, or announcement claim does not match the underlying records.
+
+This layer is report-only. It does not rewrite artifacts, change classifications, apply fixes, create pull requests, commit, push, or merge changes automatically.
 
 ## Advisory-only policy
 
@@ -282,6 +289,9 @@ Tasukeru Analysis may generate the following review artifacts:
 - `tasukeru_dradm_draft.json`
 - `tasukeru_confidence_report.md`
 - `tasukeru_confidence_report.json`
+- `tasukeru_result_consistency_report.md`
+- `tasukeru_result_consistency_report.json`
+- `tasukeru_result_consistency_verify.json`
 
 `tasukeru_advisory_summary.md` provides a concise overview.
 
@@ -307,6 +317,10 @@ These DRADM drafts may include proposed minimal diffs, full draft text, hashes, 
 `tasukeru_confidence_report.md` and `tasukeru_confidence_report.json` summarize Tasukeru's confidence in its classifications, explanations, and draft recommendations.
 
 Confidence scores are review-aid metadata only. They do not indicate that a finding is safe to ignore, and they must not enable automatic fixes, automatic PR creation, automatic commits, automatic pushes, or automatic merges.
+
+`tasukeru_result_consistency_report.md`, `tasukeru_result_consistency_report.json`, and `tasukeru_result_consistency_verify.json` record whether the process logs and generated result artifacts agree.
+
+They are used to check that decision counts, ARL verification, gate adoption status, self-definition verification, and announcement data remain consistent across outputs.
 
 ## Advisory behavior
 
