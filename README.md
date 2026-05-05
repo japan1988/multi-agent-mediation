@@ -1,6 +1,6 @@
 # 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
-> > Japanese: [README.ja.md](README.ja.md)
+> Japanese: [README.ja.md](README.ja.md)
 
 <p align="center">
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
@@ -24,13 +24,11 @@
   <a href="https://github.com/japan1988/multi-agent-mediation/commits/main">
     <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
   </a>
-
-
 </p>
 
-GitHub Stars Open Issues License Python App CI Tasukeru Advisory  
-Python Version Ruff Last Commit
+Maestro Orchestrator is a research-oriented orchestration framework for multi-agent governance, fail-closed control, HITL escalation, checkpoint-based resume, and tamper-evident simulation workflows.
 
+This repository contains multiple simulator lines. Some files focus on KAGE-like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
 Maestro Orchestrator is a research-oriented orchestration framework for multi-agent governance, fail-closed control, HITL escalation, checkpoint-based resume, and tamper-evident simulation workflows.
 
 This repository contains multiple simulator lines. Some files focus on KAGE-like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
