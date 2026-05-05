@@ -25,10 +25,10 @@
     <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="最終コミット">
   </a>
 </p>
+
 Maestro Orchestrator は、マルチエージェント・ガバナンス、fail-closed 制御、HITL エスカレーション、チェックポイントベースの再開、改ざん検知可能なシミュレーション・ワークフローを研究するための、研究指向のオーケストレーション・フレームワークです。
 
 このリポジトリには、複数のシミュレーター系統が含まれています。KAGE 的なゲート挙動と Mediator 分離に焦点を当てたファイルもあれば、文書タスクのバッチ実行、チェックポイント、監査整合性、artifact 検証に焦点を当てたファイルもあります。
-
 ## 初めて読む人向けガイド
 
 このリポジトリを初めて読む場合は、ここから読み始めてください。
