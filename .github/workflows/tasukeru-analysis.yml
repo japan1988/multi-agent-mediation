@@ -3649,6 +3649,8 @@ jobs:
                   "do_not_claim_safety_guarantee": True,
                   "unknowns_must_remain_unknown": True,
                   "summary_is_not_final_decision": True,
+                  "public_comments_must_not_include_payloads": True,
+                  "public_comments_must_not_include_attack_steps": True,
               }
 
               return {
