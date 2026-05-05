@@ -222,6 +222,9 @@ jobs:
           decision_diary_verify_path = Path("tasukeru_decision_diary_verify.json")
           announcement_md_path = Path("tasukeru_announcement.md")
           announcement_json_path = Path("tasukeru_announcement.json")
+          result_consistency_report_md_path = Path("tasukeru_result_consistency_report.md")
+          result_consistency_report_json_path = Path("tasukeru_result_consistency_report.json")
+          result_consistency_verify_path = Path("tasukeru_result_consistency_verify.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -3779,6 +3782,307 @@ jobs:
               write_tasukeru_announcement(payload)
               return payload
 
+          def parse_summary_decision_counts(summary_text: str) -> dict[str, int]:
+              parsed: dict[str, int] = {}
+              for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
+                  match = re.search(rf"^\s*-\s+{re.escape(level)}:\s+(\d+)\s*$", summary_text, re.MULTILINE)
+                  if match:
+                      parsed[level] = int(match.group(1))
+              return parsed
+
+          def compare_result_field(
+              mismatches: list[dict[str, Any]],
+              *,
+              field: str,
+              process_value: Any,
+              output_value: Any,
+              artifact: str,
+              reason_code: str,
+          ) -> None:
+              if process_value != output_value:
+                  mismatches.append(
+                      {
+                          "field": field,
+                          "process_value": process_value,
+                          "output_value": output_value,
+                          "artifact": artifact,
+                          "reason_code": reason_code,
+                      }
+                  )
+
+          def build_result_consistency_report(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+              announcement: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Audit whether process records and generated result artifacts agree.
+
+              This is report-only. It does not modify findings, rewrite artifacts,
+              create branches, create PRs, commit, push, auto-fix, or auto-merge.
+              """
+              counts = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
+              normalized_counts = {
+                  level: int(counts.get(level, 0))
+                  for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY")
+              }
+              mismatches: list[dict[str, Any]] = []
+
+              hitl_payload = read_json(hitl_json_path, {})
+              notification_payload = read_json(notification_state_path, {})
+              announcement_payload = read_json(announcement_json_path, {})
+              arl_verify_payload = read_json(arl_verify_json_path, {})
+              gate_flags_payload = read_json(gate_flags_path, {})
+              gate_adoption_verify_payload = read_json(gate_adoption_verify_path, {})
+              self_definition_verify_payload = read_json(self_definition_verify_path, {})
+              decision_diary_verify_payload = read_json(decision_diary_verify_path, {})
+              summary_text = read_text(summary_path, "")
+              summary_counts = parse_summary_decision_counts(summary_text)
+
+              # Decision count consistency.
+              compare_result_field(
+                  mismatches,
+                  field="decision_counts.hitl_review_json",
+                  process_value=normalized_counts,
+                  output_value={level: int(hitl_payload.get("counts", {}).get(level, 0)) for level in normalized_counts},
+                  artifact=str(hitl_json_path),
+                  reason_code="RESULT_COUNTS_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="decision_counts.summary_md",
+                  process_value=normalized_counts,
+                  output_value={level: int(summary_counts.get(level, 0)) for level in normalized_counts},
+                  artifact=str(summary_path),
+                  reason_code="RESULT_COUNTS_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="decision_counts.announcement_json",
+                  process_value=normalized_counts,
+                  output_value={level: int(announcement_payload.get("decision_counts", {}).get(level, 0)) for level in normalized_counts},
+                  artifact=str(announcement_json_path),
+                  reason_code="RESULT_COUNTS_MISMATCH",
+              )
+
+              # HITL / critical notification consistency.
+              hitl_count = int(normalized_counts.get("HITL_REQUIRED", 0))
+              critical_count = int(state.get("critical_count", 0) or 0)
+              compare_result_field(
+                  mismatches,
+                  field="critical_count.state_vs_process_hitl",
+                  process_value=hitl_count,
+                  output_value=critical_count,
+                  artifact=str(notification_state_path),
+                  reason_code="RESULT_CRITICAL_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="critical_count.notification_json",
+                  process_value=critical_count,
+                  output_value=int(notification_payload.get("critical_count", 0) or 0),
+                  artifact=str(notification_state_path),
+                  reason_code="RESULT_CRITICAL_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="review_queue.hitl_required",
+                  process_value=critical_count,
+                  output_value=int(announcement_payload.get("review_queue", {}).get("hitl_required", 0) or 0),
+                  artifact=str(announcement_json_path),
+                  reason_code="RESULT_REVIEW_QUEUE_MISMATCH",
+              )
+
+              # ARL verification consistency.
+              compare_result_field(
+                  mismatches,
+                  field="arl.verified",
+                  process_value=bool(arl_verification.get("verified")),
+                  output_value=bool(arl_verify_payload.get("verified")),
+                  artifact=str(arl_verify_json_path),
+                  reason_code="RESULT_ARL_VERIFY_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="arl.row_count",
+                  process_value=arl_verification.get("row_count"),
+                  output_value=arl_verify_payload.get("row_count"),
+                  artifact=str(arl_verify_json_path),
+                  reason_code="RESULT_ARL_ROW_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="announcement.arl.verified",
+                  process_value=bool(arl_verification.get("verified")),
+                  output_value=bool(announcement_payload.get("arl", {}).get("verified")),
+                  artifact=str(announcement_json_path),
+                  reason_code="RESULT_ANNOUNCEMENT_ARL_MISMATCH",
+              )
+
+              # Middle Layer Pack consistency.
+              middle_layer = metadata.get("middle_layer", {}) if isinstance(metadata, dict) else {}
+              middle_flags = middle_layer.get("flags", {}) if isinstance(middle_layer, dict) else {}
+              middle_verify = middle_layer.get("verify", {}) if isinstance(middle_layer, dict) else {}
+              adopted_from_flags = sum(
+                  1 for stage in gate_flags_payload.get("stages", []) or []
+                  if isinstance(stage, dict) and stage.get("adopted_as_gate") is True
+              )
+              compare_result_field(
+                  mismatches,
+                  field="middle_layer.verify",
+                  process_value=bool(middle_verify.get("verified")),
+                  output_value=bool(gate_adoption_verify_payload.get("verified")),
+                  artifact=str(gate_adoption_verify_path),
+                  reason_code="RESULT_MIDDLE_LAYER_VERIFY_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="middle_layer.adopted_stage_count",
+                  process_value=middle_flags.get("adopted_stage_count"),
+                  output_value=gate_flags_payload.get("adopted_stage_count"),
+                  artifact=str(gate_flags_path),
+                  reason_code="RESULT_MIDDLE_LAYER_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="middle_layer.adopted_stage_count_from_stages",
+                  process_value=gate_flags_payload.get("adopted_stage_count"),
+                  output_value=adopted_from_flags,
+                  artifact=str(gate_flags_path),
+                  reason_code="RESULT_MIDDLE_LAYER_STAGE_MISMATCH",
+              )
+
+              # Guard artifact consistency.
+              self_definition = metadata.get("self_definition", {}) if isinstance(metadata, dict) else {}
+              compare_result_field(
+                  mismatches,
+                  field="self_definition.verified",
+                  process_value=bool(self_definition.get("verified")),
+                  output_value=bool(self_definition_verify_payload.get("verified")),
+                  artifact=str(self_definition_verify_path),
+                  reason_code="RESULT_SELF_DEFINITION_MISMATCH",
+              )
+              if decision_diary_verify_path.exists():
+                  compare_result_field(
+                      mismatches,
+                      field="decision_diary.verified",
+                      process_value=True,
+                      output_value=bool(decision_diary_verify_payload.get("verified")),
+                      artifact=str(decision_diary_verify_path),
+                      reason_code="RESULT_DECISION_DIARY_MISMATCH",
+                  )
+
+              # Automation policy must remain false across the result layer.
+              automation_policy = {
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "workflow_auto_edit_allowed": False,
+                  "self_definition_auto_update_allowed": False,
+              }
+
+              verified = not mismatches
+              report = {
+                  "schema_version": "result-consistency-auditor-v1",
+                  "verified": verified,
+                  "decision": "RUN" if verified else "PAUSE_FOR_HITL",
+                  "reason_code": "RESULT_CONSISTENCY_VERIFIED" if verified else "RESULT_PROCESS_OUTPUT_MISMATCH",
+                  "mismatch_count": len(mismatches),
+                  "mismatches": mismatches,
+                  "checked_artifacts": [
+                      str(summary_path),
+                      str(hitl_json_path),
+                      str(notification_state_path),
+                      str(announcement_json_path),
+                      str(arl_verify_json_path),
+                      str(gate_flags_path),
+                      str(gate_adoption_verify_path),
+                      str(self_definition_verify_path),
+                      str(decision_diary_verify_path),
+                  ],
+                  "process_counts": normalized_counts,
+                  "summary_counts": summary_counts,
+                  "policy": automation_policy | {
+                      "report_only": True,
+                      "auto_apply_allowed": False,
+                      "human_decision_required_on_mismatch": True,
+                  },
+              }
+              report["report_sha256"] = canonical_hash(
+                  {
+                      "schema_version": report["schema_version"],
+                      "verified": report["verified"],
+                      "decision": report["decision"],
+                      "reason_code": report["reason_code"],
+                      "mismatch_count": report["mismatch_count"],
+                      "mismatches": report["mismatches"],
+                  }
+              )
+              return report
+
+          def write_result_consistency_report(report: dict[str, Any]) -> None:
+              write_json(result_consistency_report_json_path, report)
+              verify_payload = {
+                  "schema_version": "result-consistency-verify-v1",
+                  "verified": bool(report.get("verified")),
+                  "decision": report.get("decision"),
+                  "reason_code": report.get("reason_code"),
+                  "mismatch_count": report.get("mismatch_count"),
+                  "report_artifact": str(result_consistency_report_json_path),
+                  "summary_artifact": str(result_consistency_report_md_path),
+                  "report_sha256": report.get("report_sha256"),
+                  "auto_apply_allowed": False,
+                  "human_decision_required_on_mismatch": True,
+              }
+              write_json(result_consistency_verify_path, verify_payload)
+
+              with result_consistency_report_md_path.open("w", encoding="utf-8") as file_obj:
+                  file_obj.write("# Tasukeru Result Consistency Auditor\n\n")
+                  file_obj.write("This report is advisory-only. It checks whether process records and generated result artifacts agree.\n\n")
+                  file_obj.write("## Result\n\n")
+                  file_obj.write(f"- Verified: `{report.get('verified')}`\n")
+                  file_obj.write(f"- Decision: `{report.get('decision')}`\n")
+                  file_obj.write(f"- Reason code: `{report.get('reason_code')}`\n")
+                  file_obj.write(f"- Mismatch count: `{report.get('mismatch_count')}`\n")
+                  file_obj.write(f"- Report hash: `{report.get('report_sha256')}`\n")
+                  file_obj.write("\n## Process counts\n\n")
+                  for level, count in report.get("process_counts", {}).items():
+                      file_obj.write(f"- {level}: `{count}`\n")
+                  file_obj.write("\n## Mismatches\n\n")
+                  mismatches = report.get("mismatches", []) or []
+                  if not mismatches:
+                      file_obj.write("- None\n")
+                  else:
+                      for item in mismatches:
+                          file_obj.write(
+                              f"- `{item.get('reason_code')}` `{item.get('field')}` "
+                              f"process=`{item.get('process_value')}` output=`{item.get('output_value')}` "
+                              f"artifact=`{item.get('artifact')}`\n"
+                          )
+                  file_obj.write("\n## Policy\n\n")
+                  file_obj.write("- Report-only: `true`\n")
+                  file_obj.write("- Auto branch creation: `false`\n")
+                  file_obj.write("- Auto PR creation: `false`\n")
+                  file_obj.write("- Auto commit: `false`\n")
+                  file_obj.write("- Auto push: `false`\n")
+                  file_obj.write("- Auto fix: `false`\n")
+                  file_obj.write("- Auto merge: `false`\n")
+
+          def generate_tasukeru_result_consistency_report(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+              announcement: dict[str, Any],
+          ) -> dict[str, Any]:
+              report = build_result_consistency_report(entries, state, metadata, arl_verification, announcement)
+              write_result_consistency_report(report)
+              return report
+
           def clamp_score(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
               return round(max(minimum, min(maximum, value)), 3)
 
@@ -4365,6 +4669,14 @@ jobs:
           metadata["middle_layer"] = middle_layer_result
           arl_verification = generate_tasukeru_arl_hash_chain(all_entries, notification_state, metadata)
           announcement = generate_tasukeru_announcement(all_entries, notification_state, metadata, arl_verification)
+          result_consistency = generate_tasukeru_result_consistency_report(
+              all_entries,
+              notification_state,
+              metadata,
+              arl_verification,
+              announcement,
+          )
+          metadata["result_consistency"] = result_consistency
 
           print("# Tasukeru advisory summary")
           print(f"Ruff findings: {metadata['ruff_count']}")
@@ -4407,6 +4719,12 @@ jobs:
           for stage in middle_flags.get("stages", []) or []:
               print(f"Stage {stage.get('stage')} {stage.get('feature')}: {stage.get('status')} adopted={stage.get('adopted_as_gate')}")
           print("")
+          print("Result Consistency Auditor v1")
+          result_consistency = metadata.get("result_consistency", {})
+          print(f"Result consistency verified: {result_consistency.get('verified')}")
+          print(f"Mismatch count: {result_consistency.get('mismatch_count')}")
+          print(f"Result consistency decision: {result_consistency.get('decision')}")
+          print("")
           print("Automation policy")
           print("Auto branch creation: false")
           print("Auto PR creation: false")
@@ -4445,6 +4763,9 @@ jobs:
             tasukeru_decision_diary.md
             tasukeru_decision_diary.jsonl
             tasukeru_decision_diary_verify.json
+            tasukeru_result_consistency_report.md
+            tasukeru_result_consistency_report.json
+            tasukeru_result_consistency_verify.json
             tasukeru_arl.jsonl
             tasukeru_arl_verify.json
           if-no-files-found: ignore
