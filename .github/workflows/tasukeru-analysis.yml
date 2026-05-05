@@ -214,6 +214,12 @@ jobs:
           self_definition_effective_path = Path("tasukeru_self_definition_effective.json")
           self_definition_chain_path = Path("tasukeru_self_definition_chain.jsonl")
           self_definition_verify_path = Path("tasukeru_self_definition_verify.json")
+          gate_flags_path = Path("tasukeru_gate_flags.json")
+          gate_adoption_log_path = Path("tasukeru_gate_adoption_log.jsonl")
+          gate_adoption_verify_path = Path("tasukeru_gate_adoption_verify.json")
+          decision_diary_md_path = Path("tasukeru_decision_diary.md")
+          decision_diary_jsonl_path = Path("tasukeru_decision_diary.jsonl")
+          decision_diary_verify_path = Path("tasukeru_decision_diary_verify.json")
           announcement_md_path = Path("tasukeru_announcement.md")
           announcement_json_path = Path("tasukeru_announcement.json")
 
@@ -2159,6 +2165,375 @@ jobs:
               write_json(self_definition_verify_path, verify)
               return entries, verify
 
+          def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+              with path.open("w", encoding="utf-8") as file_obj:
+                  for row in rows:
+                      file_obj.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
+
+          def sha256_file(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def safe_for_diary(entry: dict[str, Any]) -> dict[str, Any]:
+              """Keep the diary useful without exposing raw reasoning or payload-like detail."""
+              return {
+                  "source": entry.get("source"),
+                  "decision": entry.get("decision"),
+                  "severity": entry.get("severity"),
+                  "category": entry.get("category"),
+                  "reason_code": entry.get("reason_code"),
+                  "rule_id": entry.get("rule_id"),
+                  "file": entry.get("file"),
+                  "line": entry.get("line"),
+                  "path_profile": entry.get("path_profile"),
+                  "classification_reason": one_line(entry.get("classification_reason", ""), 300),
+                  "suggestion": one_line(entry.get("suggestion", ""), 300),
+                  "fingerprint_hash": entry.get("fingerprint_hash"),
+                  "auto_apply_allowed": False,
+              }
+
+          def build_gate_adoption_row(
+              *,
+              seq: int,
+              run_id: str,
+              stage: int,
+              feature: str,
+              status: str,
+              adopted_as_gate: bool,
+              reason_code: str,
+              blocking_reason: str,
+              prev_hash: str,
+              flags: dict[str, Any],
+          ) -> dict[str, Any]:
+              row = {
+                  "seq": seq,
+                  "run_id": run_id,
+                  "gate_pack": "middle-layer-pack-v1",
+                  "stage": stage,
+                  "feature": feature,
+                  "status": status,
+                  "adopted_as_gate": adopted_as_gate,
+                  "reason_code": reason_code,
+                  "blocking_reason": blocking_reason,
+                  "retry_required": status in {"BLOCKED", "FAILED"},
+                  "auto_apply_allowed": False,
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "human_decision_required": True,
+                  "prev_hash": prev_hash,
+                  "flags": flags,
+              }
+              payload = {key: value for key, value in row.items() if key != "chain_hash"}
+              row["chain_hash"] = canonical_hash({"prev_hash": prev_hash, "row": payload})
+              return row
+
+          def run_middle_layer_pack(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              self_definition_result: dict[str, Any],
+              arl_verification: dict[str, Any],
+              announcement: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Flag-Collected Gate Adoption for Tasukeru Middle Layer Pack v1.
+
+              This evaluates pre-defined candidate layers and adopts only the
+              consecutive PASSED stages. It does not edit workflow files, update
+              self-definition files, create PRs, commit, push, auto-fix, or merge.
+              """
+              run_id = os.environ.get("GITHUB_RUN_ID") or os.environ.get("GITHUB_RUN_NUMBER") or "local"
+              stages: list[dict[str, Any]] = []
+              log_rows: list[dict[str, Any]] = []
+              adoption_open = True
+              prev_hash = "GENESIS"
+
+              def add_stage(
+                  *,
+                  stage: int,
+                  feature: str,
+                  status: str,
+                  reason_code: str,
+                  blocking_reason: str = "",
+                  flags: dict[str, Any] | None = None,
+              ) -> None:
+                  nonlocal adoption_open, prev_hash
+                  flags = flags or {}
+                  if not adoption_open:
+                      status = "NOT_EVALUATED"
+                      if not blocking_reason:
+                          blocking_reason = "previous_stage_not_adopted"
+                      adopted = False
+                  else:
+                      adopted = status == "PASSED"
+                      if not adopted:
+                          adoption_open = False
+
+                  stage_payload = {
+                      "stage": stage,
+                      "feature": feature,
+                      "status": status,
+                      "adopted_as_gate": adopted,
+                      "reason_code": reason_code,
+                      "blocking_reason": blocking_reason,
+                      "retry_required": status in {"BLOCKED", "FAILED"},
+                      "flags": flags,
+                  }
+                  stages.append(stage_payload)
+
+                  row = build_gate_adoption_row(
+                      seq=len(log_rows) + 1,
+                      run_id=run_id,
+                      stage=stage,
+                      feature=feature,
+                      status=status,
+                      adopted_as_gate=adopted,
+                      reason_code=reason_code,
+                      blocking_reason=blocking_reason,
+                      prev_hash=prev_hash,
+                      flags=flags,
+                  )
+                  log_rows.append(row)
+                  prev_hash = row["chain_hash"]
+
+              # Stage 1: Definition Contract Layer.
+              policy = self_definition_result.get("policy") if isinstance(self_definition_result, dict) else {}
+              policy = policy if isinstance(policy, dict) else {}
+              contract_errors = self_definition_result.get("contract_errors", []) if isinstance(self_definition_result, dict) else []
+              chain_errors = self_definition_result.get("chain_errors", []) if isinstance(self_definition_result, dict) else []
+              stage1_errors: list[str] = []
+
+              if not self_definition_result.get("verified"):
+                  stage1_errors.append("self_definition_not_verified")
+              if contract_errors:
+                  stage1_errors.append("self_definition_contract_errors_present")
+              if chain_errors:
+                  stage1_errors.append("self_definition_chain_errors_present")
+
+              for key in (
+                  "auto_apply_allowed",
+                  "auto_branch_allowed",
+                  "auto_pr_creation_allowed",
+                  "auto_commit_allowed",
+                  "auto_push_allowed",
+                  "autofix_allowed",
+                  "auto_merge_allowed",
+              ):
+                  if policy.get(key) is not False:
+                      stage1_errors.append(f"{key}_must_be_false")
+
+              if policy.get("human_decision_required_for_change") is not True:
+                  stage1_errors.append("human_decision_required_for_change_must_be_true")
+
+              add_stage(
+                  stage=1,
+                  feature="definition_contract_layer",
+                  status="PASSED" if not stage1_errors else "BLOCKED",
+                  reason_code="DEFINITION_CONTRACT_LAYER_PASSED" if not stage1_errors else "DEFINITION_CONTRACT_LAYER_BLOCKED",
+                  blocking_reason=", ".join(stage1_errors),
+                  flags={
+                      "self_definition_verified": bool(self_definition_result.get("verified")),
+                      "contract_error_count": len(contract_errors) if isinstance(contract_errors, list) else 1,
+                      "chain_error_count": len(chain_errors) if isinstance(chain_errors, list) else 1,
+                      "auto_apply_allowed": policy.get("auto_apply_allowed"),
+                      "auto_merge_allowed": policy.get("auto_merge_allowed"),
+                      "human_decision_required_for_change": policy.get("human_decision_required_for_change"),
+                  },
+              )
+
+              # Stage 2: Erosion Guard.
+              counts = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
+              source_counts = Counter(entry.get("source", "UNKNOWN") for entry in entries)
+              total_findings = max(len(entries), 1)
+              hitl_count = int(counts.get("HITL_REQUIRED", 0))
+              critical_count = int(state.get("critical_count", 0) or 0)
+              review_count = int(counts.get("FIX_RECOMMENDED", 0) + counts.get("REVIEW_RECOMMENDED", 0))
+              noise_count = int(counts.get("NOISE_CANDIDATE", 0))
+              info_count = int(counts.get("INFO_ONLY", 0))
+              erosion_errors: list[str] = []
+              if critical_count != hitl_count:
+                  erosion_errors.append("critical_count_does_not_match_hitl_required")
+              if int(state.get("suppressed_duplicate_critical_incident_count", 0) or 0) > critical_count:
+                  erosion_errors.append("suppressed_duplicate_count_exceeds_critical_count")
+
+              erosion_metrics = {
+                  "hitl_required": hitl_count,
+                  "critical_count": critical_count,
+                  "fix_or_review_recommended": review_count,
+                  "noise_candidate": noise_count,
+                  "info_only": info_count,
+                  "noise_ratio": round(noise_count / total_findings, 4),
+                  "info_ratio": round(info_count / total_findings, 4),
+                  "source_counts": dict(source_counts),
+                  "silent_suppression_detected": bool(erosion_errors),
+              }
+              add_stage(
+                  stage=2,
+                  feature="erosion_guard",
+                  status="PASSED" if not erosion_errors else "BLOCKED",
+                  reason_code="EROSION_GUARD_METRICS_COLLECTED" if not erosion_errors else "EROSION_GUARD_BLOCKED",
+                  blocking_reason=", ".join(erosion_errors),
+                  flags=erosion_metrics,
+              )
+
+              # Stage 3: Decision Diary.
+              diary_errors: list[str] = []
+              diary_rows: list[dict[str, Any]] = [safe_for_diary(entry) for entry in entries]
+              try:
+                  write_jsonl(decision_diary_jsonl_path, diary_rows)
+                  with decision_diary_md_path.open("w", encoding="utf-8") as file_obj:
+                      file_obj.write("# Tasukeru Decision Diary\n\n")
+                      file_obj.write("This diary is advisory-only. It records classification context without raw reasoning, raw prompts, exploit payloads, or attack steps.\n\n")
+                      file_obj.write("## Summary\n\n")
+                      for key in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
+                          file_obj.write(f"- {key}: {counts.get(key, 0)}\n")
+                      file_obj.write("\n## Sample entries\n\n")
+                      for row in diary_rows[:20]:
+                          file_obj.write(
+                              f"- `{row.get('decision')}` `{row.get('reason_code')}` "
+                              f"{row.get('file')}:{row.get('line')} — {row.get('classification_reason')}\n"
+                          )
+                  diary_verify = {
+                      "schema_version": "decision-diary-verify-v1",
+                      "verified": True,
+                      "row_count": len(diary_rows),
+                      "md_path": str(decision_diary_md_path),
+                      "jsonl_path": str(decision_diary_jsonl_path),
+                      "no_raw_reasoning": True,
+                      "no_auto_apply": True,
+                      "auto_apply_allowed": False,
+                      "sha256": {
+                          "md": sha256_file(decision_diary_md_path),
+                          "jsonl": sha256_file(decision_diary_jsonl_path),
+                      },
+                  }
+                  write_json(decision_diary_verify_path, diary_verify)
+              except Exception as exc:
+                  diary_errors.append(f"decision_diary_write_failed:{type(exc).__name__}")
+
+              add_stage(
+                  stage=3,
+                  feature="decision_diary",
+                  status="PASSED" if not diary_errors else "FAILED",
+                  reason_code="DECISION_DIARY_CREATED" if not diary_errors else "DECISION_DIARY_FAILED",
+                  blocking_reason=", ".join(diary_errors),
+                  flags={
+                      "diary_md_created": decision_diary_md_path.exists(),
+                      "diary_jsonl_created": decision_diary_jsonl_path.exists(),
+                      "diary_verify_created": decision_diary_verify_path.exists(),
+                      "entry_count": len(entries),
+                      "no_raw_reasoning": True,
+                      "auto_apply_allowed": False,
+                  },
+              )
+
+              # Stage 4: Announcement Proof.
+              announcement_errors: list[str] = []
+              announcement_policy = announcement.get("policy") if isinstance(announcement, dict) else {}
+              announcement_policy = announcement_policy if isinstance(announcement_policy, dict) else {}
+              source_constraints = announcement.get("source_constraints") if isinstance(announcement, dict) else {}
+              source_constraints = source_constraints if isinstance(source_constraints, dict) else {}
+
+              if not isinstance(announcement, dict) or not announcement:
+                  announcement_errors.append("announcement_payload_missing")
+              if not announcement.get("conclusion_ja"):
+                  announcement_errors.append("announcement_conclusion_missing")
+              if not isinstance(announcement.get("decision_counts"), dict):
+                  announcement_errors.append("announcement_decision_counts_missing")
+              if not bool(announcement.get("arl", {}).get("verified")):
+                  announcement_errors.append("announcement_arl_verified_missing_or_false")
+              for key in (
+                  "auto_branch_allowed",
+                  "auto_pr_creation_allowed",
+                  "auto_commit_allowed",
+                  "auto_push_allowed",
+                  "autofix_allowed",
+                  "auto_merge_allowed",
+              ):
+                  if announcement_policy.get(key) is not False:
+                      announcement_errors.append(f"announcement_policy_{key}_must_be_false")
+              if source_constraints.get("public_comments_must_not_include_payloads") is not True:
+                  announcement_errors.append("public_payload_constraint_missing")
+              if source_constraints.get("public_comments_must_not_include_attack_steps") is not True:
+                  announcement_errors.append("public_attack_steps_constraint_missing")
+
+              add_stage(
+                  stage=4,
+                  feature="announcement_proof",
+                  status="PASSED" if not announcement_errors else "BLOCKED",
+                  reason_code="ANNOUNCEMENT_PROOF_PASSED" if not announcement_errors else "ANNOUNCEMENT_PROOF_BLOCKED",
+                  blocking_reason=", ".join(announcement_errors),
+                  flags={
+                      "announcement_claims_mapped": not announcement_errors,
+                      "source_artifact_hashes_verified": bool(arl_verification.get("verified")),
+                      "no_unbacked_claims": not announcement_errors,
+                      "public_payload_constraint": source_constraints.get("public_comments_must_not_include_payloads"),
+                      "public_attack_steps_constraint": source_constraints.get("public_comments_must_not_include_attack_steps"),
+                      "auto_apply_allowed": False,
+                  },
+              )
+
+              adopted_count = sum(1 for stage in stages if stage.get("adopted_as_gate"))
+              first_blocked = next((stage for stage in stages if not stage.get("adopted_as_gate")), None)
+              flags_payload = {
+                  "schema_version": "gate-flags-v1",
+                  "gate_pack": "middle-layer-pack-v1",
+                  "adoption_strategy": "Flag-Collected Gate Adoption",
+                  "stage_order_fixed": True,
+                  "consecutive_adoption_only": True,
+                  "adopted_stage_count": adopted_count,
+                  "first_blocked_stage": first_blocked,
+                  "stages": stages,
+                  "policy": {
+                      "auto_apply_allowed": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "self_definition_auto_update_allowed": False,
+                      "workflow_auto_edit_allowed": False,
+                  },
+              }
+              write_json(gate_flags_path, flags_payload)
+              write_jsonl(gate_adoption_log_path, log_rows)
+
+              # Verify the adoption log chain.
+              verify_errors: list[dict[str, Any]] = []
+              verify_prev = "GENESIS"
+              for row in log_rows:
+                  actual = row.get("chain_hash")
+                  payload = {key: value for key, value in row.items() if key != "chain_hash"}
+                  expected = canonical_hash({"prev_hash": verify_prev, "row": payload})
+                  if row.get("prev_hash") != verify_prev:
+                      verify_errors.append({"seq": row.get("seq"), "reason": "prev_hash_mismatch"})
+                  if actual != expected:
+                      verify_errors.append({"seq": row.get("seq"), "reason": "chain_hash_mismatch"})
+                  verify_prev = str(actual or expected)
+
+              verify_payload = {
+                  "schema_version": "gate-adoption-verify-v1",
+                  "verified": not verify_errors,
+                  "gate_pack": "middle-layer-pack-v1",
+                  "stage_count": len(stages),
+                  "adopted_stage_count": adopted_count,
+                  "chain_head": verify_prev,
+                  "errors": verify_errors,
+                  "flags_path": str(gate_flags_path),
+                  "log_path": str(gate_adoption_log_path),
+                  "auto_apply_allowed": False,
+                  "human_decision_required": True,
+              }
+              write_json(gate_adoption_verify_path, verify_payload)
+
+              return {
+                  "flags": flags_payload,
+                  "verify": verify_payload,
+              }
+
           def assign_incidents(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
               critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
               by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -3122,6 +3497,12 @@ jobs:
                   self_definition_effective_path,
                   self_definition_chain_path,
                   self_definition_verify_path,
+                  gate_flags_path,
+                  gate_adoption_log_path,
+                  gate_adoption_verify_path,
+                  decision_diary_md_path,
+                  decision_diary_jsonl_path,
+                  decision_diary_verify_path,
                   log_dir / "logic-review.json",
                   log_dir / "documentation-review.json",
                   log_dir / "ruff.json",
@@ -3315,6 +3696,7 @@ jobs:
                   "recommended_next_actions": recommended_next_actions,
                   "source_constraints": source_constraints,
                   "self_definition": metadata.get("self_definition", {}),
+                  "middle_layer": metadata.get("middle_layer", {}),
                   "policy": automation_policy,
               }
 
@@ -3353,6 +3735,11 @@ jobs:
                       f.write(f"- Self-definition verified: `{self_definition.get('verified')}`\n")
                       f.write(f"- Self-definition hash: `{self_definition.get('definition_sha256')}`\n")
                       f.write(f"- Self-definition chain head: `{self_definition.get('chain_head')}`\n")
+                  middle_layer = payload.get("middle_layer", {}) if isinstance(payload, dict) else {}
+                  if isinstance(middle_layer, dict) and middle_layer:
+                      ml_flags = middle_layer.get("flags", {}) if isinstance(middle_layer.get("flags"), dict) else {}
+                      f.write(f"- Middle Layer adopted stages: `{ml_flags.get('adopted_stage_count')}`\n")
+                      f.write(f"- Middle Layer strategy: `{ml_flags.get('adoption_strategy')}`\n")
                   f.write("\n")
 
                   f.write("## 人間が先に見るもの\n\n")
@@ -3963,6 +4350,17 @@ jobs:
           write_outputs(all_entries, notification_state, metadata)
           generate_dradm_draft_artifacts(all_entries, notification_state, metadata)
           generate_readme_refinement_artifacts(metadata)
+          initial_arl_verification = generate_tasukeru_arl_hash_chain(all_entries, notification_state, metadata)
+          initial_announcement = generate_tasukeru_announcement(all_entries, notification_state, metadata, initial_arl_verification)
+          middle_layer_result = run_middle_layer_pack(
+              all_entries,
+              notification_state,
+              metadata,
+              self_definition_result,
+              initial_arl_verification,
+              initial_announcement,
+          )
+          metadata["middle_layer"] = middle_layer_result
           arl_verification = generate_tasukeru_arl_hash_chain(all_entries, notification_state, metadata)
           announcement = generate_tasukeru_announcement(all_entries, notification_state, metadata, arl_verification)
 
@@ -3999,6 +4397,14 @@ jobs:
           print(f"Announcement generated: {announcement.get('generated')}")
           print(f"Announcement mode: {announcement.get('mode')}")
           print("")
+          print("Middle Layer Pack v1")
+          middle_flags = metadata.get("middle_layer", {}).get("flags", {})
+          middle_verify = metadata.get("middle_layer", {}).get("verify", {})
+          print(f"Gate adoption verified: {middle_verify.get('verified')}")
+          print(f"Adopted stages: {middle_flags.get('adopted_stage_count')}")
+          for stage in middle_flags.get("stages", []) or []:
+              print(f"Stage {stage.get('stage')} {stage.get('feature')}: {stage.get('status')} adopted={stage.get('adopted_as_gate')}")
+          print("")
           print("Automation policy")
           print("Auto branch creation: false")
           print("Auto PR creation: false")
@@ -4031,6 +4437,12 @@ jobs:
             tasukeru_self_definition_effective.json
             tasukeru_self_definition_chain.jsonl
             tasukeru_self_definition_verify.json
+            tasukeru_gate_flags.json
+            tasukeru_gate_adoption_log.jsonl
+            tasukeru_gate_adoption_verify.json
+            tasukeru_decision_diary.md
+            tasukeru_decision_diary.jsonl
+            tasukeru_decision_diary_verify.json
             tasukeru_arl.jsonl
             tasukeru_arl_verify.json
           if-no-files-found: ignore
