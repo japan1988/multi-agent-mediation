@@ -225,6 +225,9 @@ jobs:
           result_consistency_report_md_path = Path("tasukeru_result_consistency_report.md")
           result_consistency_report_json_path = Path("tasukeru_result_consistency_report.json")
           result_consistency_verify_path = Path("tasukeru_result_consistency_verify.json")
+          finding_validation_report_md_path = Path("tasukeru_finding_validation_report.md")
+          finding_validation_report_json_path = Path("tasukeru_finding_validation_report.json")
+          finding_validation_verify_path = Path("tasukeru_finding_validation_verify.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -3782,6 +3785,262 @@ jobs:
               write_tasukeru_announcement(payload)
               return payload
 
+          def classify_finding_validation_class(entry: dict[str, Any]) -> tuple[str, str]:
+              decision = str(entry.get("decision", entry.get("level", "INFO_ONLY")))
+              path_profile = str(entry.get("path_profile", classify_path_profile(str(entry.get("file", "")))))
+              source = str(entry.get("source", ""))
+
+              if decision == "HITL_REQUIRED":
+                  return (
+                      "ACTIVE_REPAIR_CANDIDATE",
+                      "HITL_REQUIRED finding: must remain visible for human review before merge or further action.",
+                  )
+              if decision == "FIX_RECOMMENDED":
+                  return (
+                      "ACTIVE_REPAIR_CANDIDATE",
+                      "FIX_RECOMMENDED finding: likely actionable, but still requires human review and manual adoption.",
+                  )
+              if decision == "REVIEW_RECOMMENDED":
+                  return (
+                      "REVIEW_ONLY",
+                      "Review-only finding: context should be checked before deciding whether to fix, document, suppress, or accept.",
+                  )
+              if path_profile in {"historical", "archive"}:
+                  return (
+                      "HISTORICAL_WARNING",
+                      "Historical or archive finding: kept visible for auditability, but not treated as an active repair target.",
+                  )
+              if decision == "NOISE_CANDIDATE":
+                  return (
+                      "NOISE_CANDIDATE",
+                      "Likely expected noise for tests, demos, research simulations, or known low-risk context.",
+                  )
+              if decision == "INFO_ONLY":
+                  return (
+                      "INFO_ONLY",
+                      "Informational finding: retained for traceability without active repair priority.",
+                  )
+              return (
+                  "REVIEW_ONLY",
+                  f"Unrecognized decision from {source}: defaulting to review-only validation.",
+              )
+
+          def validate_finding_policy(entry: dict[str, Any]) -> list[dict[str, Any]]:
+              violations: list[dict[str, Any]] = []
+              blocked_flags = (
+                  "auto_branch_allowed",
+                  "auto_pr_creation_allowed",
+                  "auto_commit_allowed",
+                  "auto_push_allowed",
+                  "auto_merge_allowed",
+                  "autofix_allowed",
+              )
+              for flag in blocked_flags:
+                  if bool(entry.get(flag)):
+                      violations.append(
+                          {
+                              "reason_code": "FINDING_VALIDATION_AUTO_POLICY_VIOLATION",
+                              "field": flag,
+                              "value": entry.get(flag),
+                              "file": entry.get("file", ""),
+                              "rule_id": entry.get("rule_id", ""),
+                          }
+                      )
+
+              autofix = entry.get("autofix", {})
+              if isinstance(autofix, dict):
+                  for flag in ("autofix_allowed", "auto_merge_allowed"):
+                      if bool(autofix.get(flag)):
+                          violations.append(
+                              {
+                                  "reason_code": "FINDING_VALIDATION_AUTOFIX_POLICY_VIOLATION",
+                                  "field": f"autofix.{flag}",
+                                  "value": autofix.get(flag),
+                                  "file": entry.get("file", ""),
+                                  "rule_id": entry.get("rule_id", ""),
+                              }
+                          )
+
+              verification = entry.get("fix_verification", {})
+              if isinstance(verification, dict) and bool(verification.get("modifies_repository")):
+                  violations.append(
+                      {
+                          "reason_code": "FINDING_VALIDATION_REPOSITORY_MUTATION_ATTEMPT",
+                          "field": "fix_verification.modifies_repository",
+                          "value": verification.get("modifies_repository"),
+                          "file": entry.get("file", ""),
+                          "rule_id": entry.get("rule_id", ""),
+                      }
+                  )
+
+              public_policy = entry.get("public_output_policy", {})
+              if isinstance(public_policy, dict):
+                  if bool(public_policy.get("include_exploit_payloads")) or bool(public_policy.get("include_attack_steps")):
+                      violations.append(
+                          {
+                              "reason_code": "FINDING_VALIDATION_PUBLIC_OUTPUT_POLICY_VIOLATION",
+                              "field": "public_output_policy",
+                              "value": public_policy,
+                              "file": entry.get("file", ""),
+                              "rule_id": entry.get("rule_id", ""),
+                          }
+                      )
+
+              return violations
+
+          def build_tasukeru_finding_validation_report(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Validate finding classifications without modifying findings.
+
+              This layer is report-only. It does not rewrite findings, tune rules,
+              generate patches, create PRs, commit, push, auto-fix, or auto-merge.
+              """
+              validated_findings: list[dict[str, Any]] = []
+              policy_violations: list[dict[str, Any]] = []
+
+              for index, entry in enumerate(entries, start=1):
+                  validation_class, validation_reason = classify_finding_validation_class(entry)
+                  entry_violations = validate_finding_policy(entry)
+                  policy_violations.extend(entry_violations)
+                  validated_findings.append(
+                      {
+                          "index": index,
+                          "source": entry.get("source", ""),
+                          "decision": entry.get("decision", entry.get("level", "")),
+                          "validation_class": validation_class,
+                          "validation_reason": validation_reason,
+                          "severity": entry.get("severity", ""),
+                          "rule_id": entry.get("rule_id", entry.get("code", "")),
+                          "reason_code": entry.get("reason_code", ""),
+                          "file": entry.get("file", ""),
+                          "line": entry.get("line"),
+                          "path_profile": entry.get("path_profile", classify_path_profile(str(entry.get("file", "")))),
+                          "fingerprint_hash": entry.get("fingerprint_hash", ""),
+                          "requires_human_review": entry.get("decision", entry.get("level", "")) in {
+                              "HITL_REQUIRED",
+                              "FIX_RECOMMENDED",
+                              "REVIEW_RECOMMENDED",
+                          },
+                          "patch_draft_allowed": False,
+                          "auto_apply_allowed": False,
+                      }
+                  )
+
+              validation_counts = Counter(item["validation_class"] for item in validated_findings)
+              decision_counts = Counter(str(entry.get("decision", entry.get("level", "UNKNOWN"))) for entry in entries)
+              source_counts = Counter(str(entry.get("source", "UNKNOWN")) for entry in entries)
+              path_profile_counts = Counter(str(item.get("path_profile", "UNKNOWN")) for item in validated_findings)
+              verified = not policy_violations
+              report = {
+                  "schema_version": "finding-validation-layer-v1",
+                  "verified": verified,
+                  "decision": "RUN" if verified else "PAUSE_FOR_HITL",
+                  "reason_code": "FINDING_VALIDATION_VERIFIED" if verified else "FINDING_VALIDATION_REVIEW_REQUIRED",
+                  "report_only": True,
+                  "finding_count": len(entries),
+                  "validation_counts": dict(sorted(validation_counts.items())),
+                  "decision_counts": dict(sorted(decision_counts.items())),
+                  "source_counts": dict(sorted(source_counts.items())),
+                  "path_profile_counts": dict(sorted(path_profile_counts.items())),
+                  "policy_violation_count": len(policy_violations),
+                  "policy_violations": policy_violations,
+                  "validated_findings": validated_findings,
+                  "policy": {
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "workflow_auto_edit_allowed": False,
+                      "self_definition_auto_update_allowed": False,
+                      "patch_generation_enabled": False,
+                      "human_decision_required_for_adoption": True,
+                  },
+              }
+              report["report_sha256"] = canonical_hash(
+                  {
+                      "schema_version": report["schema_version"],
+                      "verified": report["verified"],
+                      "decision": report["decision"],
+                      "reason_code": report["reason_code"],
+                      "finding_count": report["finding_count"],
+                      "validation_counts": report["validation_counts"],
+                      "policy_violation_count": report["policy_violation_count"],
+                      "policy_violations": report["policy_violations"],
+                  }
+              )
+              return report
+
+          def write_tasukeru_finding_validation_report(report: dict[str, Any]) -> None:
+              write_json(finding_validation_report_json_path, report)
+              verify_payload = {
+                  "schema_version": "finding-validation-verify-v1",
+                  "verified": bool(report.get("verified")),
+                  "decision": report.get("decision"),
+                  "reason_code": report.get("reason_code"),
+                  "finding_count": report.get("finding_count"),
+                  "validation_counts": report.get("validation_counts", {}),
+                  "policy_violation_count": report.get("policy_violation_count"),
+                  "report_artifact": str(finding_validation_report_json_path),
+                  "summary_artifact": str(finding_validation_report_md_path),
+                  "report_sha256": report.get("report_sha256"),
+                  "report_only": True,
+                  "auto_apply_allowed": False,
+                  "patch_generation_enabled": False,
+                  "human_decision_required_for_adoption": True,
+              }
+              write_json(finding_validation_verify_path, verify_payload)
+
+              with finding_validation_report_md_path.open("w", encoding="utf-8") as file_obj:
+                  file_obj.write("# Tasukeru Finding Validation Layer v1\n\n")
+                  file_obj.write("This report is advisory-only and report-only. It validates finding classifications without rewriting findings or applying fixes.\n\n")
+                  file_obj.write("## Result\n\n")
+                  file_obj.write(f"- Verified: `{report.get('verified')}`\n")
+                  file_obj.write(f"- Decision: `{report.get('decision')}`\n")
+                  file_obj.write(f"- Reason code: `{report.get('reason_code')}`\n")
+                  file_obj.write(f"- Finding count: `{report.get('finding_count')}`\n")
+                  file_obj.write(f"- Policy violation count: `{report.get('policy_violation_count')}`\n")
+                  file_obj.write(f"- Report hash: `{report.get('report_sha256')}`\n")
+                  file_obj.write("\n## Validation classes\n\n")
+                  for key, count in (report.get("validation_counts", {}) or {}).items():
+                      file_obj.write(f"- {key}: `{count}`\n")
+                  file_obj.write("\n## Decision counts\n\n")
+                  for key, count in (report.get("decision_counts", {}) or {}).items():
+                      file_obj.write(f"- {key}: `{count}`\n")
+                  file_obj.write("\n## Policy violations\n\n")
+                  violations = report.get("policy_violations", []) or []
+                  if not violations:
+                      file_obj.write("- None\n")
+                  else:
+                      for item in violations:
+                          file_obj.write(
+                              f"- `{item.get('reason_code')}` field=`{item.get('field')}` "
+                              f"file=`{item.get('file')}` rule=`{item.get('rule_id')}`\n"
+                          )
+                  file_obj.write("\n## Policy\n\n")
+                  file_obj.write("- Report-only: `true`\n")
+                  file_obj.write("- Patch generation: `false`\n")
+                  file_obj.write("- Auto branch creation: `false`\n")
+                  file_obj.write("- Auto PR creation: `false`\n")
+                  file_obj.write("- Auto commit: `false`\n")
+                  file_obj.write("- Auto push: `false`\n")
+                  file_obj.write("- Auto fix: `false`\n")
+                  file_obj.write("- Auto merge: `false`\n")
+                  file_obj.write("- Human adoption required: `true`\n")
+
+          def generate_tasukeru_finding_validation_report(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> dict[str, Any]:
+              report = build_tasukeru_finding_validation_report(entries, state, metadata)
+              write_tasukeru_finding_validation_report(report)
+              return report
+
           def parse_summary_decision_counts(summary_text: str) -> dict[str, int]:
               parsed: dict[str, int] = {}
               for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
@@ -3837,6 +4096,7 @@ jobs:
               gate_adoption_verify_payload = read_json(gate_adoption_verify_path, {})
               self_definition_verify_payload = read_json(self_definition_verify_path, {})
               decision_diary_verify_payload = read_json(decision_diary_verify_path, {})
+              finding_validation_verify_payload = read_json(finding_validation_verify_path, {})
               summary_text = read_text(summary_path, "")
               summary_counts = parse_summary_decision_counts(summary_text)
 
@@ -3972,6 +4232,24 @@ jobs:
                       artifact=str(decision_diary_verify_path),
                       reason_code="RESULT_DECISION_DIARY_MISMATCH",
                   )
+              finding_validation = metadata.get("finding_validation", {}) if isinstance(metadata, dict) else {}
+              if finding_validation_verify_path.exists():
+                  compare_result_field(
+                      mismatches,
+                      field="finding_validation.verified",
+                      process_value=bool(finding_validation.get("verified")),
+                      output_value=bool(finding_validation_verify_payload.get("verified")),
+                      artifact=str(finding_validation_verify_path),
+                      reason_code="RESULT_FINDING_VALIDATION_MISMATCH",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="finding_validation.finding_count",
+                      process_value=finding_validation.get("finding_count"),
+                      output_value=finding_validation_verify_payload.get("finding_count"),
+                      artifact=str(finding_validation_verify_path),
+                      reason_code="RESULT_FINDING_VALIDATION_COUNT_MISMATCH",
+                  )
 
               # Automation policy must remain false across the result layer.
               automation_policy = {
@@ -4003,6 +4281,7 @@ jobs:
                       str(gate_adoption_verify_path),
                       str(self_definition_verify_path),
                       str(decision_diary_verify_path),
+                      str(finding_validation_verify_path),
                   ],
                   "process_counts": normalized_counts,
                   "summary_counts": summary_counts,
@@ -4653,6 +4932,13 @@ jobs:
               "pip_audit_exit": read_exit("pip-audit.exit"),
           }
 
+          finding_validation_result = generate_tasukeru_finding_validation_report(
+              all_entries,
+              notification_state,
+              metadata,
+          )
+          metadata["finding_validation"] = finding_validation_result
+
           write_outputs(all_entries, notification_state, metadata)
           generate_dradm_draft_artifacts(all_entries, notification_state, metadata)
           generate_readme_refinement_artifacts(metadata)
@@ -4719,6 +5005,16 @@ jobs:
           for stage in middle_flags.get("stages", []) or []:
               print(f"Stage {stage.get('stage')} {stage.get('feature')}: {stage.get('status')} adopted={stage.get('adopted_as_gate')}")
           print("")
+          print("Finding Validation Layer v1")
+          finding_validation = metadata.get("finding_validation", {})
+          print(f"Finding validation verified: {finding_validation.get('verified')}")
+          print(f"Finding validation decision: {finding_validation.get('decision')}")
+          print(f"Finding validation policy violations: {finding_validation.get('policy_violation_count')}")
+          validation_counts = finding_validation.get("validation_counts", {}) or {}
+          for key in ("ACTIVE_REPAIR_CANDIDATE", "REVIEW_ONLY", "HISTORICAL_WARNING", "NOISE_CANDIDATE", "INFO_ONLY"):
+              if key in validation_counts:
+                  print(f"{key}: {validation_counts.get(key)}")
+          print("")
           print("Result Consistency Auditor v1")
           result_consistency = metadata.get("result_consistency", {})
           print(f"Result consistency verified: {result_consistency.get('verified')}")
@@ -4766,6 +5062,9 @@ jobs:
             tasukeru_result_consistency_report.md
             tasukeru_result_consistency_report.json
             tasukeru_result_consistency_verify.json
+            tasukeru_finding_validation_report.md
+            tasukeru_finding_validation_report.json
+            tasukeru_finding_validation_verify.json
             tasukeru_arl.jsonl
             tasukeru_arl_verify.json
           if-no-files-found: ignore
