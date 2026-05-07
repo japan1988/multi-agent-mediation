@@ -228,6 +228,9 @@ jobs:
           finding_validation_report_md_path = Path("tasukeru_finding_validation_report.md")
           finding_validation_report_json_path = Path("tasukeru_finding_validation_report.json")
           finding_validation_verify_path = Path("tasukeru_finding_validation_verify.json")
+          clean_run_draft_md_path = Path("tasukeru_clean_run_draft.md")
+          clean_run_draft_json_path = Path("tasukeru_clean_run_draft.json")
+          clean_run_draft_verify_path = Path("tasukeru_clean_run_draft_verify.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -4041,6 +4044,174 @@ jobs:
               write_tasukeru_finding_validation_report(report)
               return report
 
+          def build_tasukeru_clean_run_draft(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+              announcement: dict[str, Any],
+              result_consistency: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Generate a draft-only clean-run or review-status note.
+
+              This layer does not change findings, rewrite artifacts, create PRs,
+              commit, push, auto-fix, or auto-merge. It exists only to make the
+              no-active-repair state reviewable for humans.
+              """
+              counts = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
+              finding_validation = metadata.get("finding_validation", {}) if isinstance(metadata, dict) else {}
+              self_definition = metadata.get("self_definition", {}) if isinstance(metadata, dict) else {}
+              middle_layer = metadata.get("middle_layer", {}) if isinstance(metadata, dict) else {}
+              middle_verify = middle_layer.get("verify", {}) if isinstance(middle_layer, dict) else {}
+
+              checks = {
+                  "hitl_required_zero": int(counts.get("HITL_REQUIRED", 0)) == 0,
+                  "arl_verified": bool(arl_verification.get("verified")),
+                  "result_consistency_verified": bool(result_consistency.get("verified")),
+                  "finding_validation_verified": bool(finding_validation.get("verified")),
+                  "finding_validation_policy_violations_zero": int(finding_validation.get("policy_violation_count", 0) or 0) == 0,
+                  "self_definition_verified": bool(self_definition.get("verified")),
+                  "middle_layer_verified": bool(middle_verify.get("verified")),
+                  "automation_policy_locked": True,
+              }
+              blockers = [key for key, value in checks.items() if not value]
+              clean_ready = not blockers
+              mode = "CLEAN_RUN_REVIEW_DRAFT" if clean_ready else "REVIEW_STATUS_DRAFT"
+              reason_code = "CLEAN_RUN_DRAFT_GENERATED" if clean_ready else "CLEAN_RUN_DRAFT_BLOCKED_BY_REVIEW_ITEMS"
+
+              review_queue = {
+                  "HITL_REQUIRED": int(counts.get("HITL_REQUIRED", 0)),
+                  "FIX_RECOMMENDED": int(counts.get("FIX_RECOMMENDED", 0)),
+                  "REVIEW_RECOMMENDED": int(counts.get("REVIEW_RECOMMENDED", 0)),
+                  "NOISE_CANDIDATE": int(counts.get("NOISE_CANDIDATE", 0)),
+                  "INFO_ONLY": int(counts.get("INFO_ONLY", 0)),
+              }
+              draft = {
+                  "schema_version": "clean-run-draft-layer-v1",
+                  "generated": True,
+                  "clean_run_ready": clean_ready,
+                  "mode": mode,
+                  "decision": "RUN" if clean_ready else "PAUSE_FOR_HITL",
+                  "reason_code": reason_code,
+                  "blockers": blockers,
+                  "checks": checks,
+                  "review_queue": review_queue,
+                  "summary": {
+                      "finding_count": len(entries),
+                      "arl_rows": arl_verification.get("row_count"),
+                      "announcement_mode": announcement.get("mode"),
+                      "result_consistency_mismatch_count": result_consistency.get("mismatch_count"),
+                      "finding_validation_policy_violation_count": finding_validation.get("policy_violation_count"),
+                  },
+                  "human_review_note": (
+                      "No active HITL blocker was detected and verification layers passed."
+                      if clean_ready
+                      else "This is a review-status draft because one or more clean-run checks did not pass."
+                  ),
+                  "policy": {
+                      "report_only": True,
+                      "draft_only": True,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "workflow_auto_edit_allowed": False,
+                      "self_definition_auto_update_allowed": False,
+                      "auto_apply_allowed": False,
+                      "human_decision_required_for_adoption": True,
+                  },
+              }
+              draft["draft_sha256"] = canonical_hash(
+                  {
+                      "schema_version": draft["schema_version"],
+                      "generated": draft["generated"],
+                      "clean_run_ready": draft["clean_run_ready"],
+                      "mode": draft["mode"],
+                      "decision": draft["decision"],
+                      "reason_code": draft["reason_code"],
+                      "blockers": draft["blockers"],
+                      "checks": draft["checks"],
+                      "review_queue": draft["review_queue"],
+                  }
+              )
+              return draft
+
+          def write_tasukeru_clean_run_draft(draft: dict[str, Any]) -> None:
+              write_json(clean_run_draft_json_path, draft)
+              verify_payload = {
+                  "schema_version": "clean-run-draft-verify-v1",
+                  "verified": True,
+                  "generated": bool(draft.get("generated")),
+                  "clean_run_ready": bool(draft.get("clean_run_ready")),
+                  "mode": draft.get("mode"),
+                  "decision": draft.get("decision"),
+                  "reason_code": draft.get("reason_code"),
+                  "blockers": draft.get("blockers", []),
+                  "report_artifact": str(clean_run_draft_json_path),
+                  "summary_artifact": str(clean_run_draft_md_path),
+                  "draft_sha256": draft.get("draft_sha256"),
+                  "report_only": True,
+                  "draft_only": True,
+                  "auto_apply_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "auto_fix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "human_decision_required_for_adoption": True,
+              }
+              write_json(clean_run_draft_verify_path, verify_payload)
+
+              with clean_run_draft_md_path.open("w", encoding="utf-8") as file_obj:
+                  file_obj.write("# Tasukeru Clean Run Draft Layer v1\n\n")
+                  file_obj.write("This artifact is draft-only and report-only. It does not apply fixes, create PRs, commit, push, or merge.\n\n")
+                  file_obj.write("## Result\n\n")
+                  file_obj.write(f"- Generated: `{draft.get('generated')}`\n")
+                  file_obj.write(f"- Clean run ready: `{draft.get('clean_run_ready')}`\n")
+                  file_obj.write(f"- Mode: `{draft.get('mode')}`\n")
+                  file_obj.write(f"- Decision: `{draft.get('decision')}`\n")
+                  file_obj.write(f"- Reason code: `{draft.get('reason_code')}`\n")
+                  file_obj.write(f"- Draft hash: `{draft.get('draft_sha256')}`\n")
+                  file_obj.write("\n## Checks\n\n")
+                  for key, value in (draft.get("checks", {}) or {}).items():
+                      file_obj.write(f"- {key}: `{value}`\n")
+                  file_obj.write("\n## Review queue\n\n")
+                  for key, value in (draft.get("review_queue", {}) or {}).items():
+                      file_obj.write(f"- {key}: `{value}`\n")
+                  file_obj.write("\n## Blockers\n\n")
+                  blockers = draft.get("blockers", []) or []
+                  if not blockers:
+                      file_obj.write("- None\n")
+                  else:
+                      for blocker in blockers:
+                          file_obj.write(f"- `{blocker}`\n")
+                  file_obj.write("\n## Human review note\n\n")
+                  file_obj.write(str(draft.get("human_review_note", "")) + "\n")
+                  file_obj.write("\n## Policy\n\n")
+                  file_obj.write("- Report-only: `true`\n")
+                  file_obj.write("- Draft-only: `true`\n")
+                  file_obj.write("- Auto branch creation: `false`\n")
+                  file_obj.write("- Auto PR creation: `false`\n")
+                  file_obj.write("- Auto commit: `false`\n")
+                  file_obj.write("- Auto push: `false`\n")
+                  file_obj.write("- Auto fix: `false`\n")
+                  file_obj.write("- Auto merge: `false`\n")
+                  file_obj.write("- Human adoption required: `true`\n")
+
+          def generate_tasukeru_clean_run_draft(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+              announcement: dict[str, Any],
+              result_consistency: dict[str, Any],
+          ) -> dict[str, Any]:
+              draft = build_tasukeru_clean_run_draft(entries, state, metadata, arl_verification, announcement, result_consistency)
+              write_tasukeru_clean_run_draft(draft)
+              return draft
+
           def parse_summary_decision_counts(summary_text: str) -> dict[str, int]:
               parsed: dict[str, int] = {}
               for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
@@ -4097,6 +4268,7 @@ jobs:
               self_definition_verify_payload = read_json(self_definition_verify_path, {})
               decision_diary_verify_payload = read_json(decision_diary_verify_path, {})
               finding_validation_verify_payload = read_json(finding_validation_verify_path, {})
+              clean_run_draft_verify_payload = read_json(clean_run_draft_verify_path, {})
               summary_text = read_text(summary_path, "")
               summary_counts = parse_summary_decision_counts(summary_text)
 
@@ -4250,6 +4422,24 @@ jobs:
                       artifact=str(finding_validation_verify_path),
                       reason_code="RESULT_FINDING_VALIDATION_COUNT_MISMATCH",
                   )
+              clean_run_draft = metadata.get("clean_run_draft", {}) if isinstance(metadata, dict) else {}
+              if clean_run_draft_verify_path.exists():
+                  compare_result_field(
+                      mismatches,
+                      field="clean_run_draft.generated",
+                      process_value=bool(clean_run_draft.get("generated")),
+                      output_value=bool(clean_run_draft_verify_payload.get("generated")),
+                      artifact=str(clean_run_draft_verify_path),
+                      reason_code="RESULT_CLEAN_RUN_DRAFT_MISMATCH",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="clean_run_draft.clean_run_ready",
+                      process_value=bool(clean_run_draft.get("clean_run_ready")),
+                      output_value=bool(clean_run_draft_verify_payload.get("clean_run_ready")),
+                      artifact=str(clean_run_draft_verify_path),
+                      reason_code="RESULT_CLEAN_RUN_DRAFT_READY_MISMATCH",
+                  )
 
               # Automation policy must remain false across the result layer.
               automation_policy = {
@@ -4282,6 +4472,7 @@ jobs:
                       str(self_definition_verify_path),
                       str(decision_diary_verify_path),
                       str(finding_validation_verify_path),
+                      str(clean_run_draft_verify_path),
                   ],
                   "process_counts": normalized_counts,
                   "summary_counts": summary_counts,
@@ -4963,6 +5154,23 @@ jobs:
               announcement,
           )
           metadata["result_consistency"] = result_consistency
+          clean_run_draft = generate_tasukeru_clean_run_draft(
+              all_entries,
+              notification_state,
+              metadata,
+              arl_verification,
+              announcement,
+              result_consistency,
+          )
+          metadata["clean_run_draft"] = clean_run_draft
+          result_consistency = generate_tasukeru_result_consistency_report(
+              all_entries,
+              notification_state,
+              metadata,
+              arl_verification,
+              announcement,
+          )
+          metadata["result_consistency"] = result_consistency
 
           print("# Tasukeru advisory summary")
           print(f"Ruff findings: {metadata['ruff_count']}")
@@ -5015,6 +5223,13 @@ jobs:
               if key in validation_counts:
                   print(f"{key}: {validation_counts.get(key)}")
           print("")
+          print("Clean Run Draft Layer v1")
+          clean_run_draft = metadata.get("clean_run_draft", {})
+          print(f"Clean run draft generated: {clean_run_draft.get('generated')}")
+          print(f"Clean run ready: {clean_run_draft.get('clean_run_ready')}")
+          print(f"Clean run draft mode: {clean_run_draft.get('mode')}")
+          print(f"Clean run draft decision: {clean_run_draft.get('decision')}")
+          print("")
           print("Result Consistency Auditor v1")
           result_consistency = metadata.get("result_consistency", {})
           print(f"Result consistency verified: {result_consistency.get('verified')}")
@@ -5065,6 +5280,9 @@ jobs:
             tasukeru_finding_validation_report.md
             tasukeru_finding_validation_report.json
             tasukeru_finding_validation_verify.json
+            tasukeru_clean_run_draft.md
+            tasukeru_clean_run_draft.json
+            tasukeru_clean_run_draft_verify.json
             tasukeru_arl.jsonl
             tasukeru_arl_verify.json
           if-no-files-found: ignore
