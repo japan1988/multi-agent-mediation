@@ -231,6 +231,9 @@ jobs:
           clean_run_draft_md_path = Path("tasukeru_clean_run_draft.md")
           clean_run_draft_json_path = Path("tasukeru_clean_run_draft.json")
           clean_run_draft_verify_path = Path("tasukeru_clean_run_draft_verify.json")
+          pr_draft_md_path = Path("tasukeru_pr_draft.md")
+          pr_draft_json_path = Path("tasukeru_pr_draft.json")
+          pr_draft_verify_path = Path("tasukeru_pr_draft_verify.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -4212,6 +4215,341 @@ jobs:
               write_tasukeru_clean_run_draft(draft)
               return draft
 
+          def read_pr_draft_changed_files() -> list[str]:
+              candidates = [
+                  Path("tasukeru_changed_files.txt"),
+                  log_dir / "scanned-files.txt",
+              ]
+              for path in candidates:
+                  if path.exists():
+                      files = [
+                          normalize_path(line.strip())
+                          for line in read_text(path, "").splitlines()
+                          if line.strip()
+                      ]
+                      if files:
+                          return sorted(dict.fromkeys(files))
+              return []
+
+          def collect_pr_draft_artifact_status() -> list[dict[str, Any]]:
+              artifact_paths = [
+                  summary_path,
+                  hitl_md_path,
+                  hitl_json_path,
+                  notification_state_path,
+                  pr_comment_path,
+                  dradm_md_path,
+                  dradm_json_path,
+                  confidence_md_path,
+                  confidence_json_path,
+                  readme_refinement_md_path,
+                  readme_refinement_json_path,
+                  arl_jsonl_path,
+                  arl_verify_json_path,
+                  self_definition_effective_path,
+                  self_definition_chain_path,
+                  self_definition_verify_path,
+                  gate_flags_path,
+                  gate_adoption_log_path,
+                  gate_adoption_verify_path,
+                  decision_diary_md_path,
+                  decision_diary_jsonl_path,
+                  decision_diary_verify_path,
+                  announcement_md_path,
+                  announcement_json_path,
+                  finding_validation_report_md_path,
+                  finding_validation_report_json_path,
+                  finding_validation_verify_path,
+                  clean_run_draft_md_path,
+                  clean_run_draft_json_path,
+                  clean_run_draft_verify_path,
+                  result_consistency_report_md_path,
+                  result_consistency_report_json_path,
+                  result_consistency_verify_path,
+                  pr_draft_md_path,
+                  pr_draft_json_path,
+                  pr_draft_verify_path,
+              ]
+              artifacts: list[dict[str, Any]] = []
+              for path in artifact_paths:
+                  exists = path.exists()
+                  artifacts.append(
+                      {
+                          "path": str(path),
+                          "exists": exists,
+                          "size_bytes": path.stat().st_size if exists else 0,
+                          "sha256": sha256_text(read_text(path, "")) if exists and path.is_file() else "",
+                      }
+                  )
+              return artifacts
+
+          def build_pr_draft_markdown(draft: dict[str, Any]) -> str:
+              lines: list[str] = []
+              lines.append("# Tasukeru PR Draft")
+              lines.append("")
+              lines.append("This is a draft-only PR description generated for human review.")
+              lines.append("It does not create a pull request, commit changes, push changes, apply fixes, or merge anything.")
+              lines.append("")
+              lines.append("## Summary")
+              lines.append("")
+              lines.append("- Tasukeru Analysis reviewed the changed files and generated advisory artifacts.")
+              lines.append("- This draft summarizes the changed files, generated artifacts, verification results, and automation policy.")
+              lines.append("- Human review is required before any merge or external adoption.")
+              lines.append("")
+              lines.append("## Changed files")
+              lines.append("")
+              changed_files = draft.get("changed_files", []) or []
+              if changed_files:
+                  for file_path in changed_files:
+                      lines.append(f"- `{file_path}`")
+              else:
+                  lines.append("- No changed files were recorded by `tasukeru_changed_files.txt` or `tasukeru_logs/scanned-files.txt`.")
+              lines.append("")
+              lines.append("## What changed")
+              lines.append("")
+              lines.append("- See the listed changed files and the repository diff for the exact content changes.")
+              lines.append("- Tasukeru generated review artifacts to support human verification.")
+              lines.append("- This draft intentionally avoids claiming that all issues are fixed or that the PR is automatically approved.")
+              lines.append("")
+              lines.append("## What did not change")
+              lines.append("")
+              for item in draft.get("unchanged_policy_claims", []) or []:
+                  lines.append(f"- {item}")
+              lines.append("")
+              lines.append("## Generated artifacts")
+              lines.append("")
+              for artifact in draft.get("generated_artifacts", []) or []:
+                  exists = artifact.get("exists")
+                  marker = "present" if exists else "not present yet"
+                  lines.append(f"- `{artifact.get('path')}`: {marker}")
+              lines.append("")
+              lines.append("## Verification results")
+              lines.append("")
+              for key, value in (draft.get("verification_results", {}) or {}).items():
+                  lines.append(f"- {key}: `{value}`")
+              lines.append("")
+              lines.append("## Review queue")
+              lines.append("")
+              for key, value in (draft.get("review_queue", {}) or {}).items():
+                  lines.append(f"- {key}: `{value}`")
+              lines.append("")
+              lines.append("## Automation policy")
+              lines.append("")
+              for key, value in (draft.get("automation_policy", {}) or {}).items():
+                  lines.append(f"- {key}: `{value}`")
+              lines.append("")
+              lines.append("## Human review required")
+              lines.append("")
+              lines.append("This PR draft is advisory-only. A human maintainer must review the diff, artifacts, and CI results before merge.")
+              lines.append("")
+              return "\n".join(lines) + "\n"
+
+          def validate_pr_draft_markdown(markdown_text: str, draft: dict[str, Any]) -> list[dict[str, Any]]:
+              contradictions: list[dict[str, Any]] = []
+              forbidden_patterns = {
+                  "FORBIDDEN_READY_TO_MERGE": r"\bready\s+to\s+merge\b",
+                  "FORBIDDEN_FULLY_SAFE": r"\bfully\s+safe\b",
+                  "FORBIDDEN_AUTOMATICALLY_APPROVED": r"\bautomatically\s+approved\b",
+                  "FORBIDDEN_ALL_ISSUES_FIXED": r"\ball\s+issues\s+fixed\b",
+                  "FORBIDDEN_NO_RISK": r"\bno\s+risk\b",
+                  "FORBIDDEN_AUTO_PR_ENABLED": r"\bauto(?:matic)?\s+pr\s+(?:enabled|allowed)\b",
+                  "FORBIDDEN_AUTO_MERGE_ENABLED": r"\bauto(?:matic)?\s+merge\s+(?:enabled|allowed)\b",
+              }
+              for reason_code, pattern in forbidden_patterns.items():
+                  if re.search(pattern, markdown_text, re.IGNORECASE):
+                      contradictions.append(
+                          {
+                              "reason_code": reason_code,
+                              "message": "Forbidden overclaim or automation-enabling phrase detected in PR draft.",
+                          }
+                      )
+
+              for file_path in draft.get("changed_files", []) or []:
+                  if f"`{file_path}`" not in markdown_text:
+                      contradictions.append(
+                          {
+                              "reason_code": "PR_DRAFT_CHANGED_FILE_MISSING",
+                              "message": f"Changed file is missing from markdown draft: {file_path}",
+                          }
+                      )
+
+              policy = draft.get("automation_policy", {}) or {}
+              blocked_flags = (
+                  "auto_pr_creation_allowed",
+                  "auto_commit_allowed",
+                  "auto_push_allowed",
+                  "autofix_allowed",
+                  "auto_merge_allowed",
+                  "workflow_auto_edit_allowed",
+                  "self_definition_auto_update_allowed",
+              )
+              for flag in blocked_flags:
+                  if bool(policy.get(flag)):
+                      contradictions.append(
+                          {
+                              "reason_code": "PR_DRAFT_AUTOMATION_POLICY_CONTRADICTION",
+                              "message": f"Automation policy must remain false: {flag}",
+                          }
+                      )
+
+              return contradictions
+
+          def build_tasukeru_pr_draft(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+              announcement: dict[str, Any],
+              result_consistency: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Generate a PR body draft that stays consistent with observed process data.
+
+              This layer is artifact-only and draft-only. It does not create PRs,
+              commit, push, apply fixes, merge, auto-edit workflows, or update
+              self-definition automatically.
+              """
+              counts = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
+              changed_files = read_pr_draft_changed_files()
+              generated_artifacts = collect_pr_draft_artifact_status()
+              finding_validation = metadata.get("finding_validation", {}) if isinstance(metadata, dict) else {}
+              clean_run_draft = metadata.get("clean_run_draft", {}) if isinstance(metadata, dict) else {}
+              self_definition = metadata.get("self_definition", {}) if isinstance(metadata, dict) else {}
+              middle_layer = metadata.get("middle_layer", {}) if isinstance(metadata, dict) else {}
+              middle_verify = middle_layer.get("verify", {}) if isinstance(middle_layer, dict) else {}
+
+              automation_policy = {
+                  "auto_branch_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "autofix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "workflow_auto_edit_allowed": False,
+                  "self_definition_auto_update_allowed": False,
+                  "github_pr_creation_performed": False,
+                  "human_decision_required_for_merge": True,
+              }
+              verification_results = {
+                  "arl_verified": bool(arl_verification.get("verified")),
+                  "result_consistency_verified": bool(result_consistency.get("verified")),
+                  "result_consistency_mismatch_count": int(result_consistency.get("mismatch_count", 0) or 0),
+                  "finding_validation_verified": bool(finding_validation.get("verified")),
+                  "finding_validation_policy_violations": int(finding_validation.get("policy_violation_count", 0) or 0),
+                  "clean_run_draft_generated": bool(clean_run_draft.get("generated")),
+                  "clean_run_ready": bool(clean_run_draft.get("clean_run_ready")),
+                  "self_definition_verified": bool(self_definition.get("verified")),
+                  "middle_layer_verified": bool(middle_verify.get("verified")),
+              }
+              review_queue = {
+                  "HITL_REQUIRED": int(counts.get("HITL_REQUIRED", 0)),
+                  "FIX_RECOMMENDED": int(counts.get("FIX_RECOMMENDED", 0)),
+                  "REVIEW_RECOMMENDED": int(counts.get("REVIEW_RECOMMENDED", 0)),
+                  "NOISE_CANDIDATE": int(counts.get("NOISE_CANDIDATE", 0)),
+                  "INFO_ONLY": int(counts.get("INFO_ONLY", 0)),
+              }
+              draft: dict[str, Any] = {
+                  "schema_version": "pr-draft-consistency-layer-v1",
+                  "generated": True,
+                  "verified": False,
+                  "decision": "PAUSE_FOR_HITL",
+                  "reason_code": "PR_DRAFT_PENDING_VERIFICATION",
+                  "draft_only": True,
+                  "artifact_only": True,
+                  "changed_files": changed_files,
+                  "changed_file_count": len(changed_files),
+                  "generated_artifacts": generated_artifacts,
+                  "generated_artifact_count": sum(1 for artifact in generated_artifacts if artifact.get("exists")),
+                  "verification_results": verification_results,
+                  "review_queue": review_queue,
+                  "automation_policy": automation_policy,
+                  "unchanged_policy_claims": [
+                      "No automatic PR creation was performed.",
+                      "No automatic commit was performed.",
+                      "No automatic push was performed.",
+                      "No automatic fix was applied.",
+                      "No automatic merge was performed.",
+                      "No workflow self-editing was performed.",
+                      "No self-definition auto-update was performed.",
+                  ],
+                  "source_of_truth": {
+                      "changed_files": "tasukeru_changed_files.txt or tasukeru_logs/scanned-files.txt",
+                      "generated_artifacts": "artifact path existence at generation time",
+                      "verification_results": "Tasukeru verification metadata",
+                      "automation_policy": "hard-coded false policy in this layer",
+                  },
+              }
+              markdown_text = build_pr_draft_markdown(draft)
+              contradictions = validate_pr_draft_markdown(markdown_text, draft)
+              verified = not contradictions
+              draft["markdown"] = markdown_text
+              draft["contradictions"] = contradictions
+              draft["contradiction_count"] = len(contradictions)
+              draft["verified"] = verified
+              draft["decision"] = "RUN" if verified else "PAUSE_FOR_HITL"
+              draft["reason_code"] = "PR_DRAFT_CONSISTENCY_VERIFIED" if verified else "PR_DRAFT_CONSISTENCY_MISMATCH"
+              draft["markdown_sha256"] = sha256_text(markdown_text)
+              draft["draft_sha256"] = canonical_hash(
+                  {
+                      "schema_version": draft["schema_version"],
+                      "generated": draft["generated"],
+                      "verified": draft["verified"],
+                      "decision": draft["decision"],
+                      "reason_code": draft["reason_code"],
+                      "changed_files": draft["changed_files"],
+                      "generated_artifact_count": draft["generated_artifact_count"],
+                      "verification_results": draft["verification_results"],
+                      "review_queue": draft["review_queue"],
+                      "automation_policy": draft["automation_policy"],
+                      "contradiction_count": draft["contradiction_count"],
+                      "contradictions": draft["contradictions"],
+                  }
+              )
+              return draft
+
+          def write_tasukeru_pr_draft(draft: dict[str, Any]) -> None:
+              pr_draft_md_path.write_text(str(draft.get("markdown", "")), encoding="utf-8")
+              json_payload = {key: value for key, value in draft.items() if key != "markdown"}
+              write_json(pr_draft_json_path, json_payload)
+              verify_payload = {
+                  "schema_version": "pr-draft-consistency-verify-v1",
+                  "verified": bool(draft.get("verified")),
+                  "generated": bool(draft.get("generated")),
+                  "decision": draft.get("decision"),
+                  "reason_code": draft.get("reason_code"),
+                  "changed_file_count": draft.get("changed_file_count"),
+                  "generated_artifact_count": draft.get("generated_artifact_count"),
+                  "contradiction_count": draft.get("contradiction_count"),
+                  "contradictions": draft.get("contradictions", []),
+                  "report_artifact": str(pr_draft_json_path),
+                  "summary_artifact": str(pr_draft_md_path),
+                  "draft_sha256": draft.get("draft_sha256"),
+                  "markdown_sha256": draft.get("markdown_sha256"),
+                  "artifact_only": True,
+                  "draft_only": True,
+                  "auto_apply_allowed": False,
+                  "auto_pr_creation_allowed": False,
+                  "auto_commit_allowed": False,
+                  "auto_push_allowed": False,
+                  "auto_fix_allowed": False,
+                  "auto_merge_allowed": False,
+                  "workflow_auto_edit_allowed": False,
+                  "self_definition_auto_update_allowed": False,
+                  "human_decision_required_for_merge": True,
+              }
+              write_json(pr_draft_verify_path, verify_payload)
+
+          def generate_tasukeru_pr_draft(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+              arl_verification: dict[str, Any],
+              announcement: dict[str, Any],
+              result_consistency: dict[str, Any],
+          ) -> dict[str, Any]:
+              draft = build_tasukeru_pr_draft(entries, state, metadata, arl_verification, announcement, result_consistency)
+              write_tasukeru_pr_draft(draft)
+              return draft
+
           def parse_summary_decision_counts(summary_text: str) -> dict[str, int]:
               parsed: dict[str, int] = {}
               for level in ("HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"):
@@ -4269,6 +4607,7 @@ jobs:
               decision_diary_verify_payload = read_json(decision_diary_verify_path, {})
               finding_validation_verify_payload = read_json(finding_validation_verify_path, {})
               clean_run_draft_verify_payload = read_json(clean_run_draft_verify_path, {})
+              pr_draft_verify_payload = read_json(pr_draft_verify_path, {})
               summary_text = read_text(summary_path, "")
               summary_counts = parse_summary_decision_counts(summary_text)
 
@@ -4440,6 +4779,32 @@ jobs:
                       artifact=str(clean_run_draft_verify_path),
                       reason_code="RESULT_CLEAN_RUN_DRAFT_READY_MISMATCH",
                   )
+              pr_draft = metadata.get("pr_draft", {}) if isinstance(metadata, dict) else {}
+              if pr_draft_verify_path.exists():
+                  compare_result_field(
+                      mismatches,
+                      field="pr_draft.verified",
+                      process_value=bool(pr_draft.get("verified")),
+                      output_value=bool(pr_draft_verify_payload.get("verified")),
+                      artifact=str(pr_draft_verify_path),
+                      reason_code="RESULT_PR_DRAFT_VERIFY_MISMATCH",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="pr_draft.changed_file_count",
+                      process_value=pr_draft.get("changed_file_count"),
+                      output_value=pr_draft_verify_payload.get("changed_file_count"),
+                      artifact=str(pr_draft_verify_path),
+                      reason_code="RESULT_PR_DRAFT_CHANGED_FILES_MISMATCH",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="pr_draft.contradiction_count",
+                      process_value=pr_draft.get("contradiction_count"),
+                      output_value=pr_draft_verify_payload.get("contradiction_count"),
+                      artifact=str(pr_draft_verify_path),
+                      reason_code="RESULT_PR_DRAFT_CONTRADICTION_MISMATCH",
+                  )
 
               # Automation policy must remain false across the result layer.
               automation_policy = {
@@ -4473,6 +4838,7 @@ jobs:
                       str(decision_diary_verify_path),
                       str(finding_validation_verify_path),
                       str(clean_run_draft_verify_path),
+                      str(pr_draft_verify_path),
                   ],
                   "process_counts": normalized_counts,
                   "summary_counts": summary_counts,
@@ -5171,6 +5537,23 @@ jobs:
               announcement,
           )
           metadata["result_consistency"] = result_consistency
+          pr_draft = generate_tasukeru_pr_draft(
+              all_entries,
+              notification_state,
+              metadata,
+              arl_verification,
+              announcement,
+              result_consistency,
+          )
+          metadata["pr_draft"] = pr_draft
+          result_consistency = generate_tasukeru_result_consistency_report(
+              all_entries,
+              notification_state,
+              metadata,
+              arl_verification,
+              announcement,
+          )
+          metadata["result_consistency"] = result_consistency
 
           print("# Tasukeru advisory summary")
           print(f"Ruff findings: {metadata['ruff_count']}")
@@ -5230,6 +5613,14 @@ jobs:
           print(f"Clean run draft mode: {clean_run_draft.get('mode')}")
           print(f"Clean run draft decision: {clean_run_draft.get('decision')}")
           print("")
+          print("PR Draft Consistency Layer v1")
+          pr_draft = metadata.get("pr_draft", {})
+          print(f"PR draft generated: {pr_draft.get('generated')}")
+          print(f"PR draft verified: {pr_draft.get('verified')}")
+          print(f"PR draft decision: {pr_draft.get('decision')}")
+          print(f"PR draft changed files: {pr_draft.get('changed_file_count')}")
+          print(f"PR draft contradictions: {pr_draft.get('contradiction_count')}")
+          print("")
           print("Result Consistency Auditor v1")
           result_consistency = metadata.get("result_consistency", {})
           print(f"Result consistency verified: {result_consistency.get('verified')}")
@@ -5283,6 +5674,9 @@ jobs:
             tasukeru_clean_run_draft.md
             tasukeru_clean_run_draft.json
             tasukeru_clean_run_draft_verify.json
+            tasukeru_pr_draft.md
+            tasukeru_pr_draft.json
+            tasukeru_pr_draft_verify.json
             tasukeru_arl.jsonl
             tasukeru_arl_verify.json
           if-no-files-found: ignore
