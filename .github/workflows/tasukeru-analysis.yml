@@ -532,7 +532,10 @@ jobs:
               return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
           def normalize_path(path: str) -> str:
-              return path.replace("\\", "/").lstrip("./")
+              normalized = path.replace("\\", "/")
+              while normalized.startswith("./"):
+                  normalized = normalized[2:]
+              return normalized
 
           def normalized_message(message: str) -> str:
               text = message.lower()
@@ -4308,13 +4311,23 @@ jobs:
                   pr_draft_json_path,
                   pr_draft_verify_path,
               ]
+              self_artifact_paths = {
+                  str(pr_draft_md_path),
+                  str(pr_draft_json_path),
+                  str(pr_draft_verify_path),
+              }
               artifacts: list[dict[str, Any]] = []
               for path in artifact_paths:
                   exists = path.exists()
+                  path_text = str(path)
+                  status = "present" if exists else "not_present_yet"
+                  if not exists and path_text in self_artifact_paths:
+                      status = "will_be_generated_by_this_layer"
                   artifacts.append(
                       {
-                          "path": str(path),
+                          "path": path_text,
                           "exists": exists,
+                          "status": status,
                           "size_bytes": path.stat().st_size if exists else 0,
                           "sha256": sha256_text(read_text(path, "")) if exists and path.is_file() else "",
                       }
@@ -4357,8 +4370,8 @@ jobs:
               lines.append("## Generated artifacts")
               lines.append("")
               for artifact in draft.get("generated_artifacts", []) or []:
-                  exists = artifact.get("exists")
-                  marker = "present" if exists else "not present yet"
+                  status = str(artifact.get("status") or ("present" if artifact.get("exists") else "not_present_yet"))
+                  marker = status.replace("_", " ")
                   lines.append(f"- `{artifact.get('path')}`: {marker}")
               lines.append("")
               lines.append("## Verification results")
