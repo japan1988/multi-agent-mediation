@@ -4216,20 +4216,29 @@ jobs:
               return draft
 
           def read_pr_draft_changed_files() -> list[str]:
-              candidates = [
-                  Path("tasukeru_changed_files.txt"),
-                  log_dir / "scanned-files.txt",
+              # Changed files must represent the actual PR diff.
+              # Do not fall back to scanned files here; scanned files are a broader
+              # review input and must not be presented as changed files.
+              path = Path("tasukeru_changed_files.txt")
+              if not path.exists():
+                  return []
+              files = [
+                  normalize_path(line.strip())
+                  for line in read_text(path, "").splitlines()
+                  if line.strip()
               ]
-              for path in candidates:
-                  if path.exists():
-                      files = [
-                          normalize_path(line.strip())
-                          for line in read_text(path, "").splitlines()
-                          if line.strip()
-                      ]
-                      if files:
-                          return sorted(dict.fromkeys(files))
-              return []
+              return sorted(dict.fromkeys(files))
+
+          def read_pr_draft_scanned_files() -> list[str]:
+              path = log_dir / "scanned-files.txt"
+              if not path.exists():
+                  return []
+              files = [
+                  normalize_path(line.strip())
+                  for line in read_text(path, "").splitlines()
+                  if line.strip()
+              ]
+              return sorted(dict.fromkeys(files))
 
           def collect_pr_draft_artifact_status() -> list[dict[str, Any]]:
               artifact_paths = [
@@ -4309,7 +4318,7 @@ jobs:
               lines.append("")
               lines.append("- See the listed changed files and the repository diff for the exact content changes.")
               lines.append("- Tasukeru generated review artifacts to support human verification.")
-              lines.append("- This draft intentionally avoids claiming that all issues are fixed or that the PR is automatically approved.")
+              lines.append("- This draft intentionally avoids claims of complete resolution, automatic approval, or merge readiness.")
               lines.append("")
               lines.append("## What did not change")
               lines.append("")
@@ -4364,6 +4373,14 @@ jobs:
                           }
                       )
 
+              if os.environ.get("GITHUB_EVENT_NAME") == "pull_request" and not draft.get("changed_files"):
+                  contradictions.append(
+                      {
+                          "reason_code": "PR_DRAFT_CHANGED_FILES_UNAVAILABLE",
+                          "message": "Pull request event did not provide a changed-files list for the PR draft.",
+                      }
+                  )
+
               for file_path in draft.get("changed_files", []) or []:
                   if f"`{file_path}`" not in markdown_text:
                       contradictions.append(
@@ -4410,6 +4427,7 @@ jobs:
               """
               counts = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
               changed_files = read_pr_draft_changed_files()
+              scanned_files = read_pr_draft_scanned_files()
               generated_artifacts = collect_pr_draft_artifact_status()
               finding_validation = metadata.get("finding_validation", {}) if isinstance(metadata, dict) else {}
               clean_run_draft = metadata.get("clean_run_draft", {}) if isinstance(metadata, dict) else {}
@@ -4457,6 +4475,8 @@ jobs:
                   "artifact_only": True,
                   "changed_files": changed_files,
                   "changed_file_count": len(changed_files),
+                  "scanned_files": scanned_files,
+                  "scanned_file_count": len(scanned_files),
                   "generated_artifacts": generated_artifacts,
                   "generated_artifact_count": sum(1 for artifact in generated_artifacts if artifact.get("exists")),
                   "verification_results": verification_results,
@@ -4472,7 +4492,8 @@ jobs:
                       "No self-definition auto-update was performed.",
                   ],
                   "source_of_truth": {
-                      "changed_files": "tasukeru_changed_files.txt or tasukeru_logs/scanned-files.txt",
+                      "changed_files": "tasukeru_changed_files.txt",
+                      "scanned_files": "tasukeru_logs/scanned-files.txt",
                       "generated_artifacts": "artifact path existence at generation time",
                       "verification_results": "Tasukeru verification metadata",
                       "automation_policy": "hard-coded false policy in this layer",
@@ -4517,6 +4538,7 @@ jobs:
                   "decision": draft.get("decision"),
                   "reason_code": draft.get("reason_code"),
                   "changed_file_count": draft.get("changed_file_count"),
+                  "scanned_file_count": draft.get("scanned_file_count"),
                   "generated_artifact_count": draft.get("generated_artifact_count"),
                   "contradiction_count": draft.get("contradiction_count"),
                   "contradictions": draft.get("contradictions", []),
@@ -4796,6 +4818,14 @@ jobs:
                       output_value=pr_draft_verify_payload.get("changed_file_count"),
                       artifact=str(pr_draft_verify_path),
                       reason_code="RESULT_PR_DRAFT_CHANGED_FILES_MISMATCH",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="pr_draft.scanned_file_count",
+                      process_value=pr_draft.get("scanned_file_count"),
+                      output_value=pr_draft_verify_payload.get("scanned_file_count"),
+                      artifact=str(pr_draft_verify_path),
+                      reason_code="RESULT_PR_DRAFT_SCANNED_FILES_MISMATCH",
                   )
                   compare_result_field(
                       mismatches,
