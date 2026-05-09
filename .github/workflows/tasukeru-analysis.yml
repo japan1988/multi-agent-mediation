@@ -68,12 +68,35 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-          git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            | grep -E '(\.py$|\.ipynb$|^pyproject\.toml$|^requirements.*\.txt$|^README.*\.md$|^SECURITY\.md$|^LICENSE|^LICENSE_POLICY\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$|^NOTICE$|^TRADEMARKS\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE\.md$|^\.github/workflows/tasukeru-analysis\.yml$|^log_codebook.*\.json$|^tasukeru_self_definition.*\.json$|^tasukeru_self_definition_chain.*\.jsonl$|\.jsonl$)' \
-            > tasukeru_changed_files.txt || true
+          mkdir -p tasukeru_logs
+          : > tasukeru_changed_files.txt
+          : > tasukeru_logs/changed-files.txt
+
+          # Fetch both sides explicitly. The checked-out PR commit is usually
+          # available already, but fetching both SHAs makes PR-diff detection more
+          # robust for shallow checkouts.
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" || true
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA" || true
+
+          diff_base="$BASE_SHA"
+          diff_head="$HEAD_SHA"
+
+          if ! git cat-file -e "${diff_base}^{commit}" 2>/dev/null || ! git cat-file -e "${diff_head}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=50 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" || true
+            diff_base="origin/${BASE_REF}"
+            diff_head="HEAD"
+          fi
+
+          if git cat-file -e "${diff_base}^{commit}" 2>/dev/null && git cat-file -e "${diff_head}^{commit}" 2>/dev/null; then
+            git diff --name-only "$diff_base" "$diff_head" \
+              | grep -E '(\.py$|\.ipynb$|^pyproject\.toml$|^requirements.*\.txt$|^README.*\.md$|^SECURITY\.md$|^LICENSE|^LICENSE_POLICY\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$|^NOTICE$|^TRADEMARKS\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE\.md$|^\.github/workflows/tasukeru-analysis\.yml$|^log_codebook.*\.json$|^tasukeru_self_definition.*\.json$|^tasukeru_self_definition_chain.*\.jsonl$|\.jsonl$)' \
+              | sort -u > tasukeru_changed_files.txt || true
+          fi
+
+          cp tasukeru_changed_files.txt tasukeru_logs/changed-files.txt
 
           if [ ! -s tasukeru_changed_files.txt ]; then
             echo "No relevant changed files."
@@ -4219,15 +4242,21 @@ jobs:
               # Changed files must represent the actual PR diff.
               # Do not fall back to scanned files here; scanned files are a broader
               # review input and must not be presented as changed files.
-              path = Path("tasukeru_changed_files.txt")
-              if not path.exists():
-                  return []
-              files = [
-                  normalize_path(line.strip())
-                  for line in read_text(path, "").splitlines()
-                  if line.strip()
+              candidates = [
+                  Path("tasukeru_changed_files.txt"),
+                  log_dir / "changed-files.txt",
               ]
-              return sorted(dict.fromkeys(files))
+              for path in candidates:
+                  if not path.exists():
+                      continue
+                  files = [
+                      normalize_path(line.strip())
+                      for line in read_text(path, "").splitlines()
+                      if line.strip()
+                  ]
+                  if files:
+                      return sorted(dict.fromkeys(files))
+              return []
 
           def read_pr_draft_scanned_files() -> list[str]:
               path = log_dir / "scanned-files.txt"
@@ -4312,7 +4341,7 @@ jobs:
                   for file_path in changed_files:
                       lines.append(f"- `{file_path}`")
               else:
-                  lines.append("- No changed files were recorded by `tasukeru_changed_files.txt` or `tasukeru_logs/scanned-files.txt`.")
+                  lines.append("- No changed files were recorded by `tasukeru_changed_files.txt` or `tasukeru_logs/changed-files.txt`.")
               lines.append("")
               lines.append("## What changed")
               lines.append("")
@@ -4492,7 +4521,7 @@ jobs:
                       "No self-definition auto-update was performed.",
                   ],
                   "source_of_truth": {
-                      "changed_files": "tasukeru_changed_files.txt",
+                      "changed_files": "tasukeru_changed_files.txt or tasukeru_logs/changed-files.txt",
                       "scanned_files": "tasukeru_logs/scanned-files.txt",
                       "generated_artifacts": "artifact path existence at generation time",
                       "verification_results": "Tasukeru verification metadata",
