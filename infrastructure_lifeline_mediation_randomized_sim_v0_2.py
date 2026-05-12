@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+ #!/usr/bin/env python3
 """
-Infrastructure Lifeline Mediation Randomized Simulation v0.1
+Infrastructure Lifeline Mediation Randomized Simulation v0.2
 
 Purpose:
     Simulate mediation among three lifeline infrastructure agents:
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 
-VERSION = "0.1"
+VERSION = "0.2"
 
 NORMAL_REQUIRED_PER_INFRA = 6.0
 FAILURE_TOTAL_RESOURCE_MIN = 3.5
@@ -504,7 +504,7 @@ def run_simulation(seed: int) -> SimulationRun:
         requests=requests,
     )
 
-    run_id = f"infra-lifeline-v0-1-seed-{seed}"
+    run_id = f"infra-lifeline-v0-2-seed-{seed}"
 
     return SimulationRun(
         run_id=run_id,
@@ -545,7 +545,7 @@ def render_stdout_summary(result: SimulationRun) -> str:
     proposal = result.mediator_proposal
 
     lines = [
-        "Infrastructure Lifeline Mediation Randomized Simulation v0.1",
+        "Infrastructure Lifeline Mediation Randomized Simulation v0.2",
         "=" * 64,
         f"run_id: {result.run_id}",
         f"seed: {result.seed}",
@@ -612,7 +612,7 @@ def write_json(result: SimulationRun, output_path: Path, pretty: bool) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run Infrastructure Lifeline Mediation Randomized Simulation v0.1 "
+            "Run Infrastructure Lifeline Mediation Randomized Simulation v0.2 "
             "as a local, seed-reproducible, proposal-only simulation."
         )
     )
