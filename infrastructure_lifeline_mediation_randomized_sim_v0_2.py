@@ -1,661 +1,904 @@
-#!/usr/bin/env python3
-"""
-Infrastructure Lifeline Mediation Randomized Simulation v0.2
+# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
+
+> Japanese: [README.ja.md](README.ja.md)
+
+<p align="center">
+  <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
+    <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/issues">
+    <img src="https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square" alt="Open Issues">
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache--2.0-brightgreen?style=flat-square" alt="License">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml">
+    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg?branch=main" alt="Python App CI">
+  </a>
+  <a href="https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml">
+    <img src="https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg?branch=main" alt="Tasukeru Advisory">
+  </a>
+  <br/>
+  <img src="https://img.shields.io/badge/python-3.10%20%7C%203.11-blue.svg?style=flat-square" alt="Python Version">
+  <img src="https://img.shields.io/badge/lint-Ruff-000000.svg?style=flat-square" alt="Ruff">
+  <a href="https://github.com/japan1988/multi-agent-mediation/commits/main">
+    <img src="https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square" alt="Last Commit">
+  </a>
+</p>
+
+Maestro Orchestrator is a research-oriented orchestration framework for multi-agent governance, fail-closed control, HITL escalation, checkpoint-based resume, and tamper-evident simulation workflows.
+
+This repository contains multiple simulator lines. Some files focus on KAGE-like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
+
+## Beginner reading guide
+
+If you are new to this repository, start here.
+
+1. Read **Safety and scope** first.
+2. Read **Tasukeru Analysis** to understand the review helper.
+3. Read **Advisory-only policy** to understand what the workflow does not do.
+4. Read **HITL decision support** to understand when human review is required.
+5. Read **Current simulator lines** only after you understand the safety boundaries.
+
+This repository is a research and educational test bench.  
+The outputs are research artifacts, not production approvals or safety guarantees.
+
+When behavior is unclear, read the relevant implementation together with its tests before applying any change.
+
+## Safety and scope
+
+This repository is a research prototype.
+
+It is not intended for:
+
+- production autonomous decision-making
+- unsupervised real-world control
+- legal, medical, financial, or regulatory advice
+- processing real personal data or confidential operational data
+- demonstrating complete or universal safety coverage
+- automatic external submission, upload, sending, or deployment
+- bypassing HITL review for external side effects
+
+The examples should be read as:
+
+- research simulations
+- educational references
+- governance / safety test benches
+- fail-closed and HITL design examples
+- audit-log and checkpoint integrity experiments
+- batch-orchestration examples for local simulation
+
+External submit / upload / push / send actions should remain HITL-gated.
+
+## Responsible use and prohibited use
+
+Tasukeru Analysis and the simulator examples are intended for defensive review of repositories owned by the user or repositories for which the user has explicit authorization.
+
+Do not use this repository or its tools for:
+
+- unauthorized vulnerability discovery
+- offensive reconnaissance
+- exploitation of third-party systems or code
+- credential, token, or secret harvesting
+- scanning repositories or systems without permission
+- generating or validating exploit steps against real targets
+- bypassing access controls, rate limits, or security boundaries
+- publishing sensitive findings without responsible disclosure
+
+Findings should be used to improve safety, reliability, traceability, and governance. When reviewing third-party or open-source code, follow the project maintainers' security policy and responsible disclosure process.
+
+## Tasukeru Analysis
+
+Tasukeru Analysis is an advisory workflow for defensive repository review.
+
+It runs static and repository-specific checks such as:
+
+- Ruff
+- Bandit
+- pip-audit
+- Tasukeru logic review
+- documentation review
+- HITL decision support classification
+
+The workflow is designed to improve maintainability, safety review, and developer usability without automatically treating every advisory finding as a blocking failure.
+
+Tasukeru Analysis does not aim to hide warnings. Instead, it separates active repair candidates, review-only findings, historical-version warnings, and likely noise so maintainers can focus on the right items first.
+
+Tasukeru Analysis also includes a result consistency audit layer.
+
+Earlier checks focus on whether the review process, logs, gates, and classifications look suspicious or inconsistent. The result consistency auditor additionally checks whether the generated outputs match the recorded process state.
+
+It compares process records with generated artifacts such as summaries, HITL review data, announcement data, ARL verification data, gate adoption data, and self-definition verification data.
+
+This helps detect cases where the internal process and the published result disagree, for example when a count, verification status, gate adoption result, or announcement claim does not match the underlying records.
+
+This layer is report-only. It does not rewrite artifacts, change classifications, apply fixes, create pull requests, commit, push, or merge changes automatically.
+
+## Tasukeru adversarial stress test
+
+The Tasukeru adversarial stress test is a local, synthetic, defensive stress test.
+
+It does not attack external systems, execute exploits, scan third-party targets, create pull requests, push commits, apply fixes, or merge changes automatically.
+
+The stress test feeds malformed, contradictory, or bypass-like synthetic inputs into a local evaluator and verifies that Tasukeru-style safety invariants remain intact.
+
+Typical synthetic cases include:
+
+- malformed JSON / JSONL
+- missing required audit keys
+- RFL sealed-state contradictions
+- non-safety-layer sealed rows
+- HITL bypass-like text
+- auto-merge / auto-fix injection-like text
+- duplicate JSON keys
+- suspicious path-like strings
+- oversized audit lines
+
+The expected behavior is fail-closed or review-oriented:
+
+- automation remains disabled
+- unsafe `RUN` is not returned for risky synthetic cases
+- RFL sealed contradictions are escalated without sealing
+- non-safety sealed rows are escalated for review
+- HITL bypass-like inputs do not bypass human review
+
+This test is intended to improve defensive robustness and regression coverage. It is not an offensive security tool.
+
+## Advisory-only policy
+
+Tasukeru Analysis is an advisory-only review helper.
+
+It does not:
+
+- create branches automatically
+- create pull requests automatically
+- commit changes automatically
+- push changes automatically
+- apply fixes automatically
+- merge pull requests automatically
+
+Only `HITL_REQUIRED` findings may produce a PR comment.
+
+Other findings, including `FIX_RECOMMENDED`, `REVIEW_RECOMMENDED`, `NOISE_CANDIDATE`, and `INFO_ONLY`, are collected in the GitHub Step Summary and workflow artifacts for human review.
+
+Tasukeru Analysis is intended to reduce human review load, not to replace human decision-making.
+
+## Human readability policy
+
+Tasukeru Analysis prioritizes code that humans can safely read, review, and maintain.
+
+A change should not be treated as a good fix merely because it is easier for AI or automated tools to process. If a change may reduce human readability, reviewability, or maintainability, it should be routed back for human review.
+
+## Security review output policy
+
+Tasukeru Analysis is limited to defensive review and safe remediation guidance.
+
+Public PR comments should not include:
+
+- exploit payloads
+- attack commands
+- offensive reproduction steps
+- step-by-step exploitation instructions
+- third-party target exploitation details
+
+Security-related findings should focus on:
+
+- the affected file and line
+- the defensive reason for review
+- the expected safety impact
+- a safe remediation direction
+- whether human review is required
+
+## HITL decision support
+
+Tasukeru Analysis classifies findings into review levels so maintainers can separate actionable issues from expected noise.
+
+Current review levels:
+
+- `HITL_REQUIRED`: human review is required before merge or further action
+- `FIX_RECOMMENDED`: a concrete fix is likely appropriate
+- `REVIEW_RECOMMENDED`: review the context before deciding
+- `NOISE_CANDIDATE`: likely acceptable in tests, demos, or research simulations
+- `INFO_ONLY`: informational finding, including historical-version warnings
+
+This classification is advisory by default. It helps maintainers decide whether to fix, document, suppress, or accept a finding.
+
+## Active review queue
+
+The main review queue is intended to stay compact.
+
+Findings that require immediate attention should appear as:
+
+- `HITL_REQUIRED`
+- `FIX_RECOMMENDED`
+- `REVIEW_RECOMMENDED`
+
+When these counts are zero, the repository has no active advisory items that Tasukeru currently recommends prioritizing for human repair or review.
+
+This does not mean the repository has no warnings. It means the remaining warnings are classified as either likely noise or historical/informational records.
+
+## Historical-version warnings
+
+Historical-version warnings are not fully excluded.
+
+Tasukeru Analysis keeps findings from superseded or historical simulator files visible as `INFO_ONLY` when they are useful for audit visibility but are not active repair targets.
+
+This keeps the active review queue focused on findings that currently require human attention, while preserving visibility into older versioned files kept for:
+
+- reproducibility
+- regression comparison
+- historical reference
+- versioned experiments
+- design comparison
+
+Historical warnings should be revisited if the file becomes an active entry point again.
+
+## Typical classification examples
+
+Examples:
+
+### B603 subprocess execution
+
+Usually `HITL_REQUIRED`.
+
+Requires review because subprocess execution can create external side effects.
+
+### B404 subprocess import
+
+Usually `REVIEW_RECOMMENDED`.
+
+Importing subprocess is not itself an external side effect.
+
+### B101 assert usage in tests
+
+Usually `NOISE_CANDIDATE`.
+
+Pytest tests commonly use `assert`.
+
+### B101 assert usage in active runtime code
+
+Usually `FIX_RECOMMENDED`.
+
+Runtime assert statements can be removed under Python optimization flags.
+
+### B101 assert usage in superseded historical simulator files
+
+Usually `INFO_ONLY`.
+
+Kept visible as a historical-version warning instead of being fully excluded. No immediate fix is required unless the file becomes an active entry point again.
+
+### B108 temporary path usage in tests
+
+Usually `NOISE_CANDIDATE` when using isolated pytest fixtures such as `tmp_path`.
+
+Should be reviewed if it uses a hard-coded shared path such as `/tmp/name`.
+
+### B311 pseudo-random generator usage in active simulations
+
+Usually `REVIEW_RECOMMENDED`.
+
+Deterministic simulation randomness may be acceptable when not used for secrets, tokens, authentication, authorization, or cryptography.
+
+If accepted, the code should document that the randomness is simulation-only.
+
+### B311 pseudo-random generator usage in superseded historical simulator files
+
+Usually `INFO_ONLY`.
+
+Kept visible as a historical-version warning. No immediate fix is required unless reused for security-sensitive behavior or active runtime behavior.
+
+### Dependency vulnerabilities from pip-audit
+
+Usually `FIX_RECOMMENDED`.
+
+## Evidence, explanation, and prediction
+
+Tasukeru Analysis may attach structured decision-support metadata to findings.
+
+This can include:
+
+- `evidence`: source tool, rule ID, file, line, snippet, and artifact reference
+- `explanation`: why the finding matters and why a remediation direction is suggested
+- `fix_prediction`: expected safety or maintainability effect of the suggested change
+- `fix_verification`: placeholder or result data for candidate verification
+
+`fix_prediction` is not a guarantee. It is a review aid.
+
+`fix_verification`, when enabled, must remain advisory-only. Candidate checks should use temporary or isolated files and must not modify repository files unless a human explicitly chooses to apply a change manually.
+
+## Output artifacts
+
+Tasukeru Analysis may generate the following review artifacts:
+
+- `tasukeru_advisory_summary.md`
+- `tasukeru_hitl_review.md`
+- `tasukeru_hitl_review.json`
+- `tasukeru_notification_state.json`
+- `tasukeru_pr_comment.md`
+- `tasukeru_dradm_draft.md`
+- `tasukeru_dradm_draft.json`
+- `tasukeru_confidence_report.md`
+- `tasukeru_confidence_report.json`
+- `tasukeru_result_consistency_report.md`
+- `tasukeru_result_consistency_report.json`
+- `tasukeru_result_consistency_verify.json`
+
+`tasukeru_advisory_summary.md` provides a concise overview.
+
+`tasukeru_hitl_review.md` provides human-readable review guidance, including:
+
+- file path
+- line number
+- finding code
+- issue summary
+- review level
+- suggested action
+
+`tasukeru_hitl_review.json` provides the same decision-support data in a machine-readable format.
+
+`tasukeru_notification_state.json` records critical-notification state, including fingerprint-based incident aggregation when applicable.
+
+`tasukeru_pr_comment.md` records the PR-comment body that would be used only when a `HITL_REQUIRED` incident qualifies for PR notification.
+
+`tasukeru_dradm_draft.md` and `tasukeru_dradm_draft.json` contain draft-only documentation proposals generated for human review.
+
+These DRADM drafts may include proposed minimal diffs, full draft text, hashes, evidence, and review checklists. They do not modify repository files and must not be applied automatically.
+
+`tasukeru_confidence_report.md` and `tasukeru_confidence_report.json` summarize Tasukeru's confidence in its classifications, explanations, and draft recommendations.
+
+Confidence scores are review-aid metadata only. They do not indicate that a finding is safe to ignore, and they must not enable automatic fixes, automatic PR creation, automatic commits, automatic pushes, or automatic merges.
+
+`tasukeru_result_consistency_report.md`, `tasukeru_result_consistency_report.json`, and `tasukeru_result_consistency_verify.json` record whether the process logs and generated result artifacts agree.
+
+They are used to check that decision counts, ARL verification, gate adoption status, self-definition verification, and announcement data remain consistent across outputs.
+
+## Advisory behavior
+
+Tasukeru Analysis is advisory by default.
+
+It should help maintainers answer:
+
+- Which findings are likely noise?
+- Which findings should be reviewed?
+- Which files need attention?
+- Why is the finding relevant?
+- What is the suggested fix?
+- Does this require HITL before merge?
+- Is this an active repair candidate or a historical-version warning?
+
+The workflow does not replace human review. It is a triage and documentation aid for safer repository maintenance.
+
+## Repository purpose
+
+The main purpose of this repository is to explore how agentic workflows can be controlled through explicit gates, reproducible logs, interruption points, and human review.
+
+The project emphasizes:
+
+- fail-closed behavior
+- HITL escalation
+- gate-order invariants
+- reason-code stability
+- checkpoint / resume behavior
+- tamper-evident audit records
+- artifact integrity verification
+- reproducible simulation outputs
+- clear separation between advice and execution
+
+This repository does not claim to provide complete AI safety coverage. It is a research and educational test bench for studying orchestration behavior.
+
+## Architecture diagrams
+
+Detailed architecture diagrams for the production-oriented Doc Orchestrator simulator are collected here:
+
+- Doc Orchestrator Architecture Diagrams
+
+This document includes:
+
+- Doc Orchestrator overview
+- task processing flow
+- audit HMAC chain
+- checkpoint resume flow
+- data structure map
+
+Direct diagram links are also available:
+
+- Doc Orchestrator overview
+- Task processing flow
+- Audit HMAC chain
+- Checkpoint resume flow
+- Data structure map
+
+For other diagrams, reference files, bundles, and documentation assets, see:
+
+- Documentation Index
+
+The README keeps the overview concise, while detailed diagrams are separated into `docs/architecture.md` and the broader documentation index is separated into `docs/index.md`.
+
+## Current simulator lines
+
+### 1. Mediator-based gate simulator
+
+Example:
+
+- `ai_doc_orchestrator_with_mediator_v1_0.py`
+- `tests/test_doc_orchestrator_with_mediator_v1_0.py`
+
+Plain-language guide:
+
+- Japanese: [`docs/mediator_orchestrator_plain_guide.ja.md`](docs/mediator_orchestrator_plain_guide.ja.md)
+
+This simulator focuses on the following flow:
+
+```text
+Agent → Mediator → Orchestrator
+```
+
+Core characteristics:
+
+- Agent normalizes task input.
+- Mediator gives advice only.
+- Mediator has no execution authority.
+- Orchestrator evaluates gates in a fixed order.
+- RFL is used for relative or ambiguous requests.
+- Ethics / ACC handle higher-risk blocking conditions.
+- `sealed=True` may appear only at Ethics / ACC.
+- raw text should not be persisted.
+- audit logs should avoid direct PII leakage.
+
+Canonical gate order:
+
+```text
+Meaning → Consistency → RFL → Ethics → ACC → Dispatch
+```
+
+This simulator is useful for checking:
+
+- gate invariants
+- HITL transitions
+- RFL pause behavior
+- sealed / non-sealed behavior
+- mediator-to-orchestrator separation
+- reason-code expectations
+- lightweight multi-task orchestration behavior
+
+### 2. Production-oriented document orchestrator simulator
+
+Example version:
+
+- `v1.2.6-hash-chain-checkpoint`
+
+This simulator focuses on document-task orchestration with stronger persistence and integrity controls.
+
+Core characteristics:
+
+- Task Contract Gate
+- rough token estimation
+- Word / Excel / PPT task simulation
+- per-task checkpoint / resume
+- HMAC-SHA256 audit log hash chain
+- HMAC-protected checkpoint files
+- SHA-256 + HMAC artifact integrity records
+- PII-safe audit / checkpoint / artifact writes
+- tamper-evidence detection
+- CLI-based simulation entry point
+- no mediation / negotiation feature
+- no automatic external submission
+
+Important implementation note:
+
+The simulator writes text-backed artifact outputs representing document-task results. It does not claim to generate fully formatted Microsoft Office documents unless separate document-generation libraries are connected.
+
+Hashing and HMAC provide tamper evidence. They do not provide physical write prevention. In real deployment, HMAC keys must be supplied from an environment variable or protected key file and must not be committed to the repository.
+
+### 3. Emergency Contract × KAGE integration simulator
+
+Example:
+
+- `emergency_contract_kage_orchestrator_v1_0.py`
+- `tests/test_emergency_contract_kage_orchestrator_v1_0.py`
+
+This simulator combines an Emergency Contract Case B scenario with a KAGE-style orchestration flow.
+
+It is intended as a small integration proof-of-concept, not as a production contracting, legal, or signal-control system.
+
+Core characteristics:
+
+- Emergency Contract Case B scenario
+- KAGE-style gate order
+- RFL non-sealing behavior
+- Evidence validation and fabricated-evidence detection
+- HITL auth checkpoint
+- ADMIN finalize checkpoint
+- Ethics / ACC sealed-stop invariants
+- simulated contract draft artifact generation
+- tamper-evident ARL rows with HMAC verification
+- no real-world signal control
+- no legal effect
+- no external submission, upload, send, API call, or deployment
+
+Canonical integration flow:
+
+```text
+Meaning → Consistency → RFL → Evidence → HITL Auth → Draft
+→ Ethics → Draft Lint → ACC → ADMIN Finalize → Dispatch
+```
+
+This simulator is useful for checking:
+
+- emergency-contract scenario handling
+- relative-priority evaluation through RFL
+- fabricated evidence pause behavior
+- real-world control blocking through ACC
+- USER and ADMIN HITL stop paths
+- simulated artifact dispatch only
+- ARL/HMAC verification
+- KAGE invariants across normal and abnormal paths
+
+### 4. Infrastructure Lifeline Mediation Simulation
+
+Example:
+
+- `infrastructure_lifeline_mediation_randomized_sim_v0_2.py`
+- `tests/test_infrastructure_lifeline_mediation_randomized_sim_v0_2.py`
+
+This simulator models a constrained lifeline-resource mediation scenario involving three infrastructure agents:
+
+- electricity
+- water
+- gas
+
+It is intended as a local, seed-reproducible research simulation for studying how a mediator can create proposal-only allocation plans under constrained failure resources.
+
+Core characteristics:
+
+- three infrastructure agents with normal resource requirements
+- failure-mode total resource constraint
+- minimum guarantees
+- priority weights
+- life-risk scores
+- shortage-rate-aware allocation
+- simulated HITL decisions
+- JSON and stdout output
+- no external API access
+- no real infrastructure control
+- no automatic recovery
+- no automatic shutdown or disconnection
+
+The mediator only creates allocation proposals. It does not control real infrastructure or perform real-world recovery actions.
+
+The simulated human operator may return:
+
+- `APPROVE`
+- `REJECT`
+- `REDEFINE`
+- `REQUEST_ALTERNATIVES`
+
+This simulator is useful for checking:
+
+- constrained resource allocation behavior
+- proposal-only mediation
+- seeded reproducibility
+- HITL branch behavior
+- safety-boundary flags
+- JSON output behavior
+- allocation totals staying within the available resource limit
+
+## Batch execution and resume
+
+This repository also includes batch-style orchestration examples.
+
+Batch execution means that multiple document-related tasks can be evaluated as a single orchestration run while preserving gate decisions, audit records, and interruption points.
+
+### Mediator-based batch flow
+
+The mediator-based simulator can accept multiple tasks in one run.
+
+Example use cases:
+
+- evaluate several spreadsheet / slide tasks together
+- compare task-level gate outcomes
+- check HITL behavior across multiple tasks
+- verify mediator advice before orchestration
+- confirm that each task still passes through the fixed gate order
+
+This line is useful when the focus is on:
+
+- multi-task gate behavior
+- mediator separation
+- RFL / HITL transitions
+- reason-code stability
+- lightweight orchestration tests
+
+Example task sequence:
+
+- T1: xlsx task
+- T2: pptx task
+- T3: ambiguous task requiring RFL / HITL
+
+Expected behavior:
+
+- each task is normalized by the Agent
+- each task receives Mediator advice
+- each task is evaluated by the Orchestrator
+- paused tasks remain non-sealed unless Ethics / ACC performs a sealed stop
+- dispatch only occurs when the final decision is `RUN`
+
+### Document-task batch flow
+
+The production-oriented document orchestrator simulator uses a fixed document-task sequence:
+
+```text
+Word → Excel → PPT
+```
+
+This line is useful when the focus is on:
+
+- batch task execution
+- per-task checkpointing
+- interruption and resume
+- artifact integrity records
+- HMAC-protected checkpoints
+- HMAC-SHA256 audit log hash chains
+- tamper-evidence detection
+
+If a task is interrupted, the simulator records:
+
+- failed task ID
+- failed layer
+- reason code
+- checkpoint path
+- resume requirement
+- HITL confirmation requirement when applicable
+
+A later run can resume from the checkpoint after HITL confirmation when required.
+
+## Batch scripts
+
+Batch scripts may be used as convenience wrappers for local simulation runs.
+
+Recommended script examples:
+
+- `scripts/run_doc_orchestrator_demo.bat`
+- `scripts/run_doc_orchestrator_resume.bat`
+- `scripts/run_doc_orchestrator_tamper_check.bat`
+
+These scripts should be treated as local developer utilities only.
+
+They should not:
+
+- embed production HMAC keys
+- upload or submit artifacts automatically
+- bypass HITL confirmation
+- delete files automatically
+- process real personal or confidential data
+- change license or safety semantics
+- weaken tests or gate invariants
+
+For local demonstrations, a demo key mode may be used only when the simulator explicitly supports it. Production-like runs should use an environment variable or a protected key file for HMAC keys.
+
+### Example batch-script roles
+
+#### `run_doc_orchestrator_demo.bat`
 
 Purpose:
-    Simulate mediation among three lifeline infrastructure agents:
-    Electricity, Water, and Gas.
-
-Scope boundary:
-    This is a randomized, seed-reproducible local simulation only.
-
-Strictly prohibited in this file:
-    - External API connections
-    - Real infrastructure control
-    - Automatic recovery
-    - Automatic shutdown / disconnection
-
-The mediator creates allocation proposals only. A simulated human operator
-randomly returns APPROVE / REJECT / REDEFINE / REQUEST_ALTERNATIVES.
-
-No real-world side effects are performed.
-"""
-
-from __future__ import annotations
-
-import argparse
-import json
-import random
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
-
-
-VERSION = "0.2"
-
-NORMAL_REQUIRED_PER_INFRA = 6.0
-FAILURE_TOTAL_RESOURCE_MIN = 3.5
-FAILURE_TOTAL_RESOURCE_MAX = 5.0
-
-INFRA_NAMES = ("electricity", "water", "gas")
-
-HITL_DECISIONS: Tuple[str, ...] = (
-    "APPROVE",
-    "REJECT",
-    "REDEFINE",
-    "REQUEST_ALTERNATIVES",
-)
-
-SAFETY_BOUNDARY = {
-    "external_api_connection_allowed": False,
-    "real_infrastructure_control_allowed": False,
-    "automatic_recovery_allowed": False,
-    "automatic_shutdown_allowed": False,
-    "automatic_disconnection_allowed": False,
-    "simulation_only": True,
-}
-
-
-@dataclass(frozen=True)
-class AgentProfile:
-    name: str
-    normal_required: float
-    minimum_guarantee: float
-    weight: float
-    base_life_risk: float
-
-
-@dataclass(frozen=True)
-class AgentRequest:
-    name: str
-    requested: float
-    normal_required: float
-    minimum_guarantee: float
-    weight: float
-    life_risk: float
-
-
-@dataclass(frozen=True)
-class AllocationRow:
-    name: str
-    requested: float
-    allocated: float
-    shortage: float
-    shortage_rate: float
-    minimum_guarantee: float
-    weight: float
-    life_risk: float
-
-
-@dataclass(frozen=True)
-class MediationProposal:
-    proposal_id: str
-    total_resource: float
-    total_requested: float
-    total_allocated: float
-    allocation: List[AllocationRow]
-    max_shortage_rate: float
-    weighted_life_risk_shortage: float
-    mediator_note: str
-
-
-@dataclass(frozen=True)
-class HumanOperatorDecision:
-    operator_id: str
-    decision: Literal["APPROVE", "REJECT", "REDEFINE", "REQUEST_ALTERNATIVES"]
-    rationale: str
-    redefined_constraints: Optional[Dict[str, Any]] = None
-
-
-@dataclass(frozen=True)
-class SimulationRun:
-    run_id: str
-    seed: int
-    version: str
-    timestamp_utc: str
-    safety_boundary: Dict[str, bool]
-    scenario: Dict[str, Any]
-    requests: List[AgentRequest]
-    mediator_proposal: MediationProposal
-    human_operator_decision: HumanOperatorDecision
-    alternatives: List[MediationProposal]
-    final_status: str
-    no_external_effects: bool
-
-
-def clamp(value: float, lower: float, upper: float) -> float:
-    return max(lower, min(upper, value))
-
-
-def round4(value: float) -> float:
-    return round(float(value), 4)
-
-
-def default_profiles() -> List[AgentProfile]:
-    """
-    Demo profile values.
-
-    Minimum guarantees are intentionally below normal demand because the failure
-    scenario limits total available resource to 3.5-5.0 while each infrastructure
-    normally requires 6.0.
-    """
-    return [
-        AgentProfile(
-            name="electricity",
-            normal_required=NORMAL_REQUIRED_PER_INFRA,
-            minimum_guarantee=1.10,
-            weight=1.10,
-            base_life_risk=0.78,
-        ),
-        AgentProfile(
-            name="water",
-            normal_required=NORMAL_REQUIRED_PER_INFRA,
-            minimum_guarantee=1.20,
-            weight=1.25,
-            base_life_risk=0.88,
-        ),
-        AgentProfile(
-            name="gas",
-            normal_required=NORMAL_REQUIRED_PER_INFRA,
-            minimum_guarantee=0.80,
-            weight=0.90,
-            base_life_risk=0.62,
-        ),
-    ]
-
-
-def generate_requests(
-    rng: random.Random,
-    profiles: Sequence[AgentProfile],
-) -> List[AgentRequest]:
-    """
-    Each agent randomly requests resources around the normal required amount.
-
-    The request range is clipped so the simulation remains readable and avoids
-    unrealistic negative or near-zero demand.
-    """
-    requests: List[AgentRequest] = []
-
-    for profile in profiles:
-        requested = clamp(
-            rng.gauss(mu=profile.normal_required, sigma=0.75),
-            lower=4.5,
-            upper=7.5,
-        )
-
-        demand_pressure = requested / profile.normal_required
-        risk_noise = rng.uniform(-0.10, 0.10)
-        life_risk = clamp(
-            profile.base_life_risk + risk_noise + 0.08 * (demand_pressure - 1.0),
-            lower=0.0,
-            upper=1.0,
-        )
-
-        requests.append(
-            AgentRequest(
-                name=profile.name,
-                requested=round4(requested),
-                normal_required=round4(profile.normal_required),
-                minimum_guarantee=round4(profile.minimum_guarantee),
-                weight=round4(profile.weight),
-                life_risk=round4(life_risk),
-            )
-        )
-
-    return requests
-
-
-def allocate_minimum_guarantees(
-    total_resource: float,
-    requests: Sequence[AgentRequest],
-) -> Dict[str, float]:
-    """
-    Allocate the minimum guarantee first.
-
-    If total resource is ever below the sum of guarantees, this function degrades
-    gracefully by distributing the limited resource proportionally to guarantees.
-    That branch is still proposal-only and does not perform real control.
-    """
-    guarantee_sum = sum(item.minimum_guarantee for item in requests)
-
-    if guarantee_sum <= 0:
-        equal_share = total_resource / len(requests)
-        return {item.name: equal_share for item in requests}
-
-    if total_resource < guarantee_sum:
-        return {
-            item.name: total_resource * (item.minimum_guarantee / guarantee_sum)
-            for item in requests
-        }
-
-    return {
-        item.name: min(item.minimum_guarantee, item.requested)
-        for item in requests
-    }
-
-
-def proposal_priority_score(request: AgentRequest, current_allocation: float) -> float:
-    """
-    Priority score used for allocating remaining resource.
-
-    Factors:
-        - weight
-        - life_risk
-        - shortage_rate after the minimum guarantee stage
-
-    Higher score receives a larger share of the remaining resource.
-    """
-    shortage = max(0.0, request.requested - current_allocation)
-    shortage_rate = shortage / request.requested if request.requested > 0 else 0.0
-
-    return (
-        request.weight
-        * (1.0 + request.life_risk)
-        * (1.0 + shortage_rate)
-    )
-
-
-def distribute_remaining_resource(
-    total_resource: float,
-    requests: Sequence[AgentRequest],
-    allocations: Dict[str, float],
-) -> Dict[str, float]:
-    """
-    Iteratively distribute remaining resource according to priority score.
-
-    The loop prevents over-allocation by redistributing leftovers when an agent's
-    unmet demand is fully satisfied.
-    """
-    allocated_total = sum(allocations.values())
-    remaining = max(0.0, total_resource - allocated_total)
-
-    for _ in range(20):
-        if remaining <= 1e-9:
-            break
-
-        unmet = {
-            item.name: max(0.0, item.requested - allocations[item.name])
-            for item in requests
-        }
-        active = [item for item in requests if unmet[item.name] > 1e-9]
-
-        if not active:
-            break
-
-        scores = {
-            item.name: proposal_priority_score(item, allocations[item.name])
-            for item in active
-        }
-        score_sum = sum(scores.values())
-
-        if score_sum <= 0:
-            share = remaining / len(active)
-            for item in active:
-                delta = min(share, unmet[item.name])
-                allocations[item.name] += delta
-                remaining -= delta
-            continue
-
-        used_this_round = 0.0
-        for item in active:
-            raw_delta = remaining * (scores[item.name] / score_sum)
-            delta = min(raw_delta, unmet[item.name])
-            allocations[item.name] += delta
-            used_this_round += delta
-
-        remaining -= used_this_round
-
-        if used_this_round <= 1e-9:
-            break
-
-    return allocations
-
-
-def build_allocation_rows(
-    requests: Sequence[AgentRequest],
-    allocations: Dict[str, float],
-) -> List[AllocationRow]:
-    rows: List[AllocationRow] = []
-
-    for item in requests:
-        allocated = allocations[item.name]
-        shortage = max(0.0, item.requested - allocated)
-        shortage_rate = shortage / item.requested if item.requested > 0 else 0.0
-
-        rows.append(
-            AllocationRow(
-                name=item.name,
-                requested=round4(item.requested),
-                allocated=round4(allocated),
-                shortage=round4(shortage),
-                shortage_rate=round4(shortage_rate),
-                minimum_guarantee=round4(item.minimum_guarantee),
-                weight=round4(item.weight),
-                life_risk=round4(item.life_risk),
-            )
-        )
-
-    return rows
-
-
-def make_mediation_proposal(
-    proposal_id: str,
-    total_resource: float,
-    requests: Sequence[AgentRequest],
-    strategy: Literal["standard", "risk_first", "equal_shortage"] = "standard",
-) -> MediationProposal:
-    """
-    Create a proposal-only allocation plan.
-
-    Strategies:
-        standard:
-            Minimum guarantee, then weighted distribution using life risk and shortage.
-        risk_first:
-            Same algorithm, but life-risk-heavy weights are increased.
-        equal_shortage:
-            Uses flatter weights to reduce disparity in shortage rates.
-    """
-    adjusted_requests: List[AgentRequest] = []
-
-    for item in requests:
-        if strategy == "risk_first":
-            adjusted_weight = item.weight * (1.0 + item.life_risk)
-        elif strategy == "equal_shortage":
-            adjusted_weight = 1.0
-        else:
-            adjusted_weight = item.weight
-
-        adjusted_requests.append(
-            AgentRequest(
-                name=item.name,
-                requested=item.requested,
-                normal_required=item.normal_required,
-                minimum_guarantee=item.minimum_guarantee,
-                weight=round4(adjusted_weight),
-                life_risk=item.life_risk,
-            )
-        )
-
-    allocations = allocate_minimum_guarantees(total_resource, adjusted_requests)
-    allocations = distribute_remaining_resource(total_resource, adjusted_requests, allocations)
-    rows = build_allocation_rows(adjusted_requests, allocations)
-
-    max_shortage_rate = max(row.shortage_rate for row in rows)
-    weighted_life_risk_shortage = sum(
-        row.shortage_rate * row.life_risk * row.weight for row in rows
-    )
-
-    mediator_note = (
-        "Proposal only. No external API, no real infrastructure control, "
-        "no automatic recovery, and no automatic shutdown/disconnection."
-    )
-
-    return MediationProposal(
-        proposal_id=proposal_id,
-        total_resource=round4(total_resource),
-        total_requested=round4(sum(item.requested for item in adjusted_requests)),
-        total_allocated=round4(sum(row.allocated for row in rows)),
-        allocation=rows,
-        max_shortage_rate=round4(max_shortage_rate),
-        weighted_life_risk_shortage=round4(weighted_life_risk_shortage),
-        mediator_note=mediator_note,
-    )
-
-
-def simulated_human_operator(
-    rng: random.Random,
-    proposal: MediationProposal,
-) -> HumanOperatorDecision:
-    """
-    Simulated HITL decision.
-
-    The decision is randomized by design. The rationale text is generated after
-    the random decision, but it does not trigger any real-world action.
-    """
-    decision = rng.choice(HITL_DECISIONS)
-
-    if decision == "APPROVE":
-        rationale = "Simulated operator approved this proposal for simulation logging only."
-        constraints = None
-    elif decision == "REJECT":
-        rationale = "Simulated operator rejected the proposal and requested no execution."
-        constraints = None
-    elif decision == "REDEFINE":
-        rationale = "Simulated operator requested revised constraints before any simulated approval."
-        constraints = {
-            "max_allowed_shortage_rate": round4(rng.uniform(0.45, 0.65)),
-            "prioritize_life_risk_above": round4(rng.uniform(0.75, 0.90)),
-            "require_new_proposal_only": True,
-        }
-    else:
-        rationale = "Simulated operator requested alternative allocation proposals."
-        constraints = None
-
-    return HumanOperatorDecision(
-        operator_id="SimulatedHumanOperator",
-        decision=decision,  # type: ignore[arg-type]
-        rationale=rationale,
-        redefined_constraints=constraints,
-    )
-
-
-def build_alternatives_if_requested(
-    decision: HumanOperatorDecision,
-    total_resource: float,
-    requests: Sequence[AgentRequest],
-) -> List[MediationProposal]:
-    if decision.decision != "REQUEST_ALTERNATIVES":
-        return []
-
-    return [
-        make_mediation_proposal(
-            proposal_id="alternative-risk-first",
-            total_resource=total_resource,
-            requests=requests,
-            strategy="risk_first",
-        ),
-        make_mediation_proposal(
-            proposal_id="alternative-equal-shortage",
-            total_resource=total_resource,
-            requests=requests,
-            strategy="equal_shortage",
-        ),
-    ]
-
-
-def determine_final_status(decision: HumanOperatorDecision) -> str:
-    """
-    Final status is a simulation status only.
-
-    Even APPROVE does not execute anything. It only marks that the simulated
-    operator accepted the proposal inside the simulation.
-    """
-    if decision.decision == "APPROVE":
-        return "SIMULATED_APPROVAL_ONLY_NO_EXECUTION"
-    if decision.decision == "REJECT":
-        return "SIMULATED_REJECTION_NO_EXECUTION"
-    if decision.decision == "REDEFINE":
-        return "SIMULATED_REDEFINE_REQUESTED_NO_EXECUTION"
-    return "SIMULATED_ALTERNATIVES_REQUESTED_NO_EXECUTION"
-
-
-def run_simulation(seed: int) -> SimulationRun:
-    rng = random.Random(seed)
-    profiles = default_profiles()
-
-    total_resource = rng.uniform(
-        FAILURE_TOTAL_RESOURCE_MIN,
-        FAILURE_TOTAL_RESOURCE_MAX,
-    )
-    requests = generate_requests(rng, profiles)
-
-    proposal = make_mediation_proposal(
-        proposal_id="proposal-standard",
-        total_resource=total_resource,
-        requests=requests,
-        strategy="standard",
-    )
-
-    operator_decision = simulated_human_operator(rng, proposal)
-    alternatives = build_alternatives_if_requested(
-        decision=operator_decision,
-        total_resource=total_resource,
-        requests=requests,
-    )
-
-    run_id = f"infra-lifeline-v0-2-seed-{seed}"
-
-    return SimulationRun(
-        run_id=run_id,
-        seed=seed,
-        version=VERSION,
-        timestamp_utc=datetime.now(timezone.utc).isoformat(),
-        safety_boundary=SAFETY_BOUNDARY,
-        scenario={
-            "mode": "failure_resource_constraint",
-            "normal_required_per_infrastructure": NORMAL_REQUIRED_PER_INFRA,
-            "failure_total_resource_range": [
-                FAILURE_TOTAL_RESOURCE_MIN,
-                FAILURE_TOTAL_RESOURCE_MAX,
-            ],
-            "actual_total_resource": round4(total_resource),
-            "agents": list(INFRA_NAMES),
-        },
-        requests=requests,
-        mediator_proposal=proposal,
-        human_operator_decision=operator_decision,
-        alternatives=alternatives,
-        final_status=determine_final_status(operator_decision),
-        no_external_effects=True,
-    )
-
-
-def to_jsonable(value: Any) -> Any:
-    if hasattr(value, "__dataclass_fields__"):
-        return asdict(value)
-    if isinstance(value, list):
-        return [to_jsonable(item) for item in value]
-    if isinstance(value, dict):
-        return {key: to_jsonable(item) for key, item in value.items()}
-    return value
-
-
-def render_stdout_summary(result: SimulationRun) -> str:
-    proposal = result.mediator_proposal
-
-    lines = [
-        "Infrastructure Lifeline Mediation Randomized Simulation v0.2",
-        "=" * 64,
-        f"run_id: {result.run_id}",
-        f"seed: {result.seed}",
-        f"mode: {result.scenario['mode']}",
-        f"total_resource: {proposal.total_resource}",
-        f"total_requested: {proposal.total_requested}",
-        "",
-        "Safety boundary:",
-        f"  external_api_connection_allowed: {result.safety_boundary['external_api_connection_allowed']}",
-        f"  real_infrastructure_control_allowed: {result.safety_boundary['real_infrastructure_control_allowed']}",
-        f"  automatic_recovery_allowed: {result.safety_boundary['automatic_recovery_allowed']}",
-        f"  automatic_shutdown_allowed: {result.safety_boundary['automatic_shutdown_allowed']}",
-        f"  automatic_disconnection_allowed: {result.safety_boundary['automatic_disconnection_allowed']}",
-        "",
-        "Mediator proposal:",
-        f"  proposal_id: {proposal.proposal_id}",
-        f"  max_shortage_rate: {proposal.max_shortage_rate}",
-        f"  weighted_life_risk_shortage: {proposal.weighted_life_risk_shortage}",
-        "",
-        "Allocation:",
-        "  agent         requested  allocated  shortage  shortage_rate  life_risk  weight",
-    ]
-
-    for row in proposal.allocation:
-        lines.append(
-            f"  {row.name:<12} "
-            f"{row.requested:>9.4f}  "
-            f"{row.allocated:>9.4f}  "
-            f"{row.shortage:>8.4f}  "
-            f"{row.shortage_rate:>13.4f}  "
-            f"{row.life_risk:>9.4f}  "
-            f"{row.weight:>6.4f}"
-        )
-
-    lines.extend(
-        [
-            "",
-            "Simulated HITL:",
-            f"  operator_id: {result.human_operator_decision.operator_id}",
-            f"  decision: {result.human_operator_decision.decision}",
-            f"  rationale: {result.human_operator_decision.rationale}",
-            f"  redefined_constraints: {result.human_operator_decision.redefined_constraints}",
-            "",
-            f"alternatives_count: {len(result.alternatives)}",
-            f"final_status: {result.final_status}",
-            f"no_external_effects: {result.no_external_effects}",
-        ]
-    )
-
-    return "\n".join(lines)
-
-
-def write_json(result: SimulationRun, output_path: Path, pretty: bool) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = to_jsonable(result)
-
-    with output_path.open("w", encoding="utf-8") as f:
-        if pretty:
-            json.dump(payload, f, ensure_ascii=False, indent=2, sort_keys=True)
-        else:
-            json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Run Infrastructure Lifeline Mediation Randomized Simulation v0.2 "
-            "as a local, seed-reproducible, proposal-only simulation."
-        )
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Seed for reproducible randomization. Default: 42",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=Path("infrastructure_lifeline_mediation_result.json"),
-        help="JSON output path. Default: infrastructure_lifeline_mediation_result.json",
-    )
-    parser.add_argument(
-        "--pretty",
-        action="store_true",
-        help="Pretty-print JSON output.",
-    )
-    parser.add_argument(
-        "--print-json",
-        action="store_true",
-        help="Also print full JSON payload to stdout after the human-readable summary.",
-    )
-    return parser.parse_args()
-
-
-def main() -> int:
-    args = parse_args()
-    result = run_simulation(seed=args.seed)
-
-    print(render_stdout_summary(result))
-    write_json(result, args.output, pretty=args.pretty)
-    print("")
-    print(f"json_output: {args.output}")
-
-    if args.print_json:
-        print("")
-        print(json.dumps(to_jsonable(result), ensure_ascii=False, indent=2, sort_keys=True))
-
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+
+- run a local demonstration
+- use safe sample input
+- write audit logs and simulated artifacts to local output directories
+- avoid external submission
+
+Typical use:
+
+- Local demo run with demo key mode.
+
+#### `run_doc_orchestrator_resume.bat`
+
+Purpose:
+
+- resume from a checkpoint
+- require explicit resume confirmation
+- verify completed artifacts before continuing
+- preserve checkpoint integrity
+
+Typical use:
+
+- Resume interrupted Word / Excel / PPT simulation after HITL confirmation.
+
+#### `run_doc_orchestrator_tamper_check.bat`
+
+Purpose:
+
+- verify audit-log / checkpoint / artifact integrity behavior
+- demonstrate tamper-evidence detection
+- pause for HITL if integrity verification fails
+
+Typical use:
+
+- Local tamper-evidence simulation.
+
+## Recommended reading order
+
+For gate behavior and KAGE-like invariants:
+
+- `ai_doc_orchestrator_with_mediator_v1_0.py`
+- `tests/test_doc_orchestrator_with_mediator_v1_0.py`
+
+For checkpoint, resume, artifact integrity, and HMAC-chain behavior:
+
+- Production-oriented Doc Orchestrator Simulator
+- `v1.2.6-hash-chain-checkpoint`
+
+For Emergency Contract × KAGE integration behavior:
+
+- `emergency_contract_kage_orchestrator_v1_0.py`
+- `tests/test_emergency_contract_kage_orchestrator_v1_0.py`
+
+This path is useful for studying how a concrete emergency-contract scenario can be evaluated by KAGE-style gates, HITL checkpoints, ARL/HMAC verification, and simulated artifact dispatch without real-world control or legal effect.
+
+For behavior verification, always read the implementation together with the corresponding tests.
+
+This is especially important for:
+
+- gate invariants
+- reason-code expectations
+- HITL transitions
+- sealed / non-sealed behavior
+- checkpoint / resume behavior
+- tamper-evidence behavior
+- reproducibility checks
+- benchmark expectations
+- batch execution behavior
+
+## Testing and behavior
+
+In this repository, tests often define the expected behavior of the simulators and orchestration logic.
+
+When checking behavior, it is usually better to read the implementation together with the corresponding tests.
+
+Tests may verify:
+
+- fixed gate order
+- fail-closed behavior
+- HITL escalation
+- RFL non-sealing behavior
+- Ethics / ACC sealing constraints
+- checkpoint recovery
+- audit-log integrity
+- artifact hash verification
+- reason-code stability
+- reproducibility expectations
+- batch-task behavior
+- CLI behavior
+- emergency-contract scenario flow
+- fabricated-evidence pause behavior
+- real-world control sealed-stop behavior
+- USER / ADMIN HITL rejection paths
+- ARL/HMAC tamper detection
+
+A newer version number does not always mean that the file is the primary recommended entry point. Some files are preserved for historical comparison, reproducibility, or versioned experiments.
+
+## Gate and decision model
+
+The repository uses explicit gate decisions to make orchestration behavior traceable.
+
+Common decisions include:
+
+- `RUN`
+- `PAUSE_FOR_HITL`
+- `STOPPED`
+
+General interpretation:
+
+- `RUN`: the simulator may continue to the next gate or dispatch step
+- `PAUSE_FOR_HITL`: the simulator should pause and wait for human review
+- `STOPPED`: the simulator has reached a blocking condition
+
+In KAGE-like simulator lines, RFL should pause for HITL rather than seal. Sealing behavior should remain limited to higher-risk layers such as Ethics or ACC, depending on the simulator contract.
+
+## Audit and integrity model
+
+Audit and integrity behavior differs by simulator line.
+
+The mediator-based simulator focuses on lightweight audit events and safe context logging.
+
+The production-oriented document simulator adds stronger integrity controls:
+
+- audit log hash chain
+- row-level HMAC
+- checkpoint HMAC
+- artifact SHA-256
+- artifact HMAC
+- completed-artifact verification on resume
+- tamper-evidence detection
+
+These mechanisms are intended to make changes detectable. They do not prevent a local actor from modifying files on disk.
+
+## Checkpoint and resume model
+
+Checkpoint-based simulators are designed to support interrupted execution.
+
+A checkpoint may record:
+
+- run ID
+- current task ID
+- failed task ID
+- failed layer
+- reason code
+- task status
+- artifact path
+- artifact hash
+- whether resume is allowed
+- whether HITL is required before resume
+
+When resuming, completed artifacts should be verified before the simulator continues. If verification fails, the run should pause for HITL rather than continue silently.
+
+## Artifact model
+
+Artifact outputs in the simulator should be treated as research artifacts.
+
+Depending on the simulator line, outputs may include:
+
+- artifact previews
+- text-backed document-task outputs
+- audit JSONL files
+- checkpoint JSON files
+- integrity metadata
+- summary records
+
+The repository should not describe these simulated outputs as complete production Office documents unless actual document-generation code is added and tested.
+
+## External side effects
+
+External side effects include actions such as:
+
+- sending email
+- uploading files
+- submitting artifacts
+- pushing changes
+- deleting files
+- calling external APIs
+- changing license semantics
+
+These actions should remain blocked, prohibited, or HITL-gated depending on the simulator contract.
+
+No script or simulator should silently perform external submission.
+
+## Archive and historical files
+
+Some files are preserved for:
+
+- historical comparison
+- reproducibility
+- versioned experiments
+- regression testing
+- design comparison
+
+Files under `archive/` should generally be treated as historical or reference material unless explicitly referenced by current tests or documentation.
+
+## Language
+
+- English README: `README.md`
+- Japanese README: `README.ja.md`
+
+## License
+
+This repository uses a split-license model:
+
+- Software code: Apache License 2.0
+- Documentation, diagrams, and research materials: CC BY-NC-SA 4.0
+
+See `LICENSE_POLICY.md` for details.
+
+## Project policies
+
+- [Security Policy](SECURITY.md)
+- [License Policy](LICENSE_POLICY.md)
+- [Contributing Guide](CONTRIBUTING.md)
+
+## Disclaimer
+
+This repository is provided for research and educational purposes only.
+
+It is not a production safety system, not a compliance certification, and not a guarantee of safe autonomous behavior. Users are responsible for reviewing, testing, and adapting the code before any real-world use.
+
+Do not use this repository to process real personal data, confidential operational data, or high-stakes decision workflows without independent review and appropriate safeguards.
