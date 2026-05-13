@@ -114,6 +114,36 @@ This helps detect cases where the internal process and the published result disa
 
 This layer is report-only. It does not rewrite artifacts, change classifications, apply fixes, create pull requests, commit, push, or merge changes automatically.
 
+## Tasukeru adversarial stress test
+
+The Tasukeru adversarial stress test is a local, synthetic, defensive stress test.
+
+It does not attack external systems, execute exploits, scan third-party targets, create pull requests, push commits, apply fixes, or merge changes automatically.
+
+The stress test feeds malformed, contradictory, or bypass-like synthetic inputs into a local evaluator and verifies that Tasukeru-style safety invariants remain intact.
+
+Typical synthetic cases include:
+
+- malformed JSON / JSONL
+- missing required audit keys
+- RFL sealed-state contradictions
+- non-safety-layer sealed rows
+- HITL bypass-like text
+- auto-merge / auto-fix injection-like text
+- duplicate JSON keys
+- suspicious path-like strings
+- oversized audit lines
+
+The expected behavior is fail-closed or review-oriented:
+
+- automation remains disabled
+- unsafe `RUN` is not returned for risky synthetic cases
+- RFL sealed contradictions are escalated without sealing
+- non-safety sealed rows are escalated for review
+- HITL bypass-like inputs do not bypass human review
+
+This test is intended to improve defensive robustness and regression coverage. It is not an offensive security tool.
+
 ## Advisory-only policy
 
 Tasukeru Analysis is an advisory-only review helper.
@@ -504,6 +534,55 @@ This simulator is useful for checking:
 - ARL/HMAC verification
 - KAGE invariants across normal and abnormal paths
 
+### 4. Infrastructure Lifeline Mediation Simulation
+
+Example:
+
+- `infrastructure_lifeline_mediation_randomized_sim_v0_2.py`
+- `tests/test_infrastructure_lifeline_mediation_randomized_sim_v0_2.py`
+
+This simulator models a constrained lifeline-resource mediation scenario involving three infrastructure agents:
+
+- electricity
+- water
+- gas
+
+It is intended as a local, seed-reproducible research simulation for studying how a mediator can create proposal-only allocation plans under constrained failure resources.
+
+Core characteristics:
+
+- three infrastructure agents with normal resource requirements
+- failure-mode total resource constraint
+- minimum guarantees
+- priority weights
+- life-risk scores
+- shortage-rate-aware allocation
+- simulated HITL decisions
+- JSON and stdout output
+- no external API access
+- no real infrastructure control
+- no automatic recovery
+- no automatic shutdown or disconnection
+
+The mediator only creates allocation proposals. It does not control real infrastructure or perform real-world recovery actions.
+
+The simulated human operator may return:
+
+- `APPROVE`
+- `REJECT`
+- `REDEFINE`
+- `REQUEST_ALTERNATIVES`
+
+This simulator is useful for checking:
+
+- constrained resource allocation behavior
+- proposal-only mediation
+- seeded reproducibility
+- HITL branch behavior
+- safety-boundary flags
+- JSON output behavior
+- allocation totals staying within the available resource limit
+
 ## Batch execution and resume
 
 This repository also includes batch-style orchestration examples.
@@ -823,4 +902,3 @@ This repository is provided for research and educational purposes only.
 It is not a production safety system, not a compliance certification, and not a guarantee of safe autonomous behavior. Users are responsible for reviewing, testing, and adapting the code before any real-world use.
 
 Do not use this repository to process real personal data, confidential operational data, or high-stakes decision workflows without independent review and appropriate safeguards.
-
