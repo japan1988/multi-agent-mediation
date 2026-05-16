@@ -334,6 +334,9 @@ Tasukeru Analysis may generate the following review artifacts:
 - `tasukeru_result_consistency_report.md`
 - `tasukeru_result_consistency_report.json`
 - `tasukeru_result_consistency_verify.json`
+- `tasukeru_dimension_dependency_report.md`
+- `tasukeru_dimension_dependency_report.json`
+- `tasukeru_dimension_dependency_verify.json`
 
 `tasukeru_advisory_summary.md` provides a concise overview.
 
@@ -363,6 +366,10 @@ Confidence scores are review-aid metadata only. They do not indicate that a find
 `tasukeru_result_consistency_report.md`, `tasukeru_result_consistency_report.json`, and `tasukeru_result_consistency_verify.json` record whether the process logs and generated result artifacts agree.
 
 They are used to check that decision counts, ARL verification, gate adoption status, self-definition verification, and announcement data remain consistent across outputs.
+
+`tasukeru_dimension_dependency_report.md`, `tasukeru_dimension_dependency_report.json`, and `tasukeru_dimension_dependency_verify.json` record whether findings, affected structures, impact classification, review levels, and generated outputs remain dependency-consistent.
+
+They are advisory-only dependency audit artifacts. They do not modify findings, change classifications, apply fixes, create commits, push changes, or merge pull requests.
 
 ## Advisory behavior
 
