@@ -323,6 +323,9 @@ Tasukeru Analysis は、次の review artifact を生成する場合がありま
 - `tasukeru_result_consistency_report.md`
 - `tasukeru_result_consistency_report.json`
 - `tasukeru_result_consistency_verify.json`
+- `tasukeru_dimension_dependency_report.md`
+- `tasukeru_dimension_dependency_report.json`
+- `tasukeru_dimension_dependency_verify.json`
 
 `tasukeru_advisory_summary.md` は、簡潔な概要を提供します。
 
@@ -352,6 +355,10 @@ Confidence score はレビュー補助メタデータにすぎません。findin
 `tasukeru_result_consistency_report.md`、`tasukeru_result_consistency_report.json`、`tasukeru_result_consistency_verify.json` は、process log と生成された result artifact が一致しているかを記録します。
 
 これらは、decision count、ARL verification、gate adoption status、self-definition verification、announcement data が、各出力間で一貫しているかを確認するために使われます。
+
+`tasukeru_dimension_dependency_report.md`、`tasukeru_dimension_dependency_report.json`、`tasukeru_dimension_dependency_verify.json` は、finding、影響を受ける構造、影響分類、レビュー水準、生成された出力が依存関係として一貫しているかを記録します。
+
+これらは advisory-only の依存関係監査 artifact です。finding の変更、分類の変更、修正適用、commit、push、pull request の merge は行いません。
 
 ## Advisory behavior
 
