@@ -257,6 +257,10 @@ jobs:
           pr_draft_md_path = Path("tasukeru_pr_draft.md")
           pr_draft_json_path = Path("tasukeru_pr_draft.json")
           pr_draft_verify_path = Path("tasukeru_pr_draft_verify.json")
+          three_d_vaf_md_path = Path("tasukeru_3d_vulnerability_review.md")
+          three_d_vaf_json_path = Path("tasukeru_3d_vulnerability_review.json")
+          sis_md_path = Path("tasukeru_safety_impact_simulation.md")
+          sis_json_path = Path("tasukeru_safety_impact_simulation.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -4674,6 +4678,155 @@ jobs:
               pr_draft_verify_payload = read_json(pr_draft_verify_path, {})
               summary_text = read_text(summary_path, "")
               summary_counts = parse_summary_decision_counts(summary_text)
+              three_d_vaf_payload = read_json(three_d_vaf_json_path, {})
+              sis_payload = read_json(sis_json_path, {})
+              pr_comment_text = read_text(pr_comment_path, "")
+
+              # 3D-VAF / SIS / PR-comment consistency.
+              three_d_metadata = metadata.get("three_d_vaf", {}) if isinstance(metadata, dict) else {}
+              sis_metadata = metadata.get("safety_impact_simulation", {}) if isinstance(metadata, dict) else {}
+              three_d_counts = three_d_vaf_payload.get("counts", {}) if isinstance(three_d_vaf_payload, dict) else {}
+              sis_counts = sis_payload.get("counts", {}) if isinstance(sis_payload, dict) else {}
+              sis_comment_policy = sis_payload.get("comment_policy", {}) if isinstance(sis_payload, dict) else {}
+              sis_overall_risk_level = str(sis_payload.get("overall_risk_level", "UNKNOWN")) if isinstance(sis_payload, dict) else "UNKNOWN"
+
+              compare_result_field(
+                  mismatches,
+                  field="3d_vaf.entry_count",
+                  process_value=len(entries),
+                  output_value=int(three_d_counts.get("entry_count", -1)),
+                  artifact=str(three_d_vaf_json_path),
+                  reason_code="RESULT_3D_VAF_ENTRY_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="3d_vaf.metadata_entry_count",
+                  process_value=int(three_d_counts.get("entry_count", -1)),
+                  output_value=int(three_d_metadata.get("entry_count", -1)),
+                  artifact=str(three_d_vaf_json_path),
+                  reason_code="RESULT_3D_VAF_METADATA_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="3d_vaf.fallback_required",
+                  process_value=int(three_d_counts.get("fallback_required", -1)),
+                  output_value=int(three_d_metadata.get("fallback_required", -1)),
+                  artifact=str(three_d_vaf_json_path),
+                  reason_code="RESULT_3D_VAF_FALLBACK_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="sis.entry_count",
+                  process_value=len(entries),
+                  output_value=int(sis_counts.get("entry_count", -1)),
+                  artifact=str(sis_json_path),
+                  reason_code="RESULT_SIS_ENTRY_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="sis.hitl_required",
+                  process_value=int(normalized_counts.get("HITL_REQUIRED", 0)),
+                  output_value=int(sis_counts.get("hitl_required", -1)),
+                  artifact=str(sis_json_path),
+                  reason_code="RESULT_SIS_HITL_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="sis.metadata_risk_level",
+                  process_value=sis_overall_risk_level,
+                  output_value=str(sis_metadata.get("overall_risk_level", "UNKNOWN")),
+                  artifact=str(sis_json_path),
+                  reason_code="RESULT_SIS_RISK_LEVEL_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="sis.metadata_hitl_required",
+                  process_value=int(sis_counts.get("hitl_required", -1)),
+                  output_value=int(sis_metadata.get("hitl_required", -1)),
+                  artifact=str(sis_json_path),
+                  reason_code="RESULT_SIS_METADATA_HITL_MISMATCH",
+              )
+
+              # Public-comment consistency is intentionally coarse: the comment must
+              # either be absent/no-critical for clean runs, or expose only risk level
+              # and HITL status for human-review cases. Full details stay in artifacts.
+              hitl_count_for_comment = int(normalized_counts.get("HITL_REQUIRED", 0))
+              pr_has_critical_marker = "tasukeru-analysis:critical-summary" in pr_comment_text
+              pr_has_no_critical_marker = "tasukeru-analysis:no-critical" in pr_comment_text
+              pr_mentions_risk_level = f"Risk level: `{sis_overall_risk_level}`" in pr_comment_text
+              pr_mentions_hitl_count = f"HITL_REQUIRED: `{hitl_count_for_comment}`" in pr_comment_text
+              pr_mentions_artifacts = "workflow artifacts" in pr_comment_text and "Tasukeru logs" in pr_comment_text
+              pr_forbidden_tokens_present = any(
+                  token in pr_comment_text.lower()
+                  for token in ("exploit steps", "attack instructions", "credential values", "detailed attack paths")
+              )
+
+              if hitl_count_for_comment <= 0:
+                  compare_result_field(
+                      mismatches,
+                      field="pr_comment.clean_run_marker",
+                      process_value=True,
+                      output_value=pr_has_no_critical_marker,
+                      artifact=str(pr_comment_path),
+                      reason_code="RESULT_PR_COMMENT_CLEAN_RUN_MISMATCH",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="pr_comment.no_critical_marker_absent",
+                      process_value=False,
+                      output_value=pr_has_critical_marker,
+                      artifact=str(pr_comment_path),
+                      reason_code="RESULT_PR_COMMENT_UNEXPECTED_CRITICAL_MARKER",
+                  )
+              else:
+                  compare_result_field(
+                      mismatches,
+                      field="pr_comment.critical_marker",
+                      process_value=True,
+                      output_value=pr_has_critical_marker,
+                      artifact=str(pr_comment_path),
+                      reason_code="RESULT_PR_COMMENT_CRITICAL_MARKER_MISSING",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="pr_comment.risk_level",
+                      process_value=True,
+                      output_value=pr_mentions_risk_level,
+                      artifact=str(pr_comment_path),
+                      reason_code="RESULT_PR_COMMENT_RISK_LEVEL_MISMATCH",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="pr_comment.hitl_count",
+                      process_value=True,
+                      output_value=pr_mentions_hitl_count,
+                      artifact=str(pr_comment_path),
+                      reason_code="RESULT_PR_COMMENT_HITL_COUNT_MISMATCH",
+                  )
+                  compare_result_field(
+                      mismatches,
+                      field="pr_comment.artifact_pointer",
+                      process_value=True,
+                      output_value=pr_mentions_artifacts,
+                      artifact=str(pr_comment_path),
+                      reason_code="RESULT_PR_COMMENT_ARTIFACT_POINTER_MISSING",
+                  )
+              compare_result_field(
+                  mismatches,
+                  field="pr_comment.public_details_policy",
+                  process_value=False,
+                  output_value=pr_forbidden_tokens_present,
+                  artifact=str(pr_comment_path),
+                  reason_code="RESULT_PR_COMMENT_FORBIDDEN_DETAIL_PRESENT",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="sis.comment_policy.comment_when_no_problem",
+                  process_value=False,
+                  output_value=bool(sis_comment_policy.get("comment_when_no_problem", False)),
+                  artifact=str(sis_json_path),
+                  reason_code="RESULT_SIS_COMMENT_POLICY_MISMATCH",
+              )
 
               # Decision count consistency.
               compare_result_field(
@@ -4911,6 +5064,11 @@ jobs:
                       str(finding_validation_verify_path),
                       str(clean_run_draft_verify_path),
                       str(pr_draft_verify_path),
+                      str(three_d_vaf_md_path),
+                      str(three_d_vaf_json_path),
+                      str(sis_md_path),
+                      str(sis_json_path),
+                      str(pr_comment_path),
                   ],
                   "process_counts": normalized_counts,
                   "summary_counts": summary_counts,
@@ -5306,6 +5464,393 @@ jobs:
                   f.write("- Auto merge: `false`\n")
                   f.write("- Human decision required: `true`\n")
 
+
+          def build_3d_vaf_route(entry: dict[str, Any]) -> list[str]:
+              route = ["Fact axis / NCF"]
+              reason_code = str(entry.get("reason_code", ""))
+              category = str(entry.get("category", ""))
+              decision = str(entry.get("decision", ""))
+              severity = str(entry.get("severity", ""))
+              path_profile = str(entry.get("path_profile", ""))
+              message_blob = " ".join(
+                  str(entry.get(key, ""))
+                  for key in ("message", "suggestion", "reason_code", "category")
+              ).lower()
+
+              if reason_code.startswith("REL_") or "relativity" in category or "readability" in category:
+                  route.append("RFL")
+              if any(token in message_blob for token in ("number", "count", "ratio", "percent", "threshold", "score", "line", "件", "割合", "閾値", "数値")):
+                  route.append("ACG")
+              if any(token in reason_code for token in ("BYPASS", "ABUSE", "UNAPPROVED", "EXTERNAL")) or any(
+                  token in category for token in ("abuse", "safety", "control", "workflow")
+              ):
+                  route.append("Impact axis / CBL")
+              if any(token in reason_code for token in ("CONFLICT", "INVARIANT", "CONSISTENCY", "ARL", "SEALED")):
+                  route.append("Structure axis / GCR")
+              if decision in {"FIX_RECOMMENDED"} or entry.get("autofix", {}).get("safe_autofix_candidate"):
+                  route.append("AGD")
+              if decision == "HITL_REQUIRED":
+                  route.append("HITL / REVIEW_REQUIRED")
+              if path_profile in {"tests", "workflow", "docs_or_policy", "safety_or_hitl", "active_mainline"}:
+                  route.append("Structure axis")
+              if not route:
+                  route.append("Standard fixed-gate review")
+
+              # Preserve order while removing duplicates.
+              return list(dict.fromkeys(route))
+
+          def build_3d_vaf_entry(entry: dict[str, Any]) -> dict[str, Any]:
+              route = build_3d_vaf_route(entry)
+              decision = str(entry.get("decision", ""))
+              severity = str(entry.get("severity", ""))
+              category = str(entry.get("category", ""))
+              reason_code = str(entry.get("reason_code", ""))
+              path_profile = str(entry.get("path_profile", ""))
+              file_path = str(entry.get("file", ""))
+              line = entry.get("line")
+              message = one_line(entry.get("message", ""), 360)
+
+              fallback_triggers: list[str] = []
+              if decision == "HITL_REQUIRED":
+                  fallback_triggers.append("human_review_required")
+              if severity in {"CRITICAL", "HIGH"}:
+                  fallback_triggers.append("high_or_critical_severity")
+              if not file_path or file_path == "?":
+                  fallback_triggers.append("fact_axis_incomplete")
+              if path_profile in {"unknown", "", "general"}:
+                  fallback_triggers.append("structure_axis_needs_context")
+              if any(token in category for token in ("abuse", "safety", "control")):
+                  fallback_triggers.append("impact_axis_safety_boundary")
+              if any(token in reason_code for token in ("CONFLICT", "INVARIANT", "SEALED", "BYPASS")):
+                  fallback_triggers.append("standard_gate_fallback_required")
+
+              fallback_required = bool(fallback_triggers)
+
+              return {
+                  "source": entry.get("source"),
+                  "decision": decision,
+                  "severity": severity,
+                  "reason_code": reason_code,
+                  "file": file_path,
+                  "line": line,
+                  "fingerprint_hash": entry.get("fingerprint_hash"),
+                  "dynamic_gate_route": route,
+                  "fallback_required": fallback_required,
+                  "fallback_triggers": fallback_triggers,
+                  "fact_axis": {
+                      "confirmed": {
+                          "source": entry.get("source"),
+                          "rule_id": entry.get("rule_id"),
+                          "file": file_path,
+                          "line": line,
+                          "decision": decision,
+                          "reason_code": reason_code,
+                          "message": message,
+                      },
+                      "assumptions": [
+                          "Runtime reachability is not assumed unless separately confirmed.",
+                          "Exploitability is not asserted from a static finding alone.",
+                      ],
+                      "unknowns": [
+                          "Exact runtime exposure",
+                          "Caller/user input reachability",
+                          "Operational impact outside the changed files",
+                      ],
+                  },
+                  "structure_axis": {
+                      "path_profile": path_profile,
+                      "affected_file": file_path,
+                      "related_tests": "not_resolved_by_3d_vaf",
+                      "dependency_impact": "unknown" if path_profile in {"general", "unknown", ""} else path_profile,
+                      "gate_route": route,
+                  },
+                  "impact_axis": {
+                      "defensive_focus": "safe remediation and human review support only",
+                      "human_review_burden": (
+                          "high" if decision == "HITL_REQUIRED"
+                          else "medium" if decision in {"FIX_RECOMMENDED", "REVIEW_RECOMMENDED"}
+                          else "low"
+                      ),
+                      "external_side_effect_risk": "review_required" if any("CBL" in item for item in route) else "not_indicated",
+                      "rollback_cost": "review_required" if fallback_required else "low_or_unknown",
+                  },
+              }
+
+          def generate_tasukeru_3d_vulnerability_review(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> dict[str, Any]:
+              review_entries = [build_3d_vaf_entry(entry) for entry in entries]
+              route_counts: Counter[str] = Counter()
+              for item in review_entries:
+                  for route in item.get("dynamic_gate_route", []) or []:
+                      route_counts[route] += 1
+              fallback_count = sum(1 for item in review_entries if item.get("fallback_required"))
+              decision_counts = Counter(item.get("decision", "UNKNOWN") for item in review_entries)
+
+              payload = {
+                  "schema_version": "3d-vaf-v0.1",
+                  "tool": "tasukeru_3d_vulnerability_review",
+                  "purpose": (
+                      "Organize findings through Fact, Structure, and Impact axes, "
+                      "then fall back to the standard fixed-gate review when 3D review is unstable."
+                  ),
+                  "policy": {
+                      "advisory_only": True,
+                      "gate_definitions_mutated": False,
+                      "routing_only": True,
+                      "human_review_replaces_no_gate": False,
+                      "ci_replaces_no_gate": False,
+                      "include_exploit_payloads": False,
+                      "include_attack_steps": False,
+                      "auto_apply_allowed": False,
+                  },
+                  "fallback_policy": {
+                      "use_3d_review_when_stable": True,
+                      "fallback_to_standard_fixed_gates_when_unstable": True,
+                      "fallback_routes": ["NCF", "RFL", "CBL", "AGD", "GCR", "ADC", "ACG", "HITL / REVIEW_REQUIRED"],
+                      "fallback_triggers": [
+                          "facts_assumptions_unknowns_cannot_be_separated",
+                          "dependency_or_test_impact_cannot_be_confirmed",
+                          "impact_range_is_unclear",
+                          "three_axes_conflict",
+                          "human_review_is_required",
+                          "safety_boundary_external_side_effect_or_control_bypass_risk",
+                      ],
+                  },
+                  "counts": {
+                      "entry_count": len(review_entries),
+                      "fallback_required": fallback_count,
+                      "fallback_not_required": len(review_entries) - fallback_count,
+                      "decisions": dict(decision_counts),
+                      "routes": dict(route_counts),
+                  },
+                  "entries": review_entries,
+              }
+              write_json(three_d_vaf_json_path, payload)
+
+              with three_d_vaf_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru 3D Vulnerability Review\n\n")
+                  f.write("This report is advisory-only. It does not change gate definitions and does not authorize automatic fixes or external actions.\n\n")
+                  f.write("## Policy\n\n")
+                  f.write("- 3D review axes: Fact / Structure / Impact\n")
+                  f.write("- Gate definitions are fixed; only the review route changes dynamically.\n")
+                  f.write("- If 3D review is unstable, fall back to the standard fixed-gate review.\n")
+                  f.write("- No exploit payloads or attack steps are included.\n\n")
+                  f.write("## Counts\n\n")
+                  f.write(f"- Entries: `{len(review_entries)}`\n")
+                  f.write(f"- Fallback required: `{fallback_count}`\n")
+                  f.write(f"- Fallback not required: `{len(review_entries) - fallback_count}`\n\n")
+                  f.write("## Dynamic gate routes\n\n")
+                  for route, count in sorted(route_counts.items()):
+                      f.write(f"- {route}: `{count}`\n")
+                  f.write("\n## Review sample\n\n")
+                  for item in review_entries[:80]:
+                      f.write(f"- `{item.get('decision')}` `{item.get('reason_code')}` `{item.get('file')}`")
+                      if item.get("line"):
+                          f.write(f":{item.get('line')}")
+                      f.write("\n")
+                      f.write(f"  - Route: `{', '.join(item.get('dynamic_gate_route', []))}`\n")
+                      f.write(f"  - Fallback required: `{item.get('fallback_required')}`\n")
+                      triggers = item.get("fallback_triggers", []) or ["none"]
+                      f.write(f"  - Fallback triggers: `{', '.join(triggers)}`\n")
+                      f.write(f"  - Fact axis: `{one_line(item.get('fact_axis', {}).get('confirmed', {}).get('message', ''), 220)}`\n")
+                      f.write(f"  - Structure axis: `{item.get('structure_axis', {}).get('path_profile')}`\n")
+                      f.write(f"  - Impact axis: `{item.get('impact_axis', {}).get('human_review_burden')}` review burden\n")
+                  if len(review_entries) > 80:
+                      f.write(f"\n... and {len(review_entries) - 80} more entries in `tasukeru_3d_vulnerability_review.json`.\n")
+              return payload
+
+          def classify_sis_risk_level(entry: dict[str, Any], vaf_entry: dict[str, Any] | None = None) -> str:
+              """Classify public-safe risk level for safety impact simulation.
+
+              The level is intentionally coarse. Detailed reasoning remains in artifacts/logs,
+              not in public PR comments.
+              """
+              decision = str(entry.get("decision", entry.get("level", "")))
+              severity = str(entry.get("severity", "")).upper()
+              category = str(entry.get("category", "")).lower()
+              reason_code = str(entry.get("reason_code", "")).upper()
+              route = vaf_entry.get("dynamic_gate_route", []) if isinstance(vaf_entry, dict) else []
+              route_blob = " ".join(str(item) for item in route).upper()
+
+              if decision == "HITL_REQUIRED" and (
+                  severity in {"CRITICAL", "HIGH"}
+                  or any(token in reason_code for token in ("ABUSE", "BYPASS", "EXTERNAL", "UNAPPROVED", "SEALED"))
+                  or any(token in category for token in ("abuse", "safety", "control"))
+                  or "CBL" in route_blob
+              ):
+                  return "HIGH"
+              if decision == "HITL_REQUIRED":
+                  return "MEDIUM"
+              if severity in {"CRITICAL", "HIGH"}:
+                  return "MEDIUM"
+              if decision in {"REVIEW_RECOMMENDED", "FIX_RECOMMENDED"}:
+                  return "LOW"
+              return "NONE"
+
+          def build_sis_entry(entry: dict[str, Any], vaf_entry: dict[str, Any] | None = None) -> dict[str, Any]:
+              risk_level = classify_sis_risk_level(entry, vaf_entry)
+              file_path = str(entry.get("file", ""))
+              path_profile = str(entry.get("path_profile", classify_path_profile(file_path)))
+              decision = str(entry.get("decision", entry.get("level", "")))
+              reason_code = str(entry.get("reason_code", ""))
+              route = vaf_entry.get("dynamic_gate_route", []) if isinstance(vaf_entry, dict) else build_3d_vaf_route(entry)
+              fallback_required = bool(vaf_entry.get("fallback_required")) if isinstance(vaf_entry, dict) else decision == "HITL_REQUIRED"
+
+              human_action = "no_action"
+              if risk_level in {"HIGH", "MEDIUM"} or decision == "HITL_REQUIRED":
+                  human_action = "review_artifact_before_merge"
+              elif decision in {"REVIEW_RECOMMENDED", "FIX_RECOMMENDED"}:
+                  human_action = "review_when_touching_related_files"
+
+              return {
+                  "fingerprint_hash": entry.get("fingerprint_hash"),
+                  "source": entry.get("source"),
+                  "decision": decision,
+                  "risk_level": risk_level,
+                  "reason_code": reason_code,
+                  "file": file_path,
+                  "line": entry.get("line"),
+                  "visibility": {
+                      "public_comment_detail_level": "risk_level_only",
+                      "artifact_detail_level": "full_defensive_review",
+                      "include_exploit_steps_in_public_comment": False,
+                      "include_payloads_in_public_comment": False,
+                      "include_attack_paths_in_public_comment": False,
+                  },
+                  "fact_axis": {
+                      "confirmed": [
+                          {
+                              "source": entry.get("source"),
+                              "rule_id": entry.get("rule_id"),
+                              "decision": decision,
+                              "reason_code": reason_code,
+                              "file": file_path,
+                              "line": entry.get("line"),
+                          }
+                      ],
+                      "assumptions": [
+                          "Exploitability is not asserted from static analysis alone.",
+                          "Runtime reachability must be confirmed by a human or separate test evidence.",
+                      ],
+                      "unknowns": [
+                          "actual runtime exposure",
+                          "caller/user-input reachability",
+                          "environment-specific impact",
+                      ],
+                  },
+                  "structure_axis": {
+                      "path_profile": path_profile,
+                      "affected_files": [file_path] if file_path and file_path != "?" else [],
+                      "related_tests": "not_resolved_by_sis",
+                      "dependency_impact": "unknown" if path_profile in {"", "general", "unknown"} else path_profile,
+                      "dynamic_gate_route": route,
+                      "fallback_required": fallback_required,
+                  },
+                  "impact_axis": {
+                      "safety_impact": risk_level,
+                      "external_side_effect_risk": "review_required" if any("CBL" in str(item) for item in route) else "not_indicated",
+                      "human_review_burden": (
+                          "high" if risk_level == "HIGH" else "medium" if risk_level == "MEDIUM" else "low"
+                      ),
+                      "rollback_cost": "review_required" if fallback_required else "low_or_unknown",
+                      "recommended_human_action": human_action,
+                  },
+              }
+
+          def generate_tasukeru_safety_impact_simulation(
+              entries: list[dict[str, Any]],
+              three_d_vaf_payload: dict[str, Any],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Generate defensive safety-impact simulation artifacts.
+
+              SIS does not execute exploit code, perform external calls, apply fixes,
+              or replace human review. It estimates review impact and records details
+              in artifacts/logs. Public PR comments only receive a coarse risk level.
+              """
+              vaf_entries = three_d_vaf_payload.get("entries", []) if isinstance(three_d_vaf_payload, dict) else []
+              vaf_by_fingerprint = {
+                  str(item.get("fingerprint_hash")): item
+                  for item in vaf_entries
+                  if isinstance(item, dict) and item.get("fingerprint_hash")
+              }
+              sis_entries = [
+                  build_sis_entry(entry, vaf_by_fingerprint.get(str(entry.get("fingerprint_hash"))))
+                  for entry in entries
+              ]
+              risk_order = {"NONE": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
+              risk_counts = Counter(item.get("risk_level", "NONE") for item in sis_entries)
+              overall_risk_level = "NONE"
+              for level, _score in sorted(risk_order.items(), key=lambda pair: pair[1], reverse=True):
+                  if risk_counts.get(level, 0):
+                      overall_risk_level = level
+                      break
+              hitl_required = int((state or {}).get("critical_count", 0))
+              if hitl_required > 0 and risk_order.get(overall_risk_level, 0) < risk_order["MEDIUM"]:
+                  overall_risk_level = "MEDIUM"
+
+              payload = {
+                  "schema_version": "sis-v0.1",
+                  "tool": "tasukeru_safety_impact_simulation",
+                  "purpose": "Simulate defensive safety impact scope and route HITL without exposing details in PR comments.",
+                  "overall_risk_level": overall_risk_level,
+                  "comment_policy": {
+                      "comment_when_no_problem": False,
+                      "public_comment_detail_level": "risk_level_only",
+                      "details_visibility": "workflow_artifact_or_logs",
+                      "public_comment_allowed_fields": ["overall_risk_level", "decision", "artifact_pointer"],
+                  },
+                  "policy": {
+                      "advisory_only": True,
+                      "simulation_only": True,
+                      "no_exploit_execution": True,
+                      "no_external_attack": True,
+                      "no_real_api_connection": True,
+                      "no_real_infra_control": True,
+                      "no_secret_exfiltration": True,
+                      "no_autofix_apply": True,
+                      "no_hitl_bypass": True,
+                  },
+                  "counts": {
+                      "entry_count": len(sis_entries),
+                      "risk_levels": dict(risk_counts),
+                      "hitl_required": hitl_required,
+                  },
+                  "entries": sis_entries,
+              }
+              write_json(sis_json_path, payload)
+
+              with sis_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru Safety Impact Simulation\n\n")
+                  f.write("This report is artifact/log only. Public PR comments should expose only the coarse risk level and HITL status.\n\n")
+                  f.write("## Policy\n\n")
+                  f.write("- Defensive review and handoff only.\n")
+                  f.write("- No exploit execution, payloads, attack steps, external attacks, real API connections, or real infrastructure control.\n")
+                  f.write("- Detailed reasoning stays in workflow artifacts/logs.\n")
+                  f.write("- If no HITL_REQUIRED or safety-impact risk is detected, no PR comment should be posted.\n\n")
+                  f.write("## Summary\n\n")
+                  f.write(f"- Overall risk level: `{overall_risk_level}`\n")
+                  f.write(f"- Entries: `{len(sis_entries)}`\n")
+                  f.write(f"- HITL_REQUIRED: `{hitl_required}`\n")
+                  for level in ("HIGH", "MEDIUM", "LOW", "NONE"):
+                      f.write(f"- {level}: `{risk_counts.get(level, 0)}`\n")
+                  f.write("\n## Review sample\n\n")
+                  for item in sis_entries[:80]:
+                      f.write(f"- Risk `{item.get('risk_level')}` / Decision `{item.get('decision')}` / Reason `{item.get('reason_code')}` / `{item.get('file')}`")
+                      if item.get("line"):
+                          f.write(f":{item.get('line')}")
+                      f.write("\n")
+                      f.write(f"  - Human action: `{item.get('impact_axis', {}).get('recommended_human_action')}`\n")
+                      f.write(f"  - Gate route: `{', '.join(item.get('structure_axis', {}).get('dynamic_gate_route', []))}`\n")
+                      f.write(f"  - Public detail: `{item.get('visibility', {}).get('public_comment_detail_level')}`\n")
+                  if len(sis_entries) > 80:
+                      f.write(f"\n... and {len(sis_entries) - 80} more entries in `tasukeru_safety_impact_simulation.json`.\n")
+              return payload
+
           def write_outputs(entries: list[dict[str, Any]], state: dict[str, Any], metadata: dict[str, Any]) -> None:
               counts = Counter(entry["decision"] for entry in entries)
               path_profile_counts = Counter(str(entry.get("path_profile", "unknown")) for entry in entries)
@@ -5441,6 +5986,8 @@ jobs:
                   f.write("- `tasukeru_readme_refinement_draft.json`\n")
                   f.write("- `tasukeru_announcement.md`\n")
                   f.write("- `tasukeru_announcement.json`\n")
+                  f.write("- `tasukeru_3d_vulnerability_review.md`\n")
+                  f.write("- `tasukeru_3d_vulnerability_review.json`\n")
                   f.write("- `tasukeru_arl.jsonl`\n")
                   f.write("- `tasukeru_arl_verify.json`\n")
                   f.write("- `tasukeru_logs/`\n\n")
@@ -5463,62 +6010,24 @@ jobs:
 
               with pr_comment_path.open("w", encoding="utf-8") as f:
                   critical = [entry for entry in entries if entry["decision"] == "HITL_REQUIRED"]
+                  sis_metadata = metadata.get("safety_impact_simulation", {}) if isinstance(metadata, dict) else {}
+                  sis_risk_level = str(sis_metadata.get("overall_risk_level") or ("MEDIUM" if critical else "NONE"))
                   if not critical:
-                      counts_for_comment = Counter(entry["decision"] for entry in entries)
-                      f.write("<!-- tasukeru-analysis:announcement-summary -->\n\n")
-                      f.write("## Tasukeru Announcement\n\n")
-                      f.write("### Summary: `NO HITL_REQUIRED`\n\n")
-                      f.write("No `HITL_REQUIRED` findings were detected in this run.\n\n")
-                      f.write("このrunでは `HITL_REQUIRED` はありません。\n")
-                      f.write("このコメントは advisory status summary であり、安全保証ではありません。\n\n")
-                      f.write("### Quick check\n\n")
-                      f.write("- HITL_REQUIRED: `0`\n")
-                      f.write(f"- FIX_RECOMMENDED: `{counts_for_comment.get('FIX_RECOMMENDED', 0)}`\n")
-                      f.write(f"- REVIEW_RECOMMENDED: `{counts_for_comment.get('REVIEW_RECOMMENDED', 0)}`\n")
-                      f.write("- Auto branch creation: `false`\n")
-                      f.write("- Auto PR creation: `false`\n")
-                      f.write("- Auto commit: `false`\n")
-                      f.write("- Auto push: `false`\n")
-                      f.write("- Auto fix: `false`\n")
-                      f.write("- Auto merge: `false`\n\n")
-                      f.write("<details>\n<summary>Details</summary>\n\n")
-                      f.write("See `tasukeru_announcement.md`, `tasukeru_arl_verify.json`, and `tasukeru_hitl_review.md` in the workflow artifacts for the full advisory summary.\n\n")
-                      f.write("This comment is advisory-only. It does not replace human review and does not authorize automatic fixes or merges.\n\n")
-                      f.write("</details>\n")
+                      f.write("<!-- tasukeru-analysis:no-critical -->\n")
+                      f.write("No HITL_REQUIRED incidents. No PR comment should be posted.\n")
+                      f.write("Details, if any, are stored in workflow artifacts/logs.\n")
                       return
+
                   f.write("<!-- tasukeru-analysis:critical-summary -->\n\n")
-                  f.write("## Tasukeru Analysis: 重大確認が必要です\n\n")
-                  f.write("### 判定\n\nHITL_REQUIRED\n\n")
-                  f.write("### 何が変わったか\n\n")
-                  f.write("このPRで、Tasukeru Analysis が重大確認対象の変更を検出しました。\n")
-                  f.write("HITLロジック、安全不変条件、主要ワークフロー、または公開文書方針に影響する可能性があります。\n\n")
-                  f.write("### 対象\n\n")
-                  for entry in critical[:10]:
-                      f.write(f"- `{entry.get('incident_id') or ''}` `{entry['reason_code']}` `{entry['file']}`")
-                      if entry.get("line"):
-                          f.write(f":{entry['line']}")
-                      f.write(f" — `{entry['fingerprint_hash']}`\n")
-                  if len(critical) > 10:
-                      f.write(f"- ... and {len(critical) - 10} more critical entries in artifacts.\n")
-                  f.write("\n### 推奨対応\n\n")
-                  f.write("- 該当箇所を人間が確認してください。\n")
-                  f.write("- 自動修正・自動PR作成・自動マージは行わないでください。\n")
-                  f.write("- 公開PRコメントには攻撃手段・悪用手順・payload は載せません。\n")
-                  f.write("- 詳細は `tasukeru_hitl_review.md` と `tasukeru_hitl_review.json` を確認してください。\n\n")
-                  f.write("### 自動化制限\n\n")
-                  f.write("- Auto branch creation: `false`\n")
-                  f.write("- Auto PR creation: `false`\n")
-                  f.write("- Auto commit: `false`\n")
-                  f.write("- Auto push: `false`\n")
-                  f.write("- Auto fix: `false`\n")
-                  f.write("- Auto merge: `false`\n")
-                  f.write("- Human decision required: `true`\n\n")
-                  f.write("<details>\n<summary>English details</summary>\n\n")
-                  f.write("## Tasukeru Analysis: Critical review required\n\n")
-                  f.write("This PR introduced one or more changes that may affect HITL logic, safety invariants, the review workflow, or public documentation policy.\n\n")
-                  f.write("Please review the affected files manually. Do not auto-fix, auto-create a PR, or auto-merge this change.\n\n")
-                  f.write("Security details are intentionally limited to defensive review and safe remediation guidance. Exploit payloads, attack steps, and offensive reproduction instructions must not be included in public PR comments.\n\n")
-                  f.write("</details>\n")
+                  f.write("## Tasukeru Safety Review\n\n")
+                  f.write("3D safety review detected a potential risk.\n\n")
+                  f.write(f"- Risk level: `{sis_risk_level}`\n")
+                  f.write("- Decision: `HITL_REQUIRED`\n")
+                  f.write(f"- HITL_REQUIRED: `{len(critical)}`\n")
+                  f.write("- Details: see workflow artifacts / Tasukeru logs.\n")
+                  f.write("- Key artifacts: `tasukeru_safety_impact_simulation.md`, `tasukeru_safety_impact_simulation.json`, `tasukeru_3d_vulnerability_review.md`, `tasukeru_3d_vulnerability_review.json`, `tasukeru_hitl_review.md`, `tasukeru_hitl_review.json`\n\n")
+                  f.write("This PR comment contains only coarse risk metadata; detailed findings stay in workflow artifacts/logs.\n")
+                  f.write("This is advisory-only and requires human review before any action.\n")
 
               github_summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
               if github_summary:
@@ -5559,6 +6068,40 @@ jobs:
               "ruff_exit": read_exit("ruff.exit"),
               "bandit_exit": read_exit("bandit.exit"),
               "pip_audit_exit": read_exit("pip-audit.exit"),
+          }
+
+          three_d_vaf_result = generate_tasukeru_3d_vulnerability_review(
+              all_entries,
+              notification_state,
+              metadata,
+          )
+          metadata["three_d_vaf"] = {
+              "schema_version": three_d_vaf_result.get("schema_version"),
+              "entry_count": three_d_vaf_result.get("counts", {}).get("entry_count"),
+              "fallback_required": three_d_vaf_result.get("counts", {}).get("fallback_required"),
+              "route_counts": three_d_vaf_result.get("counts", {}).get("routes", {}),
+              "artifacts": [
+                  "tasukeru_3d_vulnerability_review.md",
+                  "tasukeru_3d_vulnerability_review.json",
+              ],
+          }
+
+          sis_result = generate_tasukeru_safety_impact_simulation(
+              all_entries,
+              three_d_vaf_result,
+              notification_state,
+              metadata,
+          )
+          metadata["safety_impact_simulation"] = {
+              "schema_version": sis_result.get("schema_version"),
+              "overall_risk_level": sis_result.get("overall_risk_level"),
+              "risk_counts": sis_result.get("counts", {}).get("risk_levels", {}),
+              "hitl_required": sis_result.get("counts", {}).get("hitl_required"),
+              "comment_policy": sis_result.get("comment_policy", {}),
+              "artifacts": [
+                  "tasukeru_safety_impact_simulation.md",
+                  "tasukeru_safety_impact_simulation.json",
+              ],
           }
 
           finding_validation_result = generate_tasukeru_finding_validation_report(
@@ -5693,6 +6236,16 @@ jobs:
           print(f"PR draft changed files: {pr_draft.get('changed_file_count')}")
           print(f"PR draft contradictions: {pr_draft.get('contradiction_count')}")
           print("")
+          print("3D Vulnerability Review v0.1")
+          three_d_vaf = metadata.get("three_d_vaf", {})
+          print(f"3D entries: {three_d_vaf.get('entry_count')}")
+          print(f"3D fallback required: {three_d_vaf.get('fallback_required')}")
+          print("")
+          print("Safety Impact Simulation v0.1")
+          sis = metadata.get("safety_impact_simulation", {})
+          print(f"SIS overall risk level: {sis.get('overall_risk_level')}")
+          print(f"SIS risk counts: {sis.get('risk_counts')}")
+          print("")
           print("Result Consistency Auditor v1")
           result_consistency = metadata.get("result_consistency", {})
           print(f"Result consistency verified: {result_consistency.get('verified')}")
@@ -5728,6 +6281,10 @@ jobs:
             tasukeru_readme_refinement_draft.json
             tasukeru_announcement.md
             tasukeru_announcement.json
+            tasukeru_3d_vulnerability_review.md
+            tasukeru_3d_vulnerability_review.json
+            tasukeru_safety_impact_simulation.md
+            tasukeru_safety_impact_simulation.json
             tasukeru_self_definition_effective.json
             tasukeru_self_definition_chain.jsonl
             tasukeru_self_definition_verify.json
@@ -5839,6 +6396,10 @@ jobs:
             
             announcement = read_json_file(announcement_json_path, {})
             hitl_review = read_json_file(hitl_json_path, {})
+            sis_json_path = Path("tasukeru_safety_impact_simulation.json")
+            sis_payload = read_json_file(sis_json_path, {})
+            result_consistency_verify_path = Path("tasukeru_result_consistency_verify.json")
+            result_consistency_verify = read_json_file(result_consistency_verify_path, {})
             announcement_md = (
                 announcement_md_path.read_text(encoding="utf-8")
                 if announcement_md_path.exists()
@@ -5877,19 +6438,32 @@ jobs:
                 else state.get("critical_count", 0)
             )
             arl_verified = arl.get("verified")
+            sis_risk_level = str(sis_payload.get("overall_risk_level") or "UNKNOWN") if isinstance(sis_payload, dict) else "UNKNOWN"
+            sis_counts = sis_payload.get("counts", {}) if isinstance(sis_payload, dict) else {}
+            result_consistency_failed = (
+                isinstance(result_consistency_verify, dict)
+                and result_consistency_verify.get("verified") is False
+            )
             
             # Keep PR noise low and keep policy consistent:
-            # comment only when human intervention is required, or when ARL verification failed.
-            if hitl_required <= 0 and arl_verified is not False:
-                print("No HITL_REQUIRED findings and ARL verification did not fail; skipping PR comment.")
+            # comment only when human intervention is required, ARL verification failed,
+            # or the result-consistency auditor detected a process/output mismatch.
+            if hitl_required <= 0 and arl_verified is not False and not result_consistency_failed:
+                print("No HITL_REQUIRED findings, ARL verification did not fail, and result consistency verified; skipping PR comment.")
                 raise SystemExit(0)
             
             if hitl_required > 0:
                 status_label = "REVIEW REQUIRED"
-                headline = "HITL_REQUIRED was detected. Human review is required before merge."
-            else:
+                headline = (
+                    "3D safety review detected a potential risk. "
+                    "Only the risk level is shown here; details are in workflow artifacts/logs."
+                )
+            elif arl_verified is False:
                 status_label = "ARL VERIFY FAILED"
                 headline = "ARL verification failed. Check artifacts before using this summary for review."
+            else:
+                status_label = "RESULT CONSISTENCY FAILED"
+                headline = "Result consistency verification failed. Check artifacts before using this summary for review."
             
             auto_policy_lines = [
                 f"- Auto branch creation: `{policy.get('auto_branch_allowed', False)}`",
@@ -5970,86 +6544,47 @@ jobs:
                         folded_hitl_lines.append("- HITL entries were not expanded; open the artifacts listed below.")
 
             artifact_names = [
-                "tasukeru_advisory_summary.md",
+                "tasukeru_safety_impact_simulation.md",
+                "tasukeru_safety_impact_simulation.json",
+                "tasukeru_3d_vulnerability_review.md",
+                "tasukeru_3d_vulnerability_review.json",
                 "tasukeru_hitl_review.md",
                 "tasukeru_hitl_review.json",
+                "tasukeru_result_consistency_report.md",
+                "tasukeru_result_consistency_report.json",
+                "tasukeru_result_consistency_verify.json",
                 "tasukeru_arl_verify.json",
-                "tasukeru_dradm_draft.md",
-                "tasukeru_readme_refinement_draft.md",
-                "tasukeru_confidence_report.md",
             ]
-            detail_lines = [
-                "Full details are kept in workflow artifacts, not expanded in this PR comment.",
-                "",
-                "Review artifacts:",
-                *[f"- `{name}`" for name in artifact_names],
-            ]
-            if recommended_next_actions:
-                detail_lines.extend(["", "Recommended next checks:"])
-                detail_lines.extend(f"- {item}" for item in recommended_next_actions)
-            if look_first:
-                detail_lines.extend(["", "Look first:"])
-                detail_lines.extend(f"- `{item}`" for item in look_first)
-            if hitl_required > 0 and critical_comment and "tasukeru-analysis:no-critical" not in critical_comment:
-                detail_lines.extend(
-                    [
-                        "",
-                        "Critical finding details were generated in `tasukeru_pr_comment.md`.",
-                        "Open the artifact before taking action.",
-                    ]
-                )
-            
             marker = "<!-- tasukeru-analysis:critical-summary -->"
+            if hitl_required > 0:
+                decision_label = "HITL_REQUIRED"
+            elif arl_verified is False:
+                decision_label = "ARL_VERIFY_FAILED"
+            else:
+                decision_label = "RESULT_CONSISTENCY_FAILED"
+            artifact_lines = [f"- `{name}`" for name in artifact_names]
             comment_body = "\n".join(
                 [
                     marker,
                     "",
-                    "## Tasukeru Announcement",
+                    "## Tasukeru Safety Review",
                     "",
-                    f"### Summary: `{status_label}`",
+                    "3D safety review detected a potential risk." if hitl_required > 0 else "ARL verification failed.",
                     "",
-                    headline,
+                    "### Public summary",
                     "",
-                    conclusion_ja,
-                    "",
-                    "### Quick check",
-                    "",
-                    f"- Mode: `{mode}`",
+                    f"- Risk level: `{sis_risk_level}`",
+                    f"- Decision: `{decision_label}`",
                     f"- HITL_REQUIRED: `{hitl_required}`",
-                    f"- ARL verified: `{arl_verified}`",
-                    f"- ARL rows: `{arl.get('row_count')}`",
-                    f"- ARL error count: `{arl.get('error_count')}`",
-                    f"- Self-definition verified: `{(announcement.get('self_definition') or {}).get('verified') if isinstance(announcement, dict) else None}`",
-                    f"- Confidence: `{confidence.get('score')}` / `1.0` ({confidence.get('level')})",
-                    f"- FIX_RECOMMENDED: `{review_queue.get('fix_recommended')}`",
-                    f"- REVIEW_RECOMMENDED: `{review_queue.get('review_recommended')}`",
-                    f"- README refinement: `{drafts.get('readme_refinement_status')}`",
+                    "- Details: see workflow artifacts / Tasukeru logs.",
+                    "- Public comment policy: risk level only.",
                     "",
-                    "### Automation policy",
+                    "### Review artifacts",
                     "",
-                    *auto_policy_lines,
+                    *artifact_lines,
                     "",
-                    *(
-                        [
-                            "<details>",
-                            f"<summary>Sanitized HITL_REQUIRED summary ({hitl_required})</summary>",
-                            "",
-                            "\n".join(folded_hitl_lines),
-                            "",
-                            "</details>",
-                            "",
-                        ]
-                        if hitl_required > 0
-                        else []
-                    ),
-                    "<details>",
-                    "<summary>Review artifacts and next checks</summary>",
-                    "",
-                    "\n".join(detail_lines),
-                    "",
-                    "</details>",
-                    "",
-                    "This comment is an advisory status summary only. It is not a safety guarantee and does not replace human review.",
+                    "This PR comment contains only coarse risk metadata; detailed findings stay in workflow artifacts/logs.",
+                    "This comment is advisory-only and does not replace human review.",
                 ]
             )
             
