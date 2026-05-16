@@ -91,6 +91,18 @@ Findings should be used to improve safety, reliability, traceability, and govern
 
 Tasukeru Analysis is an advisory workflow for defensive repository review.
 
+Tasukeru Analysis is also intended to help inspect and govern the increasing complexity of multi-agent and agentic workflows. As these workflows grow, their behavior can become harder to inspect, explain, and audit.
+
+It focuses on review-support questions such as:
+
+- whether findings are classified at an appropriate review level
+- whether process logs and generated outputs remain consistent
+- whether uncertain or risky cases should be routed back to HITL
+- whether public PR comments avoid excessive detail
+- whether the workflow remains advisory-only without automatic fixes, commits, pushes, or merges
+
+The workflow does not disclose detailed exploit procedures or act as an autonomous enforcement system. Detailed findings remain in workflow artifacts/logs for human review.
+
 It runs static and repository-specific checks such as:
 
 - Ruff
