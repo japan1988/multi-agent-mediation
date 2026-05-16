@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-ai_hierarchy_dynamics_full_log_20250804.py
+ai_hierarchy_simulation_log.py
 
 Research/demo simulation:
 - hierarchical agents
