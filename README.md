@@ -602,6 +602,41 @@ This simulator is useful for checking:
 - JSON output behavior
 - allocation totals staying within the available resource limit
 
+### 5. Agent Incident Mediation Simulation
+
+Example:
+
+- `agent_incident_mediation_sim_v0_2.py`
+- `tests/test_agent_incident_mediation_sim_v0_2.py`
+
+This simulator models a local-only incident mediation flow where one simulated agent performs an out-of-contract action during orchestration.
+
+PseudoTasukeru detects a log/output mismatch, creates Tasukeru-style review artifacts, and escalates the finding to a Mediator. The Mediator then performs simulated HITL before applying an in-memory `STOP_AGENT` or `AUTHORIZE_SEAL` result.
+
+Core characteristics:
+
+- simulated abnormal agent behavior
+- PseudoTasukeru log/output mismatch detection
+- escalation packet from PseudoTasukeru to Mediator
+- simulated HITL decision branching
+- `STOP_AGENT` / `AUTHORIZE_SEAL` in-memory control only
+- ARL verification
+- 3D-DAC dependency consistency verification
+- RCV result consistency verification
+- Tasukeru-style local artifacts
+- no external API access
+- no real process control
+- no automatic fix, commit, push, or merge
+
+This simulator is useful for checking:
+
+- whether an abnormal agent is detected from log/output inconsistency
+- whether PseudoTasukeru escalates instead of directly stopping agents
+- whether Mediator performs HITL before stopping or sealing
+- whether the simulated user instruction is recorded
+- whether normal agents are not incorrectly stopped or sealed
+- whether ARL, 3D-DAC, RCV, and generated artifacts remain consistent
+
 ## Batch execution and resume
 
 This repository also includes batch-style orchestration examples.
@@ -753,6 +788,13 @@ For Emergency Contract × KAGE integration behavior:
 - `tests/test_emergency_contract_kage_orchestrator_v1_0.py`
 
 This path is useful for studying how a concrete emergency-contract scenario can be evaluated by KAGE-style gates, HITL checkpoints, ARL/HMAC verification, and simulated artifact dispatch without real-world control or legal effect.
+
+For Agent Incident Mediation behavior:
+
+- `agent_incident_mediation_sim_v0_2.py`
+- `tests/test_agent_incident_mediation_sim_v0_2.py`
+
+This path is useful for studying how PseudoTasukeru detects a simulated log/output mismatch, escalates to Mediator, triggers HITL, records the user instruction, and verifies ARL / 3D-DAC / RCV consistency without external side effects.
 
 For behavior verification, always read the implementation together with the corresponding tests.
 
