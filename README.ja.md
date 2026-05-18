@@ -28,7 +28,7 @@
 
 Maestro Orchestrator は、マルチエージェント・ガバナンス、fail-closed 制御、HITL エスカレーション、チェックポイントベースの再開、改ざん検知可能なシミュレーションワークフローを扱う、研究向けのオーケストレーション・フレームワークです。
 
-このリポジトリには複数のシミュレーター系列が含まれています。一部のファイルは ゲート挙動や Mediator 分離に焦点を当て、別のファイルはドキュメントタスクのバッチ実行、チェックポイント、監査整合性、artifact 検証に焦点を当てています。
+このリポジトリには複数のシミュレーター系列が含まれています。一部のファイルは KAGE 風のゲート挙動や Mediator 分離に焦点を当て、別のファイルはドキュメントタスクのバッチ実行、チェックポイント、監査整合性、artifact 検証に焦点を当てています。
 
 ## 初めて読む人向けガイド
 
@@ -637,6 +637,50 @@ PseudoTasukeru は log/output mismatch を検出し、Tasukeru 形式の review 
 - normal agents が誤って停止または封印されないか
 - ARL、3D-DAC、RCV、generated artifacts が整合したままか
 
+### 6. Code Anomaly Maestro Handoff Simulation
+
+Example:
+
+- `agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+- `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+
+このシミュレーターは、ローカル専用の code-contract anomaly handoff flow をモデル化します。
+
+PseudoTasukeru は metadata-only の code-contract anomaly を検知し、その finding を Maestro にエスカレーションします。Maestro は自分で判断せず、模擬HITLを呼び出したうえで、模擬ユーザーの指示を実行します。
+
+模擬ユーザーは以下を選択できます。
+
+- `AUTHORIZE_SEAL`
+- `QUARANTINE_HANDOFF_RESUME`
+
+主な特徴:
+
+- metadata-only code-contract anomaly detection
+- PseudoTasukeru から Maestro へのエスカレーション
+- Maestro は自己判断しない
+- 模擬HITL指示の記録
+- `AUTHORIZE_SEAL` 分岐
+- `QUARANTINE_HANDOFF_RESUME` 分岐
+- standby agent による安全な checkpoint handoff/resume
+- ARL検証
+- 3D-DACによる依存関係整合性検証
+- RCVによる結果整合性検証
+- コード実行なし
+- マルウェア挙動なし
+- 外部APIアクセスなし
+- 実プロセス制御なし
+- 自動fix、commit、push、mergeなし
+
+このシミュレーターは、以下の確認に有用です。
+
+- PseudoTasukeru が code-contract anomaly を検知できるか
+- finding が Maestro にエスカレーションされるか
+- Maestro が自己判断せず HITL を呼ぶか
+- 模擬ユーザー指示が記録されるか
+- seal 分岐と quarantine-handoff-resume 分岐がどちらも機能するか
+- standby handoff が安全な checkpoint から再開できるか
+- ARL、3D-DAC、RCV、generated artifacts が整合したままか
+
 ## Batch execution and resume
 
 このリポジトリには、batch-style orchestration examples も含まれています。
@@ -795,6 +839,13 @@ Agent Incident Mediation behavior を確認する場合:
 - `tests/test_agent_incident_mediation_sim_v0_2.py`
 
 この経路は、PseudoTasukeru が simulated log/output mismatch を検出し、Mediator へエスカレーションし、HITL を発火させ、user instruction を記録し、external side effects なしに ARL / 3D-DAC / RCV consistency を検証する方法を学ぶのに有用です。
+
+Code Anomaly Maestro Handoff behavior を確認する場合:
+
+- `agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+- `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+
+この経路は、PseudoTasukeru が metadata-only の code-contract anomaly を検知し、Maestro にエスカレーションし、HITL を発火させ、模擬ユーザー指示を記録し、外部副作用なしに `AUTHORIZE_SEAL` または `QUARANTINE_HANDOFF_RESUME` を実行する方法を学ぶのに有用です。
 
 挙動を検証する場合は、常に実装と対応するテストを一緒に読んでください。
 
