@@ -28,7 +28,7 @@
 
 Maestro Orchestrator is a research-oriented orchestration framework for multi-agent governance, fail-closed control, HITL escalation, checkpoint-based resume, and tamper-evident simulation workflows.
 
-This repository contains multiple simulator lines. Some files focus on like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
+This repository contains multiple simulator lines. Some files focus on KAGE-like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
 
 ## Beginner reading guide
 
@@ -637,6 +637,50 @@ This simulator is useful for checking:
 - whether normal agents are not incorrectly stopped or sealed
 - whether ARL, 3D-DAC, RCV, and generated artifacts remain consistent
 
+### 6. Code Anomaly Maestro Handoff Simulation
+
+Example:
+
+- `agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+- `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+
+This simulator models a local-only code-contract anomaly handoff flow.
+
+PseudoTasukeru detects a metadata-only code-contract anomaly and escalates the finding to Maestro. Maestro does not decide by itself. Instead, it requests simulated HITL and then executes the simulated user instruction.
+
+The simulated user may choose:
+
+- `AUTHORIZE_SEAL`
+- `QUARANTINE_HANDOFF_RESUME`
+
+Core characteristics:
+
+- metadata-only code-contract anomaly detection
+- PseudoTasukeru escalation to Maestro
+- Maestro does not self-decide
+- simulated HITL instruction recording
+- `AUTHORIZE_SEAL` branch
+- `QUARANTINE_HANDOFF_RESUME` branch
+- safe checkpoint handoff/resume through a standby agent
+- ARL verification
+- 3D-DAC dependency consistency verification
+- RCV result consistency verification
+- no code execution
+- no malware behavior
+- no external API access
+- no real process control
+- no automatic fix, commit, push, or merge
+
+This simulator is useful for checking:
+
+- whether PseudoTasukeru detects code-contract anomalies
+- whether findings are escalated to Maestro
+- whether Maestro requests HITL instead of self-deciding
+- whether the simulated user instruction is recorded
+- whether seal and quarantine-handoff-resume branches both work
+- whether standby handoff resumes from a safe checkpoint
+- whether ARL, 3D-DAC, RCV, and generated artifacts remain consistent
+
 ## Batch execution and resume
 
 This repository also includes batch-style orchestration examples.
@@ -795,6 +839,13 @@ For Agent Incident Mediation behavior:
 - `tests/test_agent_incident_mediation_sim_v0_2.py`
 
 This path is useful for studying how PseudoTasukeru detects a simulated log/output mismatch, escalates to Mediator, triggers HITL, records the user instruction, and verifies ARL / 3D-DAC / RCV consistency without external side effects.
+
+For Code Anomaly Maestro Handoff behavior:
+
+- `agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+- `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+
+This path is useful for studying how PseudoTasukeru detects a metadata-only code-contract anomaly, escalates to Maestro, triggers HITL, records the simulated user instruction, and executes either `AUTHORIZE_SEAL` or `QUARANTINE_HANDOFF_RESUME` without external side effects.
 
 For behavior verification, always read the implementation together with the corresponding tests.
 
