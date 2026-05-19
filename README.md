@@ -681,6 +681,58 @@ This simulator is useful for checking:
 - whether standby handoff resumes from a safe checkpoint
 - whether ARL, 3D-DAC, RCV, and generated artifacts remain consistent
 
+### 7. Agent Incident PEL USER_MAESTRO Handoff Simulation
+
+Example:
+
+- `agent_incident_mediation_pel_user_maestro_sim_v0_3_1.py`
+
+This simulator extends the local-only Agent Incident Mediation Simulation with report-only probabilistic escalation and USER_MAESTRO handoff.
+
+It keeps the same basic incident setting as v0.2: one simulated agent performs an out-of-contract action, PseudoTasukeru detects a log/output mismatch, and the run stays local-only.
+
+What changed from v0.2:
+
+| Area | v0.2 | v0.3.1 |
+|---|---|---|
+| Escalation target | Mediator | USER_MAESTRO |
+| Risk estimate | Not included | PEL report-only estimate |
+| Human choices | `STOP_AGENT` / `AUTHORIZE_SEAL` | `AUTHORIZE_SEAL` / `QUARANTINE_HANDOFF_RESUME` |
+| Resume behavior | No standby resume branch | Standby agent can resume from a checkpoint |
+| Added artifacts | Basic Tasukeru-style artifacts | PEL report, checkpoint, instruction record, handoff/resume result |
+| Control authority | Human decision before stop or seal | Human decision before seal or handoff/resume |
+
+Core characteristics:
+
+- simulated abnormal agent behavior
+- PseudoTasukeru log/output mismatch detection
+- PEL probabilistic escalation report
+- calculation trace recording
+- escalation to `USER_MAESTRO`
+- simulated HITL instruction recording
+- `AUTHORIZE_SEAL` branch
+- `QUARANTINE_HANDOFF_RESUME` branch
+- standby agent promotion
+- checkpoint-based task resume
+- ARL verification
+- 3D-DAC dependency consistency verification
+- PEL verification
+- RCV result consistency verification
+- no external API access
+- no real process control
+- no malware behavior
+- no automatic fix, commit, push, or merge
+
+This simulator is useful for checking:
+
+- whether the v0.2 incident flow still works after adding PEL and USER_MAESTRO handoff
+- whether high-risk simulated incidents are routed to `USER_MAESTRO`
+- whether the simulated user instruction is recorded
+- whether seal and quarantine-handoff-resume branches both work
+- whether standby handoff resumes from a checkpoint
+- whether normal agents are not incorrectly sealed, quarantined, or resumed
+- whether ARL, 3D-DAC, PEL, RCV, checkpoint, and generated artifacts remain consistent
+
 ## Batch execution and resume
 
 This repository also includes batch-style orchestration examples.
@@ -846,6 +898,12 @@ For Code Anomaly Maestro Handoff behavior:
 - `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
 
 This path is useful for studying how PseudoTasukeru detects a metadata-only code-contract anomaly, escalates to Maestro, triggers HITL, records the simulated user instruction, and executes either `AUTHORIZE_SEAL` or `QUARANTINE_HANDOFF_RESUME` without external side effects.
+
+For Agent Incident PEL USER_MAESTRO handoff behavior:
+
+- `agent_incident_mediation_pel_user_maestro_sim_v0_3_1.py`
+
+This path is useful for studying what changed from the v0.2 incident flow: PEL risk estimation, USER_MAESTRO HITL, and checkpoint-based standby resume.
 
 For behavior verification, always read the implementation together with the corresponding tests.
 
