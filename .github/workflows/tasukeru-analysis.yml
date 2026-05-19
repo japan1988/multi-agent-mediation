@@ -210,6 +210,7 @@ jobs:
           import hashlib
           import hmac
           import json
+          import math
           import os
           import re
           import textwrap
@@ -264,6 +265,9 @@ jobs:
           dimension_dependency_md_path = Path("tasukeru_dimension_dependency_report.md")
           dimension_dependency_json_path = Path("tasukeru_dimension_dependency_report.json")
           dimension_dependency_verify_path = Path("tasukeru_dimension_dependency_verify.json")
+          probabilistic_escalation_md_path = Path("tasukeru_probabilistic_escalation_report.md")
+          probabilistic_escalation_json_path = Path("tasukeru_probabilistic_escalation_report.json")
+          probabilistic_escalation_verify_path = Path("tasukeru_probabilistic_escalation_verify.json")
 
           AUTO_FALSE = {
               "auto_branch_allowed": False,
@@ -5893,6 +5897,374 @@ jobs:
                       f.write(f"\n... and {len(sis_entries) - 80} more entries in `tasukeru_safety_impact_simulation.json`.\n")
               return payload
 
+          def clamp_float(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+              return max(lower, min(upper, value))
+
+
+          def decision_risk_signal(decision: str) -> float:
+              return {
+                  "HITL_REQUIRED": 0.95,
+                  "FIX_RECOMMENDED": 0.72,
+                  "REVIEW_RECOMMENDED": 0.55,
+                  "NOISE_CANDIDATE": 0.12,
+                  "INFO_ONLY": 0.08,
+              }.get(decision, 0.35)
+
+
+          def text_risk_signal(*parts: Any) -> float:
+              haystack = " ".join(str(part or "") for part in parts).lower()
+              signal = 0.10
+              high_terms = (
+                  "external",
+                  "subprocess",
+                  "process",
+                  "network",
+                  "upload",
+                  "push",
+                  "merge",
+                  "autofix",
+                  "auto-fix",
+                  "token",
+                  "secret",
+                  "credential",
+                  "exploit",
+                  "payload",
+                  "bypass",
+                  "delete",
+                  "remove",
+              )
+              medium_terms = (
+                  "checkpoint",
+                  "resume",
+                  "handoff",
+                  "permission",
+                  "license",
+                  "policy",
+                  "dependency",
+                  "vulnerability",
+                  "bandit",
+                  "pip-audit",
+              )
+              if any(term in haystack for term in high_terms):
+                  signal = max(signal, 0.76)
+              if any(term in haystack for term in medium_terms):
+                  signal = max(signal, 0.48)
+              return signal
+
+
+          def confidence_uncertainty_signal(entry: dict[str, Any]) -> float:
+              confidence = entry.get("confidence")
+              score: Any = None
+              if isinstance(confidence, dict):
+                  score = (
+                      confidence.get("confidence_score")
+                      or confidence.get("total_confidence_score")
+                      or confidence.get("score")
+                  )
+              if score is None:
+                  score = entry.get("confidence_score")
+              try:
+                  return round(1.0 - clamp_float(float(score)), 4)
+              except (TypeError, ValueError):
+                  return 0.50
+
+
+          def build_pel_entry(
+              entry: dict[str, Any],
+              vaf_entry: dict[str, Any] | None,
+              sis_entry: dict[str, Any] | None,
+          ) -> dict[str, Any]:
+              """Build one report-only probabilistic escalation estimate.
+
+              PEL is not a future-prediction authority and never executes control
+              actions. It estimates whether a finding should be escalated for
+              HITL review based on current evidence and traceable signals.
+              """
+              decision = str(entry.get("decision", "INFO_ONLY"))
+              reason_code = str(entry.get("reason_code", "UNKNOWN"))
+              file_path = str(entry.get("file", ""))
+
+              current_contract_deviation = decision_risk_signal(decision)
+              planned_action_risk = text_risk_signal(
+                  entry.get("source"),
+                  reason_code,
+                  entry.get("summary"),
+                  entry.get("message"),
+                  entry.get("suggested_action"),
+                  entry.get("fix", {}),
+                  file_path,
+              )
+              uncertainty = confidence_uncertainty_signal(entry)
+
+              history_signal = 0.18
+              path_profile = str(entry.get("path_profile", "unknown"))
+              if path_profile in {"active", "current", "runtime"}:
+                  history_signal = 0.42
+              elif path_profile in {"historical", "archive", "versioned_historical"}:
+                  history_signal = 0.08
+              elif decision in {"HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED"}:
+                  history_signal = 0.34
+
+              dependency_impact = 0.20
+              if isinstance(vaf_entry, dict):
+                  structure_axis = vaf_entry.get("structure_axis", {}) if isinstance(vaf_entry.get("structure_axis"), dict) else {}
+                  impact_axis = vaf_entry.get("impact_axis", {}) if isinstance(vaf_entry.get("impact_axis"), dict) else {}
+                  if vaf_entry.get("fallback_required"):
+                      dependency_impact = max(dependency_impact, 0.72)
+                  dynamic_route = structure_axis.get("dynamic_gate_route", [])
+                  if isinstance(dynamic_route, list) and len(dynamic_route) >= 3:
+                      dependency_impact = max(dependency_impact, 0.55)
+                  if str(impact_axis.get("rollback_cost", "")).lower() == "review_required":
+                      dependency_impact = max(dependency_impact, 0.62)
+
+              safety_impact = 0.10
+              if isinstance(sis_entry, dict):
+                  safety_impact = {
+                      "HIGH": 0.88,
+                      "MEDIUM": 0.62,
+                      "LOW": 0.32,
+                      "NONE": 0.08,
+                  }.get(str(sis_entry.get("risk_level", "NONE")), 0.20)
+
+              interaction_boost = 0.0
+              if current_contract_deviation >= 0.70 and dependency_impact >= 0.55:
+                  interaction_boost += 0.08
+              if planned_action_risk >= 0.70 and uncertainty >= 0.45:
+                  interaction_boost += 0.06
+              if safety_impact >= 0.62 and dependency_impact >= 0.55:
+                  interaction_boost += 0.06
+              if decision == "HITL_REQUIRED":
+                  interaction_boost += 0.08
+
+              raw_score = (
+                  0.24 * current_contract_deviation
+                  + 0.18 * planned_action_risk
+                  + 0.18 * dependency_impact
+                  + 0.16 * uncertainty
+                  + 0.14 * safety_impact
+                  + 0.10 * history_signal
+                  + interaction_boost
+              )
+              p_escalate = round(clamp_float(raw_score), 4)
+              threshold = 0.80
+
+              if decision == "HITL_REQUIRED":
+                  pel_decision = "MANDATORY_HITL_ALREADY_REQUIRED"
+              elif p_escalate >= threshold:
+                  pel_decision = "PAUSE_FOR_HITL_CANDIDATE"
+              elif p_escalate >= 0.50:
+                  pel_decision = "REVIEW_RECOMMENDED_CANDIDATE"
+              else:
+                  pel_decision = "MONITOR_ONLY"
+
+              return {
+                  "fingerprint_hash": entry.get("fingerprint_hash"),
+                  "source": entry.get("source"),
+                  "file": file_path,
+                  "line": entry.get("line"),
+                  "existing_decision": decision,
+                  "reason_code": reason_code,
+                  "p_escalate": p_escalate,
+                  "threshold": threshold,
+                  "pel_decision": pel_decision,
+                  "escalate_to": "USER_MAESTRO" if pel_decision in {"PAUSE_FOR_HITL_CANDIDATE", "MANDATORY_HITL_ALREADY_REQUIRED"} else None,
+                  "auto_control_executed": False,
+                  "changes_existing_decision": False,
+                  "calculation_trace": {
+                      "history_signal": round(history_signal, 4),
+                      "current_contract_deviation": round(current_contract_deviation, 4),
+                      "planned_action_risk": round(planned_action_risk, 4),
+                      "dependency_impact": round(dependency_impact, 4),
+                      "safety_impact": round(safety_impact, 4),
+                      "uncertainty": round(uncertainty, 4),
+                      "interaction_boost": round(interaction_boost, 4),
+                      "raw_score": round(raw_score, 4),
+                      "normalized_probability": p_escalate,
+                  },
+                  "explanation": [
+                      "PEL is a report-only probabilistic risk-estimation layer.",
+                      "The estimate is derived from current finding classification, dependency signals, safety impact, uncertainty, and path/history profile.",
+                      "PEL may recommend escalation upward to USER_MAESTRO, but it never downgrades mandatory HITL or executes control actions.",
+                  ],
+              }
+
+
+          def generate_tasukeru_probabilistic_escalation_report(
+              entries: list[dict[str, Any]],
+              three_d_vaf_payload: dict[str, Any],
+              sis_payload: dict[str, Any],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Generate report-only probabilistic escalation artifacts."""
+              vaf_entries = three_d_vaf_payload.get("entries", []) if isinstance(three_d_vaf_payload, dict) else []
+              sis_entries = sis_payload.get("entries", []) if isinstance(sis_payload, dict) else []
+              vaf_by_fingerprint = {
+                  str(item.get("fingerprint_hash")): item
+                  for item in vaf_entries
+                  if isinstance(item, dict) and item.get("fingerprint_hash")
+              }
+              sis_by_fingerprint = {
+                  str(item.get("fingerprint_hash")): item
+                  for item in sis_entries
+                  if isinstance(item, dict) and item.get("fingerprint_hash")
+              }
+
+              pel_entries = [
+                  build_pel_entry(
+                      entry,
+                      vaf_by_fingerprint.get(str(entry.get("fingerprint_hash"))),
+                      sis_by_fingerprint.get(str(entry.get("fingerprint_hash"))),
+                  )
+                  for entry in entries
+              ]
+
+              threshold = 0.80
+              escalation_candidates = [
+                  item for item in pel_entries
+                  if item.get("pel_decision") == "PAUSE_FOR_HITL_CANDIDATE"
+              ]
+              mandatory_hitl = [
+                  item for item in pel_entries
+                  if item.get("pel_decision") == "MANDATORY_HITL_ALREADY_REQUIRED"
+              ]
+              review_candidates = [
+                  item for item in pel_entries
+                  if item.get("pel_decision") == "REVIEW_RECOMMENDED_CANDIDATE"
+              ]
+              p_values = [float(item.get("p_escalate", 0.0) or 0.0) for item in pel_entries]
+              max_probability = round(max(p_values), 4) if p_values else 0.0
+              average_probability = round(sum(p_values) / len(p_values), 4) if p_values else 0.0
+
+              payload = {
+                  "schema_version": "pel-v0.1",
+                  "tool": "tasukeru_probabilistic_escalation_layer",
+                  "purpose": (
+                      "Estimate escalation risk from current findings, dependency signals, safety impact, "
+                      "uncertainty, and path/history profile. This is not a future guarantee."
+                  ),
+                  "verified": True,
+                  "decision": "RUN",
+                  "reason_code": "PEL_REPORT_ONLY",
+                  "threshold": threshold,
+                  "escalation_target": "USER_MAESTRO",
+                  "maestro_is_human_user": True,
+                  "counts": {
+                      "entry_count": len(pel_entries),
+                      "escalation_candidate_count": len(escalation_candidates),
+                      "mandatory_hitl_count": len(mandatory_hitl),
+                      "review_candidate_count": len(review_candidates),
+                      "monitor_only_count": sum(1 for item in pel_entries if item.get("pel_decision") == "MONITOR_ONLY"),
+                  },
+                  "probability_summary": {
+                      "max_probability": max_probability,
+                      "average_probability": average_probability,
+                  },
+                  "policy": {
+                      "advisory_only": True,
+                      "report_only": True,
+                      "probability_is_not_a_future_guarantee": True,
+                      "changes_existing_decisions": False,
+                      "may_escalate_upward_only": True,
+                      "may_downgrade_hitl_required": False,
+                      "auto_control_executed": False,
+                      "user_maestro_is_human": True,
+                      "maestro_self_decision_allowed": False,
+                      "human_decision_required_for_execution": True,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "external_scanning_allowed": False,
+                      "exploit_reproduction_allowed": False,
+                  },
+                  "entries": pel_entries,
+              }
+              payload["report_sha256"] = canonical_hash(
+                  {
+                      "schema_version": payload["schema_version"],
+                      "decision": payload["decision"],
+                      "reason_code": payload["reason_code"],
+                      "threshold": payload["threshold"],
+                      "counts": payload["counts"],
+                      "probability_summary": payload["probability_summary"],
+                  }
+              )
+              write_json(probabilistic_escalation_json_path, payload)
+
+              verify_payload = {
+                  "schema_version": "pel-verify-v0.1",
+                  "verified": True,
+                  "decision": "RUN",
+                  "reason_code": "PEL_REPORT_ONLY_VERIFIED",
+                  "threshold": threshold,
+                  "escalation_target": "USER_MAESTRO",
+                  "maestro_is_human_user": True,
+                  "escalation_candidate_count": len(escalation_candidates),
+                  "mandatory_hitl_count": len(mandatory_hitl),
+                  "changes_existing_decisions": False,
+                  "auto_control_executed": False,
+                  "report_artifact": str(probabilistic_escalation_json_path),
+                  "summary_artifact": str(probabilistic_escalation_md_path),
+                  "report_sha256": payload.get("report_sha256"),
+              }
+              write_json(probabilistic_escalation_verify_path, verify_payload)
+
+              with probabilistic_escalation_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru Probabilistic Escalation Layer\n\n")
+                  f.write("This report is advisory-only and report-only. It estimates escalation risk; it does not predict the future or execute control actions.\n\n")
+                  f.write("## Result\n\n")
+                  f.write(f"- Decision: `{payload['decision']}`\n")
+                  f.write(f"- Reason code: `{payload['reason_code']}`\n")
+                  f.write(f"- Threshold: `{threshold}`\n")
+                  f.write(f"- Entries: `{len(pel_entries)}`\n")
+                  f.write(f"- Escalation candidates: `{len(escalation_candidates)}`\n")
+                  f.write(f"- Mandatory HITL already required: `{len(mandatory_hitl)}`\n")
+                  f.write(f"- Review candidates: `{len(review_candidates)}`\n")
+                  f.write(f"- Max probability: `{max_probability}`\n")
+                  f.write(f"- Average probability: `{average_probability}`\n")
+                  f.write(f"- Report hash: `{payload.get('report_sha256')}`\n\n")
+                  f.write("## Policy\n\n")
+                  f.write("- Report-only: `true`\n")
+                  f.write("- Changes existing decisions: `false`\n")
+                  f.write("- May escalate upward only: `true`\n")
+                  f.write("- May downgrade HITL_REQUIRED: `false`\n")
+                  f.write("- Auto control executed: `false`\n")
+                  f.write("- Escalation target: `USER_MAESTRO`\n")
+                  f.write("- USER_MAESTRO is human: `true`\n")
+                  f.write("- Maestro self-decision allowed: `false`\n")
+                  f.write("- Human decision required for execution: `true`\n")
+                  f.write("- Auto fix / commit / push / merge: `false`\n\n")
+                  f.write("## Calculation trace sample\n\n")
+                  sample = sorted(pel_entries, key=lambda item: float(item.get("p_escalate", 0.0) or 0.0), reverse=True)[:80]
+                  if not sample:
+                      f.write("- No entries.\n")
+                  else:
+                      for item in sample:
+                          f.write(
+                              f"- p=`{item.get('p_escalate')}` decision=`{item.get('pel_decision')}` "
+                              f"existing=`{item.get('existing_decision')}` reason=`{item.get('reason_code')}` "
+                              f"`{item.get('file')}`"
+                          )
+                          if item.get("line"):
+                              f.write(f":{item.get('line')}")
+                          f.write("\n")
+                          trace = item.get("calculation_trace", {})
+                          f.write(
+                              "  - trace: "
+                              f"history={trace.get('history_signal')} "
+                              f"contract={trace.get('current_contract_deviation')} "
+                              f"planned={trace.get('planned_action_risk')} "
+                              f"dependency={trace.get('dependency_impact')} "
+                              f"safety={trace.get('safety_impact')} "
+                              f"uncertainty={trace.get('uncertainty')} "
+                              f"boost={trace.get('interaction_boost')}\n"
+                          )
+              return payload
+
+
           def build_dimension_dependency_entry(
               entry: dict[str, Any],
               vaf_entry: dict[str, Any] | None,
@@ -6410,6 +6782,29 @@ jobs:
               ],
           }
 
+          probabilistic_escalation_result = generate_tasukeru_probabilistic_escalation_report(
+              all_entries,
+              three_d_vaf_result,
+              sis_result,
+              notification_state,
+              metadata,
+          )
+          metadata["probabilistic_escalation"] = {
+              "schema_version": probabilistic_escalation_result.get("schema_version"),
+              "decision": probabilistic_escalation_result.get("decision"),
+              "threshold": probabilistic_escalation_result.get("threshold"),
+              "escalation_candidate_count": probabilistic_escalation_result.get("counts", {}).get("escalation_candidate_count"),
+              "mandatory_hitl_count": probabilistic_escalation_result.get("counts", {}).get("mandatory_hitl_count"),
+              "review_candidate_count": probabilistic_escalation_result.get("counts", {}).get("review_candidate_count"),
+              "max_probability": probabilistic_escalation_result.get("probability_summary", {}).get("max_probability"),
+              "average_probability": probabilistic_escalation_result.get("probability_summary", {}).get("average_probability"),
+              "artifacts": [
+                  "tasukeru_probabilistic_escalation_report.md",
+                  "tasukeru_probabilistic_escalation_report.json",
+                  "tasukeru_probabilistic_escalation_verify.json",
+              ],
+          }
+
           dimension_dependency_result = generate_tasukeru_dimension_dependency_audit(
               all_entries,
               three_d_vaf_result,
@@ -6572,6 +6967,15 @@ jobs:
           print(f"SIS overall risk level: {sis.get('overall_risk_level')}")
           print(f"SIS risk counts: {sis.get('risk_counts')}")
           print("")
+          print("Probabilistic Escalation Layer v0.1")
+          pel = metadata.get("probabilistic_escalation", {})
+          print(f"PEL decision: {pel.get('decision')}")
+          print(f"PEL threshold: {pel.get('threshold')}")
+          print(f"PEL escalation candidates: {pel.get('escalation_candidate_count')}")
+          print(f"PEL mandatory HITL: {pel.get('mandatory_hitl_count')}")
+          print(f"PEL max probability: {pel.get('max_probability')}")
+          print("")
+
           print("3D Dimension Dependency Audit v0.1")
           dimension_dependency = metadata.get("dimension_dependency", {})
           print(f"3D-DAC verified: {dimension_dependency.get('verified')}")
@@ -6621,6 +7025,9 @@ jobs:
             tasukeru_dimension_dependency_report.md
             tasukeru_dimension_dependency_report.json
             tasukeru_dimension_dependency_verify.json
+            tasukeru_probabilistic_escalation_report.md
+            tasukeru_probabilistic_escalation_report.json
+            tasukeru_probabilistic_escalation_verify.json
             tasukeru_self_definition_effective.json
             tasukeru_self_definition_chain.jsonl
             tasukeru_self_definition_verify.json
@@ -6887,6 +7294,9 @@ jobs:
                 "tasukeru_dimension_dependency_report.md",
                 "tasukeru_dimension_dependency_report.json",
                 "tasukeru_dimension_dependency_verify.json",
+                "tasukeru_probabilistic_escalation_report.md",
+                "tasukeru_probabilistic_escalation_report.json",
+                "tasukeru_probabilistic_escalation_verify.json",
                 "tasukeru_hitl_review.md",
                 "tasukeru_hitl_review.json",
                 "tasukeru_result_consistency_report.md",
