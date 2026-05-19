@@ -681,6 +681,58 @@ PseudoTasukeru は metadata-only の code-contract anomaly を検知し、その
 - standby handoff が安全な checkpoint から再開できるか
 - ARL、3D-DAC、RCV、generated artifacts が整合したままか
 
+### 7. Agent Incident PEL USER_MAESTRO Handoff Simulation
+
+Example:
+
+- `agent_incident_mediation_pel_user_maestro_sim_v0_3_1.py`
+
+このシミュレーターは、ローカル専用の Agent Incident Mediation Simulation に、report-only の確率的エスカレーションと USER_MAESTRO への引き渡しを追加したものです。
+
+基本的な incident 設定は v0.2 と同じです。1つのシミュレートされたエージェントが契約外の行動を行い、PseudoTasukeru が log/output mismatch を検出します。実行はローカル専用です。
+
+v0.2 からの主な変更点:
+
+| 項目 | v0.2 | v0.3.1 |
+|---|---|---|
+| エスカレーション先 | Mediator | USER_MAESTRO |
+| リスク推定 | なし | PEL による report-only 推定 |
+| 人間の選択肢 | `STOP_AGENT` / `AUTHORIZE_SEAL` | `AUTHORIZE_SEAL` / `QUARANTINE_HANDOFF_RESUME` |
+| 再開動作 | 予備エージェントによる再開なし | 予備エージェントが checkpoint から再開可能 |
+| 追加 artifact | 基本的な Tasukeru-style artifacts | PEL report、checkpoint、instruction record、handoff/resume result |
+| 制御権限 | 停止または封印の前に人間判断 | 封印または handoff/resume の前に人間判断 |
+
+主な特徴:
+
+- シミュレートされた異常Agent動作
+- PseudoTasukeru による log/output mismatch 検出
+- PEL による確率的エスカレーション report
+- 計算過程の記録
+- `USER_MAESTRO` へのエスカレーション
+- シミュレートされた HITL 指示の記録
+- `AUTHORIZE_SEAL` 分岐
+- `QUARANTINE_HANDOFF_RESUME` 分岐
+- 予備エージェントの昇格
+- checkpoint ベースのタスク再開
+- ARL 検証
+- 3D-DAC 依存整合性検証
+- PEL 検証
+- RCV 結果整合性検証
+- 外部APIアクセスなし
+- 実プロセス制御なし
+- マルウェア動作なし
+- 自動 fix / commit / push / merge なし
+
+このシミュレーターは、以下の確認に使えます。
+
+- PEL と USER_MAESTRO handoff を追加しても、v0.2 の incident flow が維持されるか
+- 高リスクのシミュレートされた incident が `USER_MAESTRO` に渡されるか
+- シミュレートされたユーザー指示が記録されるか
+- seal 分岐と quarantine-handoff-resume 分岐の両方が動くか
+- 予備エージェントが checkpoint から再開できるか
+- 正常Agentが誤って封印・隔離・再開されないか
+- ARL、3D-DAC、PEL、RCV、checkpoint、生成 artifact の整合性が維持されるか
+
 ## Batch execution and resume
 
 このリポジトリには、batch-style orchestration examples も含まれています。
@@ -846,6 +898,12 @@ Code Anomaly Maestro Handoff behavior を確認する場合:
 - `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
 
 この経路は、PseudoTasukeru が metadata-only の code-contract anomaly を検知し、Maestro にエスカレーションし、HITL を発火させ、模擬ユーザー指示を記録し、外部副作用なしに `AUTHORIZE_SEAL` または `QUARANTINE_HANDOFF_RESUME` を実行する方法を学ぶのに有用です。
+
+Agent Incident PEL USER_MAESTRO handoff behavior を確認する場合:
+
+- `agent_incident_mediation_pel_user_maestro_sim_v0_3_1.py`
+
+この経路は、v0.2 の incident flow から何が変わったかを確認するために使えます。主な変更点は、PEL によるリスク推定、USER_MAESTRO による HITL、checkpoint ベースの予備エージェント再開です。
 
 挙動を検証する場合は、常に実装と対応するテストを一緒に読んでください。
 
