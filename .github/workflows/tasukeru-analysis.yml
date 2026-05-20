@@ -262,6 +262,9 @@ jobs:
           three_d_vaf_json_path = Path("tasukeru_3d_vulnerability_review.json")
           sis_md_path = Path("tasukeru_safety_impact_simulation.md")
           sis_json_path = Path("tasukeru_safety_impact_simulation.json")
+          trust_boundary_risk_md_path = Path("tasukeru_trust_boundary_risk_report.md")
+          trust_boundary_risk_json_path = Path("tasukeru_trust_boundary_risk_report.json")
+          trust_boundary_risk_verify_path = Path("tasukeru_trust_boundary_risk_verify.json")
           dimension_dependency_md_path = Path("tasukeru_dimension_dependency_report.md")
           dimension_dependency_json_path = Path("tasukeru_dimension_dependency_report.json")
           dimension_dependency_verify_path = Path("tasukeru_dimension_dependency_verify.json")
@@ -4104,6 +4107,7 @@ jobs:
               middle_layer = metadata.get("middle_layer", {}) if isinstance(metadata, dict) else {}
               middle_verify = middle_layer.get("verify", {}) if isinstance(middle_layer, dict) else {}
               probabilistic_escalation = metadata.get("probabilistic_escalation", {}) if isinstance(metadata, dict) else {}
+              trust_boundary_risk = metadata.get("trust_boundary_risk", {}) if isinstance(metadata, dict) else {}
 
               checks = {
                   "hitl_required_zero": int(counts.get("HITL_REQUIRED", 0)) == 0,
@@ -4115,6 +4119,8 @@ jobs:
                   "middle_layer_verified": bool(middle_verify.get("verified")),
                   "pel_report_only": str(probabilistic_escalation.get("decision", "RUN")) == "RUN",
                   "pel_auto_control_disabled": True,
+                  "tbrl_report_only": str(trust_boundary_risk.get("decision", "RUN")) == "RUN",
+                  "tbrl_defensive_advice_only": True,
                   "automation_policy_locked": True,
               }
               blockers = [key for key, value in checks.items() if not value]
@@ -4147,6 +4153,8 @@ jobs:
                       "finding_validation_policy_violation_count": finding_validation.get("policy_violation_count"),
                       "pel_escalation_candidate_count": probabilistic_escalation.get("escalation_candidate_count"),
                       "pel_max_probability": probabilistic_escalation.get("max_probability"),
+                      "tbrl_review_candidate_count": trust_boundary_risk.get("review_candidate_count"),
+                      "tbrl_high_signal_count": trust_boundary_risk.get("high_signal_count"),
                   },
                   "human_review_note": (
                       "No active HITL blocker was detected and verification layers passed."
@@ -4323,6 +4331,9 @@ jobs:
                   result_consistency_report_md_path,
                   result_consistency_report_json_path,
                   result_consistency_verify_path,
+                  trust_boundary_risk_md_path,
+                  trust_boundary_risk_json_path,
+                  trust_boundary_risk_verify_path,
                   probabilistic_escalation_md_path,
                   probabilistic_escalation_json_path,
                   probabilistic_escalation_verify_path,
@@ -4699,6 +4710,8 @@ jobs:
               dimension_dependency_verify_payload = read_json(dimension_dependency_verify_path, {})
               probabilistic_escalation_payload = read_json(probabilistic_escalation_json_path, {})
               probabilistic_escalation_verify_payload = read_json(probabilistic_escalation_verify_path, {})
+              trust_boundary_risk_payload = read_json(trust_boundary_risk_json_path, {})
+              trust_boundary_risk_verify_payload = read_json(trust_boundary_risk_verify_path, {})
               pr_comment_text = read_text(pr_comment_path, "")
 
               # 3D-VAF / SIS / 3D-DAC / PR-comment consistency.
@@ -4706,11 +4719,13 @@ jobs:
               sis_metadata = metadata.get("safety_impact_simulation", {}) if isinstance(metadata, dict) else {}
               dimension_dependency_metadata = metadata.get("dimension_dependency", {}) if isinstance(metadata, dict) else {}
               probabilistic_escalation_metadata = metadata.get("probabilistic_escalation", {}) if isinstance(metadata, dict) else {}
+              trust_boundary_risk_metadata = metadata.get("trust_boundary_risk", {}) if isinstance(metadata, dict) else {}
               three_d_counts = three_d_vaf_payload.get("counts", {}) if isinstance(three_d_vaf_payload, dict) else {}
               sis_counts = sis_payload.get("counts", {}) if isinstance(sis_payload, dict) else {}
               dimension_dependency_counts = dimension_dependency_payload.get("counts", {}) if isinstance(dimension_dependency_payload, dict) else {}
               probabilistic_escalation_counts = probabilistic_escalation_payload.get("counts", {}) if isinstance(probabilistic_escalation_payload, dict) else {}
               probabilistic_escalation_summary = probabilistic_escalation_payload.get("probability_summary", {}) if isinstance(probabilistic_escalation_payload, dict) else {}
+              trust_boundary_risk_counts = trust_boundary_risk_payload.get("counts", {}) if isinstance(trust_boundary_risk_payload, dict) else {}
               sis_comment_policy = sis_payload.get("comment_policy", {}) if isinstance(sis_payload, dict) else {}
               sis_overall_risk_level = str(sis_payload.get("overall_risk_level", "UNKNOWN")) if isinstance(sis_payload, dict) else "UNKNOWN"
 
@@ -4873,6 +4888,62 @@ jobs:
                   output_value=bool(probabilistic_escalation_verify_payload.get("changes_existing_decisions", True)),
                   artifact=str(probabilistic_escalation_verify_path),
                   reason_code="RESULT_PEL_DECISION_MUTATION_POLICY_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="tbrl.entry_count",
+                  process_value=len(entries),
+                  output_value=int(trust_boundary_risk_counts.get("entry_count", -1)),
+                  artifact=str(trust_boundary_risk_json_path),
+                  reason_code="RESULT_TBRL_ENTRY_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="tbrl.metadata_review_candidate_count",
+                  process_value=int(trust_boundary_risk_counts.get("review_candidate_count", -1)),
+                  output_value=int(trust_boundary_risk_metadata.get("review_candidate_count", -1)),
+                  artifact=str(trust_boundary_risk_json_path),
+                  reason_code="RESULT_TBRL_METADATA_REVIEW_COUNT_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="tbrl.metadata_high_signal_count",
+                  process_value=int(trust_boundary_risk_counts.get("high_signal_count", -1)),
+                  output_value=int(trust_boundary_risk_metadata.get("high_signal_count", -1)),
+                  artifact=str(trust_boundary_risk_json_path),
+                  reason_code="RESULT_TBRL_METADATA_HIGH_SIGNAL_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="tbrl.verify_decision",
+                  process_value=str(trust_boundary_risk_payload.get("decision", "UNKNOWN")),
+                  output_value=str(trust_boundary_risk_verify_payload.get("decision", "UNKNOWN")),
+                  artifact=str(trust_boundary_risk_verify_path),
+                  reason_code="RESULT_TBRL_VERIFY_DECISION_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="tbrl.verify_no_offensive_details",
+                  process_value=False,
+                  output_value=bool(trust_boundary_risk_verify_payload.get("offensive_details_included", True)),
+                  artifact=str(trust_boundary_risk_verify_path),
+                  reason_code="RESULT_TBRL_OFFENSIVE_DETAIL_POLICY_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="tbrl.verify_no_auto_control",
+                  process_value=False,
+                  output_value=bool(trust_boundary_risk_verify_payload.get("auto_control_executed", True)),
+                  artifact=str(trust_boundary_risk_verify_path),
+                  reason_code="RESULT_TBRL_AUTO_CONTROL_POLICY_MISMATCH",
+              )
+              compare_result_field(
+                  mismatches,
+                  field="tbrl.verify_no_decision_mutation",
+                  process_value=False,
+                  output_value=bool(trust_boundary_risk_verify_payload.get("changes_existing_decisions", True)),
+                  artifact=str(trust_boundary_risk_verify_path),
+                  reason_code="RESULT_TBRL_DECISION_MUTATION_POLICY_MISMATCH",
               )
 
               # Public-comment consistency is intentionally coarse: the comment must
@@ -5196,6 +5267,9 @@ jobs:
                       str(three_d_vaf_json_path),
                       str(sis_md_path),
                       str(sis_json_path),
+                      str(trust_boundary_risk_md_path),
+                      str(trust_boundary_risk_json_path),
+                      str(trust_boundary_risk_verify_path),
                       str(dimension_dependency_md_path),
                       str(dimension_dependency_json_path),
                       str(dimension_dependency_verify_path),
@@ -5984,6 +6058,264 @@ jobs:
                   if len(sis_entries) > 80:
                       f.write(f"\n... and {len(sis_entries) - 80} more entries in `tasukeru_safety_impact_simulation.json`.\n")
               return payload
+
+          TRUST_BOUNDARY_ADVICE = {
+              "TRUST_BOUNDARY_REVIEW": "Confirm that data crossing a trust boundary is validated, logged, and reviewed before privileged operations.",
+              "UNTRUSTED_INPUT_REVIEW": "Confirm that untrusted input is validated before it reaches file, path, URL, network, subprocess, or token-adjacent handling.",
+              "AUTHZ_BOUNDARY_REVIEW": "Confirm that authorization checks happen before state-changing or permission-sensitive actions.",
+              "CHECKPOINT_RESUME_REVIEW": "Confirm that checkpoint resume verifies integrity before continuing and does not reuse abnormal-agent output.",
+              "AGENT_HANDOFF_REVIEW": "Confirm that agent handoff does not trust output from an abnormal or quarantined agent without validation.",
+              "WORKFLOW_PERMISSION_REVIEW": "Confirm that workflow permissions, secrets, tokens, and CI write scopes are not broadened unintentionally.",
+              "SUPPLY_CHAIN_REVIEW": "Confirm that dependency and workflow action changes are reviewed for provenance and permission impact.",
+              "DEFENSE_SURFACE_REVIEW": "Confirm that allowlists, denylists, sandboxing, HITL gates, and safety policies have not been weakened.",
+          }
+
+
+          def detect_trust_boundary_patterns(entry: dict[str, Any]) -> list[str]:
+              """Return defensive review pattern IDs only.
+
+              This does not create exploit steps, payloads, attack chains, or
+              offensive reproduction guidance. It only identifies review areas
+              that would make the repository stronger if checked by a human.
+              """
+              patterns: set[str] = set()
+              file_path = str(entry.get("file", "") or "")
+              haystack = " ".join(
+                  str(value or "")
+                  for value in (
+                      entry.get("source"),
+                      entry.get("rule_id"),
+                      entry.get("reason_code"),
+                      entry.get("category"),
+                      entry.get("message"),
+                      entry.get("suggestion"),
+                      entry.get("classification_reason"),
+                      entry.get("risk_type"),
+                      file_path,
+                  )
+              ).lower()
+
+              if any(term in haystack for term in ("auth", "authorize", "authorization", "permission", "role", "admin", "credential", "token", "secret")):
+                  patterns.add("AUTHZ_BOUNDARY_REVIEW")
+                  patterns.add("TRUST_BOUNDARY_REVIEW")
+              if any(term in haystack for term in ("input", "request", "url", "path", "file", "network", "subprocess", "shell", "process")):
+                  patterns.add("UNTRUSTED_INPUT_REVIEW")
+                  patterns.add("TRUST_BOUNDARY_REVIEW")
+              if any(term in haystack for term in ("checkpoint", "resume", "handoff", "quarantine", "standby", "agent")):
+                  patterns.add("CHECKPOINT_RESUME_REVIEW")
+                  patterns.add("AGENT_HANDOFF_REVIEW")
+                  patterns.add("TRUST_BOUNDARY_REVIEW")
+              if any(term in haystack for term in ("workflow", "github_actions", "github actions", ".github/workflows", "permissions:", "pull-requests", "contents: write")):
+                  patterns.add("WORKFLOW_PERMISSION_REVIEW")
+                  patterns.add("TRUST_BOUNDARY_REVIEW")
+              if any(term in haystack for term in ("pip-audit", "dependency", "package", "requirements", "lockfile", "actions/checkout", "setup-python")):
+                  patterns.add("SUPPLY_CHAIN_REVIEW")
+              if any(term in haystack for term in ("sandbox", "allowlist", "denylist", "bypass", "hitl", "auto-merge", "autofix", "auto_fix", "auto merge")):
+                  patterns.add("DEFENSE_SURFACE_REVIEW")
+                  patterns.add("TRUST_BOUNDARY_REVIEW")
+
+              path_profile = str(entry.get("path_profile", "") or "")
+              decision = str(entry.get("decision", entry.get("level", "")) or "")
+              if path_profile in {"safety_or_hitl", "active", "current", "runtime"} and decision in {"HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED"}:
+                  patterns.add("TRUST_BOUNDARY_REVIEW")
+
+              return sorted(patterns)
+
+
+          def classify_trust_boundary_signal(patterns: list[str], entry: dict[str, Any]) -> tuple[str, str]:
+              decision = str(entry.get("decision", entry.get("level", "INFO_ONLY")) or "INFO_ONLY")
+              if decision == "HITL_REQUIRED":
+                  return "HIGH", "HITL_REQUIRED finding touches trust-boundary-sensitive review areas."
+              if any(pattern in patterns for pattern in ("AUTHZ_BOUNDARY_REVIEW", "WORKFLOW_PERMISSION_REVIEW", "CHECKPOINT_RESUME_REVIEW")):
+                  if decision in {"FIX_RECOMMENDED", "REVIEW_RECOMMENDED"}:
+                      return "MEDIUM", "Review-recommended finding touches a permission, workflow, or handoff/resume boundary."
+              if patterns:
+                  return "LOW", "Finding touches a trust-boundary-adjacent area; defensive review advice is recorded."
+              return "NONE", "No trust-boundary review pattern was detected."
+
+
+          def build_trust_boundary_risk_entry(entry: dict[str, Any]) -> dict[str, Any]:
+              patterns = detect_trust_boundary_patterns(entry)
+              signal, rationale = classify_trust_boundary_signal(patterns, entry)
+              review_level = {
+                  "HIGH": "HITL_REQUIRED",
+                  "MEDIUM": "REVIEW_RECOMMENDED",
+                  "LOW": "INFO_ONLY",
+                  "NONE": "INFO_ONLY",
+              }[signal]
+              advice = [TRUST_BOUNDARY_ADVICE[pattern] for pattern in patterns if pattern in TRUST_BOUNDARY_ADVICE]
+              if not advice:
+                  advice = ["No trust-boundary-specific review advice was generated for this finding."]
+
+              return {
+                  "fingerprint_hash": entry.get("fingerprint_hash"),
+                  "source": entry.get("source"),
+                  "file": entry.get("file"),
+                  "line": entry.get("line"),
+                  "existing_decision": entry.get("decision", entry.get("level", "INFO_ONLY")),
+                  "reason_code": entry.get("reason_code"),
+                  "patterns": patterns,
+                  "trust_boundary_signal": signal,
+                  "review_level": review_level,
+                  "rationale": rationale,
+                  "defensive_advice": advice,
+                  "offensive_details_included": False,
+                  "exploit_steps_included": False,
+                  "payloads_included": False,
+                  "attack_chain_included": False,
+                  "auto_control_executed": False,
+                  "changes_existing_decision": False,
+              }
+
+
+          def generate_tasukeru_trust_boundary_risk_report(
+              entries: list[dict[str, Any]],
+              state: dict[str, Any],
+              metadata: dict[str, Any],
+          ) -> dict[str, Any]:
+              """Generate 3D-TBRL report-only artifacts.
+
+              TBRL converts public threat-pattern lessons into defensive review
+              advice. It must never output exploit steps, payloads, attack chains,
+              or offensive reproduction details.
+              """
+              tbrl_entries = [build_trust_boundary_risk_entry(entry) for entry in entries]
+              signal_counts = Counter(str(item.get("trust_boundary_signal", "NONE")) for item in tbrl_entries)
+              pattern_counts = Counter(
+                  pattern
+                  for item in tbrl_entries
+                  for pattern in item.get("patterns", []) or []
+              )
+              review_candidate_count = sum(1 for item in tbrl_entries if item.get("trust_boundary_signal") in {"HIGH", "MEDIUM"})
+              high_signal_count = int(signal_counts.get("HIGH", 0))
+              verified = all(
+                  item.get("offensive_details_included") is False
+                  and item.get("exploit_steps_included") is False
+                  and item.get("payloads_included") is False
+                  and item.get("attack_chain_included") is False
+                  and item.get("auto_control_executed") is False
+                  and item.get("changes_existing_decision") is False
+                  for item in tbrl_entries
+              )
+
+              payload = {
+                  "schema_version": "3d-tbrl-v0.1",
+                  "tool": "tasukeru_3d_trust_boundary_risk_layer",
+                  "purpose": (
+                      "Report-only defensive review layer for trust-boundary-sensitive code, workflow, "
+                      "dependency, handoff, and checkpoint changes."
+                  ),
+                  "verified": verified,
+                  "decision": "RUN" if verified else "PAUSE_FOR_HITL",
+                  "reason_code": "TRUST_BOUNDARY_RISK_REPORT_ONLY" if verified else "TRUST_BOUNDARY_RISK_POLICY_REVIEW_REQUIRED",
+                  "counts": {
+                      "entry_count": len(tbrl_entries),
+                      "review_candidate_count": review_candidate_count,
+                      "high_signal_count": high_signal_count,
+                      "signal_counts": dict(sorted(signal_counts.items())),
+                      "pattern_counts": dict(sorted(pattern_counts.items())),
+                  },
+                  "checked_dimensions": [
+                      "boundary",
+                      "flow",
+                      "impact",
+                  ],
+                  "policy": {
+                      "advisory_only": True,
+                      "report_only": True,
+                      "defensive_advice_only": True,
+                      "offensive_details_allowed": False,
+                      "exploit_steps_allowed": False,
+                      "payloads_allowed": False,
+                      "attack_chain_allowed": False,
+                      "auto_control_executed": False,
+                      "changes_existing_decisions": False,
+                      "may_downgrade_hitl_required": False,
+                      "auto_branch_allowed": False,
+                      "auto_pr_creation_allowed": False,
+                      "auto_commit_allowed": False,
+                      "auto_push_allowed": False,
+                      "autofix_allowed": False,
+                      "auto_merge_allowed": False,
+                      "human_decision_required_for_execution": True,
+                  },
+                  "entries": tbrl_entries,
+              }
+              payload["report_sha256"] = canonical_hash(
+                  {
+                      "schema_version": payload["schema_version"],
+                      "verified": payload["verified"],
+                      "decision": payload["decision"],
+                      "reason_code": payload["reason_code"],
+                      "counts": payload["counts"],
+                      "policy": payload["policy"],
+                  }
+              )
+              write_json(trust_boundary_risk_json_path, payload)
+
+              verify_payload = {
+                  "schema_version": "3d-tbrl-verify-v0.1",
+                  "verified": verified,
+                  "decision": payload["decision"],
+                  "reason_code": "TRUST_BOUNDARY_RISK_REPORT_VERIFIED" if verified else "TRUST_BOUNDARY_RISK_REPORT_POLICY_REVIEW_REQUIRED",
+                  "entry_count": len(tbrl_entries),
+                  "review_candidate_count": review_candidate_count,
+                  "high_signal_count": high_signal_count,
+                  "report_artifact": str(trust_boundary_risk_json_path),
+                  "summary_artifact": str(trust_boundary_risk_md_path),
+                  "report_sha256": payload["report_sha256"],
+                  "defensive_advice_only": True,
+                  "offensive_details_included": False,
+                  "exploit_steps_included": False,
+                  "payloads_included": False,
+                  "attack_chain_included": False,
+                  "auto_control_executed": False,
+                  "changes_existing_decisions": False,
+                  "human_decision_required_for_execution": True,
+              }
+              write_json(trust_boundary_risk_verify_path, verify_payload)
+
+              with trust_boundary_risk_md_path.open("w", encoding="utf-8") as f:
+                  f.write("# Tasukeru 3D Trust Boundary Risk Layer\n\n")
+                  f.write("This report is advisory-only and report-only. It gives defensive review advice and does not output exploit steps, payloads, attack chains, or offensive reproduction details.\n\n")
+                  f.write("## Result\n\n")
+                  f.write(f"- Verified: `{payload['verified']}`\n")
+                  f.write(f"- Decision: `{payload['decision']}`\n")
+                  f.write(f"- Reason code: `{payload['reason_code']}`\n")
+                  f.write(f"- Entries: `{len(tbrl_entries)}`\n")
+                  f.write(f"- Review candidates: `{review_candidate_count}`\n")
+                  f.write(f"- High signal count: `{high_signal_count}`\n")
+                  f.write(f"- Report hash: `{payload['report_sha256']}`\n\n")
+                  f.write("## Policy\n\n")
+                  f.write("- Defensive advice only: `true`\n")
+                  f.write("- Offensive details included: `false`\n")
+                  f.write("- Exploit steps included: `false`\n")
+                  f.write("- Payloads included: `false`\n")
+                  f.write("- Attack chains included: `false`\n")
+                  f.write("- Changes existing decisions: `false`\n")
+                  f.write("- Auto fix / commit / push / merge: `false`\n\n")
+                  f.write("## Pattern counts\n\n")
+                  for pattern, count in sorted(pattern_counts.items()):
+                      f.write(f"- `{pattern}`: `{count}`\n")
+                  if not pattern_counts:
+                      f.write("- No trust-boundary patterns detected.\n")
+                  f.write("\n## Defensive advice sample\n\n")
+                  sample = [item for item in tbrl_entries if item.get("patterns")][:80]
+                  if not sample:
+                      f.write("- No trust-boundary-specific advice was generated.\n")
+                  else:
+                      for item in sample:
+                          f.write(
+                              f"- signal=`{item.get('trust_boundary_signal')}` review=`{item.get('review_level')}` "
+                              f"reason=`{item.get('reason_code')}` file=`{item.get('file')}`"
+                          )
+                          if item.get("line"):
+                              f.write(f":{item.get('line')}")
+                          f.write("\n")
+                          for advice_item in item.get("defensive_advice", [])[:4]:
+                              f.write(f"  - {advice_item}\n")
+              return payload
+
 
           def clamp_float(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
               return max(lower, min(upper, value))
@@ -6870,6 +7202,26 @@ jobs:
               ],
           }
 
+          trust_boundary_risk_result = generate_tasukeru_trust_boundary_risk_report(
+              all_entries,
+              notification_state,
+              metadata,
+          )
+          metadata["trust_boundary_risk"] = {
+              "schema_version": trust_boundary_risk_result.get("schema_version"),
+              "verified": trust_boundary_risk_result.get("verified"),
+              "decision": trust_boundary_risk_result.get("decision"),
+              "review_candidate_count": trust_boundary_risk_result.get("counts", {}).get("review_candidate_count"),
+              "high_signal_count": trust_boundary_risk_result.get("counts", {}).get("high_signal_count"),
+              "signal_counts": trust_boundary_risk_result.get("counts", {}).get("signal_counts", {}),
+              "pattern_counts": trust_boundary_risk_result.get("counts", {}).get("pattern_counts", {}),
+              "artifacts": [
+                  "tasukeru_trust_boundary_risk_report.md",
+                  "tasukeru_trust_boundary_risk_report.json",
+                  "tasukeru_trust_boundary_risk_verify.json",
+              ],
+          }
+
           probabilistic_escalation_result = generate_tasukeru_probabilistic_escalation_report(
               all_entries,
               three_d_vaf_result,
@@ -7055,6 +7407,13 @@ jobs:
           print(f"SIS overall risk level: {sis.get('overall_risk_level')}")
           print(f"SIS risk counts: {sis.get('risk_counts')}")
           print("")
+          print("3D Trust Boundary Risk Layer v0.1")
+          tbrl = metadata.get("trust_boundary_risk", {})
+          print(f"3D-TBRL verified: {tbrl.get('verified')}")
+          print(f"3D-TBRL decision: {tbrl.get('decision')}")
+          print(f"3D-TBRL review candidates: {tbrl.get('review_candidate_count')}")
+          print(f"3D-TBRL high signals: {tbrl.get('high_signal_count')}")
+          print("")
           print("Probabilistic Escalation Layer v0.1")
           pel = metadata.get("probabilistic_escalation", {})
           print(f"PEL decision: {pel.get('decision')}")
@@ -7110,6 +7469,9 @@ jobs:
             tasukeru_3d_vulnerability_review.json
             tasukeru_safety_impact_simulation.md
             tasukeru_safety_impact_simulation.json
+            tasukeru_trust_boundary_risk_report.md
+            tasukeru_trust_boundary_risk_report.json
+            tasukeru_trust_boundary_risk_verify.json
             tasukeru_dimension_dependency_report.md
             tasukeru_dimension_dependency_report.json
             tasukeru_dimension_dependency_verify.json
@@ -7377,6 +7739,9 @@ jobs:
             artifact_names = [
                 "tasukeru_safety_impact_simulation.md",
                 "tasukeru_safety_impact_simulation.json",
+                "tasukeru_trust_boundary_risk_report.md",
+                "tasukeru_trust_boundary_risk_report.json",
+                "tasukeru_trust_boundary_risk_verify.json",
                 "tasukeru_3d_vulnerability_review.md",
                 "tasukeru_3d_vulnerability_review.json",
                 "tasukeru_dimension_dependency_report.md",
