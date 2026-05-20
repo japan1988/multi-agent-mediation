@@ -262,6 +262,61 @@ jobs:
             fi
           done
 
+          # Aggregate per-requirements pip-audit reports into the canonical file
+          # consumed by Tasukeru's advisory parser. This keeps the summary from
+          # silently ignoring dependency findings.
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+
+          log_dir = Path("tasukeru_logs")
+          aggregate = {
+              "dependencies": [],
+              "vulnerabilities": [],
+              "sources": [],
+          }
+
+          for path in sorted(log_dir.glob("pip-audit-*.json")):
+              if path.name == "pip-audit.json":
+                  continue
+              try:
+                  payload = json.loads(path.read_text(encoding="utf-8") or "{}")
+              except Exception as exc:
+                  aggregate["sources"].append(
+                      {
+                          "path": str(path),
+                          "parsed": False,
+                          "error": type(exc).__name__,
+                      }
+                  )
+                  continue
+
+              aggregate["sources"].append({"path": str(path), "parsed": True})
+
+              dependencies = payload.get("dependencies")
+              if isinstance(dependencies, list):
+                  for item in dependencies:
+                      if isinstance(item, dict):
+                          enriched = dict(item)
+                          enriched.setdefault("source_file", str(path))
+                          aggregate["dependencies"].append(enriched)
+
+              vulnerabilities = payload.get("vulnerabilities")
+              if isinstance(vulnerabilities, list):
+                  for item in vulnerabilities:
+                      if isinstance(item, dict):
+                          enriched = dict(item)
+                          enriched.setdefault("source_file", str(path))
+                          aggregate["vulnerabilities"].append(enriched)
+
+          log_dir.joinpath("pip-audit.json").write_text(
+              json.dumps(aggregate, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
           set -e
 
           echo "$ruff_exit" > tasukeru_logs/ruff.exit
@@ -3630,11 +3685,34 @@ jobs:
                   decision_diary_md_path,
                   decision_diary_jsonl_path,
                   decision_diary_verify_path,
+                  finding_validation_report_md_path,
+                  finding_validation_report_json_path,
+                  finding_validation_verify_path,
+                  clean_run_draft_md_path,
+                  clean_run_draft_json_path,
+                  clean_run_draft_verify_path,
+                  pr_draft_md_path,
+                  pr_draft_json_path,
+                  pr_draft_verify_path,
+                  three_d_vaf_md_path,
+                  three_d_vaf_json_path,
+                  sis_md_path,
+                  sis_json_path,
+                  trust_boundary_risk_md_path,
+                  trust_boundary_risk_json_path,
+                  trust_boundary_risk_verify_path,
+                  dimension_dependency_md_path,
+                  dimension_dependency_json_path,
+                  dimension_dependency_verify_path,
+                  probabilistic_escalation_md_path,
+                  probabilistic_escalation_json_path,
+                  probabilistic_escalation_verify_path,
                   log_dir / "logic-review.json",
                   log_dir / "documentation-review.json",
                   log_dir / "ruff.json",
                   log_dir / "bandit.json",
                   log_dir / "pip-audit.json",
+                  *sorted(log_dir.glob("pip-audit-*.json")),
               ]
               for artifact_path in artifact_paths:
                   if not artifact_path.exists():
@@ -4350,24 +4428,45 @@ jobs:
               write_tasukeru_clean_run_draft(draft)
               return draft
 
+          def read_lines_as_normalized_paths(path: Path) -> list[str]:
+              if not path.exists():
+                  return []
+              files = [
+                  normalize_path(line.strip())
+                  for line in read_text(path, "").splitlines()
+                  if line.strip()
+              ]
+              return sorted(dict.fromkeys(files))
+
+
           def read_pr_draft_changed_files() -> list[str]:
-              # Changed files must represent the actual PR diff.
-              # Do not fall back to scanned files here; scanned files are a broader
-              # review input and must not be presented as changed files.
+              # Changed files should represent the actual PR diff. Prefer the
+              # unfiltered PR-file list captured in changed-files-all.txt, and
+              # fall back to the filtered list only when older artifacts or local
+              # simulations do not provide the unfiltered source.
+              candidates = [
+                  log_dir / "changed-files-all.txt",
+                  Path("tasukeru_changed_files.txt"),
+                  log_dir / "changed-files.txt",
+              ]
+              for path in candidates:
+                  files = read_lines_as_normalized_paths(path)
+                  if files:
+                      return files
+              return []
+
+
+          def read_pr_draft_relevant_changed_files() -> list[str]:
+              # Relevant changed files are the subset that Tasukeru actually scans
+              # or reviews under this workflow's path filters.
               candidates = [
                   Path("tasukeru_changed_files.txt"),
                   log_dir / "changed-files.txt",
               ]
               for path in candidates:
-                  if not path.exists():
-                      continue
-                  files = [
-                      normalize_path(line.strip())
-                      for line in read_text(path, "").splitlines()
-                      if line.strip()
-                  ]
+                  files = read_lines_as_normalized_paths(path)
                   if files:
-                      return sorted(dict.fromkeys(files))
+                      return files
               return []
 
           def read_pr_draft_scanned_files() -> list[str]:
@@ -4416,9 +4515,16 @@ jobs:
                   result_consistency_report_md_path,
                   result_consistency_report_json_path,
                   result_consistency_verify_path,
+                  three_d_vaf_md_path,
+                  three_d_vaf_json_path,
+                  sis_md_path,
+                  sis_json_path,
                   trust_boundary_risk_md_path,
                   trust_boundary_risk_json_path,
                   trust_boundary_risk_verify_path,
+                  dimension_dependency_md_path,
+                  dimension_dependency_json_path,
+                  dimension_dependency_verify_path,
                   probabilistic_escalation_md_path,
                   probabilistic_escalation_json_path,
                   probabilistic_escalation_verify_path,
@@ -4458,8 +4564,8 @@ jobs:
               lines.append("")
               lines.append("## Summary")
               lines.append("")
-              lines.append("- Tasukeru Analysis reviewed the changed files and generated advisory artifacts.")
-              lines.append("- This draft summarizes the changed files, generated artifacts, verification results, and automation policy.")
+              lines.append("- Tasukeru Analysis reviewed the relevant changed files and generated advisory artifacts.")
+              lines.append("- This draft summarizes the actual PR changed files, Tasukeru-relevant changed files, generated artifacts, verification results, and automation policy.")
               lines.append("- Human review is required before any merge or external adoption.")
               lines.append("")
               lines.append("## Changed files")
@@ -4469,7 +4575,16 @@ jobs:
                   for file_path in changed_files:
                       lines.append(f"- `{file_path}`")
               else:
-                  lines.append("- No changed files were recorded by `tasukeru_changed_files.txt` or `tasukeru_logs/changed-files.txt`.")
+                  lines.append("- No changed files were recorded by `tasukeru_logs/changed-files-all.txt` or fallback changed-file artifacts.")
+              lines.append("")
+              lines.append("## Tasukeru-relevant changed files")
+              lines.append("")
+              relevant_changed_files = draft.get("relevant_changed_files", []) or []
+              if relevant_changed_files:
+                  for file_path in relevant_changed_files:
+                      lines.append(f"- `{file_path}`")
+              else:
+                  lines.append("- No relevant changed files were recorded by `tasukeru_changed_files.txt` or `tasukeru_logs/changed-files.txt`.")
               lines.append("")
               lines.append("## What changed")
               lines.append("")
@@ -4547,6 +4662,15 @@ jobs:
                           }
                       )
 
+              for file_path in draft.get("relevant_changed_files", []) or []:
+                  if f"`{file_path}`" not in markdown_text:
+                      contradictions.append(
+                          {
+                              "reason_code": "PR_DRAFT_RELEVANT_CHANGED_FILE_MISSING",
+                              "message": f"Relevant changed file is missing from markdown draft: {file_path}",
+                          }
+                      )
+
               policy = draft.get("automation_policy", {}) or {}
               blocked_flags = (
                   "auto_pr_creation_allowed",
@@ -4584,6 +4708,7 @@ jobs:
               """
               counts = Counter(entry.get("decision", "UNKNOWN") for entry in entries)
               changed_files = read_pr_draft_changed_files()
+              relevant_changed_files = read_pr_draft_relevant_changed_files()
               scanned_files = read_pr_draft_scanned_files()
               generated_artifacts = collect_pr_draft_artifact_status()
               finding_validation = metadata.get("finding_validation", {}) if isinstance(metadata, dict) else {}
@@ -4632,6 +4757,8 @@ jobs:
                   "artifact_only": True,
                   "changed_files": changed_files,
                   "changed_file_count": len(changed_files),
+                  "relevant_changed_files": relevant_changed_files,
+                  "relevant_changed_file_count": len(relevant_changed_files),
                   "scanned_files": scanned_files,
                   "scanned_file_count": len(scanned_files),
                   "generated_artifacts": generated_artifacts,
@@ -4649,7 +4776,8 @@ jobs:
                       "No self-definition auto-update was performed.",
                   ],
                   "source_of_truth": {
-                      "changed_files": "tasukeru_changed_files.txt or tasukeru_logs/changed-files.txt",
+                      "changed_files": "tasukeru_logs/changed-files-all.txt, with filtered changed-files fallback",
+                      "relevant_changed_files": "tasukeru_changed_files.txt or tasukeru_logs/changed-files.txt",
                       "scanned_files": "tasukeru_logs/scanned-files.txt",
                       "generated_artifacts": "artifact path existence at generation time",
                       "verification_results": "Tasukeru verification metadata",
@@ -4674,6 +4802,7 @@ jobs:
                       "decision": draft["decision"],
                       "reason_code": draft["reason_code"],
                       "changed_files": draft["changed_files"],
+                      "relevant_changed_files": draft["relevant_changed_files"],
                       "generated_artifact_count": draft["generated_artifact_count"],
                       "verification_results": draft["verification_results"],
                       "review_queue": draft["review_queue"],
@@ -4695,6 +4824,7 @@ jobs:
                   "decision": draft.get("decision"),
                   "reason_code": draft.get("reason_code"),
                   "changed_file_count": draft.get("changed_file_count"),
+                  "relevant_changed_file_count": draft.get("relevant_changed_file_count"),
                   "scanned_file_count": draft.get("scanned_file_count"),
                   "generated_artifact_count": draft.get("generated_artifact_count"),
                   "contradiction_count": draft.get("contradiction_count"),
@@ -7434,6 +7564,19 @@ jobs:
               announcement,
           )
           metadata["result_consistency"] = result_consistency
+          # Final ARL pass after PR Draft and Clean Run artifacts exist. This
+          # records stable advisory artifacts such as 3D/TBRL/PEL/DAC and PR Draft
+          # without introducing a recursive dependency on the RCV artifact itself.
+          arl_verification = generate_tasukeru_arl_hash_chain(all_entries, notification_state, metadata)
+          announcement = generate_tasukeru_announcement(all_entries, notification_state, metadata, arl_verification)
+          result_consistency = generate_tasukeru_result_consistency_report(
+              all_entries,
+              notification_state,
+              metadata,
+              arl_verification,
+              announcement,
+          )
+          metadata["result_consistency"] = result_consistency
 
           print("# Tasukeru advisory summary")
           print(f"Ruff findings: {metadata['ruff_count']}")
@@ -7499,6 +7642,7 @@ jobs:
           print(f"PR draft verified: {pr_draft.get('verified')}")
           print(f"PR draft decision: {pr_draft.get('decision')}")
           print(f"PR draft changed files: {pr_draft.get('changed_file_count')}")
+          print(f"PR draft relevant changed files: {pr_draft.get('relevant_changed_file_count')}")
           print(f"PR draft contradictions: {pr_draft.get('contradiction_count')}")
           print("")
           print("3D Vulnerability Review v0.1")
@@ -7875,7 +8019,7 @@ jobs:
                     "",
                     "## Tasukeru Safety Review",
                     "",
-                    "3D safety review detected a potential risk." if hitl_required > 0 else "ARL verification failed.",
+                    headline,
                     "",
                     "### Public summary",
                     "",
