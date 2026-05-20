@@ -42,6 +42,7 @@ jobs:
 
     permissions:
       contents: read
+      pull-requests: read
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -69,37 +70,111 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p tasukeru_logs
           : > tasukeru_changed_files.txt
           : > tasukeru_logs/changed-files.txt
+          : > tasukeru_logs/changed-files-all.txt
 
-          # Fetch both sides explicitly. The checked-out PR commit is usually
-          # available already, but fetching both SHAs makes PR-diff detection more
-          # robust for shallow checkouts.
-          git fetch --no-tags --depth=1 origin "$BASE_SHA" || true
-          git fetch --no-tags --depth=1 origin "$HEAD_SHA" || true
+          relevant_regex='(\.py$|\.ipynb$|^pyproject\.toml$|^requirements.*\.txt$|^README.*\.md$|^SECURITY\.md$|^LICENSE|^LICENSE_POLICY\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$|^NOTICE$|^TRADEMARKS\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE\.md$|^\.github/workflows/tasukeru-analysis\.yml$|^log_codebook.*\.json$|^tasukeru_self_definition.*\.json$|^tasukeru_self_definition_chain.*\.jsonl$|\.jsonl$)'
 
-          diff_base="$BASE_SHA"
-          diff_head="$HEAD_SHA"
+          # Preferred source: GitHub pull-request files API. This avoids shallow
+          # checkout ambiguity and keeps PR Draft changed-files grounded in the
+          # actual PR diff. This is read-only metadata access.
+          python - <<'PY' > tasukeru_logs/changed-files-api.txt || true
+          import json
+          import os
+          import urllib.error
+          import urllib.request
 
-          if ! git cat-file -e "${diff_base}^{commit}" 2>/dev/null || ! git cat-file -e "${diff_head}^{commit}" 2>/dev/null; then
-            git fetch --no-tags --depth=50 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" || true
-            diff_base="origin/${BASE_REF}"
-            diff_head="HEAD"
+          event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+          token = os.environ.get("GITHUB_TOKEN", "")
+          if not event_path or not os.path.exists(event_path):
+              raise SystemExit(0)
+
+          with open(event_path, "r", encoding="utf-8") as file_obj:
+              event = json.load(file_obj)
+
+          pull_request = event.get("pull_request") or {}
+          files_url = str(pull_request.get("url") or "").rstrip("/") + "/files?per_page=100"
+          if not files_url.startswith("https://"):
+              raise SystemExit(0)
+
+          seen = set()
+          while files_url:
+              request = urllib.request.Request(
+                  files_url,
+                  method="GET",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      **({"Authorization": f"Bearer {token}"} if token else {}),
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      page = json.loads(response.read().decode("utf-8"))
+                      if isinstance(page, list):
+                          for item in page:
+                              filename = str(item.get("filename", "")).strip()
+                              if filename and filename not in seen:
+                                  print(filename)
+                                  seen.add(filename)
+                      link = response.headers.get("Link", "")
+                      next_url = ""
+                      for part in link.split(","):
+                          if 'rel="next"' in part:
+                              start = part.find("<")
+                              end = part.find(">")
+                              if start >= 0 and end > start:
+                                  next_url = part[start + 1 : end]
+                                  break
+                      files_url = next_url
+              except urllib.error.HTTPError:
+                  break
+              except urllib.error.URLError:
+                  break
+          PY
+
+          if [ -s tasukeru_logs/changed-files-api.txt ]; then
+            cp tasukeru_logs/changed-files-api.txt tasukeru_logs/changed-files-all.txt
           fi
 
-          if git cat-file -e "${diff_base}^{commit}" 2>/dev/null && git cat-file -e "${diff_head}^{commit}" 2>/dev/null; then
-            git diff --name-only "$diff_base" "$diff_head" \
-              | grep -E '(\.py$|\.ipynb$|^pyproject\.toml$|^requirements.*\.txt$|^README.*\.md$|^SECURITY\.md$|^LICENSE|^LICENSE_POLICY\.md$|^CONTRIBUTING\.md$|^CODE_OF_CONDUCT\.md$|^NOTICE$|^TRADEMARKS\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE\.md$|^\.github/workflows/tasukeru-analysis\.yml$|^log_codebook.*\.json$|^tasukeru_self_definition.*\.json$|^tasukeru_self_definition_chain.*\.jsonl$|\.jsonl$)' \
-              | sort -u > tasukeru_changed_files.txt || true
+          # Git fallback 1: explicit base/head SHA diff.
+          if [ ! -s tasukeru_logs/changed-files-all.txt ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA" || true
+            git fetch --no-tags --depth=1 origin "$HEAD_SHA" || true
+
+            if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+              git diff --name-only "$BASE_SHA" "$HEAD_SHA" > tasukeru_logs/changed-files-git-sha.txt || true
+              if [ -s tasukeru_logs/changed-files-git-sha.txt ]; then
+                cp tasukeru_logs/changed-files-git-sha.txt tasukeru_logs/changed-files-all.txt
+              fi
+            fi
+          fi
+
+          # Git fallback 2: merge-base style diff against the fetched base branch.
+          if [ ! -s tasukeru_logs/changed-files-all.txt ]; then
+            git fetch --no-tags --depth=50 origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}" || true
+            git diff --name-only "origin/${BASE_REF}...HEAD" > tasukeru_logs/changed-files-git-merge-base.txt || true
+            if [ -s tasukeru_logs/changed-files-git-merge-base.txt ]; then
+              cp tasukeru_logs/changed-files-git-merge-base.txt tasukeru_logs/changed-files-all.txt
+            fi
+          fi
+
+          if [ -s tasukeru_logs/changed-files-all.txt ]; then
+            grep -E "$relevant_regex" tasukeru_logs/changed-files-all.txt | sort -u > tasukeru_changed_files.txt || true
           fi
 
           cp tasukeru_changed_files.txt tasukeru_logs/changed-files.txt
 
           if [ ! -s tasukeru_changed_files.txt ]; then
             echo "No relevant changed files."
+          else
+            echo "Relevant changed files:"
+            sed 's/^/- /' tasukeru_changed_files.txt
           fi
 
       - name: Install advisory tools only
@@ -4108,6 +4183,8 @@ jobs:
               middle_verify = middle_layer.get("verify", {}) if isinstance(middle_layer, dict) else {}
               probabilistic_escalation = metadata.get("probabilistic_escalation", {}) if isinstance(metadata, dict) else {}
               trust_boundary_risk = metadata.get("trust_boundary_risk", {}) if isinstance(metadata, dict) else {}
+              pr_draft = metadata.get("pr_draft", {}) if isinstance(metadata, dict) else {}
+              pr_draft_seen = "verified" in pr_draft
 
               checks = {
                   "hitl_required_zero": int(counts.get("HITL_REQUIRED", 0)) == 0,
@@ -4121,6 +4198,12 @@ jobs:
                   "pel_auto_control_disabled": True,
                   "tbrl_report_only": str(trust_boundary_risk.get("decision", "RUN")) == "RUN",
                   "tbrl_defensive_advice_only": True,
+                  "pr_draft_verified_if_generated": (not pr_draft_seen) or bool(pr_draft.get("verified")),
+                  "pr_draft_changed_files_available_if_pr": (
+                      (not pr_draft_seen)
+                      or os.environ.get("GITHUB_EVENT_NAME") != "pull_request"
+                      or int(pr_draft.get("changed_file_count", 0) or 0) > 0
+                  ),
                   "automation_policy_locked": True,
               }
               blockers = [key for key, value in checks.items() if not value]
@@ -4155,6 +4238,8 @@ jobs:
                       "pel_max_probability": probabilistic_escalation.get("max_probability"),
                       "tbrl_review_candidate_count": trust_boundary_risk.get("review_candidate_count"),
                       "tbrl_high_signal_count": trust_boundary_risk.get("high_signal_count"),
+                      "pr_draft_verified": pr_draft.get("verified") if pr_draft_seen else None,
+                      "pr_draft_changed_file_count": pr_draft.get("changed_file_count") if pr_draft_seen else None,
                   },
                   "human_review_note": (
                       "No active HITL blocker was detected and verification layers passed."
@@ -7322,6 +7407,25 @@ jobs:
               result_consistency,
           )
           metadata["pr_draft"] = pr_draft
+          result_consistency = generate_tasukeru_result_consistency_report(
+              all_entries,
+              notification_state,
+              metadata,
+              arl_verification,
+              announcement,
+          )
+          metadata["result_consistency"] = result_consistency
+          # Rebuild Clean Run after PR Draft so a PR Draft verification failure
+          # cannot be missed by the final clean-run status.
+          clean_run_draft = generate_tasukeru_clean_run_draft(
+              all_entries,
+              notification_state,
+              metadata,
+              arl_verification,
+              announcement,
+              result_consistency,
+          )
+          metadata["clean_run_draft"] = clean_run_draft
           result_consistency = generate_tasukeru_result_consistency_report(
               all_entries,
               notification_state,
