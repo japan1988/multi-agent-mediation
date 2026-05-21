@@ -1,5 +1,3 @@
-
-
 # Artifact groups that should stay aligned across PR Draft, upload, and ARL.
 # The tuple is: (logical name, file name in artifact zip, Python path symbol).
 BOUNDARY_ARTIFACTS: tuple[tuple[str, str, str], ...] = (
