@@ -156,6 +156,22 @@ The expected behavior is fail-closed or review-oriented:
 
 This test is intended to improve defensive robustness and regression coverage. It is not an offensive security tool.
 
+## Tasukeru boundary self-check tests
+
+Tasukeru boundary self-check tests verify that Tasukeru's own workflow boundaries remain aligned.
+
+They check that generated artifacts, PR Draft artifact listings, upload artifact paths, ARL artifact-integrity records, and result-consistency expectations do not drift apart.
+
+The maintained test entry point is:
+
+- `tests/test_tasukeru_boundary_self_check_v0_2.py`
+
+The legacy/private compatibility shim is:
+
+- `tests/_tasukeru_boundary_self_check_v0_1.py`
+
+These tests are static/read-only. They do not execute external actions, create branches, create pull requests, commit, push, apply fixes, post comments, or merge changes automatically.
+
 ## Advisory-only policy
 
 Tasukeru Analysis is an advisory-only review helper.
