@@ -317,6 +317,21 @@ Tasukeru Analysis は、findings に構造化された decision-support metadata
 `fix_prediction` は保証ではありません。レビュー補助です。
 
 `fix_verification` を有効にする場合も、advisory-only のままでなければなりません。candidate checks は一時ファイルまたは isolated files を使うべきであり、人間が明示的に手動適用を選ばない限り、リポジトリファイルを変更してはいけません。
+## Tasukeru 自己境界チェックテスト
+
+Tasukeru 自己境界チェックテストは、Tasukeru 自身の workflow 境界がずれていないかを確認するためのテストです。
+
+生成artifact、PR Draftのartifact一覧、upload対象、ARL artifact-integrity記録、result-consistencyの期待値が互いに食い違っていないかを確認します。
+
+現在の正式なテスト入口は次のファイルです。
+
+- `tests/test_tasukeru_boundary_self_check_v0_2.py`
+
+互換用の旧ファイルは次のshimです。
+
+- `tests/_tasukeru_boundary_self_check_v0_1.py`
+
+これらのテストは静的・読み取り専用です。外部操作、branch作成、PR作成、commit、push、自動修正、PRコメント投稿、自動mergeは行いません。
 
 ## Output artifacts
 
