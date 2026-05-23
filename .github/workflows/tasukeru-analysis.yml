@@ -7693,6 +7693,376 @@ jobs:
           print("Auto merge: false")
           PY
 
+
+      - name: Generate Tasukeru 4D inspection report
+        if: always()
+        env:
+          TASUKERU_EVENT_NAME: ${{ github.event_name }}
+          TASUKERU_EVENT_PATH: ${{ github.event_path }}
+          TASUKERU_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          def read_json(path: str, default: Any) -> Any:
+              file_path = Path(path)
+              if not file_path.exists():
+                  return default
+              try:
+                  return json.loads(file_path.read_text(encoding="utf-8"))
+              except Exception:
+                  return default
+
+          def read_lines(path: str) -> list[str]:
+              file_path = Path(path)
+              if not file_path.exists():
+                  return []
+              return [
+                  line.strip()
+                  for line in file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                  if line.strip()
+              ]
+
+          def count_review_levels(data: Any) -> dict[str, int]:
+              counts: dict[str, int] = {
+                  "HITL_REQUIRED": 0,
+                  "FIX_RECOMMENDED": 0,
+                  "REVIEW_RECOMMENDED": 0,
+                  "NOISE_CANDIDATE": 0,
+                  "INFO_ONLY": 0,
+              }
+
+              def walk(value: Any) -> None:
+                  if isinstance(value, dict):
+                      level = value.get("review_level") or value.get("level") or value.get("decision")
+                      if isinstance(level, str) and level in counts:
+                          counts[level] += 1
+                      for child in value.values():
+                          walk(child)
+                  elif isinstance(value, list):
+                      for child in value:
+                          walk(child)
+
+              walk(data)
+              return counts
+
+          event = read_json(os.environ.get("TASUKERU_EVENT_PATH", ""), {})
+          pr = event.get("pull_request") or {}
+
+          base = pr.get("base") or {}
+          head = pr.get("head") or {}
+
+          changed_files = read_lines("tasukeru_changed_files.txt") or read_lines("tasukeru_logs/changed-files.txt")
+          changed_all = read_lines("tasukeru_logs/changed-files-all.txt") or changed_files
+
+          hitl_review = read_json("tasukeru_hitl_review.json", {})
+          confidence = read_json("tasukeru_confidence_report.json", {})
+          dimension_dependency = read_json("tasukeru_dimension_dependency_report.json", {})
+          result_consistency = read_json("tasukeru_result_consistency_report.json", {})
+          pel = read_json("tasukeru_probabilistic_escalation_report.json", {})
+          finding_validation = read_json("tasukeru_finding_validation_report.json", {})
+
+          review_counts = count_review_levels(hitl_review)
+
+          signals: list[dict[str, Any]] = []
+
+          def add_signal(name: str, weight: int, reason: str, evidence: Any = None) -> None:
+              signals.append(
+                  {
+                      "name": name,
+                      "weight": weight,
+                      "reason": reason,
+                      "evidence": evidence,
+                  }
+              )
+
+          if review_counts.get("HITL_REQUIRED", 0) > 0:
+              add_signal(
+                  "hitl_required_findings_present",
+                  40,
+                  "Current advisory findings include HITL_REQUIRED items.",
+                  {"count": review_counts["HITL_REQUIRED"]},
+              )
+
+          if review_counts.get("FIX_RECOMMENDED", 0) > 0:
+              add_signal(
+                  "fix_recommended_findings_present",
+                  20,
+                  "Current advisory findings include FIX_RECOMMENDED items.",
+                  {"count": review_counts["FIX_RECOMMENDED"]},
+              )
+
+          if review_counts.get("REVIEW_RECOMMENDED", 0) > 0:
+              add_signal(
+                  "review_recommended_findings_present",
+                  12,
+                  "Current advisory findings include REVIEW_RECOMMENDED items.",
+                  {"count": review_counts["REVIEW_RECOMMENDED"]},
+              )
+
+          if any(path.startswith(".github/workflows/") for path in changed_all):
+              add_signal(
+                  "workflow_surface_changed",
+                  15,
+                  "Workflow files changed; automation boundaries should be reviewed.",
+                  [path for path in changed_all if path.startswith(".github/workflows/")],
+              )
+
+          if any(path.endswith(".py") for path in changed_all):
+              add_signal(
+                  "python_surface_changed",
+                  10,
+                  "Python files changed; code-path and test coverage review may be relevant.",
+                  [path for path in changed_all if path.endswith(".py")],
+              )
+
+          if any(path.startswith("tests/") for path in changed_all):
+              add_signal(
+                  "test_surface_changed",
+                  5,
+                  "Test files changed; expected behavior may have shifted.",
+                  [path for path in changed_all if path.startswith("tests/")],
+              )
+
+          if any(path.startswith("README") or path.startswith("docs/") for path in changed_all):
+              add_signal(
+                  "documentation_surface_changed",
+                  5,
+                  "Documentation changed; public claims and safety scope should remain consistent.",
+                  [path for path in changed_all if path.startswith("README") or path.startswith("docs/")],
+              )
+
+          def first_present_mapping(data: Any) -> dict[str, Any]:
+              if isinstance(data, dict):
+                  return data
+              return {}
+
+          result_consistency_map = first_present_mapping(result_consistency)
+          dimension_dependency_map = first_present_mapping(dimension_dependency)
+          pel_map = first_present_mapping(pel)
+          confidence_map = first_present_mapping(confidence)
+          finding_validation_map = first_present_mapping(finding_validation)
+
+          mismatch_count = int(result_consistency_map.get("mismatch_count") or 0)
+          if mismatch_count:
+              add_signal(
+                  "result_consistency_mismatch",
+                  25,
+                  "Generated outputs and process records may disagree.",
+                  {"mismatch_count": mismatch_count},
+              )
+
+          dependency_mismatch_count = int(dimension_dependency_map.get("dependency_mismatch_count") or 0)
+          if dependency_mismatch_count:
+              add_signal(
+                  "dimension_dependency_mismatch",
+                  25,
+                  "Finding, impact, dependency, or output classifications may disagree.",
+                  {"dependency_mismatch_count": dependency_mismatch_count},
+              )
+
+          mandatory_hitl_count = int(pel_map.get("mandatory_hitl_count") or 0)
+          if mandatory_hitl_count:
+              add_signal(
+                  "pel_mandatory_hitl",
+                  30,
+                  "Probabilistic escalation layer reports mandatory HITL candidates.",
+                  {"mandatory_hitl_count": mandatory_hitl_count},
+              )
+
+          low_confidence_count = int(confidence_map.get("low_confidence_count") or 0)
+          if low_confidence_count:
+              add_signal(
+                  "low_confidence_classifications",
+                  10,
+                  "Classification confidence includes low-confidence items.",
+                  {"low_confidence_count": low_confidence_count},
+              )
+
+          validation_issue_count = int(finding_validation_map.get("issue_count") or 0)
+          if validation_issue_count:
+              add_signal(
+                  "finding_validation_issues",
+                  15,
+                  "Finding validation reports issues that should be reviewed.",
+                  {"issue_count": validation_issue_count},
+              )
+
+          risk_score = sum(int(signal["weight"]) for signal in signals)
+          if risk_score >= 60:
+              future_decision = "PAUSE_FOR_HITL"
+              review_level = "HITL_REQUIRED"
+          elif risk_score >= 25:
+              future_decision = "DRAFT_REVIEW"
+              review_level = "REVIEW_RECOMMENDED"
+          elif risk_score > 0:
+              future_decision = "INFO_ONLY_MONITOR"
+              review_level = "INFO_ONLY"
+          else:
+              future_decision = "NO_ACTION_REQUIRED"
+              review_level = "INFO_ONLY"
+
+          report = {
+              "schema_version": "tasukeru-4d-inspection-v0.1",
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+              "mode": "report-only",
+              "advisory_only": True,
+              "auto_apply": False,
+              "auto_fix": False,
+              "auto_commit": False,
+              "auto_push": False,
+              "auto_merge": False,
+              "external_side_effects": False,
+              "past": {
+                  "meaning": "base/reference state",
+                  "base_ref": base.get("ref"),
+                  "base_sha": base.get("sha"),
+                  "sources": [
+                      "pull_request.base metadata",
+                      "existing advisory artifacts when present",
+                      "changed-file metadata",
+                  ],
+              },
+              "current": {
+                  "meaning": "head/current observed state",
+                  "head_ref": head.get("ref"),
+                  "head_sha": head.get("sha") or os.environ.get("TASUKERU_SHA"),
+                  "changed_files": changed_files,
+                  "changed_files_all": changed_all,
+                  "review_counts": review_counts,
+              },
+              "prediction": {
+                  "meaning": "delta-derived risk estimate, not a factual claim",
+                  "risk_score": risk_score,
+                  "signals": signals,
+                  "statement": (
+                      "Prediction is based on changed surfaces and advisory metadata. "
+                      "It is not a guarantee and must not trigger automatic fixes or merges."
+                  ),
+              },
+              "future_judgment": {
+                  "meaning": "advisory next-step recommendation",
+                  "decision": future_decision,
+                  "review_level": review_level,
+                  "allowed_outputs": [
+                      "DRAFT_FIX",
+                      "DRAFT_REVIEW",
+                      "REVIEW_RECOMMENDED",
+                      "PAUSE_FOR_HITL",
+                      "INFO_ONLY",
+                  ],
+                  "blocked_actions": [
+                      "automatic fixes",
+                      "automatic commits",
+                      "automatic pushes",
+                      "automatic merges",
+                      "external actions",
+                  ],
+              },
+          }
+
+          Path("tasukeru_4d_inspection_report.json").write_text(
+              json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          md_lines = [
+              "# Tasukeru 4D Inspection Report",
+              "",
+              "This report is advisory-only and report-only.",
+              "",
+              "## 4D model",
+              "",
+              "- Past: base/reference state and existing advisory metadata",
+              "- Current: PR head/current observed files and findings",
+              "- Prediction: delta-derived risk estimate, not a factual claim",
+              "- Future judgment: advisory next step such as HITL or draft review",
+              "",
+              "## Automation boundary",
+              "",
+              "- Auto apply: false",
+              "- Auto fix: false",
+              "- Auto commit: false",
+              "- Auto push: false",
+              "- Auto merge: false",
+              "- External side effects: false",
+              "",
+              "## Summary",
+              "",
+              f"- Risk score: {risk_score}",
+              f"- Future decision: `{future_decision}`",
+              f"- Review level: `{review_level}`",
+              "",
+              "## Review counts",
+              "",
+          ]
+          for key, value in review_counts.items():
+              md_lines.append(f"- {key}: {value}")
+
+          md_lines.extend(["", "## Prediction signals", ""])
+          if signals:
+              for signal in signals:
+                  md_lines.append(f"- `{signal['name']}` (+{signal['weight']}): {signal['reason']}")
+          else:
+              md_lines.append("- No risk-increasing 4D signals were detected.")
+
+          md_lines.extend(
+              [
+                  "",
+                  "## Notes",
+                  "",
+                  "Predictions in this report are review aids. They must not be treated as guarantees.",
+                  "High-risk, uncertain, or externally consequential cases should be routed to HITL.",
+                  "",
+              ]
+          )
+          Path("tasukeru_4d_inspection_report.md").write_text(
+              "\n".join(md_lines),
+              encoding="utf-8",
+          )
+
+          verify = {
+              "schema_version": "tasukeru-4d-inspection-verify-v0.1",
+              "verified": True,
+              "report_exists": Path("tasukeru_4d_inspection_report.json").exists(),
+              "markdown_exists": Path("tasukeru_4d_inspection_report.md").exists(),
+              "advisory_only": report["advisory_only"] is True,
+              "auto_apply": report["auto_apply"],
+              "auto_fix": report["auto_fix"],
+              "auto_commit": report["auto_commit"],
+              "auto_push": report["auto_push"],
+              "auto_merge": report["auto_merge"],
+              "external_side_effects": report["external_side_effects"],
+              "decision": future_decision,
+          }
+          verify["verified"] = (
+              verify["report_exists"]
+              and verify["markdown_exists"]
+              and verify["advisory_only"]
+              and not verify["auto_apply"]
+              and not verify["auto_fix"]
+              and not verify["auto_commit"]
+              and not verify["auto_push"]
+              and not verify["auto_merge"]
+              and not verify["external_side_effects"]
+          )
+
+          Path("tasukeru_4d_inspection_verify.json").write_text(
+              json.dumps(verify, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          print(f"4D inspection decision: {future_decision}")
+          print(f"4D inspection risk score: {risk_score}")
+          print("Generated tasukeru_4d_inspection_report.md/json and verify json.")
+          PY
+
+
       - name: Upload advisory logs
         if: always()
         uses: actions/upload-artifact@v6
@@ -7723,6 +8093,9 @@ jobs:
             tasukeru_dimension_dependency_report.md
             tasukeru_dimension_dependency_report.json
             tasukeru_dimension_dependency_verify.json
+            tasukeru_4d_inspection_report.md
+            tasukeru_4d_inspection_report.json
+            tasukeru_4d_inspection_verify.json
             tasukeru_probabilistic_escalation_report.md
             tasukeru_probabilistic_escalation_report.json
             tasukeru_probabilistic_escalation_verify.json
