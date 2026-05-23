@@ -660,6 +660,13 @@ Example:
 - `agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
 - `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
 
+Extended multi-abnormal / PEL experiment:
+
+- `agent_code_anomaly_maestro_handoff_multi_abnormal_pel_sim_v0_4_1.py`
+- `tests/test_agent_code_anomaly_maestro_handoff_multi_abnormal_pel_sim_v0_4_1.py`
+
+The v0.4.1 multi-abnormal / PEL variant extends the code-anomaly handoff line with additional abnormal-case handling and report-oriented probabilistic escalation checks. It remains local-only, advisory/research-oriented, and does not perform external API access, real process control, automatic fixes, commits, pushes, or merges.
+
 This simulator models a local-only code-contract anomaly handoff flow.
 
 PseudoTasukeru detects a metadata-only code-contract anomaly and escalates the finding to Maestro. Maestro does not decide by itself. Instead, it requests simulated HITL and then executes the simulated user instruction.
