@@ -7737,11 +7737,68 @@ jobs:
                   "INFO_ONLY": 0,
               }
 
+              def merge_top_level_counts(raw_counts: Any) -> bool:
+                  if not isinstance(raw_counts, dict):
+                      return False
+                  found = False
+                  for key in counts:
+                      raw_value = raw_counts.get(key, 0)
+                      try:
+                          value = int(raw_value or 0)
+                      except (TypeError, ValueError):
+                          value = 0
+                      counts[key] = value
+                      found = found or value > 0
+                  return found
+
+              def entry_signature(entry: dict[str, Any]) -> str:
+                  explicit = entry.get("fingerprint_hash") or entry.get("fingerprint")
+                  if isinstance(explicit, str) and explicit:
+                      return explicit
+                  fields = (
+                      entry.get("source"),
+                      entry.get("rule_id") or entry.get("code") or entry.get("reason_code"),
+                      entry.get("file"),
+                      entry.get("line"),
+                      entry.get("column"),
+                      entry.get("message"),
+                  )
+                  return json.dumps(fields, ensure_ascii=False, sort_keys=True)
+
+              def count_entries(entries: Any) -> bool:
+                  if not isinstance(entries, list):
+                      return False
+                  seen: set[str] = set()
+                  counted = False
+                  for entry in entries:
+                      if not isinstance(entry, dict):
+                          continue
+                      level = entry.get("review_level") or entry.get("level") or entry.get("decision")
+                      if not isinstance(level, str) or level not in counts:
+                          continue
+                      signature = entry_signature(entry)
+                      if signature in seen:
+                          continue
+                      seen.add(signature)
+                      counts[level] += 1
+                      counted = True
+                  return counted
+
+              if isinstance(data, dict):
+                  # Prefer the canonical HITL review summary counts.
+                  # Recursing over the whole object double-counts entries because
+                  # each finding may contain both `decision` and `level` fields.
+                  if merge_top_level_counts(data.get("counts")):
+                      return counts
+                  if count_entries(data.get("entries")):
+                      return counts
+
               def walk(value: Any) -> None:
                   if isinstance(value, dict):
                       level = value.get("review_level") or value.get("level") or value.get("decision")
                       if isinstance(level, str) and level in counts:
                           counts[level] += 1
+                          return
                       for child in value.values():
                           walk(child)
                   elif isinstance(value, list):
