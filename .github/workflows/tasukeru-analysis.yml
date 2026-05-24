@@ -8120,6 +8120,404 @@ jobs:
           PY
 
 
+      - name: Generate Tasukeru FEI reference report
+        if: always()
+        env:
+          TASUKERU_EVENT_NAME: ${{ github.event_name }}
+          TASUKERU_EVENT_PATH: ${{ github.event_path }}
+          TASUKERU_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          def read_json(path: str, default: Any) -> Any:
+              file_path = Path(path)
+              if not file_path.exists():
+                  return default
+              try:
+                  return json.loads(file_path.read_text(encoding="utf-8"))
+              except Exception:
+                  return default
+
+          def read_jsonl(path: str) -> list[dict[str, Any]]:
+              file_path = Path(path)
+              if not file_path.exists():
+                  return []
+              rows: list[dict[str, Any]] = []
+              for line in file_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                  line = line.strip()
+                  if not line:
+                      continue
+                  try:
+                      item = json.loads(line)
+                  except Exception:
+                      continue
+                  if isinstance(item, dict):
+                      rows.append(item)
+              return rows
+
+          def read_lines(path: str) -> list[str]:
+              file_path = Path(path)
+              if not file_path.exists():
+                  return []
+              return [
+                  line.strip()
+                  for line in file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                  if line.strip()
+              ]
+
+          def stable_hash(obj: Any) -> str:
+              import hashlib
+
+              return hashlib.sha256(
+                  json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+              ).hexdigest()
+
+          def as_int(value: Any) -> int:
+              try:
+                  return int(value or 0)
+              except (TypeError, ValueError):
+                  return 0
+
+          def normalize_signal(value: Any) -> str:
+              text = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+              return "_".join(part for part in text.split("_") if part)
+
+          def list_from_any(value: Any) -> list[Any]:
+              if isinstance(value, list):
+                  return value
+              return []
+
+          def dict_from_any(value: Any) -> dict[str, Any]:
+              if isinstance(value, dict):
+                  return value
+              return {}
+
+          def collect_entries(data: Any) -> list[dict[str, Any]]:
+              entries: list[dict[str, Any]] = []
+              if isinstance(data, dict):
+                  direct = data.get("entries")
+                  if isinstance(direct, list):
+                      entries.extend(item for item in direct if isinstance(item, dict))
+                  findings = data.get("findings")
+                  if isinstance(findings, list):
+                      entries.extend(item for item in findings if isinstance(item, dict))
+              return entries
+
+          def feature_set_for_current(
+              *,
+              hitl_review: dict[str, Any],
+              four_d: dict[str, Any],
+              pel: dict[str, Any],
+              result_consistency: dict[str, Any],
+              changed_files: list[str],
+          ) -> set[str]:
+              features: set[str] = set()
+              for path in changed_files:
+                  if path.startswith(".github/workflows/"):
+                      features.add("surface:workflow")
+                  if path.startswith("tests/"):
+                      features.add("surface:tests")
+                  if path.endswith(".py"):
+                      features.add("surface:python")
+                  if path.startswith("README") or path.startswith("docs/"):
+                      features.add("surface:documentation")
+                  if path.endswith(".json") or path.endswith(".jsonl"):
+                      features.add("surface:json")
+
+              counts = dict_from_any(hitl_review.get("counts"))
+              for level in ["HITL_REQUIRED", "FIX_RECOMMENDED", "REVIEW_RECOMMENDED", "NOISE_CANDIDATE", "INFO_ONLY"]:
+                  if as_int(counts.get(level)) > 0:
+                      features.add(f"review:{level.lower()}")
+
+              for entry in collect_entries(hitl_review):
+                  level = entry.get("review_level") or entry.get("level") or entry.get("decision")
+                  if level:
+                      features.add(f"review:{normalize_signal(level)}")
+                  source = entry.get("source") or entry.get("tool")
+                  if source:
+                      features.add(f"source:{normalize_signal(source)}")
+                  code = entry.get("rule_id") or entry.get("code") or entry.get("reason_code")
+                  if code:
+                      features.add(f"code:{normalize_signal(code)}")
+
+              prediction = dict_from_any(four_d.get("prediction"))
+              for signal in list_from_any(prediction.get("signals")):
+                  if isinstance(signal, dict) and signal.get("name"):
+                      features.add(f"4d:{normalize_signal(signal.get('name'))}")
+
+              future = dict_from_any(four_d.get("future_judgment"))
+              if future.get("decision"):
+                  features.add(f"4d_decision:{normalize_signal(future.get('decision'))}")
+
+              if as_int(result_consistency.get("mismatch_count")) > 0:
+                  features.add("result_consistency:mismatch")
+
+              if pel.get("decision"):
+                  features.add(f"pel_decision:{normalize_signal(pel.get('decision'))}")
+              if as_int(pel.get("mandatory_hitl_count")) > 0:
+                  features.add("pel:mandatory_hitl")
+              if as_int(pel.get("escalation_candidate_count")) > 0:
+                  features.add("pel:escalation_candidate")
+
+              return features
+
+          def feature_set_for_incident(incident: dict[str, Any]) -> set[str]:
+              features: set[str] = set()
+              for key in ["failure_type", "decision", "review_level", "user_action", "outcome"]:
+                  value = incident.get(key)
+                  if value:
+                      features.add(f"{key}:{normalize_signal(value)}")
+              for item in incident.get("observed_signals", []) if isinstance(incident.get("observed_signals"), list) else []:
+                  features.add(f"signal:{normalize_signal(item)}")
+              for item in incident.get("features", []) if isinstance(incident.get("features"), list) else []:
+                  features.add(normalize_signal(item))
+              for item in incident.get("changed_surfaces", []) if isinstance(incident.get("changed_surfaces"), list) else []:
+                  features.add(f"surface:{normalize_signal(item)}")
+              return features
+
+          def similarity(a: set[str], b: set[str]) -> float:
+              if not a or not b:
+                  return 0.0
+              return round(len(a & b) / len(a | b), 4)
+
+          event = read_json(os.environ.get("TASUKERU_EVENT_PATH", ""), {})
+          pr = dict_from_any(event.get("pull_request"))
+          base = dict_from_any(pr.get("base"))
+          head = dict_from_any(pr.get("head"))
+
+          changed_files = read_lines("tasukeru_logs/changed-files-all.txt") or read_lines("tasukeru_changed_files.txt") or read_lines("tasukeru_logs/changed-files.txt")
+          hitl_review = read_json("tasukeru_hitl_review.json", {})
+          four_d = read_json("tasukeru_4d_inspection_report.json", {})
+          pel = read_json("tasukeru_probabilistic_escalation_report.json", {})
+          result_consistency = read_json("tasukeru_result_consistency_report.json", {})
+
+          # FEI is reference-only. It can read an optional checked-in or generated
+          # incident index, but it does not mutate thresholds, scores, PEL, 4D, HITL,
+          # review classifications, or repository files.
+          index_candidates = [
+              "tasukeru_failure_experience_index.jsonl",
+              "tasukeru_logs/tasukeru_failure_experience_index.jsonl",
+              "docs/tasukeru_failure_experience_index.jsonl",
+          ]
+          indexed_incidents: list[dict[str, Any]] = []
+          loaded_indexes: list[str] = []
+          for candidate in index_candidates:
+              rows = read_jsonl(candidate)
+              if rows:
+                  indexed_incidents.extend(rows)
+                  loaded_indexes.append(candidate)
+
+          current_features = feature_set_for_current(
+              hitl_review=hitl_review,
+              four_d=four_d,
+              pel=pel,
+              result_consistency=result_consistency,
+              changed_files=changed_files,
+          )
+
+          similar_incidents: list[dict[str, Any]] = []
+          for incident in indexed_incidents:
+              incident_features = feature_set_for_incident(incident)
+              sim = similarity(current_features, incident_features)
+              if sim <= 0:
+                  continue
+              similar_incidents.append(
+                  {
+                      "incident_id": incident.get("incident_id", "UNKNOWN_INCIDENT"),
+                      "failure_type": incident.get("failure_type"),
+                      "similarity": sim,
+                      "prior_decision": incident.get("decision"),
+                      "prior_user_action": incident.get("user_action"),
+                      "prior_outcome": incident.get("outcome"),
+                      "matched_features": sorted(current_features & incident_features),
+                      "source_index": incident.get("source_index"),
+                      "arl_hash": incident.get("arl_hash"),
+                  }
+              )
+
+          similar_incidents.sort(key=lambda item: item["similarity"], reverse=True)
+          similar_incidents = similar_incidents[:10]
+
+          current_candidate = {
+              "incident_id": "CURRENT_RUN_CANDIDATE",
+              "task_type": "tasukeru_advisory_analysis",
+              "failure_type": "CURRENT_ADVISORY_SIGNAL_SET",
+              "observed_signals": sorted(current_features),
+              "decision": dict_from_any(four_d.get("future_judgment")).get("decision"),
+              "collision_or_risk_score": dict_from_any(four_d.get("prediction")).get("risk_score"),
+              "pel_decision": pel.get("decision"),
+              "result_consistency_mismatch_count": result_consistency.get("mismatch_count"),
+              "changed_files": changed_files,
+              "created_at": datetime.now(timezone.utc).isoformat(),
+              "candidate_hash": "",
+          }
+          current_candidate["candidate_hash"] = stable_hash(current_candidate)
+
+          prediction_evidence = {
+              "similar_incident_count": len(similar_incidents),
+              "similar_incidents": similar_incidents,
+              "statement": (
+                  "FEI references prior indexed incidents when available. "
+                  "It is evidence for review, not automatic learning or automatic decision-making."
+              ),
+          }
+
+          report = {
+              "schema_version": "tasukeru-fei-reference-report-v0.1",
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+              "mode": "reference-only",
+              "advisory_only": True,
+              "auto_learning": False,
+              "auto_weight_mutation": False,
+              "auto_threshold_mutation": False,
+              "auto_decision_mutation": False,
+              "auto_apply": False,
+              "auto_fix": False,
+              "auto_commit": False,
+              "auto_push": False,
+              "auto_merge": False,
+              "external_side_effects": False,
+              "loaded_indexes": loaded_indexes,
+              "indexed_incident_count": len(indexed_incidents),
+              "current_context": {
+                  "event_name": os.environ.get("TASUKERU_EVENT_NAME"),
+                  "base_ref": base.get("ref"),
+                  "base_sha": base.get("sha"),
+                  "head_ref": head.get("ref"),
+                  "head_sha": head.get("sha") or os.environ.get("TASUKERU_SHA"),
+                  "changed_files": changed_files,
+                  "features": sorted(current_features),
+              },
+              "prediction_evidence": prediction_evidence,
+              "current_incident_candidate": current_candidate,
+              "decision_policy": {
+                  "changes_existing_hitl_decision": False,
+                  "changes_existing_pel_probability": False,
+                  "changes_existing_4d_risk_score": False,
+                  "changes_existing_review_counts": False,
+                  "may_be_used_as_human_review_context": True,
+              },
+          }
+
+          Path("tasukeru_fei_report.json").write_text(
+              json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          Path("tasukeru_fei_current_incident_candidate.json").write_text(
+              json.dumps(current_candidate, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          md_lines = [
+              "# Tasukeru FEI Reference Report",
+              "",
+              "FEI means Failure Experience Index.",
+              "",
+              "This report is reference-only and advisory-only. It does not train, learn, mutate weights, change thresholds, change PEL, change 4D, trigger HITL, apply fixes, create commits, push, or merge.",
+              "",
+              "## Summary",
+              "",
+              f"- Indexed incidents loaded: {len(indexed_incidents)}",
+              f"- Similar incidents found: {len(similar_incidents)}",
+              f"- Loaded indexes: {', '.join(loaded_indexes) if loaded_indexes else 'none'}",
+              "",
+              "## Current features",
+              "",
+          ]
+          if current_features:
+              for feature in sorted(current_features):
+                  md_lines.append(f"- `{feature}`")
+          else:
+              md_lines.append("- No FEI features were detected from the current advisory artifacts.")
+
+          md_lines.extend(["", "## Similar incidents", ""])
+          if similar_incidents:
+              for incident in similar_incidents:
+                  md_lines.append(
+                      f"- `{incident['incident_id']}` similarity={incident['similarity']} "
+                      f"failure_type={incident.get('failure_type')} prior_decision={incident.get('prior_decision')}"
+                  )
+          else:
+              md_lines.append("- No prior similar incidents were found in the available FEI indexes.")
+
+          md_lines.extend(
+              [
+                  "",
+                  "## Boundary",
+                  "",
+                  "- Auto learning: false",
+                  "- Auto weight mutation: false",
+                  "- Auto threshold mutation: false",
+                  "- Auto decision mutation: false",
+                  "- Auto apply/fix/commit/push/merge: false",
+                  "- External side effects: false",
+                  "",
+                  "FEI evidence may be shown to a human reviewer as context. It must not be treated as proof or as an automatic decision trigger.",
+                  "",
+              ]
+          )
+          Path("tasukeru_fei_report.md").write_text("\n".join(md_lines), encoding="utf-8")
+
+          verify = {
+              "schema_version": "tasukeru-fei-reference-verify-v0.1",
+              "report_exists": Path("tasukeru_fei_report.json").exists(),
+              "markdown_exists": Path("tasukeru_fei_report.md").exists(),
+              "candidate_exists": Path("tasukeru_fei_current_incident_candidate.json").exists(),
+              "advisory_only": report["advisory_only"] is True,
+              "auto_learning": report["auto_learning"],
+              "auto_weight_mutation": report["auto_weight_mutation"],
+              "auto_threshold_mutation": report["auto_threshold_mutation"],
+              "auto_decision_mutation": report["auto_decision_mutation"],
+              "auto_apply": report["auto_apply"],
+              "auto_fix": report["auto_fix"],
+              "auto_commit": report["auto_commit"],
+              "auto_push": report["auto_push"],
+              "auto_merge": report["auto_merge"],
+              "external_side_effects": report["external_side_effects"],
+              "changes_existing_hitl_decision": report["decision_policy"]["changes_existing_hitl_decision"],
+              "changes_existing_pel_probability": report["decision_policy"]["changes_existing_pel_probability"],
+              "changes_existing_4d_risk_score": report["decision_policy"]["changes_existing_4d_risk_score"],
+              "changes_existing_review_counts": report["decision_policy"]["changes_existing_review_counts"],
+          }
+          verify["verified"] = (
+              verify["report_exists"]
+              and verify["markdown_exists"]
+              and verify["candidate_exists"]
+              and verify["advisory_only"]
+              and not verify["auto_learning"]
+              and not verify["auto_weight_mutation"]
+              and not verify["auto_threshold_mutation"]
+              and not verify["auto_decision_mutation"]
+              and not verify["auto_apply"]
+              and not verify["auto_fix"]
+              and not verify["auto_commit"]
+              and not verify["auto_push"]
+              and not verify["auto_merge"]
+              and not verify["external_side_effects"]
+              and not verify["changes_existing_hitl_decision"]
+              and not verify["changes_existing_pel_probability"]
+              and not verify["changes_existing_4d_risk_score"]
+              and not verify["changes_existing_review_counts"]
+          )
+
+          Path("tasukeru_fei_verify.json").write_text(
+              json.dumps(verify, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          print(f"FEI indexed incidents: {len(indexed_incidents)}")
+          print(f"FEI similar incidents: {len(similar_incidents)}")
+          print(f"FEI reference-only verified: {verify['verified']}")
+          print("Generated tasukeru_fei_report.md/json, current incident candidate, and verify json.")
+          PY
+
+
       - name: Upload advisory logs
         if: always()
         uses: actions/upload-artifact@v6
@@ -8153,6 +8551,10 @@ jobs:
             tasukeru_4d_inspection_report.md
             tasukeru_4d_inspection_report.json
             tasukeru_4d_inspection_verify.json
+            tasukeru_fei_report.md
+            tasukeru_fei_report.json
+            tasukeru_fei_current_incident_candidate.json
+            tasukeru_fei_verify.json
             tasukeru_probabilistic_escalation_report.md
             tasukeru_probabilistic_escalation_report.json
             tasukeru_probabilistic_escalation_verify.json
