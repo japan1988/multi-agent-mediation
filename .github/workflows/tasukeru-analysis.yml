@@ -8518,6 +8518,383 @@ jobs:
           PY
 
 
+      - name: Generate Tasukeru PBM branch firing report
+        if: always()
+        env:
+          TASUKERU_EVENT_NAME: ${{ github.event_name }}
+          TASUKERU_EVENT_PATH: ${{ github.event_path }}
+          TASUKERU_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import math
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          def read_json(path: str, default: Any) -> Any:
+              file_path = Path(path)
+              if not file_path.exists():
+                  return default
+              try:
+                  return json.loads(file_path.read_text(encoding="utf-8"))
+              except Exception:
+                  return default
+
+          def read_lines(path: str) -> list[str]:
+              file_path = Path(path)
+              if not file_path.exists():
+                  return []
+              return [
+                  line.strip()
+                  for line in file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                  if line.strip()
+              ]
+
+          def as_float(value: Any, default: float = 0.0) -> float:
+              try:
+                  return float(value)
+              except (TypeError, ValueError):
+                  return default
+
+          def as_int(value: Any, default: int = 0) -> int:
+              try:
+                  return int(value or 0)
+              except (TypeError, ValueError):
+                  return default
+
+          def clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+              return max(minimum, min(maximum, value))
+
+          def stable_hash(obj: Any) -> str:
+              import hashlib
+
+              return hashlib.sha256(
+                  json.dumps(obj, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+              ).hexdigest()
+
+          def dict_from_any(value: Any) -> dict[str, Any]:
+              if isinstance(value, dict):
+                  return value
+              return {}
+
+          def list_from_any(value: Any) -> list[Any]:
+              if isinstance(value, list):
+                  return value
+              return []
+
+          def nested_get(data: dict[str, Any], paths: list[list[str]], default: Any = None) -> Any:
+              for path in paths:
+                  current: Any = data
+                  for key in path:
+                      if not isinstance(current, dict) or key not in current:
+                          current = None
+                          break
+                      current = current[key]
+                  if current is not None:
+                      return current
+              return default
+
+          def extract_review_counts(hitl_review: dict[str, Any]) -> dict[str, int]:
+              counts_raw = dict_from_any(hitl_review.get("counts"))
+              counts = {
+                  "HITL_REQUIRED": as_int(counts_raw.get("HITL_REQUIRED")),
+                  "FIX_RECOMMENDED": as_int(counts_raw.get("FIX_RECOMMENDED")),
+                  "REVIEW_RECOMMENDED": as_int(counts_raw.get("REVIEW_RECOMMENDED")),
+                  "NOISE_CANDIDATE": as_int(counts_raw.get("NOISE_CANDIDATE")),
+                  "INFO_ONLY": as_int(counts_raw.get("INFO_ONLY")),
+              }
+              if any(counts.values()):
+                  return counts
+              for entry in list_from_any(hitl_review.get("entries")) + list_from_any(hitl_review.get("findings")):
+                  if not isinstance(entry, dict):
+                      continue
+                  level = entry.get("review_level") or entry.get("level") or entry.get("decision")
+                  if isinstance(level, str) and level in counts:
+                      counts[level] += 1
+              return counts
+
+          def extract_max_fei_similarity(fei_report: dict[str, Any]) -> tuple[float, list[dict[str, Any]]]:
+              evidence = dict_from_any(fei_report.get("prediction_evidence"))
+              incident_sources = [
+                  evidence.get("similar_incidents"),
+                  fei_report.get("similar_incidents"),
+                  fei_report.get("incidents"),
+              ]
+              similar: list[dict[str, Any]] = []
+              for source in incident_sources:
+                  for item in list_from_any(source):
+                      if isinstance(item, dict):
+                          similar.append(item)
+              max_similarity = 0.0
+              for item in similar:
+                  max_similarity = max(max_similarity, clamp(as_float(item.get("similarity"))))
+              return round(max_similarity, 6), similar[:10]
+
+          def extract_pel_probability(pel_report: dict[str, Any]) -> float:
+              raw = nested_get(
+                  pel_report,
+                  [
+                      ["max_probability"],
+                      ["future_failure_probability"],
+                      ["summary", "max_probability"],
+                      ["probability", "max"],
+                  ],
+                  0.0,
+              )
+              return round(clamp(as_float(raw)), 6)
+
+          def extract_4d_normalized_score(four_d_report: dict[str, Any]) -> float:
+              raw = nested_get(
+                  four_d_report,
+                  [
+                      ["risk_score"],
+                      ["prediction", "risk_score"],
+                      ["future_judgment", "risk_score"],
+                      ["summary", "risk_score"],
+                  ],
+                  0.0,
+              )
+              score = as_float(raw)
+              if score > 1.0:
+                  score = score / 100.0
+              return round(clamp(score), 6)
+
+          event = read_json(os.environ.get("TASUKERU_EVENT_PATH", ""), {})
+          pr = dict_from_any(event.get("pull_request"))
+          base = dict_from_any(pr.get("base"))
+          head = dict_from_any(pr.get("head"))
+          changed_files = read_lines("tasukeru_logs/changed-files-all.txt") or read_lines("tasukeru_changed_files.txt") or read_lines("tasukeru_logs/changed-files.txt")
+
+          four_d = read_json("tasukeru_4d_inspection_report.json", {})
+          fei = read_json("tasukeru_fei_report.json", {})
+          pel = read_json("tasukeru_probabilistic_escalation_report.json", {})
+          hitl_review = read_json("tasukeru_hitl_review.json", {})
+
+          four_d_normalized_score = extract_4d_normalized_score(four_d)
+          pel_probability = extract_pel_probability(pel)
+          fei_similarity_score, similar_incidents = extract_max_fei_similarity(fei)
+          review_counts = extract_review_counts(hitl_review)
+          review_pressure_raw = (
+              review_counts["HITL_REQUIRED"] * 1.0
+              + review_counts["FIX_RECOMMENDED"] * 0.65
+              + review_counts["REVIEW_RECOMMENDED"] * 0.35
+              + review_counts["NOISE_CANDIDATE"] * 0.05
+              + review_counts["INFO_ONLY"] * 0.03
+          )
+          review_pressure_score = round(clamp(review_pressure_raw / 20.0), 6)
+
+          weights = {
+              "4d_normalized_score": 0.35,
+              "pel_probability": 0.25,
+              "fei_similarity_score": 0.25,
+              "review_pressure_score": 0.15,
+          }
+          raw_components = {
+              "4d_normalized_score": four_d_normalized_score,
+              "pel_probability": pel_probability,
+              "fei_similarity_score": fei_similarity_score,
+              "review_pressure_score": review_pressure_score,
+          }
+          score_breakdown = []
+          branch_score = 0.0
+          for feature, weight in weights.items():
+              value = raw_components[feature]
+              contribution = round(value * weight, 6)
+              branch_score += contribution
+              score_breakdown.append(
+                  {
+                      "feature": feature,
+                      "value": value,
+                      "weight": weight,
+                      "contribution": contribution,
+                  }
+              )
+          branch_score = round(clamp(branch_score), 6)
+          branch_fired = branch_score > 0.8
+          branch_band = "BRANCH_CANDIDATE" if branch_fired else ("WATCH_BAND" if branch_score >= 0.6 else "REFERENCE_ONLY")
+          decision_reason = (
+              "PBM observed a future branch candidate from 4D, PEL, FEI, and review-pressure signals."
+              if branch_fired
+              else "PBM did not observe a branch candidate above threshold."
+          )
+
+          report = {
+              "schema_version": "tasukeru-pbm-branch-firing-report-v0.1",
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+              "model": "Predictive Branch Model",
+              "mode": "report-only",
+              "advisory_only": True,
+              "prediction_is_fact": False,
+              "neuron_firing_analogy": "thresholded signal emission only; not biological neuron reproduction",
+              "auto_learning": False,
+              "auto_weight_mutation": False,
+              "auto_threshold_mutation": False,
+              "auto_decision_mutation": False,
+              "changes_existing_hitl_decision": False,
+              "changes_existing_pel_probability": False,
+              "changes_existing_4d_risk_score": False,
+              "changes_existing_fei_index": False,
+              "changes_existing_review_counts": False,
+              "auto_apply": False,
+              "auto_fix": False,
+              "auto_commit": False,
+              "auto_push": False,
+              "auto_merge": False,
+              "external_side_effects": False,
+              "threshold": 0.8,
+              "branch_score": branch_score,
+              "branch_fired": branch_fired,
+              "branch_band": branch_band,
+              "decision": "REFERENCE_REPORT_ONLY",
+              "decision_reason": decision_reason,
+              "score_breakdown": score_breakdown,
+              "score_breakdown_sum": round(sum(item["contribution"] for item in score_breakdown), 6),
+              "inputs": {
+                  "four_d_normalized_score": four_d_normalized_score,
+                  "pel_probability": pel_probability,
+                  "fei_similarity_score": fei_similarity_score,
+                  "review_pressure_score": review_pressure_score,
+                  "review_counts": review_counts,
+                  "similar_incidents": similar_incidents,
+              },
+              "current_context": {
+                  "event_name": os.environ.get("TASUKERU_EVENT_NAME"),
+                  "base_ref": base.get("ref"),
+                  "base_sha": base.get("sha"),
+                  "head_ref": head.get("ref"),
+                  "head_sha": head.get("sha") or os.environ.get("TASUKERU_SHA"),
+                  "changed_files": changed_files,
+              },
+              "policy": {
+                  "may_be_used_as_human_review_context": True,
+                  "must_not_be_used_as_automatic_decision_trigger": True,
+                  "must_not_change_existing_pipeline_decisions": True,
+              },
+          }
+          report["report_hash"] = stable_hash(report)
+
+          Path("tasukeru_pbm_branch_report.json").write_text(
+              json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          md_lines = [
+              "# Tasukeru PBM Branch Firing Report",
+              "",
+              "PBM means Predictive Branch Model.",
+              "",
+              "This report is report-only and advisory-only. It uses a neuron-firing-style threshold analogy to describe whether current signals resemble a future branch candidate. It does not reproduce biological neurons and does not change HITL, PEL, 4D, FEI, review counts, or automation behavior.",
+              "",
+              "## Summary",
+              "",
+              f"- Branch score: `{branch_score}`",
+              f"- Branch fired: `{branch_fired}`",
+              f"- Branch band: `{branch_band}`",
+              f"- Decision: `{report['decision']}`",
+              "",
+              "## Score breakdown",
+              "",
+          ]
+          for item in score_breakdown:
+              md_lines.append(
+                  f"- `{item['feature']}` value={item['value']} weight={item['weight']} contribution={item['contribution']}"
+              )
+          md_lines.extend([
+              "",
+              "## Similar incidents from FEI",
+              "",
+          ])
+          if similar_incidents:
+              for incident in similar_incidents:
+                  md_lines.append(
+                      f"- `{incident.get('incident_id', 'UNKNOWN_INCIDENT')}` similarity={incident.get('similarity')} failure_type={incident.get('failure_type')} prior_decision={incident.get('prior_decision')}"
+                  )
+          else:
+              md_lines.append("- No FEI similar incidents were available for PBM reference.")
+          md_lines.extend(
+              [
+                  "",
+                  "## Boundary",
+                  "",
+                  "- Report-only: true",
+                  "- Advisory-only: true",
+                  "- Auto learning: false",
+                  "- Auto weight mutation: false",
+                  "- Auto threshold mutation: false",
+                  "- Auto decision mutation: false",
+                  "- Auto apply/fix/commit/push/merge: false",
+                  "- External side effects: false",
+                  "",
+                  "PBM branch firing is a reference signal for human review context. It must not be treated as proof, as a factual prediction, or as an automatic decision trigger.",
+                  "",
+              ]
+          )
+          Path("tasukeru_pbm_branch_report.md").write_text("\n".join(md_lines), encoding="utf-8")
+
+          verify = {
+              "schema_version": "tasukeru-pbm-branch-verify-v0.1",
+              "report_exists": Path("tasukeru_pbm_branch_report.json").exists(),
+              "markdown_exists": Path("tasukeru_pbm_branch_report.md").exists(),
+              "advisory_only": report["advisory_only"],
+              "prediction_is_fact": report["prediction_is_fact"],
+              "auto_learning": report["auto_learning"],
+              "auto_weight_mutation": report["auto_weight_mutation"],
+              "auto_threshold_mutation": report["auto_threshold_mutation"],
+              "auto_decision_mutation": report["auto_decision_mutation"],
+              "changes_existing_hitl_decision": report["changes_existing_hitl_decision"],
+              "changes_existing_pel_probability": report["changes_existing_pel_probability"],
+              "changes_existing_4d_risk_score": report["changes_existing_4d_risk_score"],
+              "changes_existing_fei_index": report["changes_existing_fei_index"],
+              "changes_existing_review_counts": report["changes_existing_review_counts"],
+              "auto_apply": report["auto_apply"],
+              "auto_fix": report["auto_fix"],
+              "auto_commit": report["auto_commit"],
+              "auto_push": report["auto_push"],
+              "auto_merge": report["auto_merge"],
+              "external_side_effects": report["external_side_effects"],
+              "score_breakdown_present": bool(score_breakdown),
+              "score_breakdown_sum_matches": math.isclose(
+                  report["score_breakdown_sum"], report["branch_score"], rel_tol=0.0, abs_tol=1e-6
+              ),
+          }
+          verify["verified"] = (
+              verify["report_exists"]
+              and verify["markdown_exists"]
+              and verify["advisory_only"]
+              and not verify["prediction_is_fact"]
+              and not verify["auto_learning"]
+              and not verify["auto_weight_mutation"]
+              and not verify["auto_threshold_mutation"]
+              and not verify["auto_decision_mutation"]
+              and not verify["changes_existing_hitl_decision"]
+              and not verify["changes_existing_pel_probability"]
+              and not verify["changes_existing_4d_risk_score"]
+              and not verify["changes_existing_fei_index"]
+              and not verify["changes_existing_review_counts"]
+              and not verify["auto_apply"]
+              and not verify["auto_fix"]
+              and not verify["auto_commit"]
+              and not verify["auto_push"]
+              and not verify["auto_merge"]
+              and not verify["external_side_effects"]
+              and verify["score_breakdown_present"]
+              and verify["score_breakdown_sum_matches"]
+          )
+          Path("tasukeru_pbm_branch_verify.json").write_text(
+              json.dumps(verify, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          print(f"PBM branch score: {branch_score}")
+          print(f"PBM branch fired: {branch_fired}")
+          print(f"PBM branch verify: {verify['verified']}")
+          print("Generated tasukeru_pbm_branch_report.md/json and verify json.")
+          PY
+
+
       - name: Upload advisory logs
         if: always()
         uses: actions/upload-artifact@v6
@@ -8555,6 +8932,9 @@ jobs:
             tasukeru_fei_report.json
             tasukeru_fei_current_incident_candidate.json
             tasukeru_fei_verify.json
+            tasukeru_pbm_branch_report.md
+            tasukeru_pbm_branch_report.json
+            tasukeru_pbm_branch_verify.json
             tasukeru_probabilistic_escalation_report.md
             tasukeru_probabilistic_escalation_report.json
             tasukeru_probabilistic_escalation_verify.json
