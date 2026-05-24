@@ -756,6 +756,99 @@ This simulator is useful for checking:
 - whether normal agents are not incorrectly sealed, quarantined, or resumed
 - whether ARL, 3D-DAC, PEL, RCV, checkpoint, and generated artifacts remain consistent
 
+### 8. Office Task Mediation + Tasukeru + Maestro Simulation
+
+Example:
+
+- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+- `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+
+This simulator models a local-only Office task mediation flow using Word / Excel / PowerPoint-style synthetic artifacts.
+
+It checks whether generated document, spreadsheet, and presentation outputs remain aligned with the original user task instruction. Tasukeru reads logs, detects anomalies, and outputs risk materials only. Mediator receives only masked metadata packets and reconciles differences between the original task and generated outputs. Maestro does not decide by itself; it distributes tasks only to user-selected agents, triggers HITL only when the score is above the threshold, and executes only explicit user-selected actions.
+
+Simulation flow:
+
+```text
+User selects target agents
+↓
+Maestro dispatches the task only to user-selected agents
+↓
+Word / Excel / PowerPoint-style synthetic artifacts are generated
+↓
+Tasukeru reads internal logs and creates masked metadata packets
+↓
+Mediator receives only masked metadata and compares outputs against the original task snapshot
+↓
+Mediator calculates the collision score
+↓
+PEL estimates future failure probability as advisory metadata
+↓
+If score == 0.8, the result remains WARNING / DRAFT_REVIEW
+↓
+If score > 0.8, Maestro triggers PAUSE_FOR_HITL
+↓
+User selects the next action
+↓
+Maestro executes only the explicit user-selected action
+```
+
+The simulator does not generate real Office files. It uses synthetic Word / Excel / PowerPoint-style records to test consistency, masking, threshold behavior, HITL routing, and draft-only revision propagation.
+
+Core characteristics:
+
+- fixed Word / Excel / PowerPoint synthetic task set
+- user-selected agent dispatch before Maestro handoff
+- original task snapshot and hash-fixed task baseline
+- Tasukeru log analysis and risk-material output only
+- masked metadata handoff from Tasukeru to Mediator
+- no raw log handoff to Mediator
+- Mediator request verification
+- Office output consistency checks
+- profit / formula / chart / conclusion mismatch detection
+- PII and confidential-signal masking
+- threshold policy: `score == 0.8` is warning / draft review only
+- threshold policy: `score > 0.8` triggers `PAUSE_FOR_HITL`
+- `USER_TARGETED_REVISION_PROMPT` for user-scoped draft revisions
+- related agents create draft revision proposals only
+- Maestro has no autonomous decision authority
+- ARL verification
+- RCV result consistency verification
+- no real Office document generation
+- no external API access
+- no real process control
+- no automatic fix, commit, push, or merge
+
+What the tests verify:
+
+- the safe scenario does not trigger HITL
+- `score == 0.8` remains warning / draft review only
+- `score > 0.8` triggers HITL
+- Maestro does not decide by itself
+- Maestro dispatches only to user-selected agents
+- Tasukeru does not hand raw logs to Mediator
+- Mediator uses masked metadata only
+- PII is masked before mediation
+- confidential signals are masked before mediation
+- `USER_TARGETED_REVISION_PROMPT` creates draft proposals only
+- draft revisions are not auto-applied
+- auto fix / commit / push / merge remain disabled
+- ARL verification succeeds
+- RCV result consistency verification succeeds
+
+This simulator is useful for checking:
+
+- whether Word / Excel / PowerPoint-style outputs remain consistent
+- whether Excel formula results and PowerPoint chart values conflict
+- whether Word text, spreadsheet values, and presentation summaries diverge
+- whether the original user instruction remains the comparison baseline
+- whether PII and confidential signals are masked before mediation
+- whether Mediator uses only masked metadata
+- whether `score == 0.8` does not trigger HITL
+- whether `score > 0.8` triggers HITL
+- whether user-targeted revision prompts generate draft proposals only
+- whether Maestro avoids self-decision and only executes explicit user-selected actions
+
 ## Batch execution and resume
 
 This repository also includes batch-style orchestration examples.
@@ -927,6 +1020,13 @@ For Agent Incident PEL USER_MAESTRO handoff behavior:
 - `agent_incident_mediation_pel_user_maestro_sim_v0_3_1.py`
 
 This path is useful for studying what changed from the v0.2 incident flow: PEL risk estimation, USER_MAESTRO HITL, and checkpoint-based standby resume.
+
+For Office task mediation behavior:
+
+- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+- `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+
+This path is useful for studying Word / Excel / PowerPoint-style consistency checks, masked metadata handoff, threshold-based HITL behavior, and user-targeted draft revision without automatic application.
 
 For behavior verification, always read the implementation together with the corresponding tests.
 
