@@ -28,7 +28,7 @@
 
 Maestro Orchestrator は、マルチエージェント・ガバナンス、fail-closed 制御、HITL エスカレーション、チェックポイントベースの再開、改ざん検知可能なシミュレーション・ワークフローを扱う、研究志向のオーケストレーション・フレームワークです。
 
-このリポジトリには、複数のシミュレーター系列が含まれています。ゲート動作と Mediator 分離に焦点を当て、別のファイル群はドキュメントタスクのバッチ実行、チェックポイント、監査整合性、成果物検証に焦点を当てています。
+このリポジトリには、複数のシミュレーター系列が含まれています。一部のファイルは KAGE 的なゲート動作と Mediator 分離に焦点を当て、別のファイル群はドキュメントタスクのバッチ実行、チェックポイント、監査整合性、成果物検証に焦点を当てています。
 
 ## 初心者向け読み順
 
@@ -756,6 +756,101 @@ v0.2 からの変更点:
 - normal agents が誤って sealed、quarantined、resumed されないか
 - ARL、3D-DAC、PEL、RCV、checkpoint、生成成果物が整合しているか
 
+### 8. Office Task Mediation + Tasukeru + Maestro Simulation
+
+例:
+
+- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+- `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+
+このシミュレーターは、Word / Excel / PowerPoint 形式の合成成果物を使った、local-only の Office タスク調停フローをモデル化します。
+
+このシミュレーターでは、生成された文書・表計算・発表資料の出力が、最初のユーザータスク指示と整合しているかを検査します。Tasukeru はログを読み、異常を検出し、リスク材料のみを出力します。Mediator はマスク済みメタデータパケットだけを受け取り、元タスクと生成出力の差分を調停します。Maestro は自律判断せず、ユーザーが選択した Agent にだけタスクを配布し、スコアが閾値を超えた場合のみ HITL を起動し、明示されたユーザー選択だけを実行します。
+
+#### シミュレーションの流れ
+
+```text
+ユーザーが対象 Agent を選択する
+↓
+Maestro がユーザー選択済み Agent にだけタスクを配布する
+↓
+Word / Excel / PowerPoint 形式の合成成果物を生成する
+↓
+Tasukeru が内部ログを読み、マスク済みメタデータパケットを作成する
+↓
+Mediator がマスク済みメタデータのみを受け取り、元タスク snapshot と出力を比較する
+↓
+Mediator が collision score を算出する
+↓
+PEL が将来失敗確率を advisory metadata として推定する
+↓
+score == 0.8 の場合は WARNING / DRAFT_REVIEW に留める
+↓
+score > 0.8 の場合は Maestro が PAUSE_FOR_HITL を起動する
+↓
+ユーザーが次の行動を選択する
+↓
+Maestro は明示されたユーザー選択だけを実行する
+```
+
+このシミュレーターは実際の Office ファイルを生成しません。Word / Excel / PowerPoint 形式の合成レコードを使って、整合性、マスキング、閾値動作、HITL ルーティング、DRAFT 限定の修正伝播を検証します。
+
+#### 主な特徴
+
+- Word / Excel / PowerPoint の固定合成タスクセット
+- Maestro によるタスク配布前に、ユーザーが対象 Agent を選択
+- original task snapshot と hash 固定されたタスク基準
+- Tasukeru はログ解析とリスク材料出力のみを行う
+- Tasukeru から Mediator へのマスク済みメタデータ引き渡し
+- Mediator への raw log 引き渡しなし
+- Mediator request verification
+- Office 出力の整合性検査
+- 利益 / 数式 / グラフ / 結論の不一致検出
+- 個人情報および機密情報シグナルのマスキング
+- 閾値方針: `score == 0.8` は警告 / DRAFT_REVIEW のみ
+- 閾値方針: `score > 0.8` で `PAUSE_FOR_HITL`
+- ユーザー指定範囲だけを修正する `USER_TARGETED_REVISION_PROMPT`
+- 関連 Agent は DRAFT 修正案のみを作成
+- Maestro は自律的な決定権を持たない
+- ARL verification
+- RCV result consistency verification
+- 実際の Office 文書生成なし
+- 外部 API アクセスなし
+- 実プロセス制御なし
+- 自動 fix / commit / push / merge なし
+
+#### テストで確認している内容
+
+対応するテストでは、以下を確認します。
+
+- safe scenario では HITL が起動しないこと
+- `score == 0.8` は警告 / DRAFT_REVIEW のみに留まること
+- `score > 0.8` では HITL が起動すること
+- Maestro が自律判断しないこと
+- Maestro がユーザー選択済み Agent にのみ配布すること
+- Tasukeru が Mediator に raw log を渡さないこと
+- Mediator がマスク済みメタデータのみを使うこと
+- 個人情報が mediation 前にマスクされること
+- 機密情報シグナルが mediation 前にマスクされること
+- `USER_TARGETED_REVISION_PROMPT` が DRAFT 修正案のみを作成すること
+- DRAFT 修正案が自動適用されないこと
+- auto fix / commit / push / merge が無効のままであること
+- ARL verification が成功すること
+- RCV result consistency verification が成功すること
+
+このシミュレーターは、以下の確認に役立ちます。
+
+- Word / Excel / PowerPoint 形式の出力が整合しているか
+- Excel の数式結果と PowerPoint のグラフ値が衝突していないか
+- Word 本文、表計算値、発表資料の要約が分岐していないか
+- 最初のユーザー指示が比較基準として維持されているか
+- 個人情報や機密情報シグナルが mediation 前にマスクされているか
+- Mediator がマスク済みメタデータのみを使用しているか
+- `score == 0.8` で HITL が起動しないか
+- `score > 0.8` で HITL が起動するか
+- ユーザー指定の修正プロンプトが DRAFT 修正案のみを生成するか
+- Maestro が自律判断を避け、明示されたユーザー選択だけを実行するか
+
 ## Batch execution and resume
 
 このリポジトリには、batch-style orchestration examples も含まれます。
@@ -927,6 +1022,13 @@ Agent Incident PEL USER_MAESTRO handoff behavior を読む場合:
 - `agent_incident_mediation_pel_user_maestro_sim_v0_3_1.py`
 
 この経路は、v0.2 incident flow からの変更点、つまり PEL risk estimation、USER_MAESTRO HITL、checkpoint-based standby resume を学ぶのに有用です。
+
+Office Task Mediation + Tasukeru + Maestro behavior を読む場合:
+
+- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+- `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+
+この経路は、Word / Excel / PowerPoint 形式の合成成果物を使って、元タスク指示との整合性、マスク済みメタデータ引き渡し、Mediator 調停、`score == 0.8` の警告境界、`score > 0.8` の HITL 起動、ユーザー指定範囲の DRAFT 修正案生成を確認するのに有用です。
 
 挙動検証では、常に実装と対応テストを併せて読んでください。
 
