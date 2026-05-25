@@ -866,7 +866,7 @@ def mediator_request_packet(*, run_id: str, task_id: str) -> dict[str, Any]:
         "raw_log_requested": False,
         "raw_prompt_requested": False,
         "raw_output_requested": False,
-        "secret_requested": False,
+        "confidential_payload_requested": False,
         "pii_requested": False,
         "request_policy_verified": True,
     }
@@ -882,8 +882,8 @@ def verify_mediator_request(request: dict[str, Any]) -> dict[str, Any]:
         violations.append("MEDIATOR_RAW_PROMPT_REQUEST")
     if request.get("raw_output_requested") is not False:
         violations.append("MEDIATOR_RAW_OUTPUT_REQUEST")
-    if request.get("secret_requested") is not False:
-        violations.append("MEDIATOR_SECRET_REQUEST")
+    if request.get("confidential_payload_requested") is not False:
+        violations.append("MEDIATOR_CONFIDENTIAL_PAYLOAD_REQUEST")
     if request.get("pii_requested") is not False:
         violations.append("MEDIATOR_PII_REQUEST")
     body = dict(request)
@@ -1377,7 +1377,7 @@ def run_simulation(
     external_side_effect: bool = False,
     automation_risk_override: float | None = None,
 ) -> dict[str, Any]:
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 - deterministic simulation RNG, not cryptographic use.
     out_dir.mkdir(parents=True, exist_ok=True)
 
     run_id = f"office-task-mediation-v0.5.0-seed-{seed}-{scenario}"
