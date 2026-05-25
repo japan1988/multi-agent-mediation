@@ -763,6 +763,10 @@ v0.2 からの変更点:
 - `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
 - `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
 
+追加のドラフト版:
+
+- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
+
 このシミュレーターは、Word / Excel / PowerPoint 形式の合成成果物を使った、local-only の Office タスク調停フローをモデル化します。
 
 このシミュレーターでは、生成された文書・表計算・発表資料の出力が、最初のユーザータスク指示と整合しているかを検査します。Tasukeru はログを読み、異常を検出し、リスク材料のみを出力します。Mediator はマスク済みメタデータパケットだけを受け取り、元タスクと生成出力の差分を調停します。Maestro は自律判断せず、ユーザーが選択した Agent にだけタスクを配布し、スコアが閾値を超えた場合のみ HITL を起動し、明示されたユーザー選択だけを実行します。
@@ -795,6 +799,25 @@ Maestro は明示されたユーザー選択だけを実行する
 
 このシミュレーターは実際の Office ファイルを生成しません。Word / Excel / PowerPoint 形式の合成レコードを使って、整合性、マスキング、閾値動作、HITL ルーティング、DRAFT 限定の修正伝播を検証します。
 
+#### v0.5.1 ドラフト拡張
+
+v0.5.1 ドラフト版は、v0.5.0 の Office task mediation 系統に、trust-to-risk automation policy を追加した拡張版です。
+
+自動化を開始する前は、助ける君が `trust_score` を入口診断として使用します。
+
+- `trust_score == 0.9` は自動化候補にしない
+- `trust_score > 0.9` の場合のみ、自動化候補になり得る
+- `AUTO_ACTIVE` へ移行するには User の承認が必要
+
+自動化開始後は、助ける君が `automation_risk_score` に切り替えて 4D 継続診断を行います。
+
+- `automation_risk_score < 0.1` の場合、自動化を継続できる
+- `automation_risk_score >= 0.1` の場合、fail-closed として `AUTO_SUSPENDED_BY_4D` を発火する
+- Maestro は一時停止と User 通知を中継するリレーとしてのみ動作する
+- 一時停止された自動化を再開するには User HITL が必要
+
+この版でも、助ける君は診断専用、Maestro はリレー専用、User は最終決定者です。自動修正、commit、push、merge、外部副作用は有効化しません。
+
 #### 主な特徴
 
 - Word / Excel / PowerPoint の固定合成タスクセット
@@ -818,6 +841,18 @@ Maestro は明示されたユーザー選択だけを実行する
 - 外部 API アクセスなし
 - 実プロセス制御なし
 - 自動 fix / commit / push / merge なし
+
+v0.5.1 ドラフト拡張では、さらに以下を扱います。
+
+- trust-score による自動化入口診断
+- `trust_score == 0.9` は自動化候補にしない
+- `trust_score > 0.9` の場合のみ、User 承認後に自動化候補になり得る
+- 自動化開始後は automation-risk による 4D 継続診断を行う
+- `automation_risk_score < 0.1` の場合は自動化を継続
+- `automation_risk_score >= 0.1` の場合は fail-closed として `AUTO_SUSPENDED_BY_4D`
+- Maestro は一時停止と User 通知を中継するリレー専用
+- 自動化再開には User HITL が必要
+- 自動 fix / commit / push / merge は行わない
 
 #### テストで確認している内容
 
@@ -1028,7 +1063,11 @@ Office Task Mediation + Tasukeru + Maestro behavior を読む場合:
 - `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
 - `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
 
-この経路は、Word / Excel / PowerPoint 形式の合成成果物を使って、元タスク指示との整合性、マスク済みメタデータ引き渡し、Mediator 調停、`score == 0.8` の警告境界、`score > 0.8` の HITL 起動、ユーザー指定範囲の DRAFT 修正案生成を確認するのに有用です。
+trust-to-risk automation のドラフト拡張を読む場合:
+
+- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
+
+この経路は、Word / Excel / PowerPoint 形式の合成成果物を使って、元タスク指示との整合性、マスク済みメタデータ引き渡し、Mediator 調停、`score == 0.8` の警告境界、`score > 0.8` の HITL 起動、ユーザー指定範囲の DRAFT 修正案生成を確認するのに有用です。v0.5.1 ドラフト拡張は、これに加えて `trust_score` による自動化入口診断、`automation_risk_score` による 4D 継続診断、`AUTO_SUSPENDED_BY_4D` による fail-closed 一時停止を確認するのに有用です。
 
 挙動検証では、常に実装と対応テストを併せて読んでください。
 
