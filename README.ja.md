@@ -767,6 +767,11 @@ v0.2 からの変更点:
 
 - `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
 
+フロー図:
+
+- [v0.5.1 trust-to-risk 基礎フロー](docs/office_task_mediation_v0_5_1_baseline_flow.png)
+- [v0.5.2 診断推論ドラフトフロー](docs/office_task_mediation_v0_5_2_diagnostic_inference_flow.png)
+
 このシミュレーターは、Word / Excel / PowerPoint 形式の合成成果物を使った、local-only の Office タスク調停フローをモデル化します。
 
 このシミュレーターでは、生成された文書・表計算・発表資料の出力が、最初のユーザータスク指示と整合しているかを検査します。Tasukeru はログを読み、異常を検出し、リスク材料のみを出力します。Mediator はマスク済みメタデータパケットだけを受け取り、元タスクと生成出力の差分を調停します。Maestro は自律判断せず、ユーザーが選択した Agent にだけタスクを配布し、スコアが閾値を超えた場合のみ HITL を起動し、明示されたユーザー選択だけを実行します。
