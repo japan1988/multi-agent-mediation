@@ -763,6 +763,10 @@ Example:
 - `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
 - `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
 
+Additional draft variant:
+
+- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
+
 This simulator models a local-only Office task mediation flow using Word / Excel / PowerPoint-style synthetic artifacts.
 
 It checks whether generated document, spreadsheet, and presentation outputs remain aligned with the original user task instruction. Tasukeru reads logs, detects anomalies, and outputs risk materials only. Mediator receives only masked metadata packets and reconciles differences between the original task and generated outputs. Maestro does not decide by itself; it distributes tasks only to user-selected agents, triggers HITL only when the score is above the threshold, and executes only explicit user-selected actions.
@@ -819,6 +823,21 @@ Core characteristics:
 - no real process control
 - no automatic fix, commit, push, or merge
 
+v0.5.1 draft extension:
+
+- trust-score based automation entry diagnosis
+- `trust_score == 0.9` is not auto eligible
+- `trust_score > 0.9` may become an automation candidate after User approval
+- automation-risk based 4D continuation diagnosis after automation starts
+- `automation_risk_score < 0.1` continues automation
+- `automation_risk_score >= 0.1` triggers fail-closed `AUTO_SUSPENDED_BY_4D`
+- Maestro relay-only temporary automation suspension
+- User HITL required for automation resume
+- Tasukeru remains diagnostic-only and does not directly command agents
+- no automatic fix, commit, push, or merge
+
+The v0.5.1 draft variant keeps the v0.5.0 Office task mediation line intact and adds a trust-to-risk automation policy. Before automation starts, Tasukeru uses `trust_score` as an entry diagnostic. After automation starts, Tasukeru switches to `automation_risk_score` and performs 4D continuation diagnosis. Maestro remains relay-only, and User remains the final decider.
+
 What the tests verify:
 
 - the safe scenario does not trigger HITL
@@ -848,6 +867,18 @@ This simulator is useful for checking:
 - whether `score > 0.8` triggers HITL
 - whether user-targeted revision prompts generate draft proposals only
 - whether Maestro avoids self-decision and only executes explicit user-selected actions
+
+The v0.5.1 draft variant is useful for checking:
+
+- whether automation entry remains gated by `trust_score > 0.9`
+- whether `trust_score == 0.9` is treated as non-eligible
+- whether User approval is required before `AUTO_ACTIVE`
+- whether automation continuation switches from trust scoring to risk scoring
+- whether `automation_risk_score == 0.1` fails closed into suspension
+- whether `automation_risk_score >= 0.1` triggers `AUTO_SUSPENDED_BY_4D`
+- whether Maestro temporarily suspends automation as a relay without autonomous decision authority
+- whether User HITL is required to resume suspended automation
+- whether auto fix / commit / push / merge remain disabled
 
 ## Batch execution and resume
 
@@ -1026,7 +1057,11 @@ For Office task mediation behavior:
 - `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
 - `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
 
-This path is useful for studying Word / Excel / PowerPoint-style consistency checks, masked metadata handoff, threshold-based HITL behavior, and user-targeted draft revision without automatic application.
+For the trust-to-risk automation draft extension:
+
+- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
+
+This path is useful for studying Word / Excel / PowerPoint-style consistency checks, masked metadata handoff, threshold-based HITL behavior, and user-targeted draft revision without automatic application. The v0.5.1 draft extension additionally demonstrates trust-score based automation entry, automation-risk based 4D suspension, fail-closed `AUTO_SUSPENDED_BY_4D`, and User HITL required for automation resume.
 
 For behavior verification, always read the implementation together with the corresponding tests.
 
