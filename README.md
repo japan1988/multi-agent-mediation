@@ -767,6 +767,11 @@ Additional draft variant:
 
 - `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
 
+Flow diagrams:
+
+- [v0.5.1 trust-to-risk baseline flow](docs/office_task_mediation_v0_5_1_baseline_flow.png)
+- [v0.5.2 diagnostic inference draft flow](docs/office_task_mediation_v0_5_2_diagnostic_inference_flow.png)
+
 This simulator models a local-only Office task mediation flow using Word / Excel / PowerPoint-style synthetic artifacts.
 
 It checks whether generated document, spreadsheet, and presentation outputs remain aligned with the original user task instruction. Tasukeru reads logs, detects anomalies, and outputs risk materials only. Mediator receives only masked metadata packets and reconciles differences between the original task and generated outputs. Maestro does not decide by itself; it distributes tasks only to user-selected agents, triggers HITL only when the score is above the threshold, and executes only explicit user-selected actions.
