@@ -169,6 +169,8 @@ class AuditLog:
                 violations.append(f"RFL_MUST_NOT_BE_SEALED:{index}")
             if row.sealed and row.overrideable:
                 violations.append(f"SEALED_MUST_NOT_BE_OVERRIDEABLE:{index}")
+            if row.sealed and row.final_decider != "SYSTEM":
+                violations.append(f"SEALED_FINAL_DECIDER_MUST_BE_SYSTEM:{index}")
             if row.decision == "PAUSE_FOR_HITL" and row.sealed:
                 violations.append(f"PAUSE_FOR_HITL_MUST_NOT_BE_SEALED:{index}")
             prev = row.row_hash
@@ -189,6 +191,14 @@ def stable_hash(obj: Any) -> str:
 
 def write_json(path: Path, obj: Any) -> None:
     path.write_text(json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def first_not_none(*values: Any) -> Any:
+    """Return the first value that is not None. Keeps 0 as a valid value."""
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 def threshold_decision(score: float) -> str:
@@ -485,7 +495,10 @@ def mediator_reconcile(
     confidential_signal = any(finding["finding"].startswith("CONFIDENTIAL_") for finding in tasukeru_report["findings"])
 
     profits = {
-        artifact_type: packet["numeric_claims"].get("chart_profit") or packet["numeric_claims"].get("profit")
+        artifact_type: first_not_none(
+            packet["numeric_claims"].get("chart_profit"),
+            packet["numeric_claims"].get("profit"),
+        )
         for artifact_type, packet in by_type.items()
     }
     risk_labels = {artifact_type: packet["risk_label"] for artifact_type, packet in by_type.items()}
@@ -602,6 +615,9 @@ def pel_predict(mediation: dict[str, Any], out_dir: Path) -> dict[str, Any]:
     pel = {
         "schema_version": "pel-office-future-failure-v0.5.0",
         "prediction_is_fact": False,
+        "score_source": "collision_score_plus_safety_buffer",
+        "base_collision_score": mediation["collision_score"],
+        "safety_buffer": 0.04,
         "future_failure_probability": probability,
         "threshold": THRESHOLD,
         "decision": decision,
@@ -654,7 +670,10 @@ def create_revision_proposals(
             packet = by_type.get(artifact_type)
             if not packet:
                 continue
-            current_profit = packet["numeric_claims"].get("chart_profit") or packet["numeric_claims"].get("profit")
+            current_profit = first_not_none(
+                packet["numeric_claims"].get("chart_profit"),
+                packet["numeric_claims"].get("profit"),
+            )
             if current_profit != excel_profit:
                 proposals.append(
                     {
@@ -759,9 +778,9 @@ def maestro_handle_handoff(
                     decision="STOPPED",
                     sealed=True,
                     overrideable=False,
-                    final_decider="SYSTEM_AFTER_USER_AUTH",
+                    final_decider="SYSTEM",
                     reason_code="USER_AUTHORIZED_SEAL",
-                    message="User authorized seal.",
+                    message="User authorized seal; system applied non-overrideable seal.",
                     agent_id=agent_id,
                 )
         return {
@@ -860,6 +879,7 @@ def verify_result(
     *,
     original_task_snapshot: dict[str, Any],
     selected_agents: list[str],
+    tasukeru_report: dict[str, Any],
     mediator_request_verify: dict[str, Any],
     mediation: dict[str, Any],
     pel: dict[str, Any],
@@ -870,6 +890,18 @@ def verify_result(
 
     if set(selected_agents) - set(OFFICE_AGENT_IDS):
         mismatches.append("UNKNOWN_SELECTED_AGENT")
+
+    required_artifacts = set(original_task_snapshot.get("required_artifacts", []))
+    masked_packets = tasukeru_report.get("masked_metadata_packets", [])
+    produced_artifacts = {
+        packet.get("artifact_type")
+        for packet in masked_packets
+        if isinstance(packet, dict) and packet.get("artifact_type")
+    }
+    missing_artifacts = sorted(required_artifacts - produced_artifacts)
+    if missing_artifacts:
+        mismatches.append("REQUIRED_ARTIFACTS_MISSING:" + ",".join(missing_artifacts))
+
     if not original_task_snapshot.get("original_user_task_snapshot_hash"):
         mismatches.append("ORIGINAL_TASK_HASH_MISSING")
     if not mediator_request_verify["verified"]:
@@ -915,6 +947,7 @@ def run_simulation(
     scenario: str,
     selected_agents_value: str,
     human_action_mode: str,
+    save_raw_logs_simulation_only: bool = False,
 ) -> dict[str, Any]:
     rng = random.Random(seed)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -939,7 +972,8 @@ def run_simulation(
 
     artifacts = create_artifacts(scenario, selected_agents)
     raw_agent_logs = make_raw_agent_logs(artifacts)
-    write_json(out_dir / "internal_raw_agent_logs_simulation_only.json", raw_agent_logs)
+    if save_raw_logs_simulation_only:
+        write_json(out_dir / "internal_raw_agent_logs_simulation_only.json", raw_agent_logs)
 
     tasukeru_report = tasukeru_analyze_logs(
         run_id=run_id,
@@ -987,6 +1021,7 @@ def run_simulation(
     rcv = verify_result(
         original_task_snapshot=original_task_snapshot,
         selected_agents=selected_agents,
+        tasukeru_report=tasukeru_report,
         mediator_request_verify=request_verify,
         mediation=mediation,
         pel=pel,
@@ -1006,6 +1041,7 @@ def run_simulation(
             "real_office_generation": False,
             "raw_log_handoff_to_mediator": False,
             "masked_metadata_packet_only": True,
+            "raw_log_artifact_saved": save_raw_logs_simulation_only,
             "external_communication": False,
             "real_process_control": False,
             "auto_apply_revision": False,
@@ -1079,6 +1115,11 @@ def main() -> int:
         default="all",
         help="Comma-separated user-selected agent IDs, or 'all'. Maestro does not select agents autonomously.",
     )
+    parser.add_argument(
+        "--save-raw-logs-simulation-only",
+        action="store_true",
+        help="Save internal raw agent logs for local simulation debugging only. Disabled by default.",
+    )
     parser.add_argument("--human-action", choices=["random", *ACTIONS], default="random")
     args = parser.parse_args()
 
@@ -1088,6 +1129,7 @@ def main() -> int:
         scenario=args.scenario,
         selected_agents_value=args.selected_agents,
         human_action_mode=args.human_action,
+        save_raw_logs_simulation_only=args.save_raw_logs_simulation_only,
     )
 
     mediation = result["mediator_reconciliation"]
