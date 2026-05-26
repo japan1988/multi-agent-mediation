@@ -823,6 +823,12 @@ Core characteristics:
 - Maestro has no autonomous decision authority
 - ARL verification
 - RCV result consistency verification
+- required Word / Excel / PowerPoint artifact completeness checks
+- missing required artifacts produce `REQUIRED_ARTIFACTS_MISSING` in RCV
+- None-safe profit comparison so `0` remains a valid value
+- sealed ARL rows preserve system-level final-decider semantics
+- PEL safety-buffer metadata is explicit and reviewable
+- internal raw agent logs are not saved by default and require `--save-raw-logs-simulation-only`
 - no real Office document generation
 - no external API access
 - no real process control
@@ -857,6 +863,11 @@ What the tests verify:
 - `USER_TARGETED_REVISION_PROMPT` creates draft proposals only
 - draft revisions are not auto-applied
 - auto fix / commit / push / merge remain disabled
+- missing required Office artifacts are detected by RCV
+- `chart_profit=0` and `profit=0` are treated as valid values
+- sealed ARL rows preserve system-level final-decider semantics
+- raw simulation logs are opt-in and are not written by default
+- PEL safety-buffer metadata is explicit and reviewable
 - ARL verification succeeds
 - RCV result consistency verification succeeds
 
@@ -1231,7 +1242,3 @@ See `LICENSE_POLICY.md` for details.
 ## Disclaimer
 
 This repository is provided for research and educational purposes only.
-
-It is not a production safety system, not a compliance certification, and not a guarantee of safe autonomous behavior. Users are responsible for reviewing, testing, and adapting the code before any real-world use.
-
-Do not use this repository to process real personal data, confidential operational data, or high-stakes decision workflows without independent review and appropriate safeguards.
