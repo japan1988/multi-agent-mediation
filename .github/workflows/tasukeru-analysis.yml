@@ -262,7 +262,47 @@ jobs:
             fi
           done
 
-          # Aggregate per-requirements pip-audit reports into the canonical file
+          if [ -f pyproject.toml ]; then
+            python - <<'PY'
+          from __future__ import annotations
+
+          import tomllib
+          from pathlib import Path
+
+          pyproject = Path("pyproject.toml")
+          output = Path("tasukeru_logs/pip-audit-pyproject-requirements.txt")
+          requirements: list[str] = []
+
+          try:
+              data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+          except Exception:
+              data = {}
+
+          project = data.get("project") if isinstance(data, dict) else {}
+          if isinstance(project, dict):
+              deps = project.get("dependencies")
+              if isinstance(deps, list):
+                  requirements.extend(str(dep) for dep in deps if str(dep).strip())
+
+              optional_deps = project.get("optional-dependencies")
+              if isinstance(optional_deps, dict):
+                  for values in optional_deps.values():
+                      if isinstance(values, list):
+                          requirements.extend(str(dep) for dep in values if str(dep).strip())
+
+          output.write_text("\n".join(requirements) + ("\n" if requirements else ""), encoding="utf-8")
+          PY
+
+            if [ -s tasukeru_logs/pip-audit-pyproject-requirements.txt ]; then
+              python -m pip_audit -r tasukeru_logs/pip-audit-pyproject-requirements.txt -f json -o tasukeru_logs/pip-audit-pyproject.json \
+                > tasukeru_logs/pip-audit-pyproject.stdout \
+                2> tasukeru_logs/pip-audit-pyproject.stderr
+              this_exit=$?
+              [ "$this_exit" -ne 0 ] && pip_exit=$this_exit
+            fi
+          fi
+
+          # Aggregate per-requirements and pyproject-derived pip-audit reports into the canonical file
           # consumed by Tasukeru's advisory parser. This keeps the summary from
           # silently ignoring dependency findings.
           python - <<'PY'
@@ -1630,9 +1670,10 @@ jobs:
                               idx,
                           )
 
-                  if normalize_path(str(path)) == ".github/workflows/tasukeru-analysis.yml":
-                      continue
-
+                  # Do not skip the self workflow for logic review.
+                  # Only the abuse/network self-noise check is skipped inside
+                  # run_abuse_pattern_review_for_file(). Control-bypass patterns
+                  # must still be detected in .github/workflows/tasukeru-analysis.yml.
                   for code, pattern in CONTROL_BYPASS_PATTERNS:
                       for match in pattern.finditer(text):
                           line_no = text[: match.start()].count("\n") + 1
@@ -3637,15 +3678,41 @@ jobs:
 
               for entry in entries:
                   advisory_decision = str(entry.get("decision", ""))
-                  arl_decision = "PAUSE_FOR_HITL" if advisory_decision == "HITL_REQUIRED" else "RUN"
+                  entry_gate_decision = str(entry.get("gate_decision", "")).strip()
+                  if entry_gate_decision in ALLOWED_DECISIONS:
+                      arl_decision = entry_gate_decision
+                  elif advisory_decision == "HITL_REQUIRED":
+                      arl_decision = "PAUSE_FOR_HITL"
+                  else:
+                      arl_decision = "RUN"
+
+                  arl_layer = str(entry.get("layer") or "tasukeru_finding")
+                  if entry.get("sealed") is None:
+                      arl_sealed = False
+                  else:
+                      arl_sealed = parse_bool(entry.get("sealed"))
+
+                  if entry.get("overrideable") is None:
+                      arl_overrideable = arl_decision == "PAUSE_FOR_HITL" and not arl_sealed
+                  else:
+                      arl_overrideable = parse_bool(entry.get("overrideable"))
+
+                  # Preserve stronger gate semantics from the finding layer, while
+                  # keeping ARL invariants valid. Sealed rows must be final SYSTEM
+                  # decisions from ethics/ACC, and sealed rows are never overrideable.
+                  if arl_sealed:
+                      arl_overrideable = False
+                      if arl_layer not in ETHICS_OR_ACC_LAYERS:
+                          arl_layer = "acc_gate"
+
                   row = build_arl_row(
                       seq=seq,
                       run_id=run_id,
-                      layer="tasukeru_finding",
+                      layer=arl_layer,
                       decision=arl_decision,
-                      sealed=False,
-                      overrideable=arl_decision == "PAUSE_FOR_HITL",
-                      final_decider="SYSTEM",
+                      sealed=arl_sealed,
+                      overrideable=arl_overrideable,
+                      final_decider=str(entry.get("final_decider") or "SYSTEM"),
                       reason_code=str(entry.get("reason_code", "TASUKERU_FINDING_RECORDED")),
                       prev_hash=prev_hash,
                       evidence={
@@ -7901,7 +7968,10 @@ jobs:
 
           result_consistency_map = first_present_mapping(result_consistency)
           dimension_dependency_map = first_present_mapping(dimension_dependency)
+          dimension_dependency_counts = first_present_mapping(dimension_dependency_map.get("counts"))
           pel_map = first_present_mapping(pel)
+          pel_counts = first_present_mapping(pel_map.get("counts"))
+          pel_probability_summary = first_present_mapping(pel_map.get("probability_summary"))
           confidence_map = first_present_mapping(confidence)
           finding_validation_map = first_present_mapping(finding_validation)
 
@@ -7914,7 +7984,7 @@ jobs:
                   {"mismatch_count": mismatch_count},
               )
 
-          dependency_mismatch_count = int(dimension_dependency_map.get("dependency_mismatch_count") or 0)
+          dependency_mismatch_count = int(dimension_dependency_counts.get("dependency_mismatch_count") or 0)
           if dependency_mismatch_count:
               add_signal(
                   "dimension_dependency_mismatch",
@@ -7923,7 +7993,7 @@ jobs:
                   {"dependency_mismatch_count": dependency_mismatch_count},
               )
 
-          mandatory_hitl_count = int(pel_map.get("mandatory_hitl_count") or 0)
+          mandatory_hitl_count = int(pel_counts.get("mandatory_hitl_count") or 0)
           if mandatory_hitl_count:
               add_signal(
                   "pel_mandatory_hitl",
@@ -7941,7 +8011,7 @@ jobs:
                   {"low_confidence_count": low_confidence_count},
               )
 
-          validation_issue_count = int(finding_validation_map.get("issue_count") or 0)
+          validation_issue_count = int(finding_validation_map.get("policy_violation_count") or finding_validation_map.get("issue_count") or 0)
           if validation_issue_count:
               add_signal(
                   "finding_validation_issues",
@@ -8260,9 +8330,13 @@ jobs:
 
               if pel.get("decision"):
                   features.add(f"pel_decision:{normalize_signal(pel.get('decision'))}")
-              if as_int(pel.get("mandatory_hitl_count")) > 0:
+              pel_counts = dict_from_any(pel.get("counts"))
+              if not pel_counts:
+                  # Backward-compatible fallback for flattened metadata snapshots.
+                  pel_counts = pel
+              if as_int(pel_counts.get("mandatory_hitl_count")) > 0:
                   features.add("pel:mandatory_hitl")
-              if as_int(pel.get("escalation_candidate_count")) > 0:
+              if as_int(pel_counts.get("escalation_candidate_count")) > 0:
                   features.add("pel:escalation_candidate")
 
               return features
@@ -8640,6 +8714,7 @@ jobs:
                       ["max_probability"],
                       ["future_failure_probability"],
                       ["summary", "max_probability"],
+                      ["probability_summary", "max_probability"],
                       ["probability", "max"],
                   ],
                   0.0,
@@ -8991,6 +9066,7 @@ jobs:
     steps:
       - name: Download advisory logs
         uses: actions/download-artifact@v6
+        continue-on-error: true
         with:
           name: tasukeru-advisory-logs
           path: .
