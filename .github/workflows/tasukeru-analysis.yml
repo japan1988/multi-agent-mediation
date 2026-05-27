@@ -7861,11 +7861,19 @@ jobs:
               if path.exists() and (not changed_set or path.as_posix() in changed_set)
           ]
 
-          # If the PR changed tests but not the source, still inspect the canonical source if present.
+          # If the PR changed tests/workflow/policy but not the source, still inspect the canonical source if present.
           if not source_paths:
               for path in SOURCE_CANDIDATES:
                   if path.exists():
                       source_paths.append(path)
+                      break
+
+          # If the PR changed workflow/policy only, still inspect the canonical regression tests if present.
+          # This prevents test_paths_checked from becoming empty on Tasukeru workflow-only PRs.
+          if not test_paths:
+              for path in TEST_CANDIDATES:
+                  if path.exists():
+                      test_paths.append(path)
                       break
 
           findings: list[dict[str, Any]] = []
