@@ -8,11 +8,53 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 # Ensure repository root is importable under pytest/CI cwd differences.
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# The canonical repository target is mediation_emergency_contract_sim_v5_1_2.py.
+# The fixed5 fallback exists only so this file can be verified before the source
+# file is renamed/replaced during local review.
+import importlib
+import importlib.util
 
-import mediation_emergency_contract_sim_v5_1_2 as sim  # noqa: E402
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_THIS_DIR = Path(__file__).resolve().parent
+for _p in (_REPO_ROOT, _THIS_DIR, Path.cwd()):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+
+def _load_sim_module():
+    for module_name in (
+        "mediation_emergency_contract_sim_v5_1_2",
+        "mediation_emergency_contract_sim_v5_1_2_fixed5",
+    ):
+        try:
+            return importlib.import_module(module_name)
+        except ModuleNotFoundError:
+            pass
+
+    for base in (_REPO_ROOT, _THIS_DIR, Path.cwd()):
+        for filename in (
+            "mediation_emergency_contract_sim_v5_1_2.py",
+            "mediation_emergency_contract_sim_v5_1_2_fixed5.py",
+        ):
+            path = base / filename
+            if path.exists():
+                spec = importlib.util.spec_from_file_location(
+                    "_mediation_emergency_contract_sim_v5_1_2_under_test",
+                    path,
+                )
+                if spec is None or spec.loader is None:
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
+
+    raise ModuleNotFoundError(
+        "Could not load mediation_emergency_contract_sim_v5_1_2.py "
+        "or mediation_emergency_contract_sim_v5_1_2_fixed5.py"
+    )
+
+
+sim = _load_sim_module()  # noqa: E402
 
 
 def _fail(message: str) -> None:
@@ -80,7 +122,10 @@ def _assert_sealed_only_ethics_or_acc(results: Dict[str, Any]) -> None:
     for run in runs:
         for row in (run.get("arl", []) or []):
             layer = row.get("layer")
+            decision = row.get("decision")
             sealed = bool(row.get("sealed", False))
+            if decision == sim.DECISION_PAUSE:
+                _require(sealed is False, "PAUSE_FOR_HITL rows must not be sealed")
             if sealed:
                 _require(
                     layer in (sim.LAYER_ETHICS, sim.LAYER_ACC),
@@ -88,6 +133,223 @@ def _assert_sealed_only_ethics_or_acc(results: Dict[str, Any]) -> None:
                 )
             if layer == sim.LAYER_RFL:
                 _require(sealed is False, "RFL rows must never be sealed")
+
+
+def _audit_for_unit_test() -> sim.AuditLog:
+    return sim.AuditLog(key=b"TEST_KEY_DO_NOT_USE", key_id="test-key")
+
+
+def _state_for_unit_test(run_id: str = "TEST#V512") -> sim.OrchestratorState:
+    return sim.OrchestratorState(run_id=run_id)
+
+
+def _draft_with_required_footer(body: str) -> str:
+    """
+    draft_lint_gate() の required_lines を満たした上で、
+    境界文だけを検証するための最小ドラフト。
+    """
+    return f"""# Unit Test Draft
+
+{body}
+
+This document is a draft.
+This document has no operational effect.
+AI is used for drafting only.
+ADMIN approval is required.
+"""
+
+
+def _lint_result(body: str) -> tuple[bool, str]:
+    audit = _audit_for_unit_test()
+    st = _state_for_unit_test()
+    return sim.draft_lint_gate(audit, st, _draft_with_required_footer(body))
+
+
+def _assert_lint_rejects(body: str, expected_reason: str) -> None:
+    ok, reason = _lint_result(body)
+    _require(ok is False, f"draft_lint should reject: {body!r}")
+    _require_equal(reason, expected_reason, f"draft_lint reason mismatch for: {body!r}")
+
+
+def _assert_lint_ok(body: str) -> None:
+    ok, reason = _lint_result(body)
+    _require(ok is True, f"draft_lint should pass: {body!r}")
+    _require_equal(reason, sim.RC_DRAFT_LINT_OK, f"draft_lint OK reason mismatch for: {body!r}")
+
+
+def test_v512_pause_for_hitl_must_not_be_sealed() -> None:
+    """
+    fixed5 regression:
+    PAUSE_FOR_HITL は HITL へ戻す一時停止であり、sealed=True と両立しない。
+    """
+    audit = _audit_for_unit_test()
+
+    try:
+        audit.emit(
+            run_id="TEST#PAUSE#SEALED",
+            layer=sim.LAYER_ACC,
+            decision=sim.DECISION_PAUSE,
+            sealed=True,
+            overrideable=True,
+            final_decider=sim.DECIDER_SYSTEM,
+            reason_code=sim.RC_ADMIN_FINALIZE_REQUIRED,
+        )
+    except AssertionError as exc:
+        _require(
+            "PAUSE_FOR_HITL" in str(exc) and "sealed" in str(exc),
+            "unexpected AssertionError for sealed PAUSE_FOR_HITL",
+        )
+        return
+
+    _fail("PAUSE_FOR_HITL + sealed=True must be rejected")
+
+
+def test_v512_arl_invariant_rejections_are_enforced() -> None:
+    """
+    fixed5 regression:
+    RFL sealed 禁止、sealed は ethics/acc のみ、という不変条件を直接固定する。
+    """
+    audit = _audit_for_unit_test()
+
+    try:
+        audit.emit(
+            run_id="TEST#RFL#SEALED",
+            layer=sim.LAYER_RFL,
+            decision=sim.DECISION_RUN,
+            sealed=True,
+            overrideable=True,
+            final_decider=sim.DECIDER_SYSTEM,
+            reason_code=sim.RC_REL_REF_MISSING,
+        )
+    except AssertionError:
+        pass
+    else:
+        _fail("RFL sealed must be rejected")
+
+    try:
+        audit.emit(
+            run_id="TEST#MEANING#SEALED",
+            layer=sim.LAYER_MEANING,
+            decision=sim.DECISION_STOP,
+            sealed=True,
+            overrideable=False,
+            final_decider=sim.DECIDER_SYSTEM,
+            reason_code=sim.RC_OK,
+        )
+    except AssertionError:
+        pass
+    else:
+        _fail("sealed rows outside ethics/acc must be rejected")
+
+
+def test_v512_draft_lint_rejects_repeated_and_clause_boundary_unsafe_claims() -> None:
+    """
+    fixed5 regression:
+    最初の一致が否定されていても、後続の非否定一致を見逃さない。
+    カンマや but 後の節転換でも、前半の否定を後半に効かせない。
+    """
+    legal_cases = [
+        "No delay is expected. This contract is binding.",
+        "This is not legally binding. It is legally binding.",
+        "This is not legally binding, it is legally binding.",
+        "This is not legally binding but it is legally binding.",
+    ]
+    for body in legal_cases:
+        _assert_lint_rejects(body, sim.RC_SAFETY_LEGAL_BINDING_CLAIM)
+
+    discrimination_cases = [
+        "This is not racist. This text is racist.",
+        "This is not racist, this text is racist.",
+    ]
+    for body in discrimination_cases:
+        _assert_lint_rejects(body, sim.RC_SAFETY_DISCRIMINATION_TERM)
+
+
+def test_v512_draft_lint_allows_direct_negation_cases() -> None:
+    """
+    fixed5 regression:
+    直接否定されている安全な説明は DRAFT_LINT_OK のまま維持する。
+    """
+    ok_cases = [
+        "This draft is not legally binding.",
+        "This document is non-binding.",
+        "This text is not racist.",
+        "This document does not create legal effect.",
+        "This document has no binding effect.",
+    ]
+    for body in ok_cases:
+        _assert_lint_ok(body)
+
+
+def test_v512_arl_hmac_verifies_normal_rows_and_rejects_tamper() -> None:
+    """
+    ARL/HMAC の正常系と改ざん検出を直接固定する。
+    """
+    key = b"TEST_KEY_DO_NOT_USE"
+    audit = sim.AuditLog(key=key, key_id="test-key")
+    audit.emit(
+        run_id="TEST#ARL#HMAC",
+        layer=sim.LAYER_ETHICS,
+        decision=sim.DECISION_STOP,
+        sealed=True,
+        overrideable=False,
+        final_decider=sim.DECIDER_SYSTEM,
+        reason_code=sim.RC_EVIDENCE_FABRICATION,
+    )
+
+    rows = audit.export_rows()
+    ok, err = sim.verify_arl_rows(key=key, rows=rows)
+    _require(ok is True, f"ARL rows should verify, err={err!r}")
+
+    tampered = [dict(row) for row in rows]
+    tampered[0]["reason_code"] = sim.RC_OK
+    ok_tampered, err_tampered = sim.verify_arl_rows(key=key, rows=tampered)
+    _require(ok_tampered is False, "tampered ARL rows must not verify")
+    _require(err_tampered is not None, "tampered ARL verification should return an error")
+
+
+
+def test_v512_fabricated_evidence_stops_and_seals_direct(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """
+    fabricated evidence は、通常経路に乗せず STOPPED + sealed へ落ちることを直接確認する。
+    mixed/stress の間接確認だけに依存しない。
+    """
+    _patch_store_paths(monkeypatch, tmp_path)
+    sim.ensure_default_grant_exists()
+
+    key, key_id = sim.load_key_bytes("demo")
+    trust = sim.TrustState()
+
+    st, audit, _trust_after = sim.simulate_run(
+        run_id="TEST#FABRICATED",
+        dummy_auth_id="EMG-7K3P9Q",
+        trust=trust,
+        fabricate_evidence=True,
+        key=key,
+        key_id=key_id,
+        full_context_n=0,
+        persist=False,
+    )
+
+    _require_equal(st.state, "STOPPED", "fabricated evidence must stop the run")
+    _require(st.sealed is True, "fabricated evidence must seal the stopped state")
+
+    rows = audit.rows
+    _require(
+        any(
+            row.get("layer") == sim.LAYER_ETHICS
+            and row.get("decision") == sim.DECISION_STOP
+            and row.get("sealed") is True
+            and row.get("reason_code") == sim.RC_EVIDENCE_FABRICATION
+            for row in rows
+        ),
+        "fabricated evidence must emit an ethics sealed STOP row",
+    )
+
+    ok, err = sim.verify_arl_rows(key=key, rows=rows)
+    _require(ok, f"ARL rows must verify after fabricated evidence stop: {err}")
 
 
 def test_v512_operational_resilience_clean_runs_large(
