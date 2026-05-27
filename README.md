@@ -849,6 +849,47 @@ v0.5.1 draft extension:
 
 The v0.5.1 draft variant keeps the v0.5.0 Office task mediation line intact and adds a trust-to-risk automation policy. Before automation starts, Tasukeru uses `trust_score` as an entry diagnostic. After automation starts, Tasukeru switches to `automation_risk_score` and performs 4D continuation diagnosis. Maestro remains relay-only, and User remains the final decider.
 
+v0.6.0 source-grounded orchestration extension:
+
+- `agent_source_grounded_office_orchestration_sim_v0_6_0.py`
+- `tests/test_agent_source_grounded_office_orchestration_sim_v0_6_0.py`
+
+The v0.6.0 variant extends the v0.5.x Office mediation line from artifact consistency checking into source-grounded multi-agent orchestration.
+
+What changed from v0.5.1:
+
+| Area | v0.5.1 | v0.6.0 |
+|---|---|---|
+| Main focus | Trust-to-risk automation diagnosis | Source-grounded multi-agent orchestration |
+| Source handling | No dedicated source-agent layer | Primary / secondary / tertiary synthetic source agents |
+| Evidence handoff | Masked artifact metadata | Source Evidence Packets plus masked artifact metadata |
+| Office artifacts | Word / Excel / PowerPoint-style synthetic artifacts | Word / Excel / PowerPoint DRAFT artifacts grounded in source packets |
+| Mediator role | Reconciles artifact differences | Reconciles source-to-artifact mismatches and artifact contradictions |
+| Tasukeru role | Diagnostic-only log analysis | Diagnostic-only source/artifact packet creation and risk material handling |
+| Loop handling | Single HITL-oriented mediation flow | Reconciliation retry loop with `LOOP_LIMIT_EXCEEDED` after 3 loops |
+| Added checks | Trust score and automation-risk boundaries | PII / confidential source signals, unsupported claims, source conflicts, missing artifacts, unknown agents, request tampering |
+| Final output | DRAFT review / HITL result | `DRAFT_RESULT` only, with User review required |
+
+Core additions:
+
+- Source Agent layer for primary / secondary / tertiary synthetic source checks
+- Source Evidence Packet handoff instead of raw source logs
+- source-to-artifact consistency checks
+- Office DRAFT artifacts grounded in source packets
+- Mediator reconciliation for source conflicts and artifact contradictions
+- Tasukeru source/artifact packet boundary checks
+- `collision_score=1.0` for PII and confidential signals
+- `ARTIFACT_UNSUPPORTED_CLAIM` treated above the HITL threshold
+- `score == 0.8` remains `DRAFT_REVIEW`
+- `score > 0.8` triggers `PAUSE_FOR_HITL`
+- `NaN` / `inf` scores fail closed to `PAUSE_FOR_HITL`
+- mediator unsafe request keys are rejected
+- missing required artifacts and unknown selected agents are detected by RCV
+- reconciliation loops stop at 3 attempts with `LOOP_LIMIT_EXCEEDED`
+- ARL and RCV verification remain required
+
+The v0.6.0 variant remains local-only and synthetic. It does not fetch real sources, generate real Office files, call external APIs, control real processes, auto-fix, commit, push, or merge.
+
 What the tests verify:
 
 - the safe scenario does not trigger HITL
@@ -868,6 +909,27 @@ What the tests verify:
 - sealed ARL rows preserve system-level final-decider semantics
 - raw simulation logs are opt-in and are not written by default
 - PEL safety-buffer metadata is explicit and reviewable
+- ARL verification succeeds
+- RCV result consistency verification succeeds
+
+The v0.6.0 tests additionally verify:
+
+- `score == 0.8` remains `DRAFT_REVIEW`
+- `score > 0.8` triggers `PAUSE_FOR_HITL`
+- `0.8000001` triggers `PAUSE_FOR_HITL`
+- non-finite scores such as `NaN` and `inf` trigger `PAUSE_FOR_HITL`
+- `first_not_none(0, ...)` preserves zero as a valid value
+- raw source logs and raw artifact logs are not handed to Mediator
+- PII and confidential source signals produce `collision_score=1.0`
+- unsupported claims are treated as above-threshold reconciliation cases
+- artifact conflicts can be resolved after an approved retry
+- secondary source conflicts are reported for review
+- primary source missing and fabricated source signals can stop the run
+- missing required artifacts are detected by RCV
+- unknown selected agents are detected by RCV
+- mediator unsafe request keys are rejected
+- mediator request tampering is rejected
+- reconciliation loop limit stops at 3 attempts
 - ARL verification succeeds
 - RCV result consistency verification succeeds
 
@@ -1078,6 +1140,13 @@ For the trust-to-risk automation draft extension:
 - `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
 
 This path is useful for studying Word / Excel / PowerPoint-style consistency checks, masked metadata handoff, threshold-based HITL behavior, and user-targeted draft revision without automatic application. The v0.5.1 draft extension additionally demonstrates trust-score based automation entry, automation-risk based 4D suspension, fail-closed `AUTO_SUSPENDED_BY_4D`, and User HITL required for automation resume.
+
+For source-grounded Office orchestration behavior:
+
+- `agent_source_grounded_office_orchestration_sim_v0_6_0.py`
+- `tests/test_agent_source_grounded_office_orchestration_sim_v0_6_0.py`
+
+This path is useful for studying how Source Agents, Source Evidence Packets, Office DRAFT artifacts, Mediator reconciliation, Tasukeru diagnostic packet handling, Maestro HITL relay, and loop-limit enforcement work together without external side effects.
 
 For behavior verification, always read the implementation together with the corresponding tests.
 
