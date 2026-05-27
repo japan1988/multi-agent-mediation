@@ -327,6 +327,8 @@ class AuditLog:
         log_level: str = "SUMMARY",
         force_full: bool = False,
     ) -> Dict[str, Any]:
+        if decision == DECISION_PAUSE and sealed:
+            raise AssertionError("PAUSE_FOR_HITL must not be sealed")
         if sealed and layer not in (LAYER_ETHICS, LAYER_ACC):
             raise AssertionError(f"sealed may only be issued by ethics/acc (got layer={layer})")
         if layer == LAYER_RFL and sealed:
@@ -608,7 +610,6 @@ def evidence_gate(
     return True, RC_EVIDENCE_OK
 
 
-_NEG_WORDS = ("not", "no", "cannot", "can't", "without", "lacks", "lack", "never")
 _PATTERNS_POSITIVE = [
     re.compile(r"\blegally binding\b", re.IGNORECASE),
     re.compile(r"\bthis contract is binding\b", re.IGNORECASE),
@@ -621,47 +622,84 @@ _PATTERNS_DISCRIMINATION = [
     re.compile(r"\b(discriminat(?:e|ion)|racist|racial slur)\b", re.IGNORECASE),
 ]
 
+_CLAUSE_BOUNDARY_RE = re.compile(
+    r"[.!?\n;:,]|\b(?:but|however|although|though|yet|nevertheless|whereas)\b",
+    re.IGNORECASE,
+)
+_NEGATION_PATTERNS = [
+    re.compile(r"\bnot\s+(?:legally\s+)?binding\b", re.IGNORECASE),
+    re.compile(r"\bnon[-\s]?binding\b", re.IGNORECASE),
+    re.compile(r"\bno\s+(?:legal\s+)?binding\s+effect\b", re.IGNORECASE),
+    re.compile(r"\bwithout\s+(?:legal\s+)?binding\s+effect\b", re.IGNORECASE),
+    re.compile(r"\b(?:do|does|did)\s+not\s+(?:create|have)\s+(?:legal\s+)?(?:effect|obligation|binding\s+effect)\b", re.IGNORECASE),
+    re.compile(r"\b(?:do|does|did)\s+not\s+constitute\s+(?:a\s+)?(?:contract|binding\s+agreement|legal\s+agreement)\b", re.IGNORECASE),
+    re.compile(r"\b(?:do|does|did)\s+not\s+(?:grant|create|have)\s+(?:legal\s+)?authority\b", re.IGNORECASE),
+    re.compile(r"\bcannot\s+(?:grant|create|have)\s+(?:legal\s+)?authority\b", re.IGNORECASE),
+    re.compile(r"\bno\s+(?:legal\s+)?authority\b", re.IGNORECASE),
+    re.compile(r"\bwithout\s+(?:legal\s+)?authority\b", re.IGNORECASE),
+    re.compile(r"\b(?:do|does|did)\s+not\s+guarantee\b", re.IGNORECASE),
+    re.compile(r"\bcannot\s+guarantee\b", re.IGNORECASE),
+    re.compile(r"\bno\s+guarantee\b", re.IGNORECASE),
+    re.compile(r"\bnot\s+discriminat(?:e|ion|ory)\b", re.IGNORECASE),
+    re.compile(r"\bnon[-\s]?discriminatory\b", re.IGNORECASE),
+    re.compile(r"\bno\s+discrimination\b", re.IGNORECASE),
+    re.compile(r"\bnot\s+racist\b", re.IGNORECASE),
+    re.compile(r"\bwithout\s+racial\s+slurs?\b", re.IGNORECASE),
+]
 
-def _window_before(text: str, idx: int, n: int = 30) -> str:
-    lo = max(0, idx - n)
-    return text[lo:idx].lower()
+
+def _same_clause_fragment(text: str, match_start: int, match_end: int) -> str:
+    """Return only the current clause fragment up to the matched phrase.
+
+    This prevents a negation in an earlier sentence or clause from suppressing
+    a later positive legal/safety claim, for example:
+    "This is not legally binding, it is legally binding."
+    """
+
+    prefix = text[:match_start]
+    last_boundary = 0
+    for m in _CLAUSE_BOUNDARY_RE.finditer(prefix):
+        last_boundary = m.end()
+    fragment = text[last_boundary:match_end]
+    return re.sub(r"[*_`]+", "", fragment).strip()
 
 
-def _is_negated(text: str, match_start: int) -> bool:
-    w = _window_before(text, match_start, n=40)
-    return any(neg in w.split() or neg in w for neg in _NEG_WORDS)
+def _is_negated(text: str, match_start: int, match_end: Optional[int] = None) -> bool:
+    match_end = match_start if match_end is None else match_end
+    fragment = _same_clause_fragment(text, match_start, match_end)
+    return any(pat.search(fragment) for pat in _NEGATION_PATTERNS)
 
 
 def draft_lint_gate(audit: AuditLog, st: "OrchestratorState", draft_md: str) -> Tuple[bool, str]:
     text = draft_md or ""
     for pat in _PATTERNS_POSITIVE:
-        m = pat.search(text)
-        if m and not _is_negated(text, m.start()):
-            audit.emit(
-                run_id=st.run_id,
-                layer=LAYER_DRAFT_LINT,
-                decision=DECISION_PAUSE,
-                sealed=False,
-                overrideable=True,
-                final_decider=DECIDER_SYSTEM,
-                reason_code=RC_SAFETY_LEGAL_BINDING_CLAIM,
-                extra={"pattern": pat.pattern},
-            )
-            return False, RC_SAFETY_LEGAL_BINDING_CLAIM
+        for m in pat.finditer(text):
+            if not _is_negated(text, m.start(), m.end()):
+                audit.emit(
+                    run_id=st.run_id,
+                    layer=LAYER_DRAFT_LINT,
+                    decision=DECISION_PAUSE,
+                    sealed=False,
+                    overrideable=True,
+                    final_decider=DECIDER_SYSTEM,
+                    reason_code=RC_SAFETY_LEGAL_BINDING_CLAIM,
+                    extra={"pattern": pat.pattern},
+                )
+                return False, RC_SAFETY_LEGAL_BINDING_CLAIM
     for pat in _PATTERNS_DISCRIMINATION:
-        m = pat.search(text)
-        if m and not _is_negated(text, m.start()):
-            audit.emit(
-                run_id=st.run_id,
-                layer=LAYER_DRAFT_LINT,
-                decision=DECISION_PAUSE,
-                sealed=False,
-                overrideable=True,
-                final_decider=DECIDER_SYSTEM,
-                reason_code=RC_SAFETY_DISCRIMINATION_TERM,
-                extra={"pattern": pat.pattern},
-            )
-            return False, RC_SAFETY_DISCRIMINATION_TERM
+        for m in pat.finditer(text):
+            if not _is_negated(text, m.start(), m.end()):
+                audit.emit(
+                    run_id=st.run_id,
+                    layer=LAYER_DRAFT_LINT,
+                    decision=DECISION_PAUSE,
+                    sealed=False,
+                    overrideable=True,
+                    final_decider=DECIDER_SYSTEM,
+                    reason_code=RC_SAFETY_DISCRIMINATION_TERM,
+                    extra={"pattern": pat.pattern},
+                )
+                return False, RC_SAFETY_DISCRIMINATION_TERM
 
     required_lines = ["draft", "no operational effect", "AI is used for drafting only", "ADMIN approval"]
     normalized = re.sub(r"[*_]", "", text)
