@@ -1,3 +1,12 @@
+# v5.1.2 boundary regression policy:
+# Purpose:
+# - Detect regressions for the boundary issues found in v5.1.2.
+# Required:
+# - Deterministic boundary-case checks.
+# Not required:
+# - 1000-run / 10000-run stress tests.
+# - Randomized stress loops.
+# - Long-running load tests.
 name: Tasukeru Analysis
 
 on:
@@ -7760,6 +7769,388 @@ jobs:
           print("Auto merge: false")
           PY
 
+      - name: Generate Tasukeru v5.1.2 audit boundary review
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          repo = Path(".")
+          log_dir = Path("tasukeru_logs")
+          log_dir.mkdir(parents=True, exist_ok=True)
+
+          report_md_path = Path("tasukeru_v512_boundary_review.md")
+          report_json_path = Path("tasukeru_v512_boundary_review.json")
+          log_md_path = log_dir / "v512_boundary_review.md"
+          log_json_path = log_dir / "v512_boundary_review.json"
+
+          SOURCE_CANDIDATES = [
+              Path("mediation_emergency_contract_sim_v5_1_2.py"),
+          ]
+          TEST_CANDIDATES = [
+              Path("tests/test_mediation_emergency_contract_sim_v5_1_2_stress_metrics.py"),
+          ]
+
+          def read_text(path: Path) -> str:
+              try:
+                  return path.read_text(encoding="utf-8", errors="replace")
+              except Exception:
+                  return ""
+
+          def read_changed_files() -> list[Path]:
+              candidates = [
+                  Path("tasukeru_changed_files.txt"),
+                  log_dir / "changed-files.txt",
+                  log_dir / "changed-files-all.txt",
+              ]
+              changed: list[Path] = []
+              for path in candidates:
+                  if not path.exists():
+                      continue
+                  for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+                      item = line.strip()
+                      if not item or item.startswith("#"):
+                          continue
+                      changed.append(Path(item))
+              # Preserve order while deduplicating.
+              seen: set[str] = set()
+              out: list[Path] = []
+              for path in changed:
+                  key = path.as_posix()
+                  if key not in seen:
+                      out.append(path)
+                      seen.add(key)
+              return out
+
+          def function_body(source: str, function_name: str) -> str:
+              match = re.search(
+                  rf"^(?P<indent>[ \t]*)def\s+{re.escape(function_name)}\s*\(",
+                  source,
+                  re.M,
+              )
+              if not match:
+                  return ""
+              start = match.start()
+              indent_len = len(match.group("indent").replace("\t", "    "))
+              cursor = match.end()
+              for next_match in re.finditer(r"^(?P<indent>[ \t]*)(?:def|class)\s+", source[cursor:], re.M):
+                  next_indent_len = len(next_match.group("indent").replace("\t", "    "))
+                  if next_indent_len <= indent_len:
+                      return source[start:cursor + next_match.start()]
+              return source[start:]
+
+          def has_regex(source: str, pattern: str, flags: int = re.S) -> bool:
+              return re.search(pattern, source, flags) is not None
+
+          changed_files = read_changed_files()
+          changed_set = {path.as_posix() for path in changed_files}
+
+          source_paths = [
+              path for path in SOURCE_CANDIDATES
+              if path.exists() and (not changed_set or path.as_posix() in changed_set)
+          ]
+          test_paths = [
+              path for path in TEST_CANDIDATES
+              if path.exists() and (not changed_set or path.as_posix() in changed_set)
+          ]
+
+          # If the PR changed tests but not the source, still inspect the canonical source if present.
+          if not source_paths:
+              for path in SOURCE_CANDIDATES:
+                  if path.exists():
+                      source_paths.append(path)
+                      break
+
+          findings: list[dict[str, Any]] = []
+          checks: list[dict[str, Any]] = []
+
+          def record_check(check_id: str, ok: bool, path: Path | None, summary: str) -> None:
+              checks.append({
+                  "check_id": check_id,
+                  "ok": bool(ok),
+                  "path": path.as_posix() if path else None,
+                  "summary": summary,
+              })
+
+          def add_finding(
+              check_id: str,
+              severity: str,
+              decision: str,
+              path: Path | None,
+              summary_ja: str,
+              summary_en: str,
+              evidence: str,
+          ) -> None:
+              findings.append({
+                  "check_id": check_id,
+                  "severity": severity,
+                  "decision": decision,
+                  "path": path.as_posix() if path else None,
+                  "summary_ja": summary_ja,
+                  "summary_en": summary_en,
+                  "evidence": evidence[:500],
+              })
+
+          for path in source_paths:
+              source = read_text(path)
+              emit_body = function_body(source, "emit")
+              draft_lint_body = function_body(source, "draft_lint_gate")
+              is_negated_body = function_body(source, "_is_negated")
+
+              pause_guard = (
+                  ("PAUSE_FOR_HITL must not be sealed" in source
+                   or "INVALID_PAUSE_FOR_HITL_SEALED" in source)
+                  and (
+                      "DECISION_PAUSE" in emit_body
+                      or '"PAUSE_FOR_HITL"' in emit_body
+                      or "'PAUSE_FOR_HITL'" in emit_body
+                  )
+                  and "sealed" in emit_body
+                  and ("raise ValueError" in emit_body or "raise AssertionError" in emit_body)
+              )
+              record_check(
+                  "V512_PAUSE_FOR_HITL_NOT_SEALED",
+                  pause_guard,
+                  path,
+                  "PAUSE_FOR_HITL + sealed=True guard",
+              )
+              if not pause_guard:
+                  add_finding(
+                      "V512_PAUSE_FOR_HITL_NOT_SEALED",
+                      "HIGH",
+                      "REVIEW_RECOMMENDED",
+                      path,
+                      "PAUSE_FOR_HITL が sealed=True になる経路を静的に否定できません。",
+                      "Could not statically confirm that PAUSE_FOR_HITL cannot be sealed.",
+                      "Expected AuditLog.emit() to reject PAUSE_FOR_HITL when sealed=True.",
+                  )
+
+              rfl_guard = (
+                  "LAYER_RFL" in emit_body
+                  and "sealed" in emit_body
+                  and ("raise ValueError" in emit_body or "raise AssertionError" in emit_body)
+              )
+              record_check("V512_RFL_NOT_SEALED", rfl_guard, path, "RFL sealed guard")
+              if not rfl_guard:
+                  add_finding(
+                      "V512_RFL_NOT_SEALED",
+                      "HIGH",
+                      "REVIEW_RECOMMENDED",
+                      path,
+                      "RFL 行が sealed=True にならないことを静的に確認できません。",
+                      "Could not statically confirm that RFL rows cannot be sealed.",
+                      "Expected AuditLog.emit() to reject sealed RFL rows.",
+                  )
+
+              sealed_layer_guard = (
+                  "LAYER_ETHICS" in emit_body
+                  and "LAYER_ACC" in emit_body
+                  and "sealed" in emit_body
+                  and ("raise ValueError" in emit_body or "raise AssertionError" in emit_body)
+              )
+              record_check(
+                  "V512_SEALED_ONLY_ETHICS_ACC",
+                  sealed_layer_guard,
+                  path,
+                  "sealed layer guard",
+              )
+              if not sealed_layer_guard:
+                  add_finding(
+                      "V512_SEALED_ONLY_ETHICS_ACC",
+                      "HIGH",
+                      "REVIEW_RECOMMENDED",
+                      path,
+                      "sealed=True が Ethics / ACC に限定されることを静的に確認できません。",
+                      "Could not statically confirm that sealed=True is limited to Ethics / ACC.",
+                      "Expected AuditLog.emit() to reject sealed rows from non-safety layers.",
+                  )
+
+              scans_all_matches = (
+                  ".finditer(" in draft_lint_body
+                  and "pat.search(text)" not in draft_lint_body
+                  and "_PATTERNS_POSITIVE" in draft_lint_body
+                  and "_PATTERNS_DISCRIMINATION" in draft_lint_body
+              )
+              record_check(
+                  "V512_DRAFT_LINT_SCANS_ALL_MATCHES",
+                  scans_all_matches,
+                  path,
+                  "draft lint all-match scan",
+              )
+              if not scans_all_matches:
+                  add_finding(
+                      "V512_DRAFT_LINT_SCANS_ALL_MATCHES",
+                      "MEDIUM",
+                      "REVIEW_RECOMMENDED",
+                      path,
+                      "draft lint が最初の一致だけを見て後続の危険文を見逃す可能性があります。",
+                      "Draft lint may inspect only the first match and miss later unsafe text.",
+                      "Expected draft_lint_gate() to use finditer() and treat any non-negated match as unsafe.",
+                  )
+
+              clause_scope = (
+                  "_CLAUSE_BOUNDARY_RE" in source
+                  and ("_clause_prefix_before_match" in source or "_same_clause_fragment" in source)
+                  and "_is_negated" in source
+                  and "," in source
+                  and all(term in source.lower() for term in ("but", "however", "although", "yet"))
+              )
+              record_check(
+                  "V512_NEGATION_SCOPE_CURRENT_CLAUSE",
+                  clause_scope,
+                  path,
+                  "draft lint negation current-clause scope",
+              )
+              if not clause_scope:
+                  add_finding(
+                      "V512_NEGATION_SCOPE_CURRENT_CLAUSE",
+                      "MEDIUM",
+                      "REVIEW_RECOMMENDED",
+                      path,
+                      "否定スコープがカンマや but 以降の危険文まで伸びないことを静的に確認できません。",
+                      "Could not statically confirm that negation scope is limited to the current clause.",
+                      "Expected clause-boundary handling for comma / but / however / although / yet.",
+                  )
+
+              fabricated_stop = (
+                  "RC_EVIDENCE_FABRICATION" in source
+                  and ("DECISION_STOP" in source or '"STOPPED"' in source or "'STOPPED'" in source)
+                  and "sealed=True" in source.replace(" ", "")
+              )
+              record_check(
+                  "V512_FABRICATED_EVIDENCE_STOP_SEALED",
+                  fabricated_stop,
+                  path,
+                  "fabricated evidence STOP + sealed",
+              )
+              if not fabricated_stop:
+                  add_finding(
+                      "V512_FABRICATED_EVIDENCE_STOP_SEALED",
+                      "HIGH",
+                      "REVIEW_RECOMMENDED",
+                      path,
+                      "fabricated evidence が STOPPED + sealed へ落ちることを静的に確認できません。",
+                      "Could not statically confirm that fabricated evidence stops and seals the run.",
+                      "Expected fabricated evidence handling to emit STOPPED/DECISION_STOP with sealed=True.",
+                  )
+
+          combined_test_text = "\n".join(read_text(path) for path in test_paths)
+          test_expectations = {
+              "V512_TEST_DRAFT_LINT_COMMA_BINDING": "This is not legally binding, it is legally binding.",
+              "V512_TEST_DRAFT_LINT_BUT_BINDING": "This is not legally binding but it is legally binding.",
+              "V512_TEST_DRAFT_LINT_COMMA_RACIST": "This is not racist, this text is racist.",
+              "V512_TEST_SAFE_NOT_BINDING": "This draft is not legally binding.",
+              "V512_TEST_SAFE_NON_BINDING": "This document is non-binding.",
+              "V512_TEST_SAFE_NOT_RACIST": "This text is not racist.",
+              "V512_TEST_PAUSE_FOR_HITL_SEALED": "PAUSE_FOR_HITL",
+              "V512_TEST_RFL_SEALED": "LAYER_RFL",
+              "V512_TEST_ARL_HMAC_TAMPER": "verify_arl_rows",
+              "V512_TEST_FABRICATED_EVIDENCE_STOP": "fabricate_evidence=True",
+          }
+          for check_id, needle in test_expectations.items():
+              ok = needle in combined_test_text
+              record_check(check_id, ok, test_paths[0] if test_paths else None, f"test coverage contains {needle!r}")
+              if not ok:
+                  add_finding(
+                      check_id,
+                      "LOW" if check_id.startswith("V512_TEST_") else "MEDIUM",
+                      "REVIEW_RECOMMENDED",
+                      test_paths[0] if test_paths else None,
+                      f"v5.1.2 回帰テストに `{needle}` の確認が見つかりません。",
+                      f"Could not find regression coverage for {needle!r}.",
+                      "Expected tests to preserve the fixed v5.1.2 audit/draft lint boundaries.",
+                  )
+
+          decision = "REVIEW_RECOMMENDED" if findings else "INFO_ONLY"
+          risk_level = (
+              "HIGH" if any(item["severity"] == "HIGH" for item in findings)
+              else "MEDIUM" if any(item["severity"] == "MEDIUM" for item in findings)
+              else "LOW" if findings
+              else "INFO"
+          )
+
+          payload = {
+              "generated_at": datetime.now(timezone.utc).isoformat(),
+              "tool": "tasukeru-v512-boundary-review",
+              "decision": decision,
+              "risk_level": risk_level,
+              "auto_fix": False,
+              "auto_commit": False,
+              "auto_push": False,
+              "auto_merge": False,
+              "changed_files": [path.as_posix() for path in changed_files],
+              "source_paths_checked": [path.as_posix() for path in source_paths],
+              "test_paths_checked": [path.as_posix() for path in test_paths],
+              "checks": checks,
+              "findings": findings,
+              "summary": {
+                  "checks_total": len(checks),
+                  "checks_ok": sum(1 for item in checks if item["ok"]),
+                  "findings_total": len(findings),
+              },
+          }
+
+          lines = [
+              "# Tasukeru v5.1.2 Audit / Draft Lint Boundary Review",
+              "",
+              f"- Decision: `{decision}`",
+              f"- Risk level: `{risk_level}`",
+              f"- Findings: `{len(findings)}`",
+              "- Auto fix / commit / push / merge: `false`",
+              "",
+              "This is a static advisory check. It does not import or execute PR code.",
+              "",
+              "## Checked files",
+          ]
+          if source_paths or test_paths:
+              for path in [*source_paths, *test_paths]:
+                  lines.append(f"- `{path.as_posix()}`")
+          else:
+              lines.append("- No v5.1.2 source/test target was found in this checkout.")
+
+          lines.extend(["", "## Findings"])
+          if findings:
+              for item in findings:
+                  lines.extend([
+                      f"- `{item['check_id']}` / `{item['severity']}` / `{item['decision']}`",
+                      f"  - {item['summary_en']}",
+                      f"  - {item['summary_ja']}",
+                  ])
+          else:
+              lines.append("- None.")
+
+          lines.extend(["", "## Checks"])
+          for item in checks:
+              mark = "OK" if item["ok"] else "NG"
+              lines.append(f"- `{mark}` `{item['check_id']}`: {item['summary']}")
+
+          report_md = "\n".join(lines) + "\n"
+          report_json = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+          for path in (report_md_path, log_md_path):
+              path.write_text(report_md, encoding="utf-8")
+          for path in (report_json_path, log_json_path):
+              path.write_text(report_json, encoding="utf-8")
+
+          summary_path = Path("tasukeru_advisory_summary.md")
+          if summary_path.exists():
+              with summary_path.open("a", encoding="utf-8") as f:
+                  f.write("\n\n")
+                  f.write(report_md)
+
+          print(f"v5.1.2 boundary review decision: {decision}")
+          print(f"v5.1.2 boundary review findings: {len(findings)}")
+          print("Generated tasukeru_v512_boundary_review.md/json and tasukeru_logs/v512_boundary_review.*")
+
+          PY
+
 
       - name: Generate Tasukeru 4D inspection report
         if: always()
@@ -8970,6 +9361,85 @@ jobs:
           PY
 
 
+
+      - name: Summarize v5.1.2 boundary regression policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tasukeru_logs
+          cat > tasukeru_v512_boundary_regression_policy.md <<'EOF'
+          # Tasukeru v5.1.2 Boundary Regression Policy
+
+          ## Purpose
+
+          Detect regressions for the boundary issues found in v5.1.2.
+
+          ## Required
+
+          Deterministic boundary-case checks.
+
+          ## Not required
+
+          - 1000-run stress tests
+          - 10000-run stress tests
+          - randomized stress loops
+          - long-running load tests
+
+          ## Scope
+
+          This policy keeps Tasukeru advisory checks focused on deterministic boundary regressions:
+          PAUSE_FOR_HITL sealing, RFL sealing, sealed-layer limits, draft-lint clause boundaries,
+          fabricated evidence stop behavior, and ARL/HMAC tamper detection.
+
+          This step does not import PR code, execute PR code, apply fixes, create commits, push changes,
+          open pull requests, or merge pull requests.
+          EOF
+
+          cp tasukeru_v512_boundary_regression_policy.md tasukeru_logs/v512_boundary_regression_policy.md
+
+          cat > tasukeru_v512_boundary_regression_policy.json <<'EOF'
+          {
+            "policy": "v5.1.2 boundary regression policy",
+            "purpose": "Detect regressions for the boundary issues found in v5.1.2.",
+            "required": [
+              "Deterministic boundary-case checks"
+            ],
+            "not_required": [
+              "1000-run stress tests",
+              "10000-run stress tests",
+              "randomized stress loops",
+              "long-running load tests"
+            ],
+            "scope": [
+              "PAUSE_FOR_HITL sealing",
+              "RFL sealing",
+              "sealed-layer limits",
+              "draft-lint clause boundaries",
+              "fabricated evidence stop behavior",
+              "ARL/HMAC tamper detection"
+            ],
+            "automation_policy": {
+              "auto_fix": false,
+              "auto_commit": false,
+              "auto_push": false,
+              "auto_pr": false,
+              "auto_merge": false
+            }
+          }
+          EOF
+
+          cp tasukeru_v512_boundary_regression_policy.json tasukeru_logs/v512_boundary_regression_policy.json
+
+          {
+            echo "## v5.1.2 boundary regression policy"
+            echo ""
+            echo "Purpose: detect regressions for the boundary issues found in v5.1.2."
+            echo ""
+            echo "Required: deterministic boundary-case checks."
+            echo ""
+            echo "Not required: 1000-run / 10000-run stress tests, randomized stress loops, or long-running load tests."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload advisory logs
         if: always()
         uses: actions/upload-artifact@v6
@@ -9010,6 +9480,8 @@ jobs:
             tasukeru_pbm_branch_report.md
             tasukeru_pbm_branch_report.json
             tasukeru_pbm_branch_verify.json
+            tasukeru_v512_boundary_review.md
+            tasukeru_v512_boundary_review.json
             tasukeru_probabilistic_escalation_report.md
             tasukeru_probabilistic_escalation_report.json
             tasukeru_probabilistic_escalation_verify.json
