@@ -26,7 +26,13 @@
   </a>
 </p>
 
-Maestro Orchestrator is a research-oriented framework for studying how multi-agent and agentic workflows can be controlled with explicit safety checks, audit logs, checkpoints, and human review.
+Maestro Orchestrator is a local research tool for testing how multiple simulated AI agents can work together safely.
+
+It records what happened, checks whether outputs stay consistent, and pauses for human review when something looks risky.
+
+It does not control real systems, send data externally, apply fixes automatically, or replace human judgment.
+
+For researchers and maintainers, this repository explores multi-agent and agentic workflows with explicit safety checks, audit logs, checkpoints, and human review.
 
 This repository focuses on local simulations and defensive review workflows. It is designed to help test questions such as:
 
@@ -43,6 +49,45 @@ It does not provide legal, medical, financial, regulatory, or safety guarantees.
 The main design principle is simple:
 
 > If behavior is uncertain, risky, inconsistent, or externally impactful, the workflow should stop or ask for human review instead of continuing automatically.
+
+## What this project is
+
+In practical terms, this project helps test questions such as:
+
+- Did the simulated agents follow the task?
+- Did their outputs stay consistent?
+- Did the workflow stop when something looked risky?
+- Is there a record of what happened?
+- Did a human need to review the result?
+
+The examples are local simulations. They are not production automation tools.
+
+## For researchers and maintainers
+
+This repository explores multi-agent orchestration with:
+
+- explicit gate decisions
+- advisory-only review
+- human-in-the-loop checkpoints
+- tamper-evident audit logs
+- result consistency checks
+- fail-closed behavior
+- reproducible local simulations
+- clear separation between advice and execution
+
+The implementation and tests are intended to make workflow behavior easier to inspect, reproduce, and review.
+
+## Glossary
+
+- **Agent**: a simulated worker that performs one part of a task.
+- **Maestro**: the coordinator that routes tasks and does not replace human judgment.
+- **Tasukeru**: the advisory review workflow used for defensive repository review.
+- **HITL**: human-in-the-loop; the workflow pauses for human review.
+- **Advisory-only**: the tool reports findings but does not automatically fix, commit, push, or merge.
+- **Audit log**: a record of important decisions and events.
+- **Checkpoint**: saved state used to resume a simulation.
+- **Fail-closed**: stop safely or ask for review instead of continuing when behavior is uncertain or risky.
+- **External side effect**: an action outside the local simulation, such as sending, uploading, pushing, deleting, deploying, or controlling a real system.
 
 ## Beginner reading guide
 
