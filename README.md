@@ -26,18 +26,32 @@
   </a>
 </p>
 
-Maestro Orchestrator is a research-oriented orchestration framework for multi-agent governance, fail-closed control, HITL escalation, checkpoint-based resume, and tamper-evident simulation workflows.
+Maestro Orchestrator is a research-oriented framework for studying how multi-agent and agentic workflows can be controlled with explicit safety checks, audit logs, checkpoints, and human review.
 
-This repository contains multiple simulator lines. Some files focus on KAGE-like gate behavior and mediator separation, while others focus on document-task batch execution, checkpointing, audit integrity, and artifact verification.
+This repository focuses on local simulations and defensive review workflows. It is designed to help test questions such as:
+
+- when an agent workflow should continue
+- when it should stop safely
+- when it should ask for human review
+- whether logs and generated outputs remain consistent
+- whether advisory findings stay separate from automatic execution
+- whether checkpoints and audit records can detect unexpected changes
+
+This project is not a production automation system.  
+It does not provide legal, medical, financial, regulatory, or safety guarantees.
+
+The main design principle is simple:
+
+> If behavior is uncertain, risky, inconsistent, or externally impactful, the workflow should stop or ask for human review instead of continuing automatically.
 
 ## Beginner reading guide
 
-If you are new to this repository, start here.
+If you are new to this repository, start here:
 
-1. Read **Safety and scope** first.
-2. Read **Tasukeru Analysis** to understand the review helper.
-3. Read **Advisory-only policy** to understand what the workflow does not do.
-4. Read **HITL decision support** to understand when human review is required.
+1. Read **Safety and scope**.
+2. Read **Responsible use and prohibited use**.
+3. Read **Advisory-only policy**.
+4. Read **Human review model**.
 5. Read **Current simulator lines** only after you understand the safety boundaries.
 
 This repository is a research and educational test bench.  
@@ -57,22 +71,23 @@ It is not intended for:
 - processing real personal data or confidential operational data
 - demonstrating complete or universal safety coverage
 - automatic external submission, upload, sending, or deployment
-- bypassing HITL review for external side effects
+- bypassing human review for external side effects
 
 The examples should be read as:
 
-- research simulations
+- local research simulations
 - educational references
-- governance / safety test benches
-- fail-closed and HITL design examples
+- governance and safety test benches
+- fail-closed design examples
+- human-review workflow examples
 - audit-log and checkpoint integrity experiments
-- batch-orchestration examples for local simulation
+- local batch-orchestration examples
 
-External submit / upload / push / send actions should remain HITL-gated.
+External submit, upload, push, send, deploy, delete, or real-world control actions should remain blocked or human-review gated.
 
 ## Responsible use and prohibited use
 
-Tasukeru Analysis and the simulator examples are intended for defensive review of repositories owned by the user or repositories for which the user has explicit authorization.
+The review workflow and simulator examples are intended for defensive review of repositories owned by the user or repositories for which the user has explicit authorization.
 
 Do not use this repository or its tools for:
 
@@ -87,96 +102,38 @@ Do not use this repository or its tools for:
 
 Findings should be used to improve safety, reliability, traceability, and governance. When reviewing third-party or open-source code, follow the project maintainers' security policy and responsible disclosure process.
 
-## Tasukeru Analysis
+## Advisory review workflow
 
-Tasukeru Analysis is an advisory workflow for defensive repository review.
+Tasukeru Analysis is the repository's advisory review workflow for defensive repository review.
 
-Tasukeru Analysis is also intended to help inspect and govern the increasing complexity of multi-agent and agentic workflows. As these workflows grow, their behavior can become harder to inspect, explain, and audit.
+It is intended to help inspect and govern the increasing complexity of multi-agent and agentic workflows. As these workflows grow, their behavior can become harder to inspect, explain, and audit.
 
 It focuses on review-support questions such as:
 
 - whether findings are classified at an appropriate review level
 - whether process logs and generated outputs remain consistent
-- whether uncertain or risky cases should be routed back to HITL
-- whether public PR comments avoid excessive detail
+- whether uncertain or risky cases should be routed back to human review
+- whether public PR comments avoid excessive security detail
 - whether the workflow remains advisory-only without automatic fixes, commits, pushes, or merges
 
-The workflow does not disclose detailed exploit procedures or act as an autonomous enforcement system. Detailed findings remain in workflow artifacts/logs for human review.
+The workflow does not disclose detailed exploit procedures or act as an autonomous enforcement system. Detailed findings remain in workflow artifacts and logs for human review.
 
 It runs static and repository-specific checks such as:
 
 - Ruff
 - Bandit
 - pip-audit
-- Tasukeru logic review
+- repository-specific logic checks
 - documentation review
-- HITL decision support classification
+- human-review classification
 
 The workflow is designed to improve maintainability, safety review, and developer usability without automatically treating every advisory finding as a blocking failure.
 
-Tasukeru Analysis does not aim to hide warnings. Instead, it separates active repair candidates, review-only findings, historical-version warnings, and likely noise so maintainers can focus on the right items first.
-
-Tasukeru Analysis also includes a result consistency audit layer.
-
-Earlier checks focus on whether the review process, logs, gates, and classifications look suspicious or inconsistent. The result consistency auditor additionally checks whether the generated outputs match the recorded process state.
-
-It compares process records with generated artifacts such as summaries, HITL review data, announcement data, ARL verification data, gate adoption data, and self-definition verification data.
-
-This helps detect cases where the internal process and the published result disagree, for example when a count, verification status, gate adoption result, or announcement claim does not match the underlying records.
-
-This layer is report-only. It does not rewrite artifacts, change classifications, apply fixes, create pull requests, commit, push, or merge changes automatically.
-
-## Tasukeru adversarial stress test
-
-The Tasukeru adversarial stress test is a local, synthetic, defensive stress test.
-
-It does not attack external systems, execute exploits, scan third-party targets, create pull requests, push commits, apply fixes, or merge changes automatically.
-
-The stress test feeds malformed, contradictory, or bypass-like synthetic inputs into a local evaluator and verifies that Tasukeru-style safety invariants remain intact.
-
-Typical synthetic cases include:
-
-- malformed JSON / JSONL
-- missing required audit keys
-- RFL sealed-state contradictions
-- non-safety-layer sealed rows
-- HITL bypass-like text
-- auto-merge / auto-fix injection-like text
-- duplicate JSON keys
-- suspicious path-like strings
-- oversized audit lines
-
-The expected behavior is fail-closed or review-oriented:
-
-- automation remains disabled
-- unsafe `RUN` is not returned for risky synthetic cases
-- RFL sealed contradictions are escalated without sealing
-- non-safety sealed rows are escalated for review
-- HITL bypass-like inputs do not bypass human review
-
-This test is intended to improve defensive robustness and regression coverage. It is not an offensive security tool.
-
-## Tasukeru boundary self-check tests
-
-Tasukeru boundary self-check tests verify that Tasukeru's own workflow boundaries remain aligned.
-
-They check that generated artifacts, PR Draft artifact listings, upload artifact paths, ARL artifact-integrity records, and result-consistency expectations do not drift apart.
-
-The maintained test entry point is:
-
-- `tests/test_tasukeru_boundary_self_check_v0_2.py`
-
-The legacy/private compatibility shim is:
-
-- `tests/_tasukeru_boundary_self_check_v0_1.py`
-
-These tests are static/read-only. They do not execute external actions, create branches, create pull requests, commit, push, apply fixes, post comments, or merge changes automatically.
+It does not aim to hide warnings. Instead, it separates active repair candidates, review-only findings, historical-version warnings, and likely noise so maintainers can focus on the right items first.
 
 ## Advisory-only policy
 
-Tasukeru Analysis is an advisory-only review helper.
-
-It does not:
+The advisory review workflow does not:
 
 - create branches automatically
 - create pull requests automatically
@@ -185,21 +142,21 @@ It does not:
 - apply fixes automatically
 - merge pull requests automatically
 
-Only `HITL_REQUIRED` findings may produce a PR comment.
+Only findings that require human review may produce a PR comment.
 
-Other findings, including `FIX_RECOMMENDED`, `REVIEW_RECOMMENDED`, `NOISE_CANDIDATE`, and `INFO_ONLY`, are collected in the GitHub Step Summary and workflow artifacts for human review.
+Other findings are collected in the GitHub Step Summary and workflow artifacts for human review.
 
-Tasukeru Analysis is intended to reduce human review load, not to replace human decision-making.
+The workflow is intended to reduce human review load, not to replace human decision-making.
 
 ## Human readability policy
 
-Tasukeru Analysis prioritizes code that humans can safely read, review, and maintain.
+This project prioritizes code that humans can safely read, review, and maintain.
 
 A change should not be treated as a good fix merely because it is easier for AI or automated tools to process. If a change may reduce human readability, reviewability, or maintainability, it should be routed back for human review.
 
 ## Security review output policy
 
-Tasukeru Analysis is limited to defensive review and safe remediation guidance.
+Security-related outputs should focus on defensive review and safe remediation guidance.
 
 Public PR comments should not include:
 
@@ -217,9 +174,9 @@ Security-related findings should focus on:
 - a safe remediation direction
 - whether human review is required
 
-## HITL decision support
+## Human review model
 
-Tasukeru Analysis classifies findings into review levels so maintainers can separate actionable issues from expected noise.
+The repository uses review levels to separate actionable issues from expected noise.
 
 Current review levels:
 
@@ -241,7 +198,7 @@ Findings that require immediate attention should appear as:
 - `FIX_RECOMMENDED`
 - `REVIEW_RECOMMENDED`
 
-When these counts are zero, the repository has no active advisory items that Tasukeru currently recommends prioritizing for human repair or review.
+When these counts are zero, the repository has no active advisory items that the workflow currently recommends prioritizing for human repair or review.
 
 This does not mean the repository has no warnings. It means the remaining warnings are classified as either likely noise or historical/informational records.
 
@@ -249,7 +206,7 @@ This does not mean the repository has no warnings. It means the remaining warnin
 
 Historical-version warnings are not fully excluded.
 
-Tasukeru Analysis keeps findings from superseded or historical simulator files visible as `INFO_ONLY` when they are useful for audit visibility but are not active repair targets.
+The advisory workflow keeps findings from superseded or historical simulator files visible as `INFO_ONLY` when they are useful for audit visibility but are not active repair targets.
 
 This keeps the active review queue focused on findings that currently require human attention, while preserving visibility into older versioned files kept for:
 
@@ -265,43 +222,43 @@ Historical warnings should be revisited if the file becomes an active entry poin
 
 Examples:
 
-### B603 subprocess execution
+### Subprocess execution
 
 Usually `HITL_REQUIRED`.
 
 Requires review because subprocess execution can create external side effects.
 
-### B404 subprocess import
+### Subprocess import
 
 Usually `REVIEW_RECOMMENDED`.
 
 Importing subprocess is not itself an external side effect.
 
-### B101 assert usage in tests
+### Assert usage in tests
 
 Usually `NOISE_CANDIDATE`.
 
 Pytest tests commonly use `assert`.
 
-### B101 assert usage in active runtime code
+### Assert usage in active runtime code
 
 Usually `FIX_RECOMMENDED`.
 
 Runtime assert statements can be removed under Python optimization flags.
 
-### B101 assert usage in superseded historical simulator files
+### Assert usage in superseded historical simulator files
 
 Usually `INFO_ONLY`.
 
 Kept visible as a historical-version warning instead of being fully excluded. No immediate fix is required unless the file becomes an active entry point again.
 
-### B108 temporary path usage in tests
+### Temporary path usage in tests
 
 Usually `NOISE_CANDIDATE` when using isolated pytest fixtures such as `tmp_path`.
 
-Should be reviewed if it uses a hard-coded shared path such as `/tmp/name`.
+Should be reviewed if it uses a hard-coded shared path.
 
-### B311 pseudo-random generator usage in active simulations
+### Pseudo-random generator usage in active simulations
 
 Usually `REVIEW_RECOMMENDED`.
 
@@ -309,19 +266,19 @@ Deterministic simulation randomness may be acceptable when not used for secrets,
 
 If accepted, the code should document that the randomness is simulation-only.
 
-### B311 pseudo-random generator usage in superseded historical simulator files
+### Pseudo-random generator usage in superseded historical simulator files
 
 Usually `INFO_ONLY`.
 
 Kept visible as a historical-version warning. No immediate fix is required unless reused for security-sensitive behavior or active runtime behavior.
 
-### Dependency vulnerabilities from pip-audit
+### Dependency vulnerabilities from dependency audit tools
 
 Usually `FIX_RECOMMENDED`.
 
 ## Evidence, explanation, and prediction
 
-Tasukeru Analysis may attach structured decision-support metadata to findings.
+The advisory workflow may attach structured decision-support metadata to findings.
 
 This can include:
 
@@ -336,27 +293,21 @@ This can include:
 
 ## Output artifacts
 
-Tasukeru Analysis may generate the following review artifacts:
+The advisory workflow may generate review artifacts such as:
 
-- `tasukeru_advisory_summary.md`
-- `tasukeru_hitl_review.md`
-- `tasukeru_hitl_review.json`
-- `tasukeru_notification_state.json`
-- `tasukeru_pr_comment.md`
-- `tasukeru_dradm_draft.md`
-- `tasukeru_dradm_draft.json`
-- `tasukeru_confidence_report.md`
-- `tasukeru_confidence_report.json`
-- `tasukeru_result_consistency_report.md`
-- `tasukeru_result_consistency_report.json`
-- `tasukeru_result_consistency_verify.json`
-- `tasukeru_dimension_dependency_report.md`
-- `tasukeru_dimension_dependency_report.json`
-- `tasukeru_dimension_dependency_verify.json`
+- advisory summaries
+- human-review reports
+- machine-readable review data
+- notification state records
+- PR-comment drafts
+- documentation proposal drafts
+- confidence reports
+- result consistency reports
+- dependency consistency reports
 
-`tasukeru_advisory_summary.md` provides a concise overview.
+These artifacts are review materials. They do not modify repository files and must not be applied automatically.
 
-`tasukeru_hitl_review.md` provides human-readable review guidance, including:
+Human-readable review reports may include:
 
 - file path
 - line number
@@ -365,55 +316,45 @@ Tasukeru Analysis may generate the following review artifacts:
 - review level
 - suggested action
 
-`tasukeru_hitl_review.json` provides the same decision-support data in a machine-readable format.
+Machine-readable reports provide the same decision-support data in structured form.
 
-`tasukeru_notification_state.json` records critical-notification state, including fingerprint-based incident aggregation when applicable.
+PR-comment drafts are used only when a finding requires human review and qualifies for PR notification.
 
-`tasukeru_pr_comment.md` records the PR-comment body that would be used only when a `HITL_REQUIRED` incident qualifies for PR notification.
-
-`tasukeru_dradm_draft.md` and `tasukeru_dradm_draft.json` contain draft-only documentation proposals generated for human review.
-
-These DRADM drafts may include proposed minimal diffs, full draft text, hashes, evidence, and review checklists. They do not modify repository files and must not be applied automatically.
-
-`tasukeru_confidence_report.md` and `tasukeru_confidence_report.json` summarize Tasukeru's confidence in its classifications, explanations, and draft recommendations.
+Documentation proposal drafts may include proposed minimal diffs, full draft text, hashes, evidence, and review checklists. They do not modify repository files and must not be applied automatically.
 
 Confidence scores are review-aid metadata only. They do not indicate that a finding is safe to ignore, and they must not enable automatic fixes, automatic PR creation, automatic commits, automatic pushes, or automatic merges.
 
-`tasukeru_result_consistency_report.md`, `tasukeru_result_consistency_report.json`, and `tasukeru_result_consistency_verify.json` record whether the process logs and generated result artifacts agree.
+Result consistency reports record whether process logs and generated result artifacts agree.
 
-They are used to check that decision counts, ARL verification, gate adoption status, self-definition verification, and announcement data remain consistent across outputs.
+Dependency consistency reports record whether findings, affected structures, impact classifications, review levels, and generated outputs remain consistent.
 
-`tasukeru_dimension_dependency_report.md`, `tasukeru_dimension_dependency_report.json`, and `tasukeru_dimension_dependency_verify.json` record whether findings, affected structures, impact classification, review levels, and generated outputs remain dependency-consistent.
-
-They are advisory-only dependency audit artifacts. They do not modify findings, change classifications, apply fixes, create commits, push changes, or merge pull requests.
+All of these artifacts are advisory-only. They do not modify findings, change classifications, apply fixes, create commits, push changes, or merge pull requests automatically.
 
 ## Advisory behavior
 
-Tasukeru Analysis is advisory by default.
-
-It should help maintainers answer:
+The advisory workflow should help maintainers answer:
 
 - Which findings are likely noise?
 - Which findings should be reviewed?
 - Which files need attention?
 - Why is the finding relevant?
 - What is the suggested fix?
-- Does this require HITL before merge?
+- Does this require human review before merge?
 - Is this an active repair candidate or a historical-version warning?
 
 The workflow does not replace human review. It is a triage and documentation aid for safer repository maintenance.
 
 ## Repository purpose
 
-The main purpose of this repository is to explore how agentic workflows can be controlled through explicit gates, reproducible logs, interruption points, and human review.
+The main purpose of this repository is to explore how agentic workflows can be controlled through explicit checks, reproducible logs, interruption points, and human review.
 
 The project emphasizes:
 
 - fail-closed behavior
-- HITL escalation
-- gate-order invariants
-- reason-code stability
-- checkpoint / resume behavior
+- human review before risky actions
+- fixed safety-check order
+- stable reason codes
+- checkpoint and resume behavior
 - tamper-evident audit records
 - artifact integrity verification
 - reproducible simulation outputs
@@ -423,46 +364,25 @@ This repository does not claim to provide complete AI safety coverage. It is a r
 
 ## Architecture diagrams
 
-Detailed architecture diagrams for the production-oriented Doc Orchestrator simulator are collected here:
+Detailed architecture diagrams for the production-oriented document orchestrator simulator are collected in the documentation directory.
 
-- Doc Orchestrator Architecture Diagrams
+The diagram documents may include:
 
-This document includes:
-
-- Doc Orchestrator overview
+- document orchestrator overview
 - task processing flow
-- audit HMAC chain
+- audit hash chain
 - checkpoint resume flow
 - data structure map
 
-Direct diagram links are also available:
-
-- Doc Orchestrator overview
-- Task processing flow
-- Audit HMAC chain
-- Checkpoint resume flow
-- Data structure map
-
-For other diagrams, reference files, bundles, and documentation assets, see:
-
-- Documentation Index
-
-The README keeps the overview concise, while detailed diagrams are separated into `docs/architecture.md` and the broader documentation index is separated into `docs/index.md`.
+The README keeps the overview concise. Detailed diagrams, reference files, bundles, and documentation assets should be placed in the documentation index.
 
 ## Current simulator lines
 
-### 1. Mediator-based gate simulator
+This repository contains several local-only simulator lines. Each line focuses on a different orchestration or review problem.
 
-Example:
+### 1. Gate-based mediator simulator
 
-- `ai_doc_orchestrator_with_mediator_v1_0.py`
-- `tests/test_doc_orchestrator_with_mediator_v1_0.py`
-
-Plain-language guide:
-
-- Japanese: [`docs/mediator_orchestrator_plain_guide.ja.md`](docs/mediator_orchestrator_plain_guide.ja.md)
-
-This simulator focuses on the following flow:
+This simulator studies a simple flow:
 
 ```text
 Agent → Mediator → Orchestrator
@@ -470,83 +390,71 @@ Agent → Mediator → Orchestrator
 
 Core characteristics:
 
-- Agent normalizes task input.
-- Mediator gives advice only.
-- Mediator has no execution authority.
-- Orchestrator evaluates gates in a fixed order.
-- RFL is used for relative or ambiguous requests.
-- Ethics / ACC handle higher-risk blocking conditions.
-- `sealed=True` may appear only at Ethics / ACC.
-- raw text should not be persisted.
-- audit logs should avoid direct PII leakage.
+- the agent normalizes task input
+- the mediator gives advice only
+- the mediator has no execution authority
+- the orchestrator evaluates checks in a fixed order
+- ambiguous or relative requests are routed to human review
+- higher-risk cases can be blocked
+- raw text should not be persisted
+- audit logs should avoid direct personal-data leakage
 
-Canonical gate order:
+Canonical check order:
 
 ```text
-Meaning → Consistency → RFL → Ethics → ACC → Dispatch
+Meaning → Consistency → Ambiguity Review → External-Action Safety → Dispatch
 ```
 
 This simulator is useful for checking:
 
-- gate invariants
-- HITL transitions
-- RFL pause behavior
-- sealed / non-sealed behavior
+- fixed check order
+- human-review transitions
+- blocked versus non-blocked behavior
 - mediator-to-orchestrator separation
 - reason-code expectations
 - lightweight multi-task orchestration behavior
 
-### 2. Production-oriented document orchestrator simulator
+### 2. Document-task checkpoint simulator
 
-Example version:
-
-- `v1.2.6-hash-chain-checkpoint`
-
-This simulator focuses on document-task orchestration with stronger persistence and integrity controls.
+This simulator studies document-task orchestration with stronger persistence and integrity controls.
 
 Core characteristics:
 
-- Task Contract Gate
+- task contract checks
 - rough token estimation
-- Word / Excel / PPT task simulation
-- per-task checkpoint / resume
-- HMAC-SHA256 audit log hash chain
-- HMAC-protected checkpoint files
-- SHA-256 + HMAC artifact integrity records
-- PII-safe audit / checkpoint / artifact writes
+- Word / Excel / PowerPoint-style task simulation
+- per-task checkpoint and resume
+- audit log hash chain
+- protected checkpoint files
+- artifact integrity records
+- personal-data-safe audit, checkpoint, and artifact writes
 - tamper-evidence detection
-- CLI-based simulation entry point
-- no mediation / negotiation feature
+- CLI-based local simulation
 - no automatic external submission
 
 Important implementation note:
 
-The simulator writes text-backed artifact outputs representing document-task results. It does not claim to generate fully formatted Microsoft Office documents unless separate document-generation libraries are connected.
+The simulator writes text-backed artifact outputs representing document-task results. It does not claim to generate fully formatted Microsoft Office documents unless separate document-generation libraries are connected and tested.
 
 Hashing and HMAC provide tamper evidence. They do not provide physical write prevention. In real deployment, HMAC keys must be supplied from an environment variable or protected key file and must not be committed to the repository.
 
-### 3. Emergency Contract × KAGE integration simulator
+### 3. Emergency contract gate-orchestration simulator
 
-Example:
-
-- `emergency_contract_kage_orchestrator_v1_0.py`
-- `tests/test_emergency_contract_kage_orchestrator_v1_0.py`
-
-This simulator combines an Emergency Contract Case B scenario with a KAGE-style orchestration flow.
+This simulator combines an emergency-contract scenario with a gate-based orchestration flow.
 
 It is intended as a small integration proof-of-concept, not as a production contracting, legal, or signal-control system.
 
 Core characteristics:
 
-- Emergency Contract Case B scenario
-- KAGE-style gate order
-- RFL non-sealing behavior
-- Evidence validation and fabricated-evidence detection
-- HITL auth checkpoint
-- ADMIN finalize checkpoint
-- Ethics / ACC sealed-stop invariants
+- emergency-contract scenario
+- fixed safety-check order
+- ambiguous-priority review behavior
+- evidence validation and fabricated-evidence detection
+- human authorization checkpoint
+- admin finalize checkpoint
+- blocked-stop invariants for high-risk conditions
 - simulated contract draft artifact generation
-- tamper-evident ARL rows with HMAC verification
+- tamper-evident audit rows
 - no real-world signal control
 - no legal effect
 - no external submission, upload, send, API call, or deployment
@@ -554,29 +462,25 @@ Core characteristics:
 Canonical integration flow:
 
 ```text
-Meaning → Consistency → RFL → Evidence → HITL Auth → Draft
-→ Ethics → Draft Lint → ACC → ADMIN Finalize → Dispatch
+Meaning → Consistency → Ambiguity Review → Evidence Check → Human Authorization
+→ Draft → Safety Review → Draft Review → External-Action Safety
+→ Admin Finalize → Dispatch
 ```
 
 This simulator is useful for checking:
 
 - emergency-contract scenario handling
-- relative-priority evaluation through RFL
+- relative-priority evaluation
 - fabricated evidence pause behavior
-- real-world control blocking through ACC
-- USER and ADMIN HITL stop paths
+- real-world control blocking
+- user and admin stop paths
 - simulated artifact dispatch only
-- ARL/HMAC verification
-- KAGE invariants across normal and abnormal paths
+- audit-log verification
+- safety invariants across normal and abnormal paths
 
-### 4. Infrastructure Lifeline Mediation Simulation
+### 4. Infrastructure lifeline mediation simulation
 
-Example:
-
-- `infrastructure_lifeline_mediation_randomized_sim_v0_2.py`
-- `tests/test_infrastructure_lifeline_mediation_randomized_sim_v0_2.py`
-
-This simulator models a constrained lifeline-resource mediation scenario involving three infrastructure agents:
+This simulator models a constrained resource-allocation scenario involving three infrastructure agents:
 
 - electricity
 - water
@@ -592,7 +496,7 @@ Core characteristics:
 - priority weights
 - life-risk scores
 - shortage-rate-aware allocation
-- simulated HITL decisions
+- simulated human decisions
 - JSON and stdout output
 - no external API access
 - no real infrastructure control
@@ -613,81 +517,57 @@ This simulator is useful for checking:
 - constrained resource allocation behavior
 - proposal-only mediation
 - seeded reproducibility
-- HITL branch behavior
+- human-review branch behavior
 - safety-boundary flags
 - JSON output behavior
 - allocation totals staying within the available resource limit
 
-### 5. Agent Incident Mediation Simulation
-
-Example:
-
-- `agent_incident_mediation_sim_v0_2.py`
-- `tests/test_agent_incident_mediation_sim_v0_2.py`
+### 5. Agent incident mediation simulation
 
 This simulator models a local-only incident mediation flow where one simulated agent performs an out-of-contract action during orchestration.
 
-PseudoTasukeru detects a log/output mismatch, creates Tasukeru-style review artifacts, and escalates the finding to a Mediator. The Mediator then performs simulated HITL before applying an in-memory `STOP_AGENT` or `AUTHORIZE_SEAL` result.
+A diagnostic review helper detects a log/output mismatch, creates review artifacts, and escalates the finding to a mediator. The mediator then performs simulated human review before applying an in-memory result.
 
 Core characteristics:
 
 - simulated abnormal agent behavior
-- PseudoTasukeru log/output mismatch detection
-- escalation packet from PseudoTasukeru to Mediator
-- simulated HITL decision branching
-- `STOP_AGENT` / `AUTHORIZE_SEAL` in-memory control only
-- ARL verification
-- 3D-DAC dependency consistency verification
-- RCV result consistency verification
-- Tasukeru-style local artifacts
+- log/output mismatch detection
+- escalation packet to mediator
+- simulated human decision branching
+- in-memory stop or authorization result only
+- audit-log verification
+- dependency consistency verification
+- result consistency verification
+- local artifacts only
 - no external API access
 - no real process control
 - no automatic fix, commit, push, or merge
 
 This simulator is useful for checking:
 
-- whether an abnormal agent is detected from log/output inconsistency
-- whether PseudoTasukeru escalates instead of directly stopping agents
-- whether Mediator performs HITL before stopping or sealing
+- whether abnormal agent behavior is detected from log/output inconsistency
+- whether the diagnostic helper escalates instead of directly stopping agents
+- whether the mediator performs human review before applying a stop or authorization result
 - whether the simulated user instruction is recorded
-- whether normal agents are not incorrectly stopped or sealed
-- whether ARL, 3D-DAC, RCV, and generated artifacts remain consistent
+- whether normal agents are not incorrectly stopped or locked
+- whether audit logs and generated artifacts remain consistent
 
-### 6. Code Anomaly Maestro Handoff Simulation
-
-Example:
-
-- `agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
-- `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
-
-Extended multi-abnormal / PEL experiment:
-
-- `agent_code_anomaly_maestro_handoff_multi_abnormal_pel_sim_v0_4_1.py`
-- `tests/test_agent_code_anomaly_maestro_handoff_multi_abnormal_pel_sim_v0_4_1.py`
-
-The v0.4.1 multi-abnormal / PEL variant extends the code-anomaly handoff line with additional abnormal-case handling and report-oriented probabilistic escalation checks. It remains local-only, advisory/research-oriented, and does not perform external API access, real process control, automatic fixes, commits, pushes, or merges.
+### 6. Code anomaly handoff simulation
 
 This simulator models a local-only code-contract anomaly handoff flow.
 
-PseudoTasukeru detects a metadata-only code-contract anomaly and escalates the finding to Maestro. Maestro does not decide by itself. Instead, it requests simulated HITL and then executes the simulated user instruction.
-
-The simulated user may choose:
-
-- `AUTHORIZE_SEAL`
-- `QUARANTINE_HANDOFF_RESUME`
+A diagnostic review helper detects a metadata-only code-contract anomaly and escalates the finding to a user-controlled coordinator. The coordinator does not decide by itself. It requests simulated human review and then executes only the simulated user instruction.
 
 Core characteristics:
 
 - metadata-only code-contract anomaly detection
-- PseudoTasukeru escalation to Maestro
-- Maestro does not self-decide
-- simulated HITL instruction recording
-- `AUTHORIZE_SEAL` branch
-- `QUARANTINE_HANDOFF_RESUME` branch
-- safe checkpoint handoff/resume through a standby agent
-- ARL verification
-- 3D-DAC dependency consistency verification
-- RCV result consistency verification
+- escalation to a user-controlled coordinator
+- no autonomous decision by the coordinator
+- simulated human instruction recording
+- safe checkpoint handoff and resume
+- audit-log verification
+- dependency consistency verification
+- result consistency verification
 - no code execution
 - no malware behavior
 - no external API access
@@ -696,51 +576,36 @@ Core characteristics:
 
 This simulator is useful for checking:
 
-- whether PseudoTasukeru detects code-contract anomalies
-- whether findings are escalated to Maestro
-- whether Maestro requests HITL instead of self-deciding
+- whether code-contract anomalies are detected
+- whether findings are escalated to a user-controlled coordinator
+- whether the coordinator requests human review instead of self-deciding
 - whether the simulated user instruction is recorded
-- whether seal and quarantine-handoff-resume branches both work
+- whether lock and quarantine-handoff-resume branches both work
 - whether standby handoff resumes from a safe checkpoint
-- whether ARL, 3D-DAC, RCV, and generated artifacts remain consistent
+- whether audit logs and generated artifacts remain consistent
 
-### 7. Agent Incident PEL USER_MAESTRO Handoff Simulation
+### 7. Agent incident risk-report handoff simulation
 
-Example:
+This simulator extends the local-only agent incident mediation line with report-only risk estimation and user-controlled handoff.
 
-- `agent_incident_mediation_pel_user_maestro_sim_v0_3_1.py`
-
-This simulator extends the local-only Agent Incident Mediation Simulation with report-only probabilistic escalation and USER_MAESTRO handoff.
-
-It keeps the same basic incident setting as v0.2: one simulated agent performs an out-of-contract action, PseudoTasukeru detects a log/output mismatch, and the run stays local-only.
-
-What changed from v0.2:
-
-| Area | v0.2 | v0.3.1 |
-|---|---|---|
-| Escalation target | Mediator | USER_MAESTRO |
-| Risk estimate | Not included | PEL report-only estimate |
-| Human choices | `STOP_AGENT` / `AUTHORIZE_SEAL` | `AUTHORIZE_SEAL` / `QUARANTINE_HANDOFF_RESUME` |
-| Resume behavior | No standby resume branch | Standby agent can resume from a checkpoint |
-| Added artifacts | Basic Tasukeru-style artifacts | PEL report, checkpoint, instruction record, handoff/resume result |
-| Control authority | Human decision before stop or seal | Human decision before seal or handoff/resume |
+It keeps the same basic incident setting: one simulated agent performs an out-of-contract action, a diagnostic helper detects a log/output mismatch, and the run stays local-only.
 
 Core characteristics:
 
 - simulated abnormal agent behavior
-- PseudoTasukeru log/output mismatch detection
-- PEL probabilistic escalation report
+- log/output mismatch detection
+- report-only risk estimate
 - calculation trace recording
-- escalation to `USER_MAESTRO`
-- simulated HITL instruction recording
-- `AUTHORIZE_SEAL` branch
-- `QUARANTINE_HANDOFF_RESUME` branch
+- escalation to a user-controlled coordinator
+- simulated human instruction recording
+- lock branch
+- quarantine-handoff-resume branch
 - standby agent promotion
 - checkpoint-based task resume
-- ARL verification
-- 3D-DAC dependency consistency verification
-- PEL verification
-- RCV result consistency verification
+- audit-log verification
+- dependency consistency verification
+- risk-report verification
+- result consistency verification
 - no external API access
 - no real process control
 - no malware behavior
@@ -748,190 +613,74 @@ Core characteristics:
 
 This simulator is useful for checking:
 
-- whether the v0.2 incident flow still works after adding PEL and USER_MAESTRO handoff
-- whether high-risk simulated incidents are routed to `USER_MAESTRO`
+- whether the incident flow still works after adding risk reporting and handoff
+- whether high-risk simulated incidents are routed to a user-controlled coordinator
 - whether the simulated user instruction is recorded
-- whether seal and quarantine-handoff-resume branches both work
+- whether lock and quarantine-handoff-resume branches both work
 - whether standby handoff resumes from a checkpoint
-- whether normal agents are not incorrectly sealed, quarantined, or resumed
-- whether ARL, 3D-DAC, PEL, RCV, checkpoint, and generated artifacts remain consistent
+- whether normal agents are not incorrectly locked, quarantined, or resumed
+- whether audit logs, risk reports, checkpoints, and generated artifacts remain consistent
 
-### 8. Office Task Mediation + Tasukeru + Maestro Simulation
-
-Example:
-
-- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
-- `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
-
-Additional draft variant:
-
-- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
-
-Flow diagrams:
-
-- [v0.5.1 trust-to-risk baseline flow](docs/office_task_mediation_v0_5_1_baseline_flow.png)
-- [v0.5.2 diagnostic inference draft flow](docs/office_task_mediation_v0_5_2_diagnostic_inference_flow.png)
+### 8. Office task mediation simulation
 
 This simulator models a local-only Office task mediation flow using Word / Excel / PowerPoint-style synthetic artifacts.
 
-It checks whether generated document, spreadsheet, and presentation outputs remain aligned with the original user task instruction. Tasukeru reads logs, detects anomalies, and outputs risk materials only. Mediator receives only masked metadata packets and reconciles differences between the original task and generated outputs. Maestro does not decide by itself; it distributes tasks only to user-selected agents, triggers HITL only when the score is above the threshold, and executes only explicit user-selected actions.
+It checks whether generated document, spreadsheet, and presentation outputs remain aligned with the original user task instruction. A diagnostic helper reads logs, detects anomalies, and outputs risk materials only. The mediator receives only masked metadata packets and reconciles differences between the original task and generated outputs. The coordinator does not decide by itself. It distributes tasks only to user-selected agents, triggers human review only when the score is above the threshold, and executes only explicit user-selected actions.
 
 Simulation flow:
 
 ```text
 User selects target agents
 ↓
-Maestro dispatches the task only to user-selected agents
+Coordinator dispatches the task only to user-selected agents
 ↓
 Word / Excel / PowerPoint-style synthetic artifacts are generated
 ↓
-Tasukeru reads internal logs and creates masked metadata packets
+Diagnostic helper reads internal logs and creates masked metadata packets
 ↓
 Mediator receives only masked metadata and compares outputs against the original task snapshot
 ↓
 Mediator calculates the collision score
 ↓
-PEL estimates future failure probability as advisory metadata
+Risk estimate is attached as advisory metadata
 ↓
-If score == 0.8, the result remains WARNING / DRAFT_REVIEW
+If score == 0.8, the result remains warning / draft review
 ↓
-If score > 0.8, Maestro triggers PAUSE_FOR_HITL
+If score > 0.8, the run pauses for human review
 ↓
 User selects the next action
 ↓
-Maestro executes only the explicit user-selected action
+Coordinator executes only the explicit user-selected action
 ```
 
-The simulator does not generate real Office files. It uses synthetic Word / Excel / PowerPoint-style records to test consistency, masking, threshold behavior, HITL routing, and draft-only revision propagation.
+The simulator does not generate real Office files. It uses synthetic Word / Excel / PowerPoint-style records to test consistency, masking, threshold behavior, human-review routing, and draft-only revision propagation.
 
 Core characteristics:
 
 - fixed Word / Excel / PowerPoint synthetic task set
-- user-selected agent dispatch before Maestro handoff
+- user-selected agent dispatch
 - original task snapshot and hash-fixed task baseline
-- Tasukeru log analysis and risk-material output only
-- masked metadata handoff from Tasukeru to Mediator
-- no raw log handoff to Mediator
-- Mediator request verification
+- diagnostic log analysis and masked metadata handoff
+- no raw log handoff to mediator
 - Office output consistency checks
-- profit / formula / chart / conclusion mismatch detection
-- PII and confidential-signal masking
+- profit, formula, chart, and conclusion mismatch detection
+- personal-data and confidential-signal masking
 - threshold policy: `score == 0.8` is warning / draft review only
-- threshold policy: `score > 0.8` triggers `PAUSE_FOR_HITL`
-- `USER_TARGETED_REVISION_PROMPT` for user-scoped draft revisions
+- threshold policy: `score > 0.8` triggers human review
+- user-scoped draft revision proposals only
 - related agents create draft revision proposals only
-- Maestro has no autonomous decision authority
-- ARL verification
-- RCV result consistency verification
+- coordinator has no autonomous decision authority
+- audit-log verification
+- result consistency verification
 - required Word / Excel / PowerPoint artifact completeness checks
-- missing required artifacts produce `REQUIRED_ARTIFACTS_MISSING` in RCV
-- None-safe profit comparison so `0` remains a valid value
-- sealed ARL rows preserve system-level final-decider semantics
-- PEL safety-buffer metadata is explicit and reviewable
-- internal raw agent logs are not saved by default and require `--save-raw-logs-simulation-only`
+- missing required artifacts are detected
+- zero values are treated as valid values
+- safety-buffer metadata is explicit and reviewable
+- internal raw agent logs are not saved by default and require explicit simulation-only opt-in
 - no real Office document generation
 - no external API access
 - no real process control
 - no automatic fix, commit, push, or merge
-
-v0.5.1 draft extension:
-
-- trust-score based automation entry diagnosis
-- `trust_score == 0.9` is not auto eligible
-- `trust_score > 0.9` may become an automation candidate after User approval
-- automation-risk based 4D continuation diagnosis after automation starts
-- `automation_risk_score < 0.1` continues automation
-- `automation_risk_score >= 0.1` triggers fail-closed `AUTO_SUSPENDED_BY_4D`
-- Maestro relay-only temporary automation suspension
-- User HITL required for automation resume
-- Tasukeru remains diagnostic-only and does not directly command agents
-- no automatic fix, commit, push, or merge
-
-The v0.5.1 draft variant keeps the v0.5.0 Office task mediation line intact and adds a trust-to-risk automation policy. Before automation starts, Tasukeru uses `trust_score` as an entry diagnostic. After automation starts, Tasukeru switches to `automation_risk_score` and performs 4D continuation diagnosis. Maestro remains relay-only, and User remains the final decider.
-
-v0.6.0 source-grounded orchestration extension:
-
-- `agent_source_grounded_office_orchestration_sim_v0_6_0.py`
-- `tests/test_agent_source_grounded_office_orchestration_sim_v0_6_0.py`
-
-The v0.6.0 variant extends the v0.5.x Office mediation line from artifact consistency checking into source-grounded multi-agent orchestration.
-
-What changed from v0.5.1:
-
-| Area | v0.5.1 | v0.6.0 |
-|---|---|---|
-| Main focus | Trust-to-risk automation diagnosis | Source-grounded multi-agent orchestration |
-| Source handling | No dedicated source-agent layer | Primary / secondary / tertiary synthetic source agents |
-| Evidence handoff | Masked artifact metadata | Source Evidence Packets plus masked artifact metadata |
-| Office artifacts | Word / Excel / PowerPoint-style synthetic artifacts | Word / Excel / PowerPoint DRAFT artifacts grounded in source packets |
-| Mediator role | Reconciles artifact differences | Reconciles source-to-artifact mismatches and artifact contradictions |
-| Tasukeru role | Diagnostic-only log analysis | Diagnostic-only source/artifact packet creation and risk material handling |
-| Loop handling | Single HITL-oriented mediation flow | Reconciliation retry loop with `LOOP_LIMIT_EXCEEDED` after 3 loops |
-| Added checks | Trust score and automation-risk boundaries | PII / confidential source signals, unsupported claims, source conflicts, missing artifacts, unknown agents, request tampering |
-| Final output | DRAFT review / HITL result | `DRAFT_RESULT` only, with User review required |
-
-Core additions:
-
-- Source Agent layer for primary / secondary / tertiary synthetic source checks
-- Source Evidence Packet handoff instead of raw source logs
-- source-to-artifact consistency checks
-- Office DRAFT artifacts grounded in source packets
-- Mediator reconciliation for source conflicts and artifact contradictions
-- Tasukeru source/artifact packet boundary checks
-- `collision_score=1.0` for PII and confidential signals
-- `ARTIFACT_UNSUPPORTED_CLAIM` treated above the HITL threshold
-- `score == 0.8` remains `DRAFT_REVIEW`
-- `score > 0.8` triggers `PAUSE_FOR_HITL`
-- `NaN` / `inf` scores fail closed to `PAUSE_FOR_HITL`
-- mediator unsafe request keys are rejected
-- missing required artifacts and unknown selected agents are detected by RCV
-- reconciliation loops stop at 3 attempts with `LOOP_LIMIT_EXCEEDED`
-- ARL and RCV verification remain required
-
-The v0.6.0 variant remains local-only and synthetic. It does not fetch real sources, generate real Office files, call external APIs, control real processes, auto-fix, commit, push, or merge.
-
-What the tests verify:
-
-- the safe scenario does not trigger HITL
-- `score == 0.8` remains warning / draft review only
-- `score > 0.8` triggers HITL
-- Maestro does not decide by itself
-- Maestro dispatches only to user-selected agents
-- Tasukeru does not hand raw logs to Mediator
-- Mediator uses masked metadata only
-- PII is masked before mediation
-- confidential signals are masked before mediation
-- `USER_TARGETED_REVISION_PROMPT` creates draft proposals only
-- draft revisions are not auto-applied
-- auto fix / commit / push / merge remain disabled
-- missing required Office artifacts are detected by RCV
-- `chart_profit=0` and `profit=0` are treated as valid values
-- sealed ARL rows preserve system-level final-decider semantics
-- raw simulation logs are opt-in and are not written by default
-- PEL safety-buffer metadata is explicit and reviewable
-- ARL verification succeeds
-- RCV result consistency verification succeeds
-
-The v0.6.0 tests additionally verify:
-
-- `score == 0.8` remains `DRAFT_REVIEW`
-- `score > 0.8` triggers `PAUSE_FOR_HITL`
-- `0.8000001` triggers `PAUSE_FOR_HITL`
-- non-finite scores such as `NaN` and `inf` trigger `PAUSE_FOR_HITL`
-- `first_not_none(0, ...)` preserves zero as a valid value
-- raw source logs and raw artifact logs are not handed to Mediator
-- PII and confidential source signals produce `collision_score=1.0`
-- unsupported claims are treated as above-threshold reconciliation cases
-- artifact conflicts can be resolved after an approved retry
-- secondary source conflicts are reported for review
-- primary source missing and fabricated source signals can stop the run
-- missing required artifacts are detected by RCV
-- unknown selected agents are detected by RCV
-- mediator unsafe request keys are rejected
-- mediator request tampering is rejected
-- reconciliation loop limit stops at 3 attempts
-- ARL verification succeeds
-- RCV result consistency verification succeeds
 
 This simulator is useful for checking:
 
@@ -939,30 +688,79 @@ This simulator is useful for checking:
 - whether Excel formula results and PowerPoint chart values conflict
 - whether Word text, spreadsheet values, and presentation summaries diverge
 - whether the original user instruction remains the comparison baseline
-- whether PII and confidential signals are masked before mediation
-- whether Mediator uses only masked metadata
-- whether `score == 0.8` does not trigger HITL
-- whether `score > 0.8` triggers HITL
+- whether personal-data and confidential signals are masked before mediation
+- whether the mediator uses only masked metadata
+- whether `score == 0.8` does not trigger human review
+- whether `score > 0.8` triggers human review
 - whether user-targeted revision prompts generate draft proposals only
-- whether Maestro avoids self-decision and only executes explicit user-selected actions
+- whether the coordinator avoids self-decision and only executes explicit user-selected actions
 
-The v0.5.1 draft variant is useful for checking:
+### 9. Trust-to-risk automation draft extension
+
+This draft extension adds automation-entry and automation-continuation diagnostics to the Office task mediation line.
+
+Core characteristics:
+
+- trust-score based automation entry diagnosis
+- `trust_score == 0.9` is not auto eligible
+- `trust_score > 0.9` may become an automation candidate after user approval
+- automation-risk based continuation diagnosis after automation starts
+- `automation_risk_score < 0.1` continues automation
+- `automation_risk_score >= 0.1` triggers fail-closed suspension
+- coordinator relay-only temporary automation suspension
+- user review required for automation resume
+- diagnostic helper remains diagnostic-only and does not directly command agents
+- no automatic fix, commit, push, or merge
+
+This extension is useful for checking:
 
 - whether automation entry remains gated by `trust_score > 0.9`
 - whether `trust_score == 0.9` is treated as non-eligible
-- whether User approval is required before `AUTO_ACTIVE`
+- whether user approval is required before automation becomes active
 - whether automation continuation switches from trust scoring to risk scoring
 - whether `automation_risk_score == 0.1` fails closed into suspension
-- whether `automation_risk_score >= 0.1` triggers `AUTO_SUSPENDED_BY_4D`
-- whether Maestro temporarily suspends automation as a relay without autonomous decision authority
-- whether User HITL is required to resume suspended automation
-- whether auto fix / commit / push / merge remain disabled
+- whether user review is required to resume suspended automation
+- whether automatic fix, commit, push, and merge remain disabled
+
+### 10. Source-grounded Office orchestration simulation
+
+This simulator extends the Office task mediation line from artifact consistency checking into source-grounded multi-agent orchestration.
+
+Core additions:
+
+- primary / secondary / tertiary synthetic source agents
+- source evidence packets instead of raw source logs
+- source-to-artifact consistency checks
+- Office draft artifacts grounded in source packets
+- mediator reconciliation for source conflicts and artifact contradictions
+- diagnostic source/artifact packet boundary checks
+- personal-data and confidential-signal masking
+- unsupported-claim detection
+- missing artifact detection
+- unknown selected-agent detection
+- request tampering detection
+- retry loop with a fixed loop limit
+- final output remains draft-only and requires user review
+
+The simulator remains local-only and synthetic. It does not fetch real sources, generate real Office files, call external APIs, control real processes, auto-fix, commit, push, or merge.
+
+This simulator is useful for checking:
+
+- whether source packets and generated artifacts remain consistent
+- whether unsupported claims are routed to review
+- whether source conflicts are reported
+- whether missing required artifacts are detected
+- whether unknown selected agents are detected
+- whether unsafe mediator request keys are rejected
+- whether request tampering is rejected
+- whether reconciliation stops after the loop limit
+- whether audit logs and generated artifacts remain consistent
 
 ## Batch execution and resume
 
-This repository also includes batch-style orchestration examples.
+This repository includes batch-style orchestration examples.
 
-Batch execution means that multiple document-related tasks can be evaluated as a single orchestration run while preserving gate decisions, audit records, and interruption points.
+Batch execution means that multiple document-related tasks can be evaluated as a single orchestration run while preserving check decisions, audit records, and interruption points.
 
 ### Mediator-based batch flow
 
@@ -970,40 +768,40 @@ The mediator-based simulator can accept multiple tasks in one run.
 
 Example use cases:
 
-- evaluate several spreadsheet / slide tasks together
-- compare task-level gate outcomes
-- check HITL behavior across multiple tasks
+- evaluate several spreadsheet or slide tasks together
+- compare task-level check outcomes
+- check human-review behavior across multiple tasks
 - verify mediator advice before orchestration
-- confirm that each task still passes through the fixed gate order
+- confirm that each task still passes through the fixed check order
 
 This line is useful when the focus is on:
 
-- multi-task gate behavior
+- multi-task check behavior
 - mediator separation
-- RFL / HITL transitions
+- ambiguity review and human-review transitions
 - reason-code stability
 - lightweight orchestration tests
 
 Example task sequence:
 
-- T1: xlsx task
-- T2: pptx task
-- T3: ambiguous task requiring RFL / HITL
+- T1: spreadsheet task
+- T2: presentation task
+- T3: ambiguous task requiring human review
 
 Expected behavior:
 
-- each task is normalized by the Agent
-- each task receives Mediator advice
-- each task is evaluated by the Orchestrator
-- paused tasks remain non-sealed unless Ethics / ACC performs a sealed stop
-- dispatch only occurs when the final decision is `RUN`
+- each task is normalized by the agent
+- each task receives mediator advice
+- each task is evaluated by the orchestrator
+- paused tasks remain non-final unless a high-risk safety check blocks them
+- dispatch only occurs when the final decision is to continue
 
 ### Document-task batch flow
 
-The production-oriented document orchestrator simulator uses a fixed document-task sequence:
+The document-task checkpoint simulator uses a fixed document-task sequence:
 
 ```text
-Word → Excel → PPT
+Word → Excel → PowerPoint
 ```
 
 This line is useful when the focus is on:
@@ -1012,20 +810,20 @@ This line is useful when the focus is on:
 - per-task checkpointing
 - interruption and resume
 - artifact integrity records
-- HMAC-protected checkpoints
-- HMAC-SHA256 audit log hash chains
+- protected checkpoints
+- audit log hash chains
 - tamper-evidence detection
 
 If a task is interrupted, the simulator records:
 
 - failed task ID
-- failed layer
+- failed check
 - reason code
 - checkpoint path
 - resume requirement
-- HITL confirmation requirement when applicable
+- human confirmation requirement when applicable
 
-A later run can resume from the checkpoint after HITL confirmation when required.
+A later run can resume from the checkpoint after human confirmation when required.
 
 ## Batch scripts
 
@@ -1033,9 +831,9 @@ Batch scripts may be used as convenience wrappers for local simulation runs.
 
 Recommended script examples:
 
-- `scripts/run_doc_orchestrator_demo.bat`
-- `scripts/run_doc_orchestrator_resume.bat`
-- `scripts/run_doc_orchestrator_tamper_check.bat`
+- local demo run
+- checkpoint resume run
+- tamper-evidence check run
 
 These scripts should be treated as local developer utilities only.
 
@@ -1043,17 +841,17 @@ They should not:
 
 - embed production HMAC keys
 - upload or submit artifacts automatically
-- bypass HITL confirmation
+- bypass human confirmation
 - delete files automatically
 - process real personal or confidential data
 - change license or safety semantics
-- weaken tests or gate invariants
+- weaken tests or safety-check invariants
 
 For local demonstrations, a demo key mode may be used only when the simulator explicitly supports it. Production-like runs should use an environment variable or a protected key file for HMAC keys.
 
 ### Example batch-script roles
 
-#### `run_doc_orchestrator_demo.bat`
+#### Local demo script
 
 Purpose:
 
@@ -1062,11 +860,7 @@ Purpose:
 - write audit logs and simulated artifacts to local output directories
 - avoid external submission
 
-Typical use:
-
-- Local demo run with demo key mode.
-
-#### `run_doc_orchestrator_resume.bat`
+#### Resume script
 
 Purpose:
 
@@ -1075,88 +869,74 @@ Purpose:
 - verify completed artifacts before continuing
 - preserve checkpoint integrity
 
-Typical use:
-
-- Resume interrupted Word / Excel / PPT simulation after HITL confirmation.
-
-#### `run_doc_orchestrator_tamper_check.bat`
+#### Tamper-check script
 
 Purpose:
 
-- verify audit-log / checkpoint / artifact integrity behavior
+- verify audit-log, checkpoint, and artifact integrity behavior
 - demonstrate tamper-evidence detection
-- pause for HITL if integrity verification fails
-
-Typical use:
-
-- Local tamper-evidence simulation.
+- pause for human review if integrity verification fails
 
 ## Recommended reading order
 
-For gate behavior and KAGE-like invariants:
+For gate behavior and mediator separation:
 
-- `ai_doc_orchestrator_with_mediator_v1_0.py`
-- `tests/test_doc_orchestrator_with_mediator_v1_0.py`
+- read the mediator-based gate simulator
+- read its corresponding tests
 
-For checkpoint, resume, artifact integrity, and HMAC-chain behavior:
+This path is useful for studying fixed check order, human-review transitions, blocked and non-blocked behavior, mediator separation, and lightweight multi-task orchestration behavior.
 
-- Production-oriented Doc Orchestrator Simulator
-- `v1.2.6-hash-chain-checkpoint`
+For checkpoint, resume, artifact integrity, and hash-chain behavior:
 
-For Emergency Contract × KAGE integration behavior:
+- read the document-task checkpoint simulator
+- read its corresponding tests
 
-- `emergency_contract_kage_orchestrator_v1_0.py`
-- `tests/test_emergency_contract_kage_orchestrator_v1_0.py`
+This path is useful for studying batch execution, checkpointing, artifact verification, tamper evidence, and resume behavior.
 
-This path is useful for studying how a concrete emergency-contract scenario can be evaluated by KAGE-style gates, HITL checkpoints, ARL/HMAC verification, and simulated artifact dispatch without real-world control or legal effect.
+For emergency-contract behavior:
 
-For Agent Incident Mediation behavior:
+- read the emergency contract gate-orchestration simulator
+- read its corresponding tests
 
-- `agent_incident_mediation_sim_v0_2.py`
-- `tests/test_agent_incident_mediation_sim_v0_2.py`
+This path is useful for studying how a concrete emergency-contract scenario can be evaluated by fixed checks, human-review checkpoints, audit verification, and simulated artifact dispatch without real-world control or legal effect.
 
-This path is useful for studying how PseudoTasukeru detects a simulated log/output mismatch, escalates to Mediator, triggers HITL, records the user instruction, and verifies ARL / 3D-DAC / RCV consistency without external side effects.
+For agent incident mediation behavior:
 
-For Code Anomaly Maestro Handoff behavior:
+- read the agent incident mediation simulator
+- read its corresponding tests
 
-- `agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
-- `tests/test_agent_code_anomaly_maestro_handoff_sim_v0_3_1.py`
+This path is useful for studying how a diagnostic helper detects a simulated log/output mismatch, escalates to a mediator, triggers human review, records the user instruction, and verifies output consistency without external side effects.
 
-This path is useful for studying how PseudoTasukeru detects a metadata-only code-contract anomaly, escalates to Maestro, triggers HITL, records the simulated user instruction, and executes either `AUTHORIZE_SEAL` or `QUARANTINE_HANDOFF_RESUME` without external side effects.
+For code anomaly handoff behavior:
 
-For Agent Incident PEL USER_MAESTRO handoff behavior:
+- read the code anomaly handoff simulator
+- read its corresponding tests
 
-- `agent_incident_mediation_pel_user_maestro_sim_v0_3_1.py`
-
-This path is useful for studying what changed from the v0.2 incident flow: PEL risk estimation, USER_MAESTRO HITL, and checkpoint-based standby resume.
+This path is useful for studying how metadata-only code-contract anomalies are detected, escalated to a user-controlled coordinator, reviewed by a human, and handled through safe checkpoint handoff without external side effects.
 
 For Office task mediation behavior:
 
-- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
-- `tests/test_agent_office_task_mediation_tasukeru_maestro_sim_v0_5_0.py`
+- read the Office task mediation simulator
+- read its corresponding tests
 
-For the trust-to-risk automation draft extension:
-
-- `agent_office_task_mediation_tasukeru_maestro_sim_v0_5_1_trust_to_risk.py`
-
-This path is useful for studying Word / Excel / PowerPoint-style consistency checks, masked metadata handoff, threshold-based HITL behavior, and user-targeted draft revision without automatic application. The v0.5.1 draft extension additionally demonstrates trust-score based automation entry, automation-risk based 4D suspension, fail-closed `AUTO_SUSPENDED_BY_4D`, and User HITL required for automation resume.
+This path is useful for studying Word / Excel / PowerPoint-style consistency checks, masked metadata handoff, threshold-based human-review behavior, and user-targeted draft revision without automatic application.
 
 For source-grounded Office orchestration behavior:
 
-- `agent_source_grounded_office_orchestration_sim_v0_6_0.py`
-- `tests/test_agent_source_grounded_office_orchestration_sim_v0_6_0.py`
+- read the source-grounded Office orchestration simulator
+- read its corresponding tests
 
-This path is useful for studying how Source Agents, Source Evidence Packets, Office DRAFT artifacts, Mediator reconciliation, Tasukeru diagnostic packet handling, Maestro HITL relay, and loop-limit enforcement work together without external side effects.
+This path is useful for studying how source agents, source evidence packets, Office draft artifacts, mediator reconciliation, diagnostic packet handling, human-review relay, and loop-limit enforcement work together without external side effects.
 
 For behavior verification, always read the implementation together with the corresponding tests.
 
 This is especially important for:
 
-- gate invariants
+- safety-check invariants
 - reason-code expectations
-- HITL transitions
-- sealed / non-sealed behavior
-- checkpoint / resume behavior
+- human-review transitions
+- blocked and non-blocked behavior
+- checkpoint and resume behavior
 - tamper-evidence behavior
 - reproducibility checks
 - benchmark expectations
@@ -1166,15 +946,15 @@ This is especially important for:
 
 In this repository, tests often define the expected behavior of the simulators and orchestration logic.
 
-When checking behavior, it is usually better to read the implementation together with the corresponding tests.
+When checking behavior, read the implementation together with the corresponding tests.
 
 Tests may verify:
 
-- fixed gate order
+- fixed check order
 - fail-closed behavior
-- HITL escalation
-- RFL non-sealing behavior
-- Ethics / ACC sealing constraints
+- human-review escalation
+- ambiguity review behavior
+- blocking constraints
 - checkpoint recovery
 - audit-log integrity
 - artifact hash verification
@@ -1183,10 +963,10 @@ Tests may verify:
 - batch-task behavior
 - CLI behavior
 - emergency-contract scenario flow
-- fabricated-evidence pause behavior
-- real-world control sealed-stop behavior
-- USER / ADMIN HITL rejection paths
-- ARL/HMAC tamper detection
+- fabricated-evidence handling
+- real-world control blocking
+- user/admin rejection paths
+- tamper-evidence detection
 
 A newer version number does not always mean that the file is the primary recommended entry point. Some files are preserved for historical comparison, reproducibility, or versioned experiments.
 
@@ -1202,11 +982,13 @@ Common decisions include:
 
 General interpretation:
 
-- `RUN`: the simulator may continue to the next gate or dispatch step
+- `RUN`: the simulator may continue to the next check or dispatch step
 - `PAUSE_FOR_HITL`: the simulator should pause and wait for human review
 - `STOPPED`: the simulator has reached a blocking condition
 
-In KAGE-like simulator lines, RFL should pause for HITL rather than seal. Sealing behavior should remain limited to higher-risk layers such as Ethics or ACC, depending on the simulator contract.
+Ambiguous or relative requests should pause for human review instead of being silently treated as safe.
+
+Higher-risk conditions, especially external side effects, policy violations, or unsafe actions, should be blocked or routed to human review depending on the simulator contract.
 
 ## Audit and integrity model
 
@@ -1214,7 +996,7 @@ Audit and integrity behavior differs by simulator line.
 
 The mediator-based simulator focuses on lightweight audit events and safe context logging.
 
-The production-oriented document simulator adds stronger integrity controls:
+The document-task checkpoint simulator adds stronger integrity controls:
 
 - audit log hash chain
 - row-level HMAC
@@ -1235,15 +1017,15 @@ A checkpoint may record:
 - run ID
 - current task ID
 - failed task ID
-- failed layer
+- failed check
 - reason code
 - task status
 - artifact path
 - artifact hash
 - whether resume is allowed
-- whether HITL is required before resume
+- whether human review is required before resume
 
-When resuming, completed artifacts should be verified before the simulator continues. If verification fails, the run should pause for HITL rather than continue silently.
+When resuming, completed artifacts should be verified before the simulator continues. If verification fails, the run should pause for human review rather than continue silently.
 
 ## Artifact model
 
@@ -1258,7 +1040,7 @@ Depending on the simulator line, outputs may include:
 - integrity metadata
 - summary records
 
-The repository should not describe these simulated outputs as complete production Office documents unless actual document-generation code is added and tested.
+The repository should not describe simulated outputs as complete production Office documents unless actual document-generation code is added and tested.
 
 ## External side effects
 
@@ -1272,7 +1054,7 @@ External side effects include actions such as:
 - calling external APIs
 - changing license semantics
 
-These actions should remain blocked, prohibited, or HITL-gated depending on the simulator contract.
+These actions should remain blocked, prohibited, or human-review gated depending on the simulator contract.
 
 No script or simulator should silently perform external submission.
 
@@ -1311,3 +1093,7 @@ See `LICENSE_POLICY.md` for details.
 ## Disclaimer
 
 This repository is provided for research and educational purposes only.
+
+It is not a production safety system, legal tool, medical tool, financial tool, regulatory compliance tool, or autonomous control system.
+
+Use it only in local, authorized, defensive, and educational contexts.
