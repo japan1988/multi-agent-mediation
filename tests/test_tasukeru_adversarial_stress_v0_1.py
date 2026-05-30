@@ -10,7 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import scripts.tasukeru_adversarial_stress_v0_1 as stress
+# Import after adding the repository root so the local scripts package resolves in test execution.
+import scripts.tasukeru_adversarial_stress_v0_1 as stress  # noqa: E402
 
 
 def _summary_without_timestamp(summary: stress.StressSummary) -> dict[str, Any]:
