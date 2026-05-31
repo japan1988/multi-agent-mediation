@@ -157,3 +157,22 @@ def test_rfl_pause_then_user_stop_ends_without_seal():
     assert fin and fin[-1]["final_decider"] == sim.DECIDER_USER
     assert fin[-1]["sealed"] is False
     assert fin[-1]["decision"] == sim.DECISION_STOP
+
+
+def test_run_simulation_wrapper_preserves_second_run_rfl_stop_contract():
+    """Keep the unique wrapper-path check formerly present in the duplicate file."""
+    results = sim.run_simulation(runs=2, fabricate=False, hitl_rfl="stop")
+
+    assert "runs" in results
+    assert len(results["runs"]) == 2
+
+    second_run = results["runs"][1]
+    assert second_run["run_id"] == "SIM#B002"
+    assert second_run["final_state"] == "STOPPED"
+    assert second_run["sealed"] is False
+
+    rfl_rows = [row for row in second_run["arl"] if row["layer"] == sim.LAYER_RFL]
+    assert rfl_rows, "expected relativity_gate row through run_simulation wrapper"
+    assert rfl_rows[-1]["decision"] == sim.DECISION_PAUSE
+    assert rfl_rows[-1]["sealed"] is False
+    assert rfl_rows[-1]["overrideable"] is True
