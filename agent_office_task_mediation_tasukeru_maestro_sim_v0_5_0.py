@@ -202,13 +202,19 @@ def first_not_none(*values: Any) -> Any:
 
 
 def threshold_decision(score: float) -> str:
-    """0.8 exactly is warning/draft only; only > 0.8 triggers HITL."""
-    score = round(float(score), 6)
-    if score > THRESHOLD:
+    """Fail closed for invalid/non-finite scores; only exact 0.8 is draft-only."""
+    try:
+        score_value = float(score)
+    except (TypeError, ValueError):
         return "PAUSE_FOR_HITL"
-    if math.isclose(score, THRESHOLD, rel_tol=0.0, abs_tol=1e-9):
+
+    if not math.isfinite(score_value):
+        return "PAUSE_FOR_HITL"
+    if score_value > THRESHOLD:
+        return "PAUSE_FOR_HITL"
+    if score_value == THRESHOLD:
         return "DRAFT_REVIEW"
-    if score >= 0.4:
+    if score_value >= 0.4:
         return "REVIEW_RECOMMENDED"
     return "INFO_ONLY"
 

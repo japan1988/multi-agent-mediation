@@ -298,3 +298,18 @@ def test_authorize_seal_requires_user_action(tmp_path: Path) -> None:
     assert all(row["overrideable"] is False for row in sealed_rows)
     assert all(row["final_decider"] == "SYSTEM" for row in sealed_rows)
     assert all(row["reason_code"] == "USER_AUTHORIZED_SEAL" for row in sealed_rows)
+
+def test_threshold_decision_is_fail_closed_at_boundary() -> None:
+    module = load_module()
+    cases = [
+        (0.8, "DRAFT_REVIEW"),
+        (0.8000001, "PAUSE_FOR_HITL"),
+        (float("nan"), "PAUSE_FOR_HITL"),
+        (float("inf"), "PAUSE_FOR_HITL"),
+        (float("-inf"), "PAUSE_FOR_HITL"),
+        ("bad-score", "PAUSE_FOR_HITL"),
+    ]
+
+    for score, expected in cases:
+        assert module.threshold_decision(score) == expected
+
