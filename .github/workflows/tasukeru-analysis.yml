@@ -35,8 +35,8 @@ on:
       - "**/*.jsonl"
   workflow_dispatch:
 
-# Default to read-only. Write permission is granted only in the
-# post-critical-comment job, which does not checkout or execute PR code.
+# Read-only workflow. Advisory results and PR-comment text are uploaded only as
+# DRAFT artifacts for human review; this workflow does not post PR comments.
 permissions:
   contents: read
 
@@ -575,10 +575,10 @@ jobs:
           # - Do not fail the GitHub Actions job.
           # - Stop on the Tasukeru side by emitting HITL_REQUIRED + gate_decision=STOPPED
           #   for active/protected paths.
-          # - Keep public PR comments sanitized and folded.
+          # - Keep PR-comment DRAFT artifacts sanitized and folded.
           #
           # This is deliberately conservative and avoids known false positives:
-          # - workflow's own GitHub PR-comment API calls
+          # - workflow's own read-only GitHub PR-files API calls
           # - *_TOKENS vocabulary constants
           # - known state-store reset unlink calls
           # - nosec + HITL-gated + shell=False subprocess calls
@@ -2907,7 +2907,7 @@ jobs:
                   - apply fixes automatically
                   - merge pull requests automatically
 
-                  Only `HITL_REQUIRED` findings may produce a PR comment.
+                  Only `HITL_REQUIRED` findings may produce a PR comment DRAFT artifact for human review.
 
                   Other findings, including `FIX_RECOMMENDED`, `REVIEW_RECOMMENDED`,
                   `NOISE_CANDIDATE`, and `INFO_ONLY`, are collected in the GitHub Step Summary
@@ -2934,7 +2934,7 @@ jobs:
                   - 自動修正の適用
                   - Pull Request の自動 merge
 
-                  PR comment の対象になり得るのは、原則として `HITL_REQUIRED` finding のみです。
+                  PR comment DRAFT artifact の対象になり得るのは、原則として `HITL_REQUIRED` finding のみです。
 
                   `FIX_RECOMMENDED`、`REVIEW_RECOMMENDED`、`NOISE_CANDIDATE`、`INFO_ONLY`
                   などの finding は、GitHub Step Summary と workflow artifacts に集約され、
@@ -6165,7 +6165,7 @@ jobs:
               """Classify public-safe risk level for safety impact simulation.
 
               The level is intentionally coarse. Detailed reasoning remains in artifacts/logs,
-              not in public PR comments.
+              not in PR comment DRAFT artifacts.
               """
               decision = str(entry.get("decision", entry.get("level", "")))
               severity = str(entry.get("severity", "")).upper()
@@ -6269,7 +6269,7 @@ jobs:
 
               SIS does not execute exploit code, perform external calls, apply fixes,
               or replace human review. It estimates review impact and records details
-              in artifacts/logs. Public PR comments only receive a coarse risk level.
+              in artifacts/logs. PR comment DRAFT artifacts contain only a coarse risk level.
               """
               vaf_entries = three_d_vaf_payload.get("entries", []) if isinstance(three_d_vaf_payload, dict) else []
               vaf_by_fingerprint = {
@@ -6295,7 +6295,7 @@ jobs:
               payload = {
                   "schema_version": "sis-v0.1",
                   "tool": "tasukeru_safety_impact_simulation",
-                  "purpose": "Simulate defensive safety impact scope and route HITL without exposing details in PR comments.",
+                  "purpose": "Simulate defensive safety impact scope and route HITL without exposing details in PR comment DRAFT artifacts.",
                   "overall_risk_level": overall_risk_level,
                   "comment_policy": {
                       "comment_when_no_problem": False,
@@ -6325,12 +6325,12 @@ jobs:
 
               with sis_md_path.open("w", encoding="utf-8") as f:
                   f.write("# Tasukeru Safety Impact Simulation\n\n")
-                  f.write("This report is artifact/log only. Public PR comments should expose only the coarse risk level and HITL status.\n\n")
+                  f.write("This report is artifact/log only. PR comment DRAFT artifacts should contain only the coarse risk level and HITL status.\n\n")
                   f.write("## Policy\n\n")
                   f.write("- Defensive review and handoff only.\n")
                   f.write("- No exploit execution, payloads, attack steps, external attacks, real API connections, or real infrastructure control.\n")
                   f.write("- Detailed reasoning stays in workflow artifacts/logs.\n")
-                  f.write("- If no HITL_REQUIRED or safety-impact risk is detected, no PR comment should be posted.\n\n")
+                  f.write("- If no HITL_REQUIRED or safety-impact risk is detected, no PR comment DRAFT needs to be prepared.\n\n")
                   f.write("## Summary\n\n")
                   f.write(f"- Overall risk level: `{overall_risk_level}`\n")
                   f.write(f"- Entries: `{len(sis_entries)}`\n")
@@ -7358,9 +7358,9 @@ jobs:
                   f.write("- Auto fix: false\n")
                   f.write("- Auto merge: false\n\n")
                   f.write("## Security output policy\n\n")
-                  f.write("- Public PR comments must not include exploit payloads.\n")
-                  f.write("- Public PR comments must not include attack steps.\n")
-                  f.write("- Public PR comments must focus on detection and safe remediation.\n\n")
+                  f.write("- PR comment DRAFT artifacts must not include exploit payloads.\n")
+                  f.write("- PR comment DRAFT artifacts must not include attack steps.\n")
+                  f.write("- PR comment DRAFT artifacts must focus on detection and safe remediation.\n\n")
                   f.write("## Detailed artifacts\n\n")
                   f.write("- `tasukeru_hitl_review.md`\n")
                   f.write("- `tasukeru_hitl_review.json`\n")
@@ -7403,7 +7403,7 @@ jobs:
                   sis_risk_level = str(sis_metadata.get("overall_risk_level") or ("MEDIUM" if critical else "NONE"))
                   if not critical:
                       f.write("<!-- tasukeru-analysis:no-critical -->\n")
-                      f.write("No HITL_REQUIRED incidents. No PR comment should be posted.\n")
+                      f.write("No HITL_REQUIRED incidents. No PR comment DRAFT is required.\n")
                       f.write("Details, if any, are stored in workflow artifacts/logs.\n")
                       return
 
@@ -7415,7 +7415,7 @@ jobs:
                   f.write(f"- HITL_REQUIRED: `{len(critical)}`\n")
                   f.write("- Details: see workflow artifacts / Tasukeru logs.\n")
                   f.write("- Key artifacts: `tasukeru_safety_impact_simulation.md`, `tasukeru_safety_impact_simulation.json`, `tasukeru_3d_vulnerability_review.md`, `tasukeru_3d_vulnerability_review.json`, `tasukeru_hitl_review.md`, `tasukeru_hitl_review.json`\n\n")
-                  f.write("This PR comment contains only coarse risk metadata; detailed findings stay in workflow artifacts/logs.\n")
+                  f.write("This PR comment DRAFT contains only coarse risk metadata; detailed findings stay in workflow artifacts/logs. It is not posted automatically.\n")
                   f.write("This is advisory-only and requires human review before any action.\n")
 
               github_summary = os.environ.get("GITHUB_STEP_SUMMARY", "")
@@ -9524,361 +9524,4 @@ jobs:
           set -euo pipefail
           echo "Tasukeru advisory analysis completed."
           echo "No branch, PR, commit, push, auto-fix, or auto-merge was performed."
-
-  post-critical-comment:
-    name: post critical PR comment
-    runs-on: ubuntu-latest
-    needs: advisory-analysis
-    if: always() && github.event_name == 'pull_request'
-
-    permissions:
-      contents: read
-      pull-requests: write
-      issues: write
-
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
-    defaults:
-      run:
-        shell: bash
-
-    steps:
-      - name: Download advisory logs
-        uses: actions/download-artifact@v6
-        continue-on-error: true
-        with:
-          name: tasukeru-advisory-logs
-          path: .
-
-      - name: Post Tasukeru PR announcement
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          POST_SCRIPT: |
-            from __future__ import annotations
-            
-            import json
-            import os
-            import urllib.error
-            import urllib.request
-            from pathlib import Path
-            from typing import Any
-            
-            state_path = Path("tasukeru_notification_state.json")
-            critical_comment_path = Path("tasukeru_pr_comment.md")
-            hitl_json_path = Path("tasukeru_hitl_review.json")
-            announcement_md_path = Path("tasukeru_announcement.md")
-            announcement_json_path = Path("tasukeru_announcement.json")
-            
-            if not state_path.exists():
-                print("Tasukeru notification state not found; skipping comment.")
-                raise SystemExit(0)
-            
-            event_path = os.environ.get("GITHUB_EVENT_PATH", "")
-            token = os.environ.get("GITHUB_TOKEN", "")
-            repo_name = os.environ.get("GITHUB_REPOSITORY", "")
-            
-            if not event_path or not token or not repo_name:
-                print("Missing GitHub event/token/repository context; skipping comment.")
-                raise SystemExit(0)
-            
-            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
-            pull_request = event.get("pull_request")
-            if not isinstance(pull_request, dict):
-                print("No pull_request context; skipping comment.")
-                raise SystemExit(0)
-            
-            pr_number = pull_request.get("number")
-            owner, repo = repo_name.split("/", 1)
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-            
-            def read_json_file(path: Path, default: Any) -> Any:
-                try:
-                    if not path.exists():
-                        return default
-                    text = path.read_text(encoding="utf-8").strip()
-                    if not text:
-                        return default
-                    return json.loads(text)
-                except Exception:
-                    return default
-            
-            announcement = read_json_file(announcement_json_path, {})
-            hitl_review = read_json_file(hitl_json_path, {})
-            sis_json_path = Path("tasukeru_safety_impact_simulation.json")
-            sis_payload = read_json_file(sis_json_path, {})
-            result_consistency_verify_path = Path("tasukeru_result_consistency_verify.json")
-            result_consistency_verify = read_json_file(result_consistency_verify_path, {})
-            announcement_md = (
-                announcement_md_path.read_text(encoding="utf-8")
-                if announcement_md_path.exists()
-                else "Tasukeru announcement artifact was not generated."
-            )
-            critical_comment = (
-                critical_comment_path.read_text(encoding="utf-8")
-                if critical_comment_path.exists()
-                else ""
-            )
-            
-            review_queue = announcement.get("review_queue", {}) if isinstance(announcement, dict) else {}
-            arl = announcement.get("arl", {}) if isinstance(announcement, dict) else {}
-            confidence = announcement.get("confidence", {}) if isinstance(announcement, dict) else {}
-            policy = announcement.get("policy", {}) if isinstance(announcement, dict) else {}
-            drafts = announcement.get("drafts", {}) if isinstance(announcement, dict) else {}
-            look_first = announcement.get("look_first", []) if isinstance(announcement, dict) else []
-            recommended_next_actions = (
-                announcement.get("recommended_next_actions", [])
-                if isinstance(announcement, dict)
-                else []
-            )
-            conclusion_ja = str(
-                announcement.get("conclusion_ja")
-                or "Tasukeru announcement summary is unavailable. Check workflow artifacts."
-            )
-            mode = str(announcement.get("mode") or "UNKNOWN")
-            
-            incidents = [
-                incident for incident in state.get("incidents", [])
-                if incident.get("notification_required")
-            ]
-            hitl_required = int(
-                review_queue.get("hitl_required")
-                if review_queue.get("hitl_required") is not None
-                else state.get("critical_count", 0)
-            )
-            arl_verified = arl.get("verified")
-            sis_risk_level = str(sis_payload.get("overall_risk_level") or "UNKNOWN") if isinstance(sis_payload, dict) else "UNKNOWN"
-            sis_counts = sis_payload.get("counts", {}) if isinstance(sis_payload, dict) else {}
-            result_consistency_failed = (
-                isinstance(result_consistency_verify, dict)
-                and result_consistency_verify.get("verified") is False
-            )
-            
-            # Keep PR noise low and keep policy consistent:
-            # comment only when human intervention is required, ARL verification failed,
-            # or the result-consistency auditor detected a process/output mismatch.
-            if hitl_required <= 0 and arl_verified is not False and not result_consistency_failed:
-                print("No HITL_REQUIRED findings, ARL verification did not fail, and result consistency verified; skipping PR comment.")
-                raise SystemExit(0)
-            
-            if hitl_required > 0:
-                status_label = "REVIEW REQUIRED"
-                headline = (
-                    "3D safety review detected a potential risk. "
-                    "Only the risk level is shown here; details are in workflow artifacts/logs."
-                )
-            elif arl_verified is False:
-                status_label = "ARL VERIFY FAILED"
-                headline = "ARL verification failed. Check artifacts before using this summary for review."
-            else:
-                status_label = "RESULT CONSISTENCY FAILED"
-                headline = "Result consistency verification failed. Check artifacts before using this summary for review."
-            
-            auto_policy_lines = [
-                f"- Auto branch creation: `{policy.get('auto_branch_allowed', False)}`",
-                f"- Auto PR creation: `{policy.get('auto_pr_creation_allowed', False)}`",
-                f"- Auto commit: `{policy.get('auto_commit_allowed', False)}`",
-                f"- Auto push: `{policy.get('auto_push_allowed', False)}`",
-                f"- Auto fix: `{policy.get('autofix_allowed', False)}`",
-                f"- Auto merge: `{policy.get('auto_merge_allowed', False)}`",
-            ]
-            
-            def collect_hitl_entries(payload: Any) -> list[dict[str, Any]]:
-                if not isinstance(payload, dict):
-                    return []
-                candidates: list[Any] = []
-                for key in ("findings", "entries", "hitl_required", "items"):
-                    value = payload.get(key)
-                    if isinstance(value, list):
-                        candidates.extend(value)
-                # Some artifacts nest findings under review_queue or results.
-                for key in ("review_queue", "results"):
-                    value = payload.get(key)
-                    if isinstance(value, dict):
-                        nested = value.get("findings") or value.get("entries") or []
-                        if isinstance(nested, list):
-                            candidates.extend(nested)
-
-                hitl: list[dict[str, Any]] = []
-                for item in candidates:
-                    if not isinstance(item, dict):
-                        continue
-                    decision = str(item.get("decision", item.get("level", "")))
-                    if decision == "HITL_REQUIRED":
-                        hitl.append(item)
-                return hitl
-
-            def sanitize_for_public_comment(value: Any, limit: int = 220) -> str:
-                text = str(value or "").replace("\n", " ").strip()
-                text = text.replace("`", "'")
-                # Keep public comments detection-oriented. Detailed snippets stay in artifacts.
-                for token in ("payload", "exploit", "attack steps", "exfiltrate"):
-                    text = text.replace(token, "[redacted-detail]")
-                if len(text) > limit:
-                    return text[: limit - 1] + "…"
-                return text
-
-            hitl_entries = collect_hitl_entries(hitl_review)
-            folded_hitl_lines: list[str] = []
-            if hitl_required > 0:
-                folded_hitl_lines.extend(
-                    [
-                        "Sanitized HITL summary. Full details are in `tasukeru_hitl_review.md` and `tasukeru_hitl_review.json`.",
-                        "",
-                    ]
-                )
-                if hitl_entries:
-                    for index, entry in enumerate(hitl_entries[:10], start=1):
-                        location = str(entry.get("file") or "repository")
-                        if entry.get("line"):
-                            location = f"{location}:{entry.get('line')}"
-                        folded_hitl_lines.extend(
-                            [
-                                f"{index}. `{sanitize_for_public_comment(entry.get('reason_code'))}`",
-                                f"   - Source: `{sanitize_for_public_comment(entry.get('source'))}`",
-                                f"   - Location: `{sanitize_for_public_comment(location)}`",
-                                f"   - Gate: `{sanitize_for_public_comment(entry.get('gate_decision', ''))}`",
-                                f"   - Message: {sanitize_for_public_comment(entry.get('message'))}",
-                            ]
-                        )
-                    if len(hitl_entries) > 10:
-                        folded_hitl_lines.append(f"- ... {len(hitl_entries) - 10} more HITL entries are kept in artifacts.")
-                else:
-                    for index, incident in enumerate(incidents[:10], start=1):
-                        folded_hitl_lines.append(
-                            f"{index}. `{sanitize_for_public_comment(incident.get('reason_code'))}` "
-                            f"at `{sanitize_for_public_comment(incident.get('representative_file'))}`"
-                        )
-                    if not incidents:
-                        folded_hitl_lines.append("- HITL entries were not expanded; open the artifacts listed below.")
-
-            artifact_names = [
-                "tasukeru_safety_impact_simulation.md",
-                "tasukeru_safety_impact_simulation.json",
-                "tasukeru_trust_boundary_risk_report.md",
-                "tasukeru_trust_boundary_risk_report.json",
-                "tasukeru_trust_boundary_risk_verify.json",
-                "tasukeru_3d_vulnerability_review.md",
-                "tasukeru_3d_vulnerability_review.json",
-                "tasukeru_dimension_dependency_report.md",
-                "tasukeru_dimension_dependency_report.json",
-                "tasukeru_dimension_dependency_verify.json",
-                "tasukeru_probabilistic_escalation_report.md",
-                "tasukeru_probabilistic_escalation_report.json",
-                "tasukeru_probabilistic_escalation_verify.json",
-                "tasukeru_hitl_review.md",
-                "tasukeru_hitl_review.json",
-                "tasukeru_result_consistency_report.md",
-                "tasukeru_result_consistency_report.json",
-                "tasukeru_result_consistency_verify.json",
-                "tasukeru_arl_verify.json",
-            ]
-            marker = "<!-- tasukeru-analysis:critical-summary -->"
-            if hitl_required > 0:
-                decision_label = "HITL_REQUIRED"
-            elif arl_verified is False:
-                decision_label = "ARL_VERIFY_FAILED"
-            else:
-                decision_label = "RESULT_CONSISTENCY_FAILED"
-            artifact_lines = [f"- `{name}`" for name in artifact_names]
-            comment_body = "\n".join(
-                [
-                    marker,
-                    "",
-                    "## Tasukeru Safety Review",
-                    "",
-                    headline,
-                    "",
-                    "### Public summary",
-                    "",
-                    f"- Risk level: `{sis_risk_level}`",
-                    f"- Decision: `{decision_label}`",
-                    f"- HITL_REQUIRED: `{hitl_required}`",
-                    "- Details: see workflow artifacts / Tasukeru logs.",
-                    "- Public comment policy: risk level only.",
-                    "",
-                    "### Review artifacts",
-                    "",
-                    *artifact_lines,
-                    "",
-                    "This PR comment contains only coarse risk metadata; detailed findings stay in workflow artifacts/logs.",
-                    "This comment is advisory-only and does not replace human review.",
-                ]
-            )
-            
-            api_root = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100"
-            
-            def request_json(method: str, url: str, payload: dict[str, Any] | None = None) -> Any:
-                data = json.dumps(payload).encode("utf-8") if payload is not None else None
-                req = urllib.request.Request(
-                    url,
-                    data=data,
-                    method=method,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Accept": "application/vnd.github+json",
-                        "X-GitHub-Api-Version": "2022-11-28",
-                        "Content-Type": "application/json",
-                    },
-                )
-                with urllib.request.urlopen(req, timeout=20) as response:
-                    body = response.read().decode("utf-8")
-                    return json.loads(body) if body else None
-            
-            try:
-                comments: list[dict[str, Any]] = []
-                next_url: str | None = api_root
-
-                while next_url:
-                    req = urllib.request.Request(
-                        next_url,
-                        method="GET",
-                        headers={
-                            "Authorization": f"Bearer {token}",
-                            "Accept": "application/vnd.github+json",
-                            "X-GitHub-Api-Version": "2022-11-28",
-                        },
-                    )
-                    with urllib.request.urlopen(req, timeout=20) as response:
-                        page = json.loads(response.read().decode("utf-8"))
-                        if isinstance(page, list):
-                            comments.extend(page)
-
-                        link = response.headers.get("Link", "")
-                        next_url = None
-                        for part in link.split(","):
-                            if 'rel="next"' in part:
-                                next_url = part[part.find("<") + 1 : part.find(">")]
-                                break
-            except urllib.error.HTTPError as err:
-                print(f"Could not list PR comments: HTTP {err.code}. Skipping comment.")
-                raise SystemExit(0)
-            
-            markers = (
-                "<!-- tasukeru-analysis:announcement-summary -->",
-                "<!-- tasukeru-analysis:critical-summary -->",
-                "<!-- tasukeru-analysis:no-critical -->",
-            )
-            existing = None
-            for comment in comments:
-                if not isinstance(comment, dict):
-                    continue
-                body = str(comment.get("body", ""))
-                user = comment.get("user") or {}
-                if user.get("login") == "github-actions[bot]" and any(marker in body for marker in markers):
-                    existing = comment
-                    break
-            
-            try:
-                if existing and existing.get("url"):
-                    request_json("PATCH", str(existing["url"]), {"body": comment_body})
-                    print("Updated existing Tasukeru PR announcement comment.")
-                else:
-                    request_json("POST", api_root, {"body": comment_body})
-                    print("Posted Tasukeru PR announcement comment.")
-            except urllib.error.HTTPError as err:
-                print(f"Could not post/update PR comment: HTTP {err.code}. Skipping comment.")
-                raise SystemExit(0)
-        run: |
-          set -euo pipefail
-          python -c "$POST_SCRIPT"
+          echo "No PR comment or review comment was posted; DRAFT artifacts only."
