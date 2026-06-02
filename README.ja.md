@@ -801,6 +801,47 @@ score > 0.8 の場合、実行は人間レビューのために一時停止
 - 調停がループ上限で停止するか
 - 監査ログと生成物が一貫しているか
 
+### 10.1 Mediator / Maestro ゲート・ハードニング DRAFT
+
+このDRAFT系統は、ソース根拠付き Office オーケストレーション・シミュレーションを拡張し、Mediator から Maestro への明示的なレビュールーティングと、スコア判定における fail-closed 処理を追加するものです。
+
+ファイル:
+
+- `agent_source_grounded_office_orchestration_sim_v1_0_0_refactored_integrated_draft.py`
+- `agent_source_grounded_office_orchestration_sim_v1_0_1_fail_closed_hardening_draft.py`
+- `tests/test_agent_source_grounded_office_orchestration_sim_v1_0_1_fail_closed_hardening_contract.py`
+
+`v1.0.0` ファイルは比較用の baseline として保持します。  
+`v1.0.1` ファイルは、baseline で検証済みの数値境界の挙動を維持したまま、無効な閾値スコア入力を fail-closed に処理する機能を追加します。
+
+Mediator / Maestro のゲート判断:
+
+- `HITL_REVIEW_READY`: 結果を人間のレビュー担当者へ候補として提示できます。ただし、自動承認や外部への自動反映は行いません。
+- `PAUSE_FOR_HITL`: 責任点が満たされない場合、残余適合値の閾値を満たさない場合、または閾値入力を安全に評価できない場合に、ワークフローを一時停止します。
+- `ROUTED_TO_PRECHECK`: 重大条件または構造的不変条件違反が検出された場合、通常の候補比較へ進まず、前段確認へ移送します。
+
+fail-closed な閾値処理:
+
+```text
+無効なスコア入力
+→ PAUSE_FOR_HITL
+```
+
+対応する契約テストでは、次を確認します。
+
+- 無効なスコア入力が `PAUSE_FOR_HITL` に安全側で閉じること
+- baseline の数値閾値挙動が維持されていること
+- 責任点の失敗がスコアによって救済されないこと
+- 重大条件および構造的不変条件違反が `ROUTED_TO_PRECHECK` へ移送されること
+- 候補提示と次段階への承認が分離されていること
+- ユーザー承認によって `PAUSE_FOR_HITL` または `ROUTED_TO_PRECHECK` を迂回できないこと
+- Maestro が自律的な最終判断または外部操作を行わないこと
+- Tasukeru、Mediator、Maestro が不正な `sealed=True` 状態を発行しないこと
+- `runs=100` および `runs=1000` の決定論的な分布確認
+
+これは、ローカル専用の研究・検証用DRAFTです。  
+自動採用、外部への自動作用、自動修正、自動コミット、自動push、自動マージを許可するものではありません。
+
 ## バッチ実行と再開
 
 このリポジトリには、バッチ型オーケストレーションの例も含まれています。
