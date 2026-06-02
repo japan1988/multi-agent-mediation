@@ -801,6 +801,47 @@ This simulator is useful for checking:
 - whether reconciliation stops after the loop limit
 - whether audit logs and generated artifacts remain consistent
 
+### 10.1 Mediator / Maestro gate hardening draft
+
+This draft line extends the source-grounded Office orchestration simulation with explicit mediator-to-Maestro review routing and fail-closed score handling.
+
+Files:
+
+- `agent_source_grounded_office_orchestration_sim_v1_0_0_refactored_integrated_draft.py`
+- `agent_source_grounded_office_orchestration_sim_v1_0_1_fail_closed_hardening_draft.py`
+- `tests/test_agent_source_grounded_office_orchestration_sim_v1_0_1_fail_closed_hardening_contract.py`
+
+The `v1.0.0` file is kept as a comparison baseline.  
+The `v1.0.1` file adds fail-closed handling for invalid threshold score input while preserving the verified numeric-boundary behavior of the baseline.
+
+Mediator / Maestro gate decisions:
+
+- `HITL_REVIEW_READY`: the result may be presented to a human reviewer, but it is not automatically accepted or externally applied.
+- `PAUSE_FOR_HITL`: the workflow pauses when a responsibility floor is unmet, the remaining conformity threshold is not met, or threshold input cannot be safely evaluated.
+- `ROUTED_TO_PRECHECK`: the workflow does not enter ordinary candidate comparison when a severe condition or structural invariant violation is detected.
+
+Fail-closed threshold behavior:
+
+```text
+invalid score input
+→ PAUSE_FOR_HITL
+```
+
+The corresponding contract test covers:
+
+- invalid score input failing closed into `PAUSE_FOR_HITL`
+- preservation of the baseline numeric threshold behavior
+- responsibility-floor failures not being rescued by score
+- routing of severe conditions and structural invariant violations to `ROUTED_TO_PRECHECK`
+- separation between candidate presentation and next-stage approval
+- no bypass of `PAUSE_FOR_HITL` or `ROUTED_TO_PRECHECK` through user acceptance
+- no autonomous final decision or external action by Maestro
+- no illegal `sealed=True` state issued by Tasukeru, Mediator, or Maestro
+- deterministic `runs=100` and `runs=1000` distribution checks
+
+This is a local-only research and verification draft.  
+It does not authorize automatic adoption, automatic external action, automatic fixes, automatic commits, automatic pushes, or automatic merges.
+
 ## Batch execution and resume
 
 This repository includes batch-style orchestration examples.
