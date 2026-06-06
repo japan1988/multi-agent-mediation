@@ -842,6 +842,47 @@ The corresponding contract test covers:
 This is a local-only research and verification draft.  
 It does not authorize automatic adoption, automatic external action, automatic fixes, automatic commits, automatic pushes, or automatic merges.
 
+### 10.2 Security orchestration isolated verification authorization simulation
+
+This simulator adapts the orchestration model toward security-review sub-agents while keeping the public line defensive, local-only, and advisory-only.
+
+File:
+
+- `security_orchestration_isolated_verification_authorization_sim.py`
+
+Core characteristics:
+
+- security-review sub-agent routing
+- user-authorized read-only static audit flow
+- static candidate finding records
+- primary and secondary mediation records
+- non-executing draft remediation proposal records
+- human-review disposition records
+- bounded isolated-verification authorization records
+- explicit separation between authorization, verification execution, application, merge, and close
+- no arbitrary command text accepted for isolated verification planning
+- no exploit execution
+- no external scanning
+- no external system access
+- no repository modification
+- no automatic remediation
+- no automatic application
+- no automatic merge
+- no production safety guarantee
+
+This simulator is useful for checking:
+
+- whether security-review sub-agents remain inside a read-only advisory boundary
+- whether candidate findings stay separate from proof of exploitability
+- whether remediation drafts remain non-executing proposal records
+- whether isolated verification is represented as a bounded authorization plan only
+- whether later execution, application, merge, close, or post-change audit progression remains separately gated by human review
+- whether security review orchestration can preserve a clear boundary between advice and action
+
+Public scope boundary:
+
+This public line should remain within authorization records, static candidate review, mediation, human-review routing, and bounded non-executing proposal records. Offensive capability expansion, external execution, external scanning, automatic remediation, automatic application, automatic merge, autonomous security enforcement, or exploit validation against real targets are out of scope.
+
 ## Batch execution and resume
 
 This repository includes batch-style orchestration examples.
