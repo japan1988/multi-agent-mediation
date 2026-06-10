@@ -1197,30 +1197,25 @@ External side effects には次のような行為が含まれます。
 
 `archive/` 配下の files は、current tests または documentation から明示的に参照されていない限り、一般に historical または reference material として扱うべきです。
 
-## Language
+## 言語
 
-- English README: `README.md`
-- Japanese README: `README.ja.md`
+* 英語版 README: `README.md`
+* 日本語版 README: `README.ja.md`
+* 英語版セキュリティポリシー: `SECURITY.md`
+* 日本語版セキュリティポリシー翻訳: `SECURITY.ja.md`
 
-## License
+## ライセンス
 
-このリポジトリは split-license model を使います。
+このリポジトリは分割ライセンスモデルを採用しています。
 
-- Software code: Apache License 2.0
-- Documentation, diagrams, and research materials: CC BY-NC-SA 4.0
+* ソフトウェアコード: Apache License 2.0
+* ドキュメント、図表、および研究資料: CC BY-NC-SA 4.0
 
 詳細は `LICENSE_POLICY.md` を参照してください。
 
-## Project policies
+## プロジェクトポリシー
 
-- [Security Policy](SECURITY.md)
-- [License Policy](LICENSE_POLICY.md)
-- [Contributing Guide](CONTRIBUTING.md)
-
-## Disclaimer
-
-このリポジトリは研究・教育目的でのみ提供されます。
-
-本番安全システム、法務ツール、医療ツール、金融ツール、規制遵守ツール、自律制御システムではありません。
-
-ローカル、許可済み、防御的、教育的な文脈でのみ使用してください。
+* [セキュリティポリシー](SECURITY.md)
+* [日本語版セキュリティポリシー翻訳](SECURITY.ja.md)
+* [ライセンスポリシー](LICENSE_POLICY.md)
+* [コントリビューションガイド](CONTRIBUTING.md)

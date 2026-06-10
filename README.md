@@ -1201,6 +1201,8 @@ Files under `archive/` should generally be treated as historical or reference ma
 
 - English README: `README.md`
 - Japanese README: `README.ja.md`
+- English security policy: `SECURITY.md`
+- Japanese security policy translation: `SECURITY.ja.md`
 
 ## License
 
@@ -1214,8 +1216,10 @@ See `LICENSE_POLICY.md` for details.
 ## Project policies
 
 - [Security Policy](SECURITY.md)
+- [Japanese Security Policy Translation](SECURITY.ja.md)
 - [License Policy](LICENSE_POLICY.md)
 - [Contributing Guide](CONTRIBUTING.md)
+
 
 ## Disclaimer
 
