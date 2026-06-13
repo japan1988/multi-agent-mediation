@@ -1,4 +1,4 @@
-# ai_doc_orchestrator_kage3_v1_2_2.py  (v1.2.2)
+  # ai_doc_orchestrator_kage3_v1_2_2.py  (v1.2.2)
 # -*- coding: utf-8 -*-
 """
 ai_doc_orchestrator_kage3_v1_2_2.py
@@ -52,13 +52,22 @@ def redact_sensitive(text: str) -> str:
 
 
 def _deep_redact(obj: Any) -> Any:
-    """Deep redaction over dict/list/str."""
+    """
+    Deep redaction over dict/list/str, including dictionary keys.
+
+    Audit rows are JSON-serialized before redaction, so dictionary keys are
+    effectively persisted strings. Redacting values only is not sufficient:
+    an email-like key would otherwise survive into JSONL logs.
+    """
     if isinstance(obj, str):
         return redact_sensitive(obj)
     if isinstance(obj, list):
         return [_deep_redact(x) for x in obj]
     if isinstance(obj, dict):
-        return {k: _deep_redact(v) for k, v in obj.items()}
+        return {
+            redact_sensitive(k) if isinstance(k, str) else k: _deep_redact(v)
+            for k, v in obj.items()
+        }
     return obj
 
 
@@ -124,11 +133,24 @@ _KIND_TOKENS: Dict[KIND, List[str]] = {
 }
 
 
+def _is_ascii_alnum_token(token: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9]+", token or ""))
+
+
+def _prompt_has_kind_token(prompt_lower: str, token: str) -> bool:
+    token_lower = (token or "").lower()
+    if not token_lower:
+        return False
+    if _is_ascii_alnum_token(token_lower):
+        return re.search(rf"(?<![A-Za-z0-9]){re.escape(token_lower)}(?![A-Za-z0-9])", prompt_lower) is not None
+    return token_lower in prompt_lower
+
+
 def _prompt_mentions_any_kind(prompt: str) -> bool:
     p = (prompt or "").lower()
     for toks in _KIND_TOKENS.values():
         for t in toks:
-            if t.lower() in p:
+            if _prompt_has_kind_token(p, t):
                 return True
     return False
 
@@ -147,7 +169,7 @@ def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], s
         return "RUN", None, "MEANING_GENERIC_ALLOW_ALL"
 
     tokens = _KIND_TOKENS[kind]
-    if any(t.lower() in pl for t in tokens):
+    if any(_prompt_has_kind_token(pl, t) for t in tokens):
         return "RUN", None, "MEANING_KIND_MATCH"
     return "HITL", "meaning", "MEANING_KIND_MISSING"
 
@@ -159,21 +181,33 @@ def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
     if kind == "excel":
         cols = draft.get("columns")
         rows = draft.get("rows")
-        if not (isinstance(cols, list) and all(isinstance(x, str) for x in cols)):
+        if not (
+            isinstance(cols, list)
+            and len(cols) > 0
+            and all(isinstance(x, str) for x in cols)
+            and len(set(cols)) == len(cols)
+        ):
             return False, "CONTRACT_EXCEL_COLUMNS_INVALID"
-        if not (isinstance(rows, list) and all(isinstance(x, dict) for x in rows)):
+        if not (isinstance(rows, list) and len(rows) > 0 and all(isinstance(x, dict) for x in rows)):
             return False, "CONTRACT_EXCEL_ROWS_INVALID"
+        expected_keys = set(cols)
+        allowed_value_types = (str, int, float, bool, type(None))
+        for row in rows:
+            if set(row.keys()) != expected_keys:
+                return False, "CONTRACT_EXCEL_ROWS_INVALID"
+            if not all(isinstance(value, allowed_value_types) for value in row.values()):
+                return False, "CONTRACT_EXCEL_ROWS_INVALID"
         return True, "CONTRACT_OK"
 
     if kind == "word":
         heads = draft.get("headings")
-        if not (isinstance(heads, list) and all(isinstance(x, str) for x in heads)):
+        if not (isinstance(heads, list) and len(heads) > 0 and all(isinstance(x, str) for x in heads)):
             return False, "CONTRACT_WORD_HEADINGS_INVALID"
         return True, "CONTRACT_OK"
 
     if kind == "ppt":
         slides = draft.get("slides")
-        if not (isinstance(slides, list) and all(isinstance(x, str) for x in slides)):
+        if not (isinstance(slides, list) and len(slides) > 0 and all(isinstance(x, str) for x in slides)):
             return False, "CONTRACT_PPT_SLIDES_INVALID"
         return True, "CONTRACT_OK"
 
@@ -252,10 +286,34 @@ def _artifact_ext(kind: KIND) -> str:
     return "txt"
 
 
+_SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def _safe_filename_part(value: str) -> str:
+    """
+    Convert an untrusted identifier into a single safe filename segment.
+
+    This prevents path traversal when helper functions are reused with
+    non-canonical task_id values such as "../escaped_probe".
+    """
+    cleaned = _SAFE_FILENAME_RE.sub("_", str(value))
+    cleaned = cleaned.strip("._")
+    return cleaned or "artifact"
+
+
 def _write_artifact(artifact_dir: Path, task_id: str, kind: KIND, safe_text: str) -> Path:
     artifact_dir.mkdir(parents=True, exist_ok=True)
+    resolved_dir = artifact_dir.resolve()
+
     # Simulator uses plain text artifacts for simplicity; tests handle .txt
-    path = artifact_dir / f"{task_id}.{_artifact_ext(kind)}.txt"
+    safe_task_id = _safe_filename_part(task_id)
+    path = artifact_dir / f"{safe_task_id}.{_artifact_ext(kind)}.txt"
+    resolved_path = path.resolve()
+
+    # Defense-in-depth: ensure the final path cannot escape artifact_dir.
+    if not resolved_path.is_relative_to(resolved_dir):
+        raise ValueError("artifact path escapes artifact_dir")
+
     path.write_text(redact_sensitive(safe_text), encoding="utf-8")
     return path
 
@@ -344,6 +402,40 @@ def run_simulation(
             "preview": safe_text[:200],
         })
 
+        # Ethics uses raw_text ONLY in memory and runs before consistency,
+        # so PII leaks cannot be hidden by a contract failure.
+        pii_hit, e_code = _ethics_detect_pii(raw_text)
+        e_dec: Decision = "STOP" if pii_hit else "RUN"
+        audit.emit({
+            "ts": _ts(),
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "GATE_ETHICS",
+            "layer": "ethics",
+            "decision": e_dec,
+            "reason_code": e_code,
+        })
+
+        if pii_hit:
+            audit.emit({
+                "ts": _ts(),
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "ARTIFACT_SKIPPED",
+                "layer": "ethics",
+                "decision": "STOP",
+                "reason_code": e_code,
+            })
+            task_results.append(TaskResult(
+                task_id=task_id,
+                kind=kind,
+                decision="STOP",
+                blocked_layer="ethics",
+                reason_code=e_code,
+                artifact_path=None,
+            ))
+            continue
+
         ok, c_code = _validate_contract(kind, draft)
         c_dec: Decision = "RUN" if ok else "HITL"
         audit.emit({
@@ -395,38 +487,6 @@ def run_simulation(
             ))
             continue
 
-        # Ethics uses raw_text ONLY in memory
-        pii_hit, e_code = _ethics_detect_pii(raw_text)
-        e_dec: Decision = "STOP" if pii_hit else "RUN"
-        audit.emit({
-            "ts": _ts(),
-            "run_id": run_id,
-            "task_id": task_id,
-            "event": "GATE_ETHICS",
-            "layer": "ethics",
-            "decision": e_dec,
-            "reason_code": e_code,
-        })
-
-        if pii_hit:
-            audit.emit({
-                "ts": _ts(),
-                "run_id": run_id,
-                "task_id": task_id,
-                "event": "ARTIFACT_SKIPPED",
-                "layer": "ethics",
-                "reason_code": e_code,
-            })
-            task_results.append(TaskResult(
-                task_id=task_id,
-                kind=kind,
-                decision="STOP",
-                blocked_layer="ethics",
-                reason_code=e_code,
-                artifact_path=None,
-            ))
-            continue
-
         artifact_path = _write_artifact(out_dir, task_id, kind, safe_text)
         audit.emit({
             "ts": _ts(),
@@ -465,3 +525,4 @@ __all__ = [
     "TaskResult",
     "redact_sensitive",
 ]
+    
