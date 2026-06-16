@@ -1,26 +1,25 @@
-# ai_doc_orchestrator_kage3_v1_2_4.py (v1.2.4)
+# ai_doc_orchestrator_kage3_v1_2_4.py (v1.2.4 hardening draft)
 # -*- coding: utf-8 -*-
 """
-(ai_doc_orchestrator_kage3_v1_2_2.py に対する設計寄り改修 + IEP寄せ + HITL分岐)
+Hardening draft for ai_doc_orchestrator_kage3_v1_2_4.py.
 
-Changes (design-oriented + IEP-aligned):
-- AuditLog gains start_run(truncate=...) to control log lifecycle per run.
-- AuditLog owns ts_state (monotonic timestamp) instead of module-global _LAST_TS.
-- Defensive JSON serialization: default=str so audit never crashes on non-JSON types.
-- Deep redaction also redacts dict keys (prevents email-like keys from persisting).
-- emit() auto-fills "ts" if missing.
-- Decision vocabulary aligned (gates/audit): RUN / PAUSE_FOR_HITL / STOPPED
-- ARL minimal keys always emitted: sealed, overrideable, final_decider
-- HITL branching implemented as a fixed firepoint:
-  HITL_REQUESTED (SYSTEM) -> HITL_DECIDED (USER) -> downstream events branch.
-- Optional RFL gate stub (prompt-based) placed per fixed order:
-  Meaning -> Consistency -> RFL -> Ethics -> ACC -> Dispatch
+This version keeps the v1.2.4 IEP/HITL additions while restoring or strengthening
+v1.2.3 safety boundaries:
+- token-boundary matching for English/alphanumeric meaning-gate tokens
+- stricter document contract validation
+- artifact path traversal hardening
+- memory-only ethics/PII preflight immediately after agent generation
+- AuditLog no-raise behavior with observable audit_health
+- deterministic redaction-key collision preservation
+- HITL resolver fail-closed behavior for None / invalid return / exception
+- bounded audit field length for non-structural fields
 
-Compatibility note:
-- This module supports `overall_policy`:
-    * "legacy": overall is "RUN" if all tasks RUN else "HITL"
-    * "iep" (default): overall is STOPPED if any STOPPED else
-      PAUSE_FOR_HITL if any pause else RUN
+Boundary statement:
+- no external API access
+- no executor/network behavior
+- no automatic fix/apply/commit/push/merge
+- advisory-only local simulation
+- raw_text is not persisted
 """
 
 from __future__ import annotations
@@ -37,6 +36,11 @@ __version__ = "1.2.4"
 JST = timezone(timedelta(hours=9))
 
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")
+SAFE_TASK_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+ALNUM_RE = re.compile(r"^[A-Za-z0-9_.+-]+$")
+
+MAX_AUDIT_STRING_LENGTH = 4096
+TRUNCATION_MARKER = "<TRUNCATED>"
 
 Decision = Literal["RUN", "PAUSE_FOR_HITL", "STOPPED"]
 OverallPolicy = Literal["legacy", "iep"]
@@ -59,6 +63,19 @@ KIND = Literal["excel", "word", "ppt"]
 HitlChoice = Literal["CONTINUE", "STOP"]
 HitlResolver = Callable[[str, str, str, str], HitlChoice]
 
+STRUCTURAL_AUDIT_FIELDS = {
+    "run_id",
+    "task_id",
+    "event",
+    "layer",
+    "decision",
+    "reason_code",
+    "sealed",
+    "overrideable",
+    "final_decider",
+    "ts",
+}
+
 
 def redact_sensitive(text: str) -> str:
     if not text:
@@ -66,27 +83,114 @@ def redact_sensitive(text: str) -> str:
     return EMAIL_RE.sub("<REDACTED_EMAIL>", text)
 
 
+def _is_alnum_token(token: str) -> bool:
+    return bool(ALNUM_RE.fullmatch(token or ""))
+
+
+def _contains_token(text: str, token: str) -> bool:
+    """Match English/alphanumeric tokens by boundaries; Japanese tokens by substring.
+
+    This prevents strings such as `documentary`, `wordplay`, `tableau`, and
+    `slideware` from being treated as direct kind mentions.
+    """
+    if not token:
+        return False
+    if _is_alnum_token(token):
+        pattern = rf"(^|[^A-Za-z0-9]){re.escape(token.lower())}($|[^A-Za-z0-9])"
+        return re.search(pattern, text.lower()) is not None
+    return token in text
+
+
+def _truncate_string(value: str) -> str:
+    if len(value) <= MAX_AUDIT_STRING_LENGTH:
+        return value
+    keep = max(0, MAX_AUDIT_STRING_LENGTH - len(TRUNCATION_MARKER) - 32)
+    return f"{value[:keep]}{TRUNCATION_MARKER}[original_length={len(value)}]"
+
+
+def _truncate_non_structural(obj: Any, *, current_key: Optional[str] = None) -> Any:
+    """Bound non-structural audit field lengths while preserving safety keys."""
+    if isinstance(obj, str):
+        if current_key in STRUCTURAL_AUDIT_FIELDS:
+            return obj
+        return _truncate_string(obj)
+    if isinstance(obj, list):
+        return [_truncate_non_structural(x, current_key=current_key) for x in obj]
+    if isinstance(obj, dict):
+        return {
+            k: _truncate_non_structural(v, current_key=str(k))
+            for k, v in obj.items()
+        }
+    return obj
+
+
+def _collision_preserving_key(base: str, counts: Dict[str, int]) -> str:
+    count = counts.get(base, 0) + 1
+    counts[base] = count
+    if count == 1:
+        return base
+    return f"{base}#{count}"
+
+
 def _deep_redact(obj: Any) -> Any:
+    """Redact values and keys while preserving deterministic mapping cardinality.
+
+    Multiple email-like keys redact to `<REDACTED_EMAIL>`,
+    `<REDACTED_EMAIL>#2`, ... rather than overwriting one another.
+    """
     if isinstance(obj, str):
         return redact_sensitive(obj)
     if isinstance(obj, list):
         return [_deep_redact(x) for x in obj]
     if isinstance(obj, dict):
-        return {redact_sensitive(str(k)): _deep_redact(v) for k, v in obj.items()}
+        out: Dict[str, Any] = {}
+        counts: Dict[str, int] = {}
+        for k, v in obj.items():
+            redacted_key = redact_sensitive(str(k))
+            safe_key = _collision_preserving_key(redacted_key, counts)
+            out[safe_key] = _deep_redact(v)
+        return out
     return obj
+
+
+@dataclass
+class AuditHealth:
+    write_failed: bool = False
+    failure_count: int = 0
+    last_error_type: Optional[str] = None
+    last_error_message: Optional[str] = None
+
+    def record_failure(self, exc: BaseException) -> None:
+        self.write_failed = True
+        self.failure_count += 1
+        self.last_error_type = type(exc).__name__
+        self.last_error_message = _truncate_string(str(exc))
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "write_failed": self.write_failed,
+            "failure_count": self.failure_count,
+            "last_error_type": self.last_error_type,
+            "last_error_message": self.last_error_message,
+        }
 
 
 @dataclass
 class AuditLog:
     audit_path: Path
+    audit_health: AuditHealth = field(default_factory=AuditHealth)
     _last_ts: Optional[datetime] = field(default=None, init=False, repr=False)
 
     def start_run(self, *, truncate: bool = False) -> None:
-        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
-        if truncate:
-            with self.audit_path.open("w", encoding="utf-8"):
-                pass
-        self._last_ts = None
+        try:
+            self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+            if truncate:
+                with self.audit_path.open("w", encoding="utf-8"):
+                    pass
+            self._last_ts = None
+        except OSError as exc:
+            self.audit_health.record_failure(exc)
+            self._last_ts = None
 
     def ts(self) -> str:
         now = datetime.now(JST)
@@ -96,20 +200,24 @@ class AuditLog:
         return now.isoformat(timespec="microseconds")
 
     def emit(self, row: Dict[str, Any]) -> None:
-        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.audit_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if "ts" not in row:
-            row = dict(row)
-            row["ts"] = self.ts()
+            if "ts" not in row:
+                row = dict(row)
+                row["ts"] = self.ts()
 
-        safe_row = json.loads(json.dumps(row, ensure_ascii=False, default=str))
-        safe_blob = json.dumps(safe_row, ensure_ascii=False)
-
-        if EMAIL_RE.search(safe_blob):
+            serialized = json.dumps(row, ensure_ascii=False, default=str)
+            safe_row = json.loads(serialized)
             safe_row = _deep_redact(safe_row)
+            safe_row = _truncate_non_structural(safe_row)
 
-        with self.audit_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(safe_row, ensure_ascii=False) + "\n")
+            with self.audit_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(safe_row, ensure_ascii=False) + "\n")
+        except OSError as exc:
+            self.audit_health.record_failure(exc)
+        except (TypeError, ValueError) as exc:
+            self.audit_health.record_failure(exc)
 
 
 @dataclass
@@ -128,6 +236,7 @@ class SimulationResult:
     decision: OverallDecision
     tasks: List[TaskResult]
     artifacts_written_task_ids: List[str]
+    audit_health: AuditHealth = field(default_factory=AuditHealth)
 
 
 def _arl_base(*, sealed: bool, overrideable: bool, final_decider: FinalDecider) -> Dict[str, Any]:
@@ -183,9 +292,37 @@ def _hitl_fire_and_decide(
         }
     )
 
-    choice: HitlChoice = "STOP" if hitl_resolver is None else hitl_resolver(
-        run_id, task_id, layer, reason_code
-    )
+    choice: HitlChoice = "STOP"
+    resolver_failed = False
+    resolver_error_type: Optional[str] = None
+
+    if hitl_resolver is not None:
+        try:
+            raw_choice = hitl_resolver(run_id, task_id, layer, reason_code)
+            if raw_choice in ("CONTINUE", "STOP"):
+                choice = raw_choice
+            else:
+                resolver_failed = True
+                resolver_error_type = "InvalidHitlChoice"
+                choice = "STOP"
+        except Exception as exc:  # fail-closed; no raw exception detail in audit
+            resolver_failed = True
+            resolver_error_type = type(exc).__name__
+            choice = "STOP"
+
+    if resolver_failed:
+        audit.emit(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "event": "HITL_RESOLVER_FAILED",
+                "layer": "hitl_finalize",
+                "decision": "STOPPED",
+                "reason_code": "HITL_RESOLVER_FAILED",
+                **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
+                "error_type": resolver_error_type,
+            }
+        )
 
     audit.emit(
         {
@@ -209,48 +346,72 @@ _KIND_TOKENS: Dict[KIND, List[str]] = {
 
 
 def _prompt_mentions_any_kind(prompt: str) -> bool:
-    p = (prompt or "").lower()
-    for toks in _KIND_TOKENS.values():
-        for t in toks:
-            if t.lower() in p:
-                return True
-    return False
+    p = prompt or ""
+    return any(_contains_token(p, t) for toks in _KIND_TOKENS.values() for t in toks)
 
 
 def _meaning_gate(prompt: str, kind: KIND) -> Tuple[Decision, Optional[Layer], str]:
     p = prompt or ""
-    pl = p.lower()
     any_kind = _prompt_mentions_any_kind(p)
 
     if not any_kind:
         return "RUN", None, "MEANING_GENERIC_ALLOW_ALL"
 
     tokens = _KIND_TOKENS[kind]
-    if any(t.lower() in pl for t in tokens):
+    if any(_contains_token(p, t) for t in tokens):
         return "RUN", None, "MEANING_KIND_MATCH"
 
     return "PAUSE_FOR_HITL", "meaning", "MEANING_KIND_MISSING"
 
 
+def _is_scalar_cell(value: Any) -> bool:
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
 def _validate_contract(kind: KIND, draft: Dict[str, Any]) -> Tuple[bool, str]:
+    if not isinstance(draft, dict):
+        return False, "CONTRACT_DRAFT_INVALID"
+
     if kind == "excel":
         cols = draft.get("columns")
         rows = draft.get("rows")
-        if not (isinstance(cols, list) and all(isinstance(x, str) for x in cols)):
+        if not (
+            isinstance(cols, list)
+            and len(cols) > 0
+            and all(isinstance(x, str) and x for x in cols)
+        ):
             return False, "CONTRACT_EXCEL_COLUMNS_INVALID"
-        if not (isinstance(rows, list) and all(isinstance(x, dict) for x in rows)):
+        if not (
+            isinstance(rows, list)
+            and len(rows) > 0
+            and all(isinstance(x, dict) for x in rows)
+        ):
             return False, "CONTRACT_EXCEL_ROWS_INVALID"
+        expected_keys = set(cols)
+        for row in rows:
+            if set(row.keys()) != expected_keys:
+                return False, "CONTRACT_EXCEL_ROW_KEYS_INVALID"
+            if not all(_is_scalar_cell(v) for v in row.values()):
+                return False, "CONTRACT_EXCEL_CELL_VALUE_INVALID"
         return True, "CONTRACT_OK"
 
     if kind == "word":
         heads = draft.get("headings")
-        if not (isinstance(heads, list) and all(isinstance(x, str) for x in heads)):
+        if not (
+            isinstance(heads, list)
+            and len(heads) > 0
+            and all(isinstance(x, str) and x for x in heads)
+        ):
             return False, "CONTRACT_WORD_HEADINGS_INVALID"
         return True, "CONTRACT_OK"
 
     if kind == "ppt":
         slides = draft.get("slides")
-        if not (isinstance(slides, list) and all(isinstance(x, str) for x in slides)):
+        if not (
+            isinstance(slides, list)
+            and len(slides) > 0
+            and all(isinstance(x, str) and x for x in slides)
+        ):
             return False, "CONTRACT_PPT_SLIDES_INVALID"
         return True, "CONTRACT_OK"
 
@@ -338,9 +499,32 @@ def _artifact_ext(kind: KIND) -> str:
     return "txt"
 
 
+def _safe_artifact_task_id(task_id: str) -> str:
+    if not task_id or not SAFE_TASK_ID_RE.fullmatch(task_id):
+        raise ValueError("unsafe task_id for artifact path")
+    if task_id in (".", "..") or ".." in task_id.split("."):
+        raise ValueError("unsafe task_id for artifact path")
+    return task_id
+
+
+def _is_relative_to(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
 def _write_artifact(artifact_dir: Path, task_id: str, kind: KIND, safe_text: str) -> Path:
+    safe_task_id = _safe_artifact_task_id(task_id)
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    path = artifact_dir / f"{task_id}.{_artifact_ext(kind)}.txt"
+    root = artifact_dir.resolve()
+    path = artifact_dir / f"{safe_task_id}.{_artifact_ext(kind)}.txt"
+    resolved_path = path.resolve(strict=False)
+    if not _is_relative_to(resolved_path, root):
+        raise ValueError("artifact path escapes artifact_dir")
+    if path.exists() and path.is_symlink():
+        raise ValueError("refusing to write artifact through symlink")
     path.write_text(redact_sensitive(safe_text), encoding="utf-8")
     return path
 
@@ -350,6 +534,35 @@ _TASKS: List[Tuple[str, KIND]] = [
     ("task_excel", "excel"),
     ("task_ppt", "ppt"),
 ]
+
+
+def _emit_artifact_skipped(
+    *,
+    audit: AuditLog,
+    run_id: str,
+    task_id: str,
+    layer: Layer,
+    decision: Decision,
+    reason_code: str,
+    sealed: bool,
+    overrideable: bool,
+    final_decider: FinalDecider,
+) -> None:
+    audit.emit(
+        {
+            "run_id": run_id,
+            "task_id": task_id,
+            "event": "ARTIFACT_SKIPPED",
+            "layer": layer,
+            "decision": decision,
+            "reason_code": reason_code,
+            **_arl_base(
+                sealed=sealed,
+                overrideable=overrideable,
+                final_decider=final_decider,
+            ),
+        }
+    )
 
 
 def run_simulation(
@@ -410,16 +623,16 @@ def run_simulation(
                 hitl_resolver=hitl_resolver,
             )
             if choice == "STOP":
-                audit.emit(
-                    {
-                        "run_id": run_id,
-                        "task_id": task_id,
-                        "event": "ARTIFACT_SKIPPED",
-                        "layer": "orchestrator",
-                        "decision": "STOPPED",
-                        "reason_code": "HITL_STOP",
-                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
-                    }
+                _emit_artifact_skipped(
+                    audit=audit,
+                    run_id=run_id,
+                    task_id=task_id,
+                    layer="orchestrator",
+                    decision="STOPPED",
+                    reason_code="HITL_STOP",
+                    sealed=False,
+                    overrideable=False,
+                    final_decider="USER",
                 )
                 task_results.append(
                     TaskResult(
@@ -434,6 +647,44 @@ def run_simulation(
                 continue
 
         draft, raw_text, safe_text = _agent_generate(prompt, kind, faults.get(kind, {}))
+
+        # Memory-only privacy preflight: raw_text is inspected before consistency so
+        # PII cannot be masked by a contract failure or persisted in previews/artifacts.
+        pii_hit, e_code = _ethics_detect_pii(raw_text)
+        if pii_hit:
+            audit.emit(
+                {
+                    "run_id": run_id,
+                    "task_id": task_id,
+                    "event": "GATE_ETHICS",
+                    "layer": "ethics",
+                    "decision": "STOPPED",
+                    "reason_code": e_code,
+                    **_arl_base(sealed=True, overrideable=False, final_decider="SYSTEM"),
+                }
+            )
+            _emit_artifact_skipped(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                layer="ethics",
+                decision="STOPPED",
+                reason_code=e_code,
+                sealed=True,
+                overrideable=False,
+                final_decider="SYSTEM",
+            )
+            task_results.append(
+                TaskResult(
+                    task_id=task_id,
+                    kind=kind,
+                    decision="STOPPED",
+                    blocked_layer="ethics",
+                    reason_code=e_code,
+                    artifact_path=None,
+                )
+            )
+            continue
 
         _emit_info(
             audit=audit,
@@ -474,16 +725,16 @@ def run_simulation(
                 hitl_resolver=hitl_resolver,
             )
             if choice == "STOP":
-                audit.emit(
-                    {
-                        "run_id": run_id,
-                        "task_id": task_id,
-                        "event": "ARTIFACT_SKIPPED",
-                        "layer": "orchestrator",
-                        "decision": "STOPPED",
-                        "reason_code": "HITL_STOP",
-                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
-                    }
+                _emit_artifact_skipped(
+                    audit=audit,
+                    run_id=run_id,
+                    task_id=task_id,
+                    layer="orchestrator",
+                    decision="STOPPED",
+                    reason_code="HITL_STOP",
+                    sealed=False,
+                    overrideable=False,
+                    final_decider="USER",
                 )
                 task_results.append(
                     TaskResult(
@@ -514,16 +765,16 @@ def run_simulation(
                 reason_code="REGEN_INSTRUCTIONS_V1",
                 extra={"instructions": "Regenerate output to match the contract schema for this kind."},
             )
-            audit.emit(
-                {
-                    "run_id": run_id,
-                    "task_id": task_id,
-                    "event": "ARTIFACT_SKIPPED",
-                    "layer": "orchestrator",
-                    "decision": "PAUSE_FOR_HITL",
-                    "reason_code": c_code,
-                    **_arl_base(sealed=False, overrideable=True, final_decider="SYSTEM"),
-                }
+            _emit_artifact_skipped(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                layer="orchestrator",
+                decision="PAUSE_FOR_HITL",
+                reason_code=c_code,
+                sealed=False,
+                overrideable=True,
+                final_decider="SYSTEM",
             )
             task_results.append(
                 TaskResult(
@@ -564,16 +815,16 @@ def run_simulation(
                 hitl_resolver=hitl_resolver,
             )
             if choice == "STOP":
-                audit.emit(
-                    {
-                        "run_id": run_id,
-                        "task_id": task_id,
-                        "event": "ARTIFACT_SKIPPED",
-                        "layer": "orchestrator",
-                        "decision": "STOPPED",
-                        "reason_code": "HITL_STOP",
-                        **_arl_base(sealed=False, overrideable=False, final_decider="USER"),
-                    }
+                _emit_artifact_skipped(
+                    audit=audit,
+                    run_id=run_id,
+                    task_id=task_id,
+                    layer="orchestrator",
+                    decision="STOPPED",
+                    reason_code="HITL_STOP",
+                    sealed=False,
+                    overrideable=False,
+                    final_decider="USER",
                 )
                 task_results.append(
                     TaskResult(
@@ -587,48 +838,19 @@ def run_simulation(
                 )
                 continue
 
-        pii_hit, e_code = _ethics_detect_pii(raw_text)
-        e_dec: Decision = "STOPPED" if pii_hit else "RUN"
-
+        # Canonical visible ethics gate for non-PII paths. PII paths are stopped
+        # earlier by the memory-only preflight and do not persist raw_text.
         audit.emit(
             {
                 "run_id": run_id,
                 "task_id": task_id,
                 "event": "GATE_ETHICS",
                 "layer": "ethics",
-                "decision": e_dec,
-                "reason_code": e_code,
-                **_arl_base(
-                    sealed=bool(pii_hit),
-                    overrideable=False,
-                    final_decider="SYSTEM",
-                ),
+                "decision": "RUN",
+                "reason_code": "ETHICS_OK",
+                **_arl_base(sealed=False, overrideable=False, final_decider="SYSTEM"),
             }
         )
-
-        if pii_hit:
-            audit.emit(
-                {
-                    "run_id": run_id,
-                    "task_id": task_id,
-                    "event": "ARTIFACT_SKIPPED",
-                    "layer": "ethics",
-                    "decision": "STOPPED",
-                    "reason_code": e_code,
-                    **_arl_base(sealed=True, overrideable=False, final_decider="SYSTEM"),
-                }
-            )
-            task_results.append(
-                TaskResult(
-                    task_id=task_id,
-                    kind=kind,
-                    decision="STOPPED",
-                    blocked_layer="ethics",
-                    reason_code=e_code,
-                    artifact_path=None,
-                )
-            )
-            continue
 
         a_dec, _, a_code = _acc_gate(prompt)
         audit.emit(
@@ -644,16 +866,16 @@ def run_simulation(
         )
 
         if a_dec != "RUN":
-            audit.emit(
-                {
-                    "run_id": run_id,
-                    "task_id": task_id,
-                    "event": "ARTIFACT_SKIPPED",
-                    "layer": "orchestrator",
-                    "decision": "PAUSE_FOR_HITL",
-                    "reason_code": "ACC_BLOCKED",
-                    **_arl_base(sealed=False, overrideable=True, final_decider="SYSTEM"),
-                }
+            _emit_artifact_skipped(
+                audit=audit,
+                run_id=run_id,
+                task_id=task_id,
+                layer="orchestrator",
+                decision="PAUSE_FOR_HITL",
+                reason_code="ACC_BLOCKED",
+                sealed=False,
+                overrideable=True,
+                final_decider="SYSTEM",
             )
             task_results.append(
                 TaskResult(
@@ -708,6 +930,7 @@ def run_simulation(
         decision=overall,
         tasks=task_results,
         artifacts_written_task_ids=artifacts_written,
+        audit_health=audit.audit_health,
     )
 
 
@@ -730,6 +953,7 @@ __all__ = [
     "EMAIL_RE",
     "run_simulation",
     "AuditLog",
+    "AuditHealth",
     "SimulationResult",
     "TaskResult",
     "HitlResolver",
