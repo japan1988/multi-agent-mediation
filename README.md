@@ -883,6 +883,18 @@ Public scope boundary:
 
 This public line should remain within authorization records, static candidate review, mediation, human-review routing, and bounded non-executing proposal records. Offensive capability expansion, external execution, external scanning, automatic remediation, automatic application, automatic merge, autonomous security enforcement, or exploit validation against real targets are out of scope.
 
+### AI-to-AI Mediation Control Plane v0.7 draft evaluator
+
+The `evaluator_pseudocode.py` file is a draft-only evaluator sketch for local research and educational use. It classifies requested or observed behavior into external-action levels from L0 to L6 and routes higher-risk cases as follows:
+
+* L4 -> `HUMAN_REVIEW_REQUIRED`
+* L5 -> `ISOLATED_REVIEW_REQUIRED`
+* L6 -> `STOP_AND_PRESERVE`
+
+The evaluator is side-effect free. It does not call external APIs, execute candidate code, modify repository files, approve deployments, change safety thresholds, train models, or implement self-improvement loops.
+
+It provides no production authorization, autonomous enforcement, deployment approval, or safety guarantees. Human review remains required before any externally impactful, self-improving, or evolution-loop-related action.
+
 ## Batch execution and resume
 
 This repository includes batch-style orchestration examples.
