@@ -895,6 +895,54 @@ The evaluator is side-effect free. It does not call external APIs, execute candi
 
 It provides no production authorization, autonomous enforcement, deployment approval, or safety guarantees. Human review remains required before any externally impactful, self-improving, or evolution-loop-related action.
 
+### AI-to-AI Mediation Control Plane v0.8 Explainable Patch Gate draft
+
+The `evaluator_pseudocode_v0_8_explainable_patch_gate.py` file is a versioned draft extension of the v0.7 evaluator.
+
+It keeps the existing L0-L6 external-action classification model and adds draft-only patch accountability checks for AI-generated patches.
+
+The v0.8 draft requires AI-generated patch proposals to include human-readable explanation, evidence, impact analysis, validation results, and explanation/diff consistency.
+
+Patch accountability findings may route otherwise-continue cases to `HUMAN_REVIEW_REQUIRED`, but they must not weaken existing higher-risk routing:
+
+* L4 -> `HUMAN_REVIEW_REQUIRED`
+* L5 -> `ISOLATED_REVIEW_REQUIRED`
+* L6 -> `STOP_AND_PRESERVE`
+
+The v0.8 draft also treats automatic patch application, commit, push, pull request creation, merge, and deployment requests as prohibited automatic actions requiring human review.
+
+This file is a versioned research draft, not a replacement for `evaluator_pseudocode.py`.
+
+Related test file:
+
+* `tests/test_evaluator_pseudocode_v0_8_explainable_patch_gate.py`
+
+#### Difference from v0.7
+
+v0.7 focuses on classifying external actions, self-improvement behavior, evaluator changes, and evolution-loop signals into L0-L6 review levels.
+
+v0.8 keeps that classification model and adds patch accountability checks for AI-generated patches. The added checks ask whether a patch has an explanation, evidence, impact analysis, validation results, and explanation/diff consistency.
+
+The v0.8 draft is intentionally versioned as a separate file so the v0.7 evaluator and v0.7 tests remain unchanged.
+
+#### What the v0.8 tests check
+
+The v0.8 test file checks that:
+
+- patch-accountability fields default to `False`
+- generated patches without explanation require human review
+- security-related patches require human review even when support fields are present
+- already-applied patches require human review
+- explanation/diff mismatches require human review
+- fully supported, unapplied, non-security patch proposals may remain `CONTINUE` when the base route allows it
+- automatic patch application, commit, push, PR creation, merge, and deployment requests require human review
+- existing L4, L5, and L6 routes remain unchanged
+- the patch-accountability overlay does not weaken L5 or L6
+- blocked actions include automatic patch actions
+- the human-review stub includes patch-accountability fields and reason codes
+- the versioned evaluator passes `py_compile`
+
+
 ## Batch execution and resume
 
 This repository includes batch-style orchestration examples.
