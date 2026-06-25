@@ -289,7 +289,8 @@ def classify(obs: Observation) -> Classification:
     decision = route(level)
 
     patch_findings = patch_accountability_findings(obs)
-    rationale.extend(finding.rationale for finding in patch_findings)
+    for finding in patch_findings:
+        rationale.append(finding.rationale)
     decision = apply_patch_accountability_route(decision, patch_findings)
 
     blocked_actions = (
