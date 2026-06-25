@@ -14,8 +14,11 @@ from evaluator_pseudocode_v0_8_explainable_patch_gate import (
 )
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TEST_PATH = Path(__file__).resolve()
+PROJECT_ROOT = TEST_PATH.parents[1]
 EVALUATOR_PATH = PROJECT_ROOT / "evaluator_pseudocode_v0_8_explainable_patch_gate.py"
+if not EVALUATOR_PATH.exists():
+    EVALUATOR_PATH = TEST_PATH.parent / "evaluator_pseudocode_v0_8_explainable_patch_gate.py"
 
 
 class PatchAccountabilityTests(unittest.TestCase):
@@ -133,6 +136,12 @@ class PatchAccountabilityTests(unittest.TestCase):
             "patch_explanation_diff_mismatch",
             result.patch_accountability_reason_codes,
         )
+
+    def test_patch_rationale_entries_are_full_strings(self):
+        result = self.classify(patch_generated=True)
+
+        self.assertIn("patch explanation missing", result.rationale)
+        self.assertNotIn("p", result.rationale)
 
     def test_supported_patch_can_continue_when_base_route_allows(self):
         result = self.classify(
