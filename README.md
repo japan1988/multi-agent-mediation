@@ -176,6 +176,14 @@ The workflow is designed to improve maintainability, safety review, and develope
 
 It does not aim to hide warnings. Instead, it separates active repair candidates, review-only findings, historical-version warnings, and likely noise so maintainers can focus on the right items first.
 
+### Workflow hardening note
+
+The Tasukeru Analysis workflow also includes defensive workflow-hardening checks.
+
+Security review dependencies are pinned in the workflow for reproducibility, and PR file-list API access is restricted to the expected GitHub API host. If an unexpected API host, HTTP error, or network error is encountered while reading PR file metadata, the workflow logs only token-free diagnostic information and stops that retrieval path safely.
+
+The workflow must not print tokens, authorization headers, or request headers to logs. These controls support the repository's advisory-only and human-review-first design without changing the workflow into an automatic enforcement, repair, commit, push, PR, merge, or deployment system.
+
 ## Advisory-only policy
 
 The advisory review workflow does not:
