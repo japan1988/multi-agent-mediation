@@ -95,7 +95,9 @@ jobs:
           python - <<'PY' > tasukeru_logs/changed-files-api.txt || true
           import json
           import os
+          import sys
           import urllib.error
+          import urllib.parse
           import urllib.request
 
           event_path = os.environ.get("GITHUB_EVENT_PATH", "")
@@ -111,11 +113,21 @@ jobs:
           if not files_url.startswith("https://"):
               raise SystemExit(0)
 
+          allowed_api_hosts = {"api.github.com"}
           seen = set()
           while files_url:
+              parsed_files_url = urllib.parse.urlparse(files_url)
+              if parsed_files_url.hostname not in allowed_api_hosts:
+                  print(
+                      "PR files API host is not allowlisted; falling back to git diff.",
+                      file=sys.stderr,
+                  )
+                  break
+
               request = urllib.request.Request(
                   files_url,
                   method="GET",
+                  # Do not print or log this token or request headers.
                   headers={
                       "Accept": "application/vnd.github+json",
                       "X-GitHub-Api-Version": "2022-11-28",
@@ -141,9 +153,17 @@ jobs:
                                   next_url = part[start + 1 : end]
                                   break
                       files_url = next_url
-              except urllib.error.HTTPError:
+              except urllib.error.HTTPError as exc:
+                  print(
+                      f"PR files API returned HTTP {exc.code}; falling back to git diff.",
+                      file=sys.stderr,
+                  )
                   break
               except urllib.error.URLError:
+                  print(
+                      "PR files API request failed; falling back to git diff.",
+                      file=sys.stderr,
+                  )
                   break
           PY
 
@@ -192,7 +212,7 @@ jobs:
           set -euo pipefail
           mkdir -p tasukeru_logs/fix_candidates
           python -m pip install --upgrade pip
-          pip install "ruff==0.6.9" "bandit[toml]" "pip-audit"
+          pip install "ruff==0.6.9" "bandit[toml]==1.7.10" "pip-audit==2.7.3"
 
       - name: Run advisory tools
         if: always()
