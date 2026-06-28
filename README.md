@@ -383,6 +383,19 @@ Dependency consistency reports record whether findings, affected structures, imp
 
 All of these artifacts are advisory-only. They do not modify findings, change classifications, apply fixes, create commits, push changes, or merge pull requests automatically.
 
+### Standalone explainable patch proposal gate
+
+The repository also includes a standalone Phase 1 Tasukeru explainable patch proposal gate script.
+
+This script generates advisory-only JSON, Markdown, and verification artifacts from candidate patch-proposal records. It checks whether a draft fix has evidence, human-readable explanation, impact analysis, validation support, policy constraints, and hash-chain consistency.
+
+The script does not apply patches, modify repository files, commit, push, create pull requests, merge, deploy, or trigger workflow actions. Human review remains required before any proposed fix is adopted.
+
+Related files:
+
+* `scripts/tasukeru_explainable_patch.py`
+* `tests/test_tasukeru_explainable_patch.py`
+
 ## Advisory behavior
 
 The advisory workflow should help maintainers answer:
