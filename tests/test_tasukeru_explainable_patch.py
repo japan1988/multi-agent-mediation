@@ -11,6 +11,21 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 import tasukeru_explainable_patch as epp  # noqa: E402
 
 
+EXPECTED_SAFETY_METADATA = {
+    "human_review_required": True,
+    "automatic_apply": False,
+    "automatic_commit": False,
+    "automatic_push": False,
+    "automatic_pr": False,
+    "automatic_merge": False,
+    "automatic_deploy": False,
+    "ai_api_call": False,
+    "api_key_required": False,
+    "external_ai_provider": None,
+    "billable_action": False,
+}
+
+
 def valid_candidate(**overrides):
     candidate = {
         "observed_issue": "Ruff F401 observed an unused import.",
@@ -53,11 +68,22 @@ def test_as_bool_unknown_string_returns_default():
     assert epp.as_bool("maybe", default=True) is True
 
 
+def test_safety_metadata_matches_project_boundary():
+    assert epp.safety_metadata() == EXPECTED_SAFETY_METADATA
+
+
+def test_build_payload_includes_safety_metadata():
+    payload = epp.build_payload([valid_candidate()])
+
+    assert payload["safety_metadata"] == EXPECTED_SAFETY_METADATA
+
+
 def test_valid_manual_outline_is_evidence_backed_but_not_diff_validated():
     payload, record = build_one(valid_candidate())
 
     assert payload["counts"]["valid_proposal_count"] == 1
     assert payload["counts"]["invalid_draft_fix_error_count"] == 0
+    assert payload["safety_metadata"] == EXPECTED_SAFETY_METADATA
     assert record["proposal_status"] == epp.VALID_STATUS
     assert record["proposal_kind"] == epp.MANUAL_OUTLINE
     assert record["candidate_patch"]["candidate_diff_generated"] is False
@@ -219,7 +245,7 @@ def test_hash_chain_verification_detects_tampering():
     assert verification["errors"]
 
 
-def test_write_artifacts_reports_counts_policy_hash_and_existence(tmp_path):
+def test_write_artifacts_reports_counts_policy_hash_existence_and_safety(tmp_path):
     result = epp.write_artifacts(
         [
             valid_candidate(),
@@ -238,6 +264,7 @@ def test_write_artifacts_reports_counts_policy_hash_and_existence(tmp_path):
     assert verify["verified"] is True
     assert verify["policy_verification"]["policy_verified"] is True
     assert verify["hash_chain_verification"]["hash_chain_verified"] is True
+    assert verify["safety_metadata"] == EXPECTED_SAFETY_METADATA
     assert verify["hash_chain_note"] == (
         "Verifies internal chain consistency. Authenticity requires preserving "
         "or comparing the head hash externally."
@@ -251,6 +278,17 @@ def test_write_artifacts_reports_counts_policy_hash_and_existence(tmp_path):
     data = json.loads(result["json_path"].read_text(encoding="utf-8"))
     assert data["counts"]["valid_proposal_count"] == 1
     assert data["counts"]["invalid_draft_fix_error_count"] == 1
+    assert data["safety_metadata"] == EXPECTED_SAFETY_METADATA
+
+    markdown = result["markdown_path"].read_text(encoding="utf-8")
+    assert "## Safety Boundary" in markdown
+    assert "AI API call" in markdown
+    assert "API key required" in markdown
+    assert "Billable action" in markdown
+    assert "- AI API call: `false`" in markdown
+    assert "- API key required: `false`" in markdown
+    assert "- External AI provider: `null`" in markdown
+    assert "- Billable action: `false`" in markdown
 
 
 def test_cli_smoke_writes_artifacts_and_verified_true(tmp_path):
@@ -268,8 +306,45 @@ def test_cli_smoke_writes_artifacts_and_verified_true(tmp_path):
 
     verify = json.loads(verify_path.read_text(encoding="utf-8"))
     assert verify["verified"] is True
+    assert verify["safety_metadata"] == EXPECTED_SAFETY_METADATA
     assert verify["output_existence_checks"] == {
         "json": True,
         "markdown": True,
         "verify": True,
     }
+
+
+def test_cli_smoke_accepts_workflow_empty_candidate_input(tmp_path):
+    input_path = tmp_path / "workflow-candidates.json"
+    input_path.write_text(
+        json.dumps(
+            {
+                "safety_metadata": EXPECTED_SAFETY_METADATA,
+                "candidates": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert epp.main(["--input", str(input_path), "--out-dir", str(tmp_path)]) == 0
+
+    json_path = tmp_path / "tasukeru_explainable_patch_proposals.json"
+    markdown_path = tmp_path / "tasukeru_explainable_patch_proposals.md"
+    verify_path = tmp_path / "tasukeru_explainable_patch_proposals_verify.json"
+    assert json_path.exists()
+    assert markdown_path.exists()
+    assert verify_path.exists()
+
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    verify = json.loads(verify_path.read_text(encoding="utf-8"))
+    markdown = markdown_path.read_text(encoding="utf-8")
+
+    assert payload["safety_metadata"] == EXPECTED_SAFETY_METADATA
+    assert verify["verified"] is True
+    assert verify["valid_proposal_count"] == 0
+    assert verify["invalid_candidate_count"] == 0
+    assert verify["safety_metadata"] == EXPECTED_SAFETY_METADATA
+    assert "## Safety Boundary" in markdown
+    assert "AI API call" in markdown
+    assert "API key required" in markdown
+    assert "Billable action" in markdown
