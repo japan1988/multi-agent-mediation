@@ -396,6 +396,47 @@ jobs:
           echo "bandit_exit=${bandit_exit}"
           echo "pip_exit=${pip_exit}"
 
+      - name: Validate explainable patch proposal gate
+        if: always()
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/tasukeru_explainable_patch.py
+          python -m py_compile tests/test_tasukeru_explainable_patch.py
+          if python -c "import pytest" >/dev/null 2>&1; then
+            python -m pytest tests/test_tasukeru_explainable_patch.py -q
+          else
+            echo "pytest is not installed; skipped explainable patch proposal tests."
+          fi
+
+      - name: Generate explainable patch proposal artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          out_dir="tasukeru_logs/explainable_patch_proposals"
+          input_path="$out_dir/candidates.json"
+          mkdir -p "$out_dir"
+          cat > "$input_path" <<'JSON'
+          {
+            "safety_metadata": {
+              "human_review_required": true,
+              "automatic_apply": false,
+              "automatic_commit": false,
+              "automatic_push": false,
+              "automatic_pr": false,
+              "automatic_merge": false,
+              "automatic_deploy": false,
+              "ai_api_call": false,
+              "api_key_required": false,
+              "external_ai_provider": null,
+              "billable_action": false
+            },
+            "candidates": []
+          }
+          JSON
+          python scripts/tasukeru_explainable_patch.py \
+            --input "$input_path" \
+            --out-dir "$out_dir"
+
       - name: Generate Tasukeru advisory review
         if: always()
         run: |
@@ -9537,6 +9578,14 @@ jobs:
             tasukeru_arl.jsonl
             tasukeru_arl_verify.json
           if-no-files-found: ignore
+
+      - name: Upload explainable patch proposal artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: tasukeru-explainable-patch-proposals
+          path: tasukeru_logs/explainable_patch_proposals/
+          if-no-files-found: warn
 
       - name: Complete advisory phase
         if: always()

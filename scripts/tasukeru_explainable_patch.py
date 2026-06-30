@@ -51,6 +51,20 @@ BLOCKED_AUTOMATION_REASON_CODES = (
     AUTOMATIC_DEPLOY_BLOCKED,
 )
 
+PROJECT_BOUNDARY_SAFETY_METADATA = {
+    "human_review_required": True,
+    "automatic_apply": False,
+    "automatic_commit": False,
+    "automatic_push": False,
+    "automatic_pr": False,
+    "automatic_merge": False,
+    "automatic_deploy": False,
+    "ai_api_call": False,
+    "api_key_required": False,
+    "external_ai_provider": None,
+    "billable_action": False,
+}
+
 REASONING_CHAIN_FIELDS = (
     "observed_issue",
     "evidence",
@@ -100,6 +114,10 @@ def support_text(value: Any) -> str:
 
 def unique_reason_codes(reason_codes: list[str]) -> list[str]:
     return list(dict.fromkeys(reason_codes))
+
+
+def safety_metadata() -> dict[str, Any]:
+    return dict(PROJECT_BOUNDARY_SAFETY_METADATA)
 
 
 def as_bool(value: Any, default: bool = False) -> bool:
@@ -627,6 +645,7 @@ def build_payload(candidates: list[dict[str, Any]]) -> dict[str, Any]:
             "A fix proposal that cannot explain why this fix follows from this "
             "evidence is not a valid proposal."
         ),
+        "safety_metadata": safety_metadata(),
         "counts": {
             "total_candidates": len(records),
             "proposal_count": len(valid),
@@ -666,10 +685,25 @@ def write_json(path: Path, payload: Any) -> None:
 
 
 def write_markdown(path: Path, payload: dict[str, Any]) -> None:
+    safety = payload["safety_metadata"]
     lines = [
         "# Tasukeru Explainable Patch Proposals",
         "",
         "This artifact is advisory-only. It does not apply fixes, commit, push, create PRs, merge, or deploy.",
+        "",
+        "## Safety Boundary",
+        "",
+        f"- Human review required: `{json.dumps(safety['human_review_required'])}`",
+        f"- Automatic apply: `{json.dumps(safety['automatic_apply'])}`",
+        f"- Automatic commit: `{json.dumps(safety['automatic_commit'])}`",
+        f"- Automatic push: `{json.dumps(safety['automatic_push'])}`",
+        f"- Automatic PR: `{json.dumps(safety['automatic_pr'])}`",
+        f"- Automatic merge: `{json.dumps(safety['automatic_merge'])}`",
+        f"- Automatic deploy: `{json.dumps(safety['automatic_deploy'])}`",
+        f"- AI API call: `{json.dumps(safety['ai_api_call'])}`",
+        f"- API key required: `{json.dumps(safety['api_key_required'])}`",
+        f"- External AI provider: `{json.dumps(safety['external_ai_provider'])}`",
+        f"- Billable action: `{json.dumps(safety['billable_action'])}`",
         "",
         "## Counts",
         "",
@@ -738,6 +772,7 @@ def write_artifacts(candidates: list[dict[str, Any]], output_dir: Path) -> dict[
         "invalid_in_valid_count": payload["counts"]["invalid_in_valid_count"],
         "policy_verification": payload["policy"],
         "hash_chain_verification": payload["hash_chain"],
+        "safety_metadata": payload["safety_metadata"],
         "hash_chain_note": (
             "Verifies internal chain consistency. Authenticity requires preserving "
             "or comparing the head hash externally."
