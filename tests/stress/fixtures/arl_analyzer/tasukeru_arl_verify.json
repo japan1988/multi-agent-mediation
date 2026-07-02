@@ -1,0 +1,23 @@
+{
+  "arl_path": "tasukeru_arl.jsonl",
+  "errors": [],
+  "head_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+  "hmac_enabled": false,
+  "policy": {
+    "auto_apply_allowed": false,
+    "auto_branch_allowed": false,
+    "auto_commit_allowed": false,
+    "auto_merge_allowed": false,
+    "auto_pr_creation_allowed": false,
+    "auto_push_allowed": false,
+    "autofix_allowed": false,
+    "human_decision_required": true,
+    "modifies_repository": false
+  },
+  "purpose": "Advisory-only tamper-evident record of Tasukeru outputs.",
+  "row_count": 4,
+  "schema_version": "1.0",
+  "tool": "tasukeru_arl_hash_chain_verify",
+  "verified": true,
+  "verify_path": "tasukeru_arl_verify.json"
+}
