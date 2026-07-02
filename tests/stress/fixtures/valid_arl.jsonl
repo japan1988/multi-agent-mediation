@@ -1,0 +1,2 @@
+{"run_id":"arl-valid-001","layer":"meaning_gate","decision":"RUN","sealed":false,"overrideable":true,"final_decider":"SYSTEM","reason_code":"OK"}
+{"run_id":"arl-valid-002","layer":"relativity_gate","decision":"PAUSE_FOR_HITL","sealed":false,"overrideable":true,"final_decider":"USER","reason_code":"REL_REF_MISSING"}
