@@ -408,6 +408,17 @@ jobs:
             echo "pytest is not installed; skipped explainable patch proposal tests."
           fi
 
+      - name: Validate ARL stress fixtures
+        if: always()
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/tasukeru_arl_stress.py
+          python -m py_compile tests/stress/test_tasukeru_arl_stress.py
+          python scripts/tasukeru_arl_stress.py \
+            --fixtures-dir tests/stress/fixtures \
+            --out-dir stress_results/arl
+          python -m unittest discover -s tests/stress -p "test_*.py"
+
       - name: Generate explainable patch proposal artifacts
         if: always()
         run: |
@@ -9585,6 +9596,14 @@ jobs:
         with:
           name: tasukeru-explainable-patch-proposals
           path: tasukeru_logs/explainable_patch_proposals/
+          if-no-files-found: warn
+
+      - name: Upload ARL stress artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: tasukeru-arl-stress-results
+          path: stress_results/arl/
           if-no-files-found: warn
 
       - name: Complete advisory phase
