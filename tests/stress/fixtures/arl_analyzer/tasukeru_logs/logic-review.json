@@ -1,0 +1,36 @@
+{
+  "category_counts": {
+    "arl": 1,
+    "offensive_or_abuse_pattern": 1,
+    "relativity_human_readability": 1
+  },
+  "findings": [
+    {
+      "category": "relativity_human_readability",
+      "decision": "REVIEW_RECOMMENDED",
+      "file": "src/example.py",
+      "line": 10,
+      "reason_code": "REL_HUMAN_READABILITY_LOST",
+      "rule_id": "REL_HUMAN_READABILITY_LOST",
+      "severity": "MEDIUM",
+      "source": "Tasukeru RFL Review"
+    },
+    {
+      "category": "arl",
+      "decision": "REVIEW_RECOMMENDED",
+      "file": "tests/stress/fixtures/missing_required_key_arl.jsonl",
+      "line": 1,
+      "message": "ARL row is missing required keys: reason_code",
+      "reason_code": "ARL_REQUIRED_KEYS_MISSING",
+      "rule_id": "ARL_REQUIRED_KEYS_MISSING",
+      "severity": "MEDIUM",
+      "source": "Tasukeru Logic Review"
+    }
+  ],
+  "findings_count": 2,
+  "schema_version": "1.0",
+  "severity_counts": {
+    "MEDIUM": 2
+  },
+  "tool": "tasukeru_logic_review"
+}
