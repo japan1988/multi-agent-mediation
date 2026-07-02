@@ -1,0 +1,8 @@
+{
+  "decision": "RUN",
+  "mismatch_count": 0,
+  "mismatches": [],
+  "reason_code": "RESULT_CONSISTENCY_VERIFIED",
+  "schema_version": "result-consistency-auditor-v1",
+  "verified": true
+}
