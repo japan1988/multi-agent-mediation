@@ -1,0 +1,30 @@
+{
+  "checks": {
+    "all_cases_passed": true,
+    "counts_consistent": true,
+    "empty_input_handled_safely": true,
+    "expected_negative_cases_are_detections_not_failures": true,
+    "failed_cases_zero": true,
+    "invalid_jsonl_detected": true,
+    "missing_required_key_detected": true,
+    "output_files_exist": true,
+    "safety_boundary_verified": true,
+    "valid_input_verified_true": true
+  },
+  "counts": {
+    "empty_input_cases": 1,
+    "failed_cases": 0,
+    "invalid_jsonl_lines": 1,
+    "missing_required_key_records": 1,
+    "passed_cases": 4,
+    "total_cases": 4,
+    "total_lines": 4,
+    "total_non_empty_lines": 4,
+    "total_valid_records": 2,
+    "valid_input_cases": 1
+  },
+  "generated_at_utc": "1970-01-01T00:00:00Z",
+  "hmac_enabled": false,
+  "schema_version": "tasukeru-arl-stress-verify-v0.1",
+  "verified": true
+}
