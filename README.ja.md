@@ -1,9 +1,16 @@
-# 📘 Maestro Orchestrator — マルチエージェント・オーケストレーション・フレームワーク
+# 📘 Maestro Orchestrator — Multi-Agent Orchestration Framework
 
-日本語版: `README.ja.md`
+Language: [English](README.md) / [日本語](README.ja.md)
 
-GitHub Stars / Open Issues / License / Python App CI / Tasukeru Advisory  
-Python Version / Ruff / Last Commit
+[![GitHub Stars](https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=flat-square)](https://github.com/japan1988/multi-agent-mediation/stargazers)
+[![Open Issues](https://img.shields.io/github/issues/japan1988/multi-agent-mediation?style=flat-square)](https://github.com/japan1988/multi-agent-mediation/issues)
+[![License](https://img.shields.io/github/license/japan1988/multi-agent-mediation?style=flat-square)](LICENSE)
+[![Python App CI](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/python-app.yml)
+[![Tasukeru Advisory](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml/badge.svg)](https://github.com/japan1988/multi-agent-mediation/actions/workflows/tasukeru-analysis.yml)
+
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square)](pyproject.toml)
+[![Ruff](https://img.shields.io/badge/lint-ruff-46a2f1?style=flat-square)](https://docs.astral.sh/ruff/)
+[![Last Commit](https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square)](https://github.com/japan1988/multi-agent-mediation/commits/main)
 
 Maestro Orchestrator は、複数のシミュレートされた AI エージェントが安全に協調できるかを検証するための、ローカル研究用ツールです。
 
