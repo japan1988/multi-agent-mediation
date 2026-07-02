@@ -1,0 +1,13 @@
+{
+  "decision": "RUN",
+  "finding_count": 2,
+  "policy_violation_count": 0,
+  "policy_violations": [],
+  "reason_code": "FINDING_VALIDATION_VERIFIED",
+  "report_only": true,
+  "schema_version": "finding-validation-layer-v1",
+  "validation_counts": {
+    "REVIEW_ONLY": 2
+  },
+  "verified": true
+}
