@@ -419,18 +419,6 @@ jobs:
             --out-dir stress_results/arl
           python -m unittest discover -s tests/stress -p "test_*.py"
 
-      - name: Generate ARL analyzer graph artifacts
-        if: always()
-        run: |
-          set -euo pipefail
-          python -m py_compile scripts/tasukeru_arl_analyzer.py
-          python -m py_compile tests/stress/test_tasukeru_arl_analyzer.py
-          python -m unittest discover -s tests/stress -p "test_tasukeru_arl_analyzer.py"
-          python scripts/tasukeru_arl_analyzer.py \
-            --input-dir . \
-            --stress-dir stress_results/arl \
-            --out-dir analysis_results/arl
-
       - name: Generate explainable patch proposal artifacts
         if: always()
         run: |
@@ -7852,6 +7840,18 @@ jobs:
           print("Auto fix: false")
           print("Auto merge: false")
           PY
+
+      - name: Generate ARL analyzer graph artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/tasukeru_arl_analyzer.py
+          python -m py_compile tests/stress/test_tasukeru_arl_analyzer.py
+          python -m unittest discover -s tests/stress -p "test_tasukeru_arl_analyzer.py"
+          python scripts/tasukeru_arl_analyzer.py \
+            --input-dir . \
+            --stress-dir stress_results/arl \
+            --out-dir analysis_results/arl
 
       - name: Generate Tasukeru v5.1.2 audit boundary review
         if: always()
