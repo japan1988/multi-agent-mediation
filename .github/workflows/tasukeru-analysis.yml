@@ -419,6 +419,18 @@ jobs:
             --out-dir stress_results/arl
           python -m unittest discover -s tests/stress -p "test_*.py"
 
+      - name: Generate ARL analyzer graph artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/tasukeru_arl_analyzer.py
+          python -m py_compile tests/stress/test_tasukeru_arl_analyzer.py
+          python -m unittest discover -s tests/stress -p "test_tasukeru_arl_analyzer.py"
+          python scripts/tasukeru_arl_analyzer.py \
+            --input-dir . \
+            --stress-dir stress_results/arl \
+            --out-dir analysis_results/arl
+
       - name: Generate explainable patch proposal artifacts
         if: always()
         run: |
@@ -9604,6 +9616,14 @@ jobs:
         with:
           name: tasukeru-arl-stress-results
           path: stress_results/arl/
+          if-no-files-found: warn
+
+      - name: Upload ARL analyzer graph artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: tasukeru-arl-analyzer-results
+          path: analysis_results/arl/
           if-no-files-found: warn
 
       - name: Complete advisory phase
