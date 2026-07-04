@@ -1,0 +1,31 @@
+{
+  "counts": {
+    "HITL_REQUIRED": 0,
+    "INFO_ONLY": 0,
+    "REVIEW_RECOMMENDED": 2
+  },
+  "entries": [
+    {
+      "category": "relativity_human_readability",
+      "decision": "REVIEW_RECOMMENDED",
+      "file": "src/example.py",
+      "line": 10,
+      "reason_code": "REL_HUMAN_READABILITY_LOST",
+      "rule_id": "REL_HUMAN_READABILITY_LOST",
+      "severity": "MEDIUM",
+      "source": "Tasukeru RFL Review"
+    },
+    {
+      "category": "offensive_or_abuse_pattern",
+      "decision": "REVIEW_RECOMMENDED",
+      "file": "legacy/example.py",
+      "line": 42,
+      "reason_code": "ABUSE_STATE_STORE_RESET_REVIEW",
+      "rule_id": "ABUSE_STATE_STORE_RESET_REVIEW",
+      "severity": "MEDIUM",
+      "source": "Tasukeru Abuse Pattern Review"
+    }
+  ],
+  "schema_version": "1.0",
+  "tool": "tasukeru_hitl_decision_support"
+}

@@ -1,0 +1,104 @@
+{
+  "cases": [
+    {
+      "case_id": "valid_arl",
+      "empty_input": false,
+      "expected_kind": "VALID",
+      "fixture_name": "valid_arl.jsonl",
+      "input_verified": true,
+      "invalid_jsonl_count": 0,
+      "issues": [],
+      "line_count": 2,
+      "missing_required_key_count": 0,
+      "non_empty_line_count": 2,
+      "passed": true,
+      "valid_record_count": 2
+    },
+    {
+      "case_id": "empty_arl",
+      "empty_input": true,
+      "expected_kind": "EMPTY",
+      "fixture_name": "empty_arl.jsonl",
+      "input_verified": false,
+      "invalid_jsonl_count": 0,
+      "issues": [],
+      "line_count": 0,
+      "missing_required_key_count": 0,
+      "non_empty_line_count": 0,
+      "passed": true,
+      "valid_record_count": 0
+    },
+    {
+      "case_id": "missing_required_key_arl",
+      "empty_input": false,
+      "expected_kind": "MISSING_REQUIRED_KEY",
+      "fixture_name": "missing_required_key_arl.jsonl",
+      "input_verified": false,
+      "invalid_jsonl_count": 0,
+      "issues": [
+        {
+          "detail": "ARL record is missing required key(s).",
+          "issue_type": "MISSING_REQUIRED_KEY",
+          "line_number": 1,
+          "missing_keys": [
+            "reason_code"
+          ]
+        }
+      ],
+      "line_count": 1,
+      "missing_required_key_count": 1,
+      "non_empty_line_count": 1,
+      "passed": true,
+      "valid_record_count": 0
+    },
+    {
+      "case_id": "invalid_jsonl_arl",
+      "empty_input": false,
+      "expected_kind": "INVALID_JSONL",
+      "fixture_name": "invalid_jsonl_arl.jsonl",
+      "input_verified": false,
+      "invalid_jsonl_count": 1,
+      "issues": [
+        {
+          "detail": "JSONDecodeError: Expecting ',' delimiter",
+          "issue_type": "INVALID_JSONL",
+          "line_number": 1,
+          "missing_keys": []
+        }
+      ],
+      "line_count": 1,
+      "missing_required_key_count": 0,
+      "non_empty_line_count": 1,
+      "passed": true,
+      "valid_record_count": 0
+    }
+  ],
+  "counts": {
+    "empty_input_cases": 1,
+    "failed_cases": 0,
+    "invalid_jsonl_lines": 1,
+    "missing_required_key_records": 1,
+    "passed_cases": 4,
+    "total_cases": 4,
+    "total_lines": 4,
+    "total_non_empty_lines": 4,
+    "total_valid_records": 2,
+    "valid_input_cases": 1
+  },
+  "expectation_checks": {
+    "all_cases_passed": true,
+    "counts_consistent": true,
+    "empty_input_handled_safely": true,
+    "expected_negative_cases_are_detections_not_failures": true,
+    "failed_cases_zero": true,
+    "invalid_jsonl_detected": true,
+    "missing_required_key_detected": true,
+    "safety_boundary_verified": true,
+    "valid_input_verified_true": true
+  },
+  "framework": "ARL v0.1 stress test framework",
+  "generated_at_utc": "1970-01-01T00:00:00Z",
+  "mode": "fixture_based_advisory_only",
+  "schema_version": "tasukeru-arl-stress-v0.1",
+  "verified": true
+}
