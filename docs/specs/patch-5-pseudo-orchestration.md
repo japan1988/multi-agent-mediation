@@ -68,6 +68,19 @@ All decisions remain advisory.
 
 Final decisions remain with a human reviewer. Pseudo-orchestration may organize materials, but it must not approve, apply, commit, push, open PRs, merge, or deploy changes.
 
+## Automation acceptance criteria
+
+Automation may be considered only when all of the following conditions are met:
+
+- The behavior is explainable.
+- The change scope is limited.
+- The before and after states are recorded.
+- A rollback procedure exists.
+- The rollback procedure has been verified.
+- Execution can stop safely on failure.
+
+For Patch 5, these criteria apply only to future pseudo-orchestration work. The initial Patch 5 specification documents these criteria only. It does not implement automation, workflow execution, model inference, code changes, commits, PR creation, merge, or deployment.
+
 ## Workflow boundary
 
 GitHub Actions may only generate local artifacts for review.
