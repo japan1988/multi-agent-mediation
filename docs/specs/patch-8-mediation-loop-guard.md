@@ -128,6 +128,31 @@ These inputs are logical artifact concepts only.
 
 Patch 8 does not require live services, external providers, or AI APIs.
 
+## Network and metadata boundary
+
+Patch 8 must not call AI providers or external AI services.
+
+Prohibited network/API behavior includes:
+
+- runtime external network calls to AI providers or external AI services
+- OpenAI API calls
+- Codex API calls
+- Anthropic API calls
+- Gemini API calls
+- Copilot API calls
+- external AI provider APIs
+- AI API keys
+- GitHub Actions secrets for AI APIs
+
+The following behavior is allowed when it remains under the reviewed advisory boundary:
+
+- read-only GitHub metadata access required to inspect PR diffs under read-only permissions
+- GitHub Actions artifact upload for human review
+- local deterministic artifact generation
+- advisory-only review material generation
+
+Read-only GitHub repository metadata access is not the same as external AI provider access. This clarification does not weaken the prohibition against AI provider calls, AI API keys, secrets for AI APIs, runtime repair, automated PR creation, merge, or deploy behavior.
+
 ## Outputs
 
 Patch 8 may define these future logical outputs:
@@ -217,6 +242,8 @@ Expected mappings:
 ## Future artifact shape
 
 Patch 8 does not implement artifacts yet.
+
+Fields such as `next_action` and `required_next_actions` are advisory artifact labels only. They do not dispatch work, launch agents, post GitHub comments, apply fixes, create pull requests, merge, or deploy.
 
 A future implementation may produce a local review artifact with this shape for a repeated reason-code loop:
 
@@ -367,6 +394,10 @@ Allowed:
 - define future assertions
 - define future fixtures as text only
 - preserve human final decision boundary
+- local deterministic artifact generation for human review, if a future implementation is separately approved
+- advisory-only review material generation
+- read-only GitHub metadata access under read-only permissions, if used by existing or separately reviewed workflow infrastructure
+- GitHub Actions artifact upload for human review, if used by existing or separately reviewed workflow infrastructure
 
 Prohibited:
 
@@ -382,9 +413,12 @@ Prohibited:
 - Gemini API calls
 - Copilot API calls
 - external AI provider calls
+- external AI provider APIs
 - API keys
+- AI API keys
 - GitHub Actions secrets
-- runtime external network calls
+- GitHub Actions secrets for AI APIs
+- runtime external network calls to AI providers or external AI services
 - actual agent execution
 - automatic repair
 - source file modification by verifier
@@ -408,7 +442,8 @@ Prohibited:
 - [ ] No AI API calls
 - [ ] No API keys or secrets
 - [ ] No external AI provider calls
-- [ ] No runtime external network calls
+- [ ] No runtime external network calls to AI providers or external AI services
+- [ ] Read-only GitHub metadata access, if present in existing or separately reviewed workflow infrastructure, remains under read-only permissions
 - [ ] No actual agent execution
 - [ ] No automatic repair
 - [ ] No source file modification by verifier
