@@ -1,4 +1,4 @@
-# Patch 12: Controlled Codex handoff
+# Patch 12: Controlled implementation handoff
 
 ## Status
 
@@ -18,24 +18,67 @@ Patch 12 is not a workflow modification.
 
 Patch 12 is not an AI API integration.
 
-Patch 12 is not permission for Codex to create a pull request during this specification task.
+Patch 12 does not grant permission for the Implementation Executor to create a pull request during this specification task.
 
-Creation of this specification does not enable Codex-created pull requests.
+Creation of this specification does not enable executor-created pull requests.
 
 No repository permission, workflow permission, runtime execution authority, merge authority, or deployment authority is created by this document.
+
+## Role-based terminology
+
+This specification uses role-based terminology and does not require, endorse, or depend on a specific model, product, provider, or repository platform.
+
+### Human Owner
+
+The Human Owner is the person with final authority for:
+
+- implementation approval
+- one-time pull-request authorization
+- authorization revocation
+- final merge decisions
+
+### Design and Review Advisor
+
+The Design and Review Advisor is a person or system that may:
+
+- prepare implementation instructions
+- define review criteria
+- inspect evidence
+- return advisory review outcomes
+
+The role has no repository authority and cannot authorize pull-request creation, merge, or deployment.
+
+### Implementation Executor
+
+The Implementation Executor is a person or system that may perform only the actions explicitly authorized for the current stage.
+
+The role cannot infer authority for later stages.
+
+### Repository and CI Evidence Sources
+
+Repository and CI systems provide evidence such as:
+
+- commit identity
+- branch comparison
+- changed files
+- pull-request metadata
+- review status
+- CI status and conclusion
+
+Evidence does not grant authorization.
 
 ## Purpose
 
 Patch 12 defines a controlled handoff protocol between:
 
-- a human owner
-- GPT acting as a design and review advisor
-- Codex acting as a limited implementation executor
-- GitHub and CI acting as evidence sources
+- a Human Owner
+- a Design and Review Advisor
+- an Implementation Executor
+- Repository and CI Evidence Sources
 
-The protocol describes a stage-gated path in which GPT prepares an implementation prompt, a human owner explicitly approves that prompt, Codex implements only the approved scope, GPT reviews the resulting evidence, a human owner separately authorizes one pull-request creation, Codex creates exactly one pull request and stops, GPT reviews the pull request and CI evidence, and a human owner alone makes the final merge decision.
+The protocol describes a stage-gated path in which the Design and Review Advisor prepares implementation instructions, the Human Owner explicitly approves those instructions, the Implementation Executor implements only the approved scope, the Design and Review Advisor reviews the resulting evidence, the Human Owner separately authorizes one pull-request creation, the Implementation Executor creates exactly one pull request and stops, the Design and Review Advisor reviews the pull request and CI evidence, and the Human Owner alone makes the final merge decision.
 
-Patch 12 allows future consideration of a human-authorized, single pull-request creation by Codex.
+Patch 12 allows future consideration of a human-authorized, single pull-request creation by the Implementation Executor.
 
 Patch 12 preserves this project boundary:
 
@@ -43,7 +86,7 @@ Patch 12 preserves this project boundary:
 
 ## Scope
 
-Patch 12 defines specification rules for controlled Codex handoff.
+Patch 12 defines specification rules for controlled implementation handoff.
 
 The scope is limited to:
 
@@ -68,7 +111,7 @@ Patch 12 does not authorize or implement:
 - automatic merge
 - deployment
 - automatic continuation between stages
-- self-authorization by GPT or Codex
+- self-authorization by the Design and Review Advisor or Implementation Executor
 - runtime orchestration
 - real agent execution
 - workflow changes
@@ -83,7 +126,9 @@ Patch 12 does not authorize or implement:
 
 ## Core authorization principle
 
-"Authorization is stage-specific, single-use, and non-transitive. Approval to implement does not authorize pull-request creation. Approval to create a pull request does not authorize merge or deployment."
+"Authorization is stage-specific, single-use, and non-transitive.
+Approval to implement does not authorize pull-request creation.
+Approval to create a pull request does not authorize merge or deployment."
 
 This principle means:
 
@@ -92,15 +137,15 @@ This principle means:
 - general approval is not sufficient for a repository write action
 - ambiguous approval must be treated as no approval
 - authorization cannot be inferred from efficiency claims
-- Codex must not expand the meaning of a human instruction
-- GPT review is advisory and does not replace human authorization
+- the Implementation Executor must not expand the meaning of a Human Owner instruction
+- advisory review does not replace human authorization
 - a human final decision remains mandatory
 
 ## Roles and authority boundaries
 
-### Human owner
+### Human Owner
 
-The human owner:
+The Human Owner:
 
 - defines project intent
 - approves the implementation prompt
@@ -110,19 +155,19 @@ The human owner:
 - makes the final merge decision
 - may revoke authorization at any time before use
 
-The human owner is the only final authority.
+The Human Owner is the only final authority.
 
-### GPT design and review advisor
+### Design and Review Advisor
 
-GPT may:
+The Design and Review Advisor may:
 
-- prepare a Codex implementation prompt
+- prepare implementation instructions
 - define scope and validation requirements
 - inspect branch comparisons, commits, diffs, pull-request metadata, and CI evidence
 - identify inconsistencies and risks
 - recommend `REVIEW_OK`, `NEEDS_CHANGES`, or `BLOCK`
 
-GPT must not:
+The Design and Review Advisor must not:
 
 - grant repository permission
 - substitute its review for human approval
@@ -130,11 +175,11 @@ GPT must not:
 - authorize merge or deployment
 - silently change the approved implementation scope
 
-### Codex implementation executor
+### Implementation Executor
 
-Codex may act only within the currently authorized stage.
+The Implementation Executor may act only within the currently authorized stage.
 
-During implementation, Codex may perform only explicitly approved actions, such as:
+During implementation, the Implementation Executor may perform only explicitly approved actions, such as:
 
 - create the specified branch
 - modify approved files
@@ -142,7 +187,7 @@ During implementation, Codex may perform only explicitly approved actions, such 
 - create the specified commit
 - report evidence
 
-Codex must not infer authority to:
+The Implementation Executor must not infer authority to:
 
 - create a pull request
 - merge
@@ -153,9 +198,9 @@ Codex must not infer authority to:
 - perform unrelated cleanup
 - continue to a later stage
 
-### GitHub and CI evidence sources
+### Repository and CI Evidence Sources
 
-GitHub and CI provide evidence such as:
+Repository and CI systems provide evidence such as:
 
 - commit SHA
 - branch comparison
@@ -166,7 +211,7 @@ GitHub and CI provide evidence such as:
 - workflow status
 - CI conclusion
 
-GitHub status or CI status does not itself grant authorization.
+Repository status or CI status does not itself grant authorization.
 
 ## Handoff stages
 
@@ -177,7 +222,7 @@ Patch 12 defines these logical stages:
 3. `IMPLEMENTATION_AUTHORIZED`
 4. `IMPLEMENTATION_IN_PROGRESS`
 5. `IMPLEMENTATION_COMPLETE`
-6. `GPT_REVIEW_REQUIRED`
+6. `ADVISORY_REVIEW_REQUIRED`
 7. `CHANGES_REQUIRED`
 8. `PR_AUTHORIZATION_REQUIRED`
 9. `PR_AUTHORIZED_ONCE`
@@ -218,15 +263,15 @@ Required transitions are:
 
 - `PROMPT_DRAFTED` -> human review -> `IMPLEMENTATION_APPROVAL_REQUIRED`
 - `IMPLEMENTATION_APPROVAL_REQUIRED` -> explicit human approval -> `IMPLEMENTATION_AUTHORIZED`
-- `IMPLEMENTATION_AUTHORIZED` -> Codex begins the approved task -> `IMPLEMENTATION_IN_PROGRESS`
+- `IMPLEMENTATION_AUTHORIZED` -> the Implementation Executor begins the approved task -> `IMPLEMENTATION_IN_PROGRESS`
 - `IMPLEMENTATION_IN_PROGRESS` -> approved work and validation complete -> `IMPLEMENTATION_COMPLETE`
-- `IMPLEMENTATION_COMPLETE` -> GitHub evidence available -> `GPT_REVIEW_REQUIRED`
-- `GPT_REVIEW_REQUIRED` -> review finds correct scope and acceptable evidence -> `PR_AUTHORIZATION_REQUIRED`
-- `GPT_REVIEW_REQUIRED` -> review finds correctable problems -> `CHANGES_REQUIRED`
-- `GPT_REVIEW_REQUIRED` -> review finds prohibited behavior -> `BLOCKED`
+- `IMPLEMENTATION_COMPLETE` -> repository evidence available -> `ADVISORY_REVIEW_REQUIRED`
+- `ADVISORY_REVIEW_REQUIRED` -> review finds correct scope and acceptable evidence -> `PR_AUTHORIZATION_REQUIRED`
+- `ADVISORY_REVIEW_REQUIRED` -> review finds correctable problems -> `CHANGES_REQUIRED`
+- `ADVISORY_REVIEW_REQUIRED` -> review finds prohibited behavior -> `BLOCKED`
 - `CHANGES_REQUIRED` -> new or revised human-approved implementation instruction -> `IMPLEMENTATION_AUTHORIZED`
 - `PR_AUTHORIZATION_REQUIRED` -> explicit, valid, single-use human authorization -> `PR_AUTHORIZED_ONCE`
-- `PR_AUTHORIZED_ONCE` -> Codex invokes exactly one pull-request creation action -> `PR_CREATION_IN_PROGRESS`
+- `PR_AUTHORIZED_ONCE` -> the Implementation Executor invokes exactly one pull-request creation action -> `PR_CREATION_IN_PROGRESS`
 - `PR_CREATION_IN_PROGRESS` -> pull request successfully created -> `PR_CREATED`
 - `PR_CREATED` -> pull request and CI review -> `CI_REVIEW_REQUIRED`
 - `CI_REVIEW_REQUIRED` -> review evidence is complete -> `READY_FOR_HUMAN_MERGE_DECISION`
@@ -255,7 +300,7 @@ Implementation authorization permits implementation and commit creation only.
 It does not authorize:
 
 - pull-request creation
-- GitHub comments
+- repository comments
 - reviewer requests
 - label changes
 - issue creation
@@ -265,9 +310,9 @@ It does not authorize:
 
 A completed implementation stage must stop and report evidence.
 
-## GPT review gate
+## Advisory Review gate
 
-The GPT review gate must inspect, where available:
+The Design and Review Advisor may inspect, where available:
 
 - branch name
 - base branch
@@ -285,7 +330,7 @@ The GPT review gate must inspect, where available:
 - external integrations
 - unexpected repository actions
 
-GPT review outcomes are limited to:
+Advisory Review outcomes are limited to:
 
 - `REVIEW_OK`
 - `NEEDS_CHANGES`
@@ -295,23 +340,27 @@ GPT review outcomes are limited to:
 
 `REVIEW_OK` does not create pull-request authority.
 
-`NEEDS_CHANGES` requires a new implementation instruction or approval.
+`NEEDS_CHANGES` requires new or revised Human Owner approval.
 
 `BLOCK` prevents continuation under the current handoff.
 
 Missing evidence must not produce `REVIEW_OK`.
 
+No review outcome grants repository permission.
+
+No review outcome authorizes merge or deployment.
+
 ## Pull-request authorization
 
 Pull-request creation is a separate repository write action.
 
-Before Codex may create a pull request, all of these conditions must be satisfied:
+Before the Implementation Executor may create a pull request, all of these conditions must be satisfied:
 
 - implementation is complete
 - the implementation commit exists
-- GPT review returned `REVIEW_OK`
-- the human owner has reviewed the implementation evidence
-- the human owner explicitly authorizes one pull-request creation
+- Advisory Review returned `REVIEW_OK`
+- the Human Owner has reviewed the implementation evidence
+- the Human Owner explicitly authorizes one pull-request creation
 - the authorization is bound to the exact repository
 - the authorization is bound to the exact head branch
 - the authorization is bound to the exact base branch
@@ -331,7 +380,8 @@ Patch 12 requires a separate explicit human authorization record after the HITL 
 ### Canonical human authorization template
 
 ```text
-I authorize Codex to create exactly one pull request for:
+I authorize the Implementation Executor to create exactly one pull request
+for:
 
 Repository: <owner/repository>
 Head branch: <head-branch>
@@ -358,11 +408,11 @@ The following statements are insufficient:
 - "make it live"
 - "handle the PR"
 - prior approval of the implementation prompt
-- GPT saying that the branch is ready
+- an advisory statement that the branch is ready
 
 ## Pull-request creation constraints
 
-When a valid `PR_AUTHORIZED_ONCE` state exists, Codex may perform only the single pull-request creation action.
+When a valid `PR_AUTHORIZED_ONCE` state exists, the Implementation Executor may perform only the single pull-request creation action.
 
 Required constraints:
 
@@ -390,7 +440,7 @@ Required constraints:
 - do not deploy
 - do not retry after failure without new authorization
 
-After successful creation, Codex must stop and report:
+After successful creation, the Implementation Executor must stop and report:
 
 - pull-request number
 - pull-request title
@@ -406,7 +456,7 @@ After successful creation, Codex must stop and report:
 
 ## Post-creation boundary
 
-After pull-request creation, Codex has no continuing authority.
+After pull-request creation, the Implementation Executor has no continuing authority.
 
 The following require separate future human decisions:
 
@@ -424,15 +474,15 @@ The following require separate future human decisions:
 
 CI success does not authorize merge.
 
-GPT review does not authorize merge.
+Advisory Review does not authorize merge.
 
 A merge button becoming available does not authorize merge.
 
-Only a human owner may make the final merge decision.
+Only the Human Owner may make the final merge decision.
 
 ## Review outcomes
 
-GPT review outcomes are:
+Advisory Review outcomes are:
 
 - `REVIEW_OK`
 - `NEEDS_CHANGES`
@@ -440,7 +490,7 @@ GPT review outcomes are:
 
 `REVIEW_OK` means the reviewed evidence appears consistent with the approved scope and contains no identified blocker. It is advisory only and does not authorize pull-request creation, merge, deployment, or further repository action.
 
-`NEEDS_CHANGES` means the reviewed evidence has correctable problems or incomplete implementation evidence. It requires a new or revised implementation instruction before Codex may continue.
+`NEEDS_CHANGES` means the reviewed evidence has correctable problems or incomplete implementation evidence. It requires a new or revised implementation instruction before the Implementation Executor may continue.
 
 `BLOCK` means the reviewed evidence shows prohibited behavior, scope violation, missing critical evidence, authorization mismatch, confidential-data exposure, or another condition that prevents continuation under the current handoff.
 
@@ -453,8 +503,8 @@ Patch 12 defines these reason codes:
 - `IMPLEMENTATION_APPROVAL_REQUIRED`
 - `IMPLEMENTATION_SCOPE_MISMATCH`
 - `IMPLEMENTATION_EVIDENCE_INCOMPLETE`
-- `GPT_REVIEW_REQUIRED`
-- `GPT_REVIEW_OK_ADVISORY_ONLY`
+- `ADVISORY_REVIEW_REQUIRED`
+- `ADVISORY_REVIEW_OK_NON_AUTHORIZING`
 - `CHANGES_REQUIRE_NEW_APPROVAL`
 - `PR_AUTHORIZATION_REQUIRED`
 - `PR_AUTHORIZATION_MISSING`
@@ -498,7 +548,7 @@ Evidence must be preserved for each stage where applicable.
 - known validation limitations
 - confirmation that no pull request was created
 
-### GPT review evidence
+### Advisory Review evidence
 
 - reviewed head SHA
 - reviewed changed files
@@ -594,13 +644,13 @@ Authorization must be invalidated when:
 - additional commits are added after review
 - a prohibited action is requested
 
-An invalidated authorization must not be repaired or silently updated by Codex.
+An invalidated authorization must not be repaired or silently updated by the Implementation Executor.
 
 A new human authorization is required.
 
 ## Duplicate and retry handling
 
-Before creating a pull request, Codex must check whether an open or closed pull request already exists for the same head branch and intended base branch.
+Before creating a pull request, the Implementation Executor must check whether an open or closed pull request already exists for the same head branch and intended base branch.
 
 If an existing matching pull request is found:
 
@@ -633,7 +683,7 @@ Authoritative scopes are preserved:
 - Patch 9: logical role-rotation escalation
 - Patch 10: checkpoint and handoff semantics
 - Patch 11: accountability and efficiency-justification classification
-- Patch 12: controlled, stage-specific Codex handoff and authorization boundaries
+- Patch 12: controlled, stage-specific implementation handoff and authorization boundaries
 
 Patch 10 remains authoritative for checkpoint and handoff semantics.
 
@@ -641,7 +691,7 @@ Patch 12 may define evidence that can later be referenced by a Patch 10 checkpoi
 
 Patch 11 remains authoritative for efficiency-based accountability classification.
 
-A proposed Codex-created pull request is a repository write and external effect.
+An executor-created pull request is a repository write and external effect.
 
 It must be classified through Patch 11 and escalated to HITL.
 
@@ -685,19 +735,19 @@ It is a separately approved, one-time repository write action bound to an exact 
 
 ### Example 1: implementation only
 
-A human owner approves an implementation-stage prompt allowing Codex to add one documentation file and commit it.
+A Human Owner approves an implementation-stage prompt allowing the Implementation Executor to add one documentation file and commit it.
 
-Codex creates the branch, file, validation result, and commit.
+The Implementation Executor creates the branch, file, validation result, and commit.
 
-Codex stops without creating a pull request.
+The Implementation Executor stops without creating a pull request.
 
 Result: `IMPLEMENTATION_COMPLETE`
 
-Next state: `GPT_REVIEW_REQUIRED`
+Next state: `ADVISORY_REVIEW_REQUIRED`
 
-### Example 2: GPT review passes
+### Example 2: Advisory Review passes
 
-GPT verifies one expected file, correct scope, no secrets, and no unexpected actions.
+The Design and Review Advisor verifies one expected file, correct scope, no secrets, and no unexpected actions.
 
 Outcome: `REVIEW_OK`
 
@@ -707,7 +757,7 @@ No pull-request authority exists yet.
 
 ### Example 3: explicit one-time PR authorization
 
-The human owner authorizes exactly one pull request for:
+The Human Owner authorizes exactly one pull request for:
 
 - repository
 - head branch
@@ -716,7 +766,7 @@ The human owner authorizes exactly one pull request for:
 - title
 - body hash
 
-Codex creates one pull request and stops.
+The Implementation Executor creates one pull request and stops.
 
 Result: `PR_CREATED`
 
@@ -724,7 +774,7 @@ Next state: `CI_REVIEW_REQUIRED`
 
 ### Example 4: vague instruction
 
-The human owner says:
+The Human Owner says:
 
 "Go ahead with the next step."
 
@@ -736,7 +786,7 @@ No pull request is created.
 
 ### Example 5: head SHA changed
 
-The human owner authorized SHA A, but the branch now points to SHA B.
+The Human Owner authorized SHA A, but the branch now points to SHA B.
 
 Result: `BLOCKED`
 
@@ -762,7 +812,7 @@ Result: `BLOCKED`
 
 Reason: `PR_CREATION_FAILED_REAUTHORIZATION_REQUIRED`
 
-Codex does not retry automatically.
+The Implementation Executor does not retry automatically.
 
 ### Example 8: CI success
 
@@ -774,7 +824,7 @@ CI success does not merge or authorize merge.
 
 ### Example 9: automatic merge request
 
-A prompt asks Codex to create and automatically merge a pull request.
+A prompt asks the Implementation Executor to create and automatically merge a pull request.
 
 Result: `BLOCKED`
 
@@ -784,14 +834,14 @@ Reason: `PROHIBITED_AUTOMATION_ATTEMPT`
 
 Patch 12 is acceptable only if:
 
-- exactly one new documentation file is added
-- the file is `docs/specs/patch-12-controlled-codex-handoff.md`
-- no existing file is modified
+- the superseded specification path is absent
+- `docs/specs/patch-12-controlled-implementation-handoff.md` is present
+- no existing unrelated file is modified
 - no workflow is changed
 - no script is changed
 - no source code is changed
 - no test is changed
-- no generated artifact is created
+- no generated artifact is added
 - no AI API integration is added
 - no external AI provider integration is added
 - no secret is added
@@ -805,6 +855,7 @@ Patch 12 is acceptable only if:
 - the specification prohibits automatic retry
 - the specification preserves human final merge authority
 - Patch 6 through Patch 11 remain unchanged
+- the normative file contains no prohibited model or product names
 
 ## Future implementation notes
 
@@ -818,16 +869,18 @@ Possible future components may include:
 - duplicate-pull-request detection
 - head-SHA binding validation
 - evidence-bundle generation
-- review-only GitHub metadata inspection
+- review-only repository metadata inspection
 
 Patch 12 does not authorize implementation.
 
 Patch 12 does not define API keys or secrets.
 
-Patch 12 does not add GitHub Actions permissions.
+Patch 12 does not add workflow permissions.
 
-Patch 12 does not add live connector execution.
+Patch 12 does not add live pull-request creation or external connector execution.
 
 Patch 12 does not call AI APIs.
+
+Patch 12 does not authorize automatic merge or deployment.
 
 Any future implementation must be fail-closed.
