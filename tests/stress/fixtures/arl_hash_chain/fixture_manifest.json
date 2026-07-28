@@ -1,0 +1,59 @@
+{
+  "cases": [
+    {
+      "case_id": "valid_chain",
+      "expected_additional_reason_codes": [],
+      "expected_canonical_head_hash": "4d7a836b8a1683f3dcc29c8f7d554503e8e5612aa0d13dec1ce702035d46cd4c",
+      "expected_outcome": "CHAIN_VALID",
+      "expected_primary_reason_code": "ARL_CHAIN_VALID",
+      "expected_row_count": 4,
+      "fixture_name": "valid_chain.jsonl",
+      "intended_mutation": "none",
+      "schema_version": "tasukeru-arl-hash-chain-fixture-case-v0.1",
+      "target": "chain"
+    },
+    {
+      "case_id": "middle_row_content_tampered",
+      "expected_additional_reason_codes": [
+        "ARL_CHAIN_HASH_MISMATCH",
+        "ARL_PREV_HASH_MISMATCH"
+      ],
+      "expected_canonical_head_hash": "4d7a836b8a1683f3dcc29c8f7d554503e8e5612aa0d13dec1ce702035d46cd4c",
+      "expected_outcome": "TAMPER_DETECTED",
+      "expected_primary_reason_code": "ARL_ROW_HASH_MISMATCH",
+      "expected_row_count": 4,
+      "fixture_name": "middle_row_content_tampered.jsonl",
+      "intended_mutation": "row_2_decision_changed_without_hash_regeneration",
+      "schema_version": "tasukeru-arl-hash-chain-fixture-case-v0.1",
+      "target": "row:2"
+    },
+    {
+      "case_id": "middle_row_chain_hash_tampered",
+      "expected_additional_reason_codes": [],
+      "expected_canonical_head_hash": "4d7a836b8a1683f3dcc29c8f7d554503e8e5612aa0d13dec1ce702035d46cd4c",
+      "expected_outcome": "TAMPER_DETECTED",
+      "expected_primary_reason_code": "ARL_CHAIN_HASH_MISMATCH",
+      "expected_row_count": 4,
+      "fixture_name": "middle_row_chain_hash_tampered.jsonl",
+      "intended_mutation": "row_2_stored_chain_hash_single_hex_change",
+      "schema_version": "tasukeru-arl-hash-chain-fixture-case-v0.1",
+      "target": "row:2"
+    },
+    {
+      "case_id": "middle_row_prev_hash_tampered",
+      "expected_additional_reason_codes": [
+        "ARL_ROW_HASH_MISMATCH",
+        "ARL_CHAIN_HASH_MISMATCH"
+      ],
+      "expected_canonical_head_hash": "4d7a836b8a1683f3dcc29c8f7d554503e8e5612aa0d13dec1ce702035d46cd4c",
+      "expected_outcome": "TAMPER_DETECTED",
+      "expected_primary_reason_code": "ARL_PREV_HASH_MISMATCH",
+      "expected_row_count": 4,
+      "fixture_name": "middle_row_prev_hash_tampered.jsonl",
+      "intended_mutation": "row_2_prev_hash_single_hex_change_without_hash_regeneration",
+      "schema_version": "tasukeru-arl-hash-chain-fixture-case-v0.1",
+      "target": "row:2"
+    }
+  ],
+  "schema_version": "tasukeru-arl-hash-chain-fixture-manifest-v0.1"
+}
