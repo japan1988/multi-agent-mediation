@@ -34,11 +34,11 @@ EXPECTED_OUTPUT_FILES = frozenset(
     }
 )
 
-CANONICAL_PHASE_1_HEAD_HASH = (
+CANONICAL_HEAD_HASH = (
     "4d7a836b8a1683f3dcc29c8f7d554503e8e5612aa0d13dec1ce702035d46cd4c"
 )
 
-PHASE_1_CASE_CONTRACTS = (
+PATCH_13_CASE_CONTRACTS = (
     MappingProxyType(
         {
             "schema_version": CASE_SCHEMA_VERSION,
@@ -50,7 +50,7 @@ PHASE_1_CASE_CONTRACTS = (
             "intended_mutation": "none",
             "target": "chain",
             "expected_row_count": 4,
-            "expected_canonical_head_hash": CANONICAL_PHASE_1_HEAD_HASH,
+            "expected_canonical_head_hash": CANONICAL_HEAD_HASH,
         }
     ),
     MappingProxyType(
@@ -67,7 +67,7 @@ PHASE_1_CASE_CONTRACTS = (
             "intended_mutation": "row_2_decision_changed_without_hash_regeneration",
             "target": "row:2",
             "expected_row_count": 4,
-            "expected_canonical_head_hash": CANONICAL_PHASE_1_HEAD_HASH,
+            "expected_canonical_head_hash": CANONICAL_HEAD_HASH,
         }
     ),
     MappingProxyType(
@@ -81,7 +81,7 @@ PHASE_1_CASE_CONTRACTS = (
             "intended_mutation": "row_2_stored_chain_hash_single_hex_change",
             "target": "row:2",
             "expected_row_count": 4,
-            "expected_canonical_head_hash": CANONICAL_PHASE_1_HEAD_HASH,
+            "expected_canonical_head_hash": CANONICAL_HEAD_HASH,
         }
     ),
     MappingProxyType(
@@ -100,13 +100,69 @@ PHASE_1_CASE_CONTRACTS = (
             ),
             "target": "row:2",
             "expected_row_count": 4,
-            "expected_canonical_head_hash": CANONICAL_PHASE_1_HEAD_HASH,
+            "expected_canonical_head_hash": CANONICAL_HEAD_HASH,
+        }
+    ),
+    MappingProxyType(
+        {
+            "schema_version": CASE_SCHEMA_VERSION,
+            "case_id": "final_row_content_tampered",
+            "fixture_name": "final_row_content_tampered.jsonl",
+            "expected_outcome": "TAMPER_DETECTED",
+            "expected_primary_reason_code": "ARL_ROW_HASH_MISMATCH",
+            "expected_additional_reason_codes": (
+                "ARL_CHAIN_HASH_MISMATCH",
+                "ARL_HEAD_HASH_MISMATCH",
+            ),
+            "intended_mutation": (
+                "row_4_decision_changed_from_BLOCK_to_CONTINUE_"
+                "without_hash_regeneration"
+            ),
+            "target": "row:4",
+            "expected_row_count": 4,
+            "expected_canonical_head_hash": CANONICAL_HEAD_HASH,
+        }
+    ),
+    MappingProxyType(
+        {
+            "schema_version": CASE_SCHEMA_VERSION,
+            "case_id": "rows_reordered",
+            "fixture_name": "rows_reordered.jsonl",
+            "expected_outcome": "TAMPER_DETECTED",
+            "expected_primary_reason_code": "ARL_SEQUENCE_MISMATCH",
+            "expected_additional_reason_codes": (
+                "ARL_PREV_HASH_MISMATCH",
+            ),
+            "intended_mutation": (
+                "rows_2_and_3_swapped_without_hash_regeneration"
+            ),
+            "target": "rows:2,3",
+            "expected_row_count": 4,
+            "expected_canonical_head_hash": CANONICAL_HEAD_HASH,
+        }
+    ),
+    MappingProxyType(
+        {
+            "schema_version": CASE_SCHEMA_VERSION,
+            "case_id": "row_deleted",
+            "fixture_name": "row_deleted.jsonl",
+            "expected_outcome": "TAMPER_DETECTED",
+            "expected_primary_reason_code": "ARL_SEQUENCE_MISMATCH",
+            "expected_additional_reason_codes": (
+                "ARL_PREV_HASH_MISMATCH",
+            ),
+            "intended_mutation": (
+                "row_2_deleted_without_modifying_remaining_rows"
+            ),
+            "target": "row:2",
+            "expected_row_count": 3,
+            "expected_canonical_head_hash": CANONICAL_HEAD_HASH,
         }
     ),
 )
 
-PHASE_1_CASE_IDS = tuple(
-    contract["case_id"] for contract in PHASE_1_CASE_CONTRACTS
+PATCH_13_CASE_IDS = tuple(
+    contract["case_id"] for contract in PATCH_13_CASE_CONTRACTS
 )
 
 PERMITTED_OUTCOMES = (
@@ -383,7 +439,7 @@ def _validate_case(case: Any) -> dict[str, Any]:
     return dict(case)
 
 
-def _validate_phase_1_case_contract(
+def _validate_case_contract(
     case: dict[str, Any],
     contract: MappingProxyType,
 ) -> None:
@@ -394,7 +450,7 @@ def _validate_phase_1_case_contract(
         if actual_value != contract[field]:
             raise ManifestError(
                 f"Manifest case {case['case_id']} does not match the "
-                f"Phase 1 contract for {field}."
+                f"Patch 13 contract for {field}."
             )
 
 
@@ -425,12 +481,13 @@ def load_manifest(fixtures_dir: Path) -> dict[str, Any]:
 
     cases = [_validate_case(case) for case in payload["cases"]]
     case_ids = [case["case_id"] for case in cases]
-    if tuple(case_ids) != PHASE_1_CASE_IDS:
+    if tuple(case_ids) != PATCH_13_CASE_IDS:
         raise ManifestError(
-            "Fixture manifest must contain the four Phase 1 cases in canonical order."
+            "Fixture manifest must contain the seven Patch 13 cases "
+            "in canonical order."
         )
-    for case, contract in zip(cases, PHASE_1_CASE_CONTRACTS, strict=True):
-        _validate_phase_1_case_contract(case, contract)
+    for case, contract in zip(cases, PATCH_13_CASE_CONTRACTS, strict=True):
+        _validate_case_contract(case, contract)
     fixture_names = [case["fixture_name"] for case in cases]
     if len(fixture_names) != len(set(fixture_names)):
         raise ManifestError("Fixture filenames must be unique.")
@@ -801,7 +858,7 @@ def run_stress(fixtures_dir: Path) -> dict[str, Any]:
     checks = {
         "manifest_valid": True,
         "required_cases_present": tuple(case["case_id"] for case in cases)
-        == PHASE_1_CASE_IDS,
+        == PATCH_13_CASE_IDS,
         "canonical_valid_chain_passed": bool(
             valid_case
             and valid_case["passed"]
