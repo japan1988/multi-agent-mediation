@@ -23,6 +23,32 @@ EXPECTED_OUTPUT_FILES = {
     hash_chain_stress.REPORT_FILENAME,
     hash_chain_stress.VERIFY_FILENAME,
 }
+CANONICAL_HEAD_HASH = (
+    "4d7a836b8a1683f3dcc29c8f7d554503e8e5612aa0d13dec1ce702035d46cd4c"
+)
+EXPECTED_CASE_IDS = (
+    "valid_chain",
+    "middle_row_content_tampered",
+    "middle_row_chain_hash_tampered",
+    "middle_row_prev_hash_tampered",
+    "final_row_content_tampered",
+    "rows_reordered",
+    "row_deleted",
+)
+EXPECTED_PHASE_2_FIXTURE_HASHES = {
+    "final_row_content_tampered.jsonl": (
+        "f2f8c09a0a0738167a23b3b3c8b3e018ecf4084ad10b666b2a89f9bc1cf6d5b0"
+    ),
+    "rows_reordered.jsonl": (
+        "f3c48fb80c491a2522b3e62d95e20a777bb195982fe857816574392c302f259f"
+    ),
+    "row_deleted.jsonl": (
+        "4e30d08c4e555527c97f27cc13487d9b842e6a56c450b0553db38db1d90afe5d"
+    ),
+}
+EXPECTED_MANIFEST_HASH = (
+    "35fc86d602cb8e7943c673499b4ed51b51a12516c2fb653d59d154485de53983"
+)
 
 
 def file_hash(path: Path) -> str:
@@ -153,6 +179,117 @@ class TasukeruArlHashChainStressTests(unittest.TestCase):
             ],
         )
         self.assertEqual(case["first_error_line"], 2)
+
+    def test_manifest_contains_canonical_seven_case_contract(self) -> None:
+        manifest = hash_chain_stress.load_manifest(FIXTURES_DIR)
+        cases = manifest["cases"]
+
+        self.assertEqual(
+            tuple(case["case_id"] for case in cases),
+            EXPECTED_CASE_IDS,
+        )
+        self.assertEqual(hash_chain_stress.PATCH_13_CASE_IDS, EXPECTED_CASE_IDS)
+        expected_phase_2 = (
+            (
+                "final_row_content_tampered",
+                "final_row_content_tampered.jsonl",
+                "ARL_ROW_HASH_MISMATCH",
+                ["ARL_CHAIN_HASH_MISMATCH", "ARL_HEAD_HASH_MISMATCH"],
+                4,
+            ),
+            (
+                "rows_reordered",
+                "rows_reordered.jsonl",
+                "ARL_SEQUENCE_MISMATCH",
+                ["ARL_PREV_HASH_MISMATCH"],
+                4,
+            ),
+            (
+                "row_deleted",
+                "row_deleted.jsonl",
+                "ARL_SEQUENCE_MISMATCH",
+                ["ARL_PREV_HASH_MISMATCH"],
+                3,
+            ),
+        )
+        for case, expected in zip(cases[4:], expected_phase_2, strict=True):
+            with self.subTest(case_id=case["case_id"]):
+                self.assertEqual(
+                    (
+                        case["case_id"],
+                        case["fixture_name"],
+                        case["expected_primary_reason_code"],
+                        case["expected_additional_reason_codes"],
+                        case["expected_row_count"],
+                    ),
+                    expected,
+                )
+                self.assertEqual(case["expected_outcome"], "TAMPER_DETECTED")
+
+    def test_final_row_content_tamper_is_detected(self) -> None:
+        result = hash_chain_stress.run_stress(FIXTURES_DIR)
+        case = next(
+            case
+            for case in result["cases"]
+            if case["case_id"] == "final_row_content_tampered"
+        )
+
+        self.assertTrue(case["passed"])
+        self.assertEqual(case["actual_outcome"], "TAMPER_DETECTED")
+        self.assertEqual(
+            case["reason_codes"],
+            [
+                "ARL_ROW_HASH_MISMATCH",
+                "ARL_CHAIN_HASH_MISMATCH",
+                "ARL_HEAD_HASH_MISMATCH",
+            ],
+        )
+        self.assertNotIn("ARL_PREV_HASH_MISMATCH", case["reason_codes"])
+        self.assertEqual(case["first_error_line"], 4)
+        self.assertEqual(case["parsed_row_count"], 4)
+        self.assertEqual(case["expected_row_count"], 4)
+        self.assertEqual(case["stored_head_hash"], CANONICAL_HEAD_HASH)
+        self.assertNotEqual(case["recomputed_head_hash"], CANONICAL_HEAD_HASH)
+        self.assertEqual(case["integrity_error_count"], 3)
+
+    def test_rows_reordered_are_detected(self) -> None:
+        result = hash_chain_stress.run_stress(FIXTURES_DIR)
+        case = next(
+            case for case in result["cases"] if case["case_id"] == "rows_reordered"
+        )
+
+        self.assertTrue(case["passed"])
+        self.assertEqual(case["actual_outcome"], "TAMPER_DETECTED")
+        self.assertEqual(
+            case["reason_codes"],
+            ["ARL_SEQUENCE_MISMATCH", "ARL_PREV_HASH_MISMATCH"],
+        )
+        self.assertEqual(case["first_error_line"], 2)
+        self.assertEqual(case["parsed_row_count"], 4)
+        self.assertEqual(case["expected_row_count"], 4)
+        self.assertEqual(case["stored_head_hash"], CANONICAL_HEAD_HASH)
+        self.assertEqual(case["recomputed_head_hash"], CANONICAL_HEAD_HASH)
+        self.assertEqual(case["integrity_error_count"], 5)
+
+    def test_deleted_middle_row_is_detected_without_head_mismatch(self) -> None:
+        result = hash_chain_stress.run_stress(FIXTURES_DIR)
+        case = next(
+            case for case in result["cases"] if case["case_id"] == "row_deleted"
+        )
+
+        self.assertTrue(case["passed"])
+        self.assertEqual(case["actual_outcome"], "TAMPER_DETECTED")
+        self.assertEqual(
+            case["reason_codes"],
+            ["ARL_SEQUENCE_MISMATCH", "ARL_PREV_HASH_MISMATCH"],
+        )
+        self.assertNotIn("ARL_HEAD_HASH_MISMATCH", case["reason_codes"])
+        self.assertEqual(case["first_error_line"], 2)
+        self.assertEqual(case["parsed_row_count"], 3)
+        self.assertEqual(case["expected_row_count"], 3)
+        self.assertEqual(case["stored_head_hash"], CANONICAL_HEAD_HASH)
+        self.assertEqual(case["recomputed_head_hash"], CANONICAL_HEAD_HASH)
+        self.assertEqual(case["integrity_error_count"], 3)
 
     def test_undetected_expected_tamper_is_blocked(self) -> None:
         manifest = hash_chain_stress.load_manifest(FIXTURES_DIR)
@@ -296,6 +433,31 @@ class TasukeruArlHashChainStressTests(unittest.TestCase):
             )
         )
 
+    def test_phase_two_allow_lists_reject_unauthorized_reasons(self) -> None:
+        self.assertFalse(
+            hash_chain_stress.validate_reason_code_sequence(
+                [
+                    "ARL_ROW_HASH_MISMATCH",
+                    "ARL_CHAIN_HASH_MISMATCH",
+                    "ARL_HEAD_HASH_MISMATCH",
+                    "ARL_PREV_HASH_MISMATCH",
+                ],
+                "ARL_ROW_HASH_MISMATCH",
+                ["ARL_CHAIN_HASH_MISMATCH", "ARL_HEAD_HASH_MISMATCH"],
+            )
+        )
+        self.assertFalse(
+            hash_chain_stress.validate_reason_code_sequence(
+                [
+                    "ARL_SEQUENCE_MISMATCH",
+                    "ARL_PREV_HASH_MISMATCH",
+                    "ARL_HEAD_HASH_MISMATCH",
+                ],
+                "ARL_SEQUENCE_MISMATCH",
+                ["ARL_PREV_HASH_MISMATCH"],
+            )
+        )
+
     def test_manifest_duplicate_allow_list_reason_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_name:
             copied_dir = Path(tmp_dir_name) / "fixtures"
@@ -341,6 +503,29 @@ class TasukeruArlHashChainStressTests(unittest.TestCase):
             with self.assertRaises(hash_chain_stress.ManifestError):
                 hash_chain_stress.load_manifest(copied_dir)
 
+    def test_manifest_rejects_altered_or_reordered_phase_two_contracts(self) -> None:
+        for mutation in ("altered", "reordered"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as name:
+                copied_dir = Path(name) / "fixtures"
+                shutil.copytree(FIXTURES_DIR, copied_dir)
+                manifest_path = copied_dir / hash_chain_stress.MANIFEST_FILENAME
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if mutation == "altered":
+                    manifest["cases"][4]["target"] = "row:3"
+                else:
+                    manifest["cases"][4], manifest["cases"][6] = (
+                        manifest["cases"][6],
+                        manifest["cases"][4],
+                    )
+                manifest_path.write_text(
+                    hash_chain_stress.json_dump(manifest),
+                    encoding="utf-8",
+                    newline="\n",
+                )
+
+                with self.assertRaises(hash_chain_stress.ManifestError):
+                    hash_chain_stress.load_manifest(copied_dir)
+
     def test_manifest_read_error_does_not_leak_physical_path(self) -> None:
         physical_path = r"C:\private\fixture_manifest.json"
         with mock.patch.object(
@@ -360,13 +545,15 @@ class TasukeruArlHashChainStressTests(unittest.TestCase):
         result = hash_chain_stress.run_stress(FIXTURES_DIR)
 
         self.assertTrue(result["verified"])
-        self.assertEqual(result["counts"]["total_cases"], 4)
-        self.assertEqual(result["counts"]["passed_cases"], 4)
+        self.assertEqual(result["counts"]["total_cases"], 7)
+        self.assertEqual(result["counts"]["passed_cases"], 7)
         self.assertEqual(result["counts"]["failed_cases"], 0)
         self.assertEqual(result["counts"]["valid_cases"], 1)
-        self.assertEqual(result["counts"]["expected_tamper_cases"], 3)
-        self.assertEqual(result["counts"]["tamper_cases_detected"], 3)
-        self.assertEqual(result["counts"]["total_rows_read"], 16)
+        self.assertEqual(result["counts"]["expected_tamper_cases"], 6)
+        self.assertEqual(result["counts"]["tamper_cases_detected"], 6)
+        self.assertEqual(result["counts"]["unexpected_valid_cases"], 0)
+        self.assertEqual(result["counts"]["input_invalid_cases"], 0)
+        self.assertEqual(result["counts"]["total_rows_read"], 27)
         self.assertTrue(
             hash_chain_stress.counts_consistent(
                 result["cases"],
@@ -481,6 +668,15 @@ class TasukeruArlHashChainStressTests(unittest.TestCase):
         after = {path.relative_to(FIXTURES_DIR): file_hash(path) for path in fixture_files}
         self.assertEqual(before, after)
 
+    def test_phase_two_fixture_and_manifest_hashes_are_fixed(self) -> None:
+        for filename, expected_hash in EXPECTED_PHASE_2_FIXTURE_HASHES.items():
+            with self.subTest(filename=filename):
+                self.assertEqual(file_hash(FIXTURES_DIR / filename), expected_hash)
+        self.assertEqual(
+            file_hash(FIXTURES_DIR / hash_chain_stress.MANIFEST_FILENAME),
+            EXPECTED_MANIFEST_HASH,
+        )
+
     def test_cli_exits_zero_for_expected_tamper_detections(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_name:
             output_dir = Path(tmp_dir_name)
@@ -553,6 +749,49 @@ class TasukeruArlHashChainStressTests(unittest.TestCase):
             )
             self.assertFalse(case["passed"])
             self.assertFalse(verify["verified"])
+
+    def test_cli_exits_one_for_unmet_phase_two_detection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir_name:
+            temp_root = Path(tmp_dir_name)
+            copied_dir = temp_root / "fixtures"
+            output_dir = temp_root / "outputs"
+            shutil.copytree(FIXTURES_DIR, copied_dir)
+            shutil.copyfile(
+                copied_dir / "valid_chain.jsonl",
+                copied_dir / "final_row_content_tampered.jsonl",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(hash_chain_stress.__file__).resolve()),
+                    "--fixtures-dir",
+                    str(copied_dir),
+                    "--output-dir",
+                    str(output_dir),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            result = json.loads(
+                (output_dir / hash_chain_stress.RESULT_FILENAME).read_text(
+                    encoding="utf-8"
+                )
+            )
+            case = next(
+                case
+                for case in result["cases"]
+                if case["case_id"] == "final_row_content_tampered"
+            )
+            self.assertEqual(case["actual_outcome"], "BLOCKED")
+            self.assertIn(
+                "ARL_EXPECTED_DETECTION_MISSING",
+                case["reason_codes"],
+            )
+            self.assertFalse(case["passed"])
 
     def test_cli_missing_manifest_exits_two(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_name:
