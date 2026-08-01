@@ -428,6 +428,15 @@ jobs:
             --fixtures-dir tests/stress/fixtures/arl_hash_chain \
             --output-dir stress_results/arl_hash_chain
 
+      - name: Generate Patch 13 ARL hash-chain analyzer artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/tasukeru_arl_hash_chain_analyzer.py
+          python scripts/tasukeru_arl_hash_chain_analyzer.py \
+            --input-dir stress_results/arl_hash_chain \
+            --output-dir analysis_results/arl_hash_chain
+
       - name: Generate explainable patch proposal artifacts
         if: always()
         run: |
@@ -9633,6 +9642,14 @@ jobs:
         with:
           name: tasukeru-arl-hash-chain-stress-results
           path: stress_results/arl_hash_chain/
+          if-no-files-found: warn
+
+      - name: Upload ARL hash-chain analyzer artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: tasukeru-arl-hash-chain-analyzer-results
+          path: analysis_results/arl_hash_chain/
           if-no-files-found: warn
 
       - name: Upload ARL analyzer graph artifacts
