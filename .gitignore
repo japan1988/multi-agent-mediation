@@ -1,4 +1,5 @@
 analysis_results/arl/
 analysis_results/arl_hash_chain/
+analysis_results/arl_hash_chain_runtime/
 stress_results/arl/
 stress_results/arl_hash_chain/
