@@ -1340,6 +1340,38 @@ class RuntimeArlVerifierTests(unittest.TestCase):
                 any(path.name.endswith(".tmp") for path in output_dir.iterdir())
             )
 
+    def test_result_bytes_mismatch_returns_two(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            arl_path, source_verify_path = self.copy_sources(root)
+            output_dir = root / "output"
+            original_read_bytes = Path.read_bytes
+
+            def mismatched_read_bytes(path: Path) -> bytes:
+                value = original_read_bytes(path)
+                if path.name == VERIFIER.RESULT_FILENAME:
+                    return value + b"mismatch"
+                return value
+
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(Path, "read_bytes", mismatched_read_bytes),
+                mock.patch.object(sys, "stderr", stderr),
+            ):
+                exit_code = VERIFIER.main(
+                    [
+                        "--arl",
+                        str(arl_path),
+                        "--source-verify",
+                        str(source_verify_path),
+                        "--out-dir",
+                        str(output_dir),
+                    ]
+                )
+            self.assertEqual(exit_code, 2)
+            self.assertIn("RUNTIME_ARL_OUTPUT_WRITE_FAILED", stderr.getvalue())
+            self.assertFalse((output_dir / VERIFIER.VERIFY_FILENAME).exists())
+
     def test_source_binding_bytes_mismatch_returns_two(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

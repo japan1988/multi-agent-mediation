@@ -867,6 +867,10 @@ def build_output_verify(
             filename: file_sha256(output_dir / filename)
             for filename in HASHED_OUTPUT_FILES
         }
+        result_consistent = (
+            (output_dir / RESULT_FILENAME).read_bytes()
+            == json_dump(result).encode("utf-8")
+        )
         source_binding_consistent = (
             source_binding_is_consistent(result, source_binding)
             and (output_dir / SOURCE_BINDING_FILENAME).read_bytes()
@@ -877,7 +881,8 @@ def build_output_verify(
         )
         safety_boundary_consistent = result.get("safety_boundary") == SAFETY_BOUNDARY
         if not (
-            source_binding_consistent
+            result_consistent
+            and source_binding_consistent
             and report_consistent
             and safety_boundary_consistent
         ):
