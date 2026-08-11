@@ -1001,11 +1001,6 @@ The next hardening stage, referred to as Phase 5B, is currently under design and
 
 Phase 5B is not implemented in the current V0.1 prototype. An update will be published after the design has been explicitly reviewed and the required tests have passed. Thank you for your patience.
 
-### Phase 5Bの開発状況
-
-次の強化段階であるPhase 5Bは、現在、設計と検証を進めています。handoffの単回消費、再利用防止、有効期限、ハッシュによる証拠の結合について、整合性と安全性の追加確認が必要なため、完成までにはもう少し時間を要します。
-
-現在のV0.1にはPhase 5Bは実装されていません。設計の明示レビューと必須テストが完了した後に更新します。公開まで、もうしばらくお待ちください。
 
 ## Batch execution and resume
 
