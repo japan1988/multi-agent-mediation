@@ -964,6 +964,49 @@ The v0.8 test file checks that:
 - the versioned evaluator passes `py_compile`
 
 
+### 11. HITL flow control simulator
+
+This simulator models dependency-aware human-review routing for a small local workflow.
+
+Files:
+
+- `hitl_flow_sim_v0_1.py`
+- `demo_hitl_flow_v0_1.py`
+
+Core characteristics:
+
+- task-level dependency checks
+- `AUTO_CONTINUE` for clear tasks
+- `LOCAL_HOLD` for ambiguous tasks that do not block downstream work
+- `EARLY_HITL` for ambiguous tasks that block dependent work
+- `MANDATORY_HITL` for external-effect tasks
+- `GLOBAL_STOP` for workflow-integrity failures
+- resume behavior that does not re-run completed tasks
+- local-only demo workflow
+
+This simulator is useful for checking:
+
+- whether clear tasks can continue without unnecessary human review
+- whether ambiguous but independent work can be held locally
+- whether downstream-blocking ambiguity triggers early human review
+- whether external side effects require explicit human approval
+- whether resume preserves completed work instead of re-running it
+
+This is a minimal V0.1 research prototype.  
+It does not include checkpoint hashing, handoff-token validation, one-time handoff consumption, expiry checks, or intent/execution hash-chain verification.
+
+### Phase 5B development status
+
+The next hardening stage, referred to as Phase 5B, is currently under design and verification. Its one-time handoff consumption, replay prevention, expiry, and hash-binding rules require additional consistency and safety review, so completion will take more time.
+
+Phase 5B is not implemented in the current V0.1 prototype. An update will be published after the design has been explicitly reviewed and the required tests have passed. Thank you for your patience.
+
+### Phase 5Bの開発状況
+
+次の強化段階であるPhase 5Bは、現在、設計と検証を進めています。handoffの単回消費、再利用防止、有効期限、ハッシュによる証拠の結合について、整合性と安全性の追加確認が必要なため、完成までにはもう少し時間を要します。
+
+現在のV0.1にはPhase 5Bは実装されていません。設計の明示レビューと必須テストが完了した後に更新します。公開まで、もうしばらくお待ちください。
+
 ## Batch execution and resume
 
 This repository includes batch-style orchestration examples.
@@ -1135,6 +1178,13 @@ For source-grounded Office orchestration behavior:
 - read its corresponding tests
 
 This path is useful for studying how source agents, source evidence packets, Office draft artifacts, mediator reconciliation, diagnostic packet handling, human-review relay, and loop-limit enforcement work together without external side effects.
+
+For HITL flow-control behavior:
+
+- read the HITL flow simulator core
+- run the demo workflow
+
+This path is useful for studying local hold, early human review, mandatory human approval for external effects, global stop behavior, and resume without re-running completed tasks.
 
 For behavior verification, always read the implementation together with the corresponding tests.
 
