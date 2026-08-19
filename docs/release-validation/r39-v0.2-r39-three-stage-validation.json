@@ -1,0 +1,141 @@
+{
+  "target": "/mnt/data/territory_mediation_sim_v0_2_hardened_r39.py",
+  "sha256": "092386e1275e4b1163d8e4be9007e19e450f25f67af3be4e78b471ebd5d4d2b6",
+  "stage1_normal_simulation": {
+    "decision": "ALLOW",
+    "reason_code": "R39_CLEANUP_NORMAL_SIMULATION_VALID",
+    "behavioral_contracts": {
+      "decision": "ALLOW",
+      "reason_code": "R39_CLEANUP_BEHAVIORAL_CONTRACTS_VALID",
+      "explanation": "30 reduced-architecture tests passed"
+    },
+    "runtime_integrity": {
+      "check_version": "R39_CLEANUP_RUNTIME_INTEGRITY_V1",
+      "decision": "ALLOW",
+      "reason_code": "R39_CLEANUP_CONSISTENCY_NON_CONTRADICTION_PURPOSE_MEANS_VALID",
+      "checks": {
+        "exact_four_core_controls": true,
+        "one_transaction_state_machine": true,
+        "one_recovery_source": true,
+        "timestamp_not_security_authority": true,
+        "authority_roles_non_overlapping": true,
+        "purpose_invariants_preserved": true,
+        "proof_uses_one_evidence_binding": true,
+        "proof_ordering_delegated_to_log": true,
+        "auth_request_tx_id_owned_by_record_envelope": true,
+        "unused_intent_hash_removed": true,
+        "simulated_attestation_layer_removed": true,
+        "abort_not_public_authority_surface": true,
+        "historical_migration_checks_not_in_runtime_core": true,
+        "production_trust_infrastructure_not_claimed": true
+      },
+      "core_controls": [
+        "CANONICAL_AUTHORITY_CONTRACT",
+        "CANONICAL_SIM_PROOF",
+        "CANONICAL_SIM_TRANSACTION",
+        "DURABLE_CANONICAL_SIM_LOG"
+      ],
+      "purpose_invariants": [
+        "USER_DECIDES",
+        "SEMANTIC_ROLE_CONTINUITY",
+        "FAIL_CLOSED",
+        "AUDITABLE_AND_RECONSTRUCTIBLE"
+      ],
+      "purpose_means_statement": "Duplicate responsibilities are consolidated; distinct purpose-critical responsibilities remain separate."
+    },
+    "canonical_log": {
+      "decision": "ALLOW",
+      "reason_code": "DURABLE_CANONICAL_SIM_LOG_VALID",
+      "explanation": "8"
+    },
+    "recovery": {
+      "decision": "ALLOW",
+      "reason_code": "R39_CLEANUP_RUNTIME_VALID",
+      "explanation": "HM-R39-CANONICAL-MEDIATION-V1"
+    },
+    "state_recovery_exact": true
+  },
+  "stage2_consistency_noncontradiction_purpose_means": {
+    "decision": "ALLOW",
+    "checks": {
+      "normal_behavioral_suite_matches_current_architecture": true,
+      "runtime_integrity_allow": true,
+      "exact_four_core_controls": true,
+      "separate_proof_object_removed": true,
+      "prepared_payload_minimal": true,
+      "auth_request_transaction_id_not_duplicated": true,
+      "unused_intent_hash_removed": true,
+      "tx_aborted_bound_to_finalize": true,
+      "abort_helper_removed": true,
+      "invalid_evidence_does_not_leave_prepared": true,
+      "validate_candidate_is_unused": false
+    },
+    "invalid_evidence_prepare": {
+      "decision": "BLOCK",
+      "reason_code": "CANONICAL_TRANSACTION_EVIDENCE_BINDING_INVALID",
+      "explanation": ""
+    },
+    "record_count_before_after": [
+      2,
+      2
+    ],
+    "note": "validate_candidate_is_unused is reported as cleanup debt, not a safety contradiction."
+  },
+  "stage3_adversarial_review": {
+    "decision": "ALLOW",
+    "probes": {
+      "direct_canonical_record_forge": {
+        "results": {
+          "AUTH_REQUEST": {"decision": "BLOCK", "reason_code": "AUTHORITY_RECORD_ISSUANCE_PATH_INVALID", "explanation": "AUTH_REQUEST"},
+          "USER_DECISION": {"decision": "BLOCK", "reason_code": "AUTHORITY_RECORD_ISSUANCE_PATH_INVALID", "explanation": "USER_DECISION"},
+          "TX_PREPARED": {"decision": "BLOCK", "reason_code": "AUTHORITY_RECORD_ISSUANCE_PATH_INVALID", "explanation": "TX_PREPARED"},
+          "TX_COMMITTED": {"decision": "BLOCK", "reason_code": "AUTHORITY_RECORD_ISSUANCE_PATH_INVALID", "explanation": "TX_COMMITTED"},
+          "TX_ABORTED": {"decision": "BLOCK", "reason_code": "AUTHORITY_RECORD_ISSUANCE_PATH_INVALID", "explanation": "TX_ABORTED"}
+        },
+        "pass": true
+      },
+      "direct_abort": {
+        "helper_exists": false,
+        "direct_append": {"decision": "BLOCK", "reason_code": "AUTHORITY_RECORD_ISSUANCE_PATH_INVALID", "explanation": "TX_ABORTED"},
+        "pass": true
+      },
+      "preverify_before_prepared_append": {
+        "result": {"decision": "BLOCK", "reason_code": "CANONICAL_PROOF_USER_DECISION_INVALID", "explanation": ""},
+        "before": [],
+        "after": [],
+        "pass": true
+      },
+      "payload_schema_tamper": {
+        "extra": {"decision": "BLOCK", "reason_code": "CANONICAL_LOG_PAYLOAD_SCHEMA_INVALID", "explanation": "seq=1:AUTH_REQUEST"},
+        "missing": {"decision": "BLOCK", "reason_code": "CANONICAL_LOG_PAYLOAD_SCHEMA_INVALID", "explanation": "seq=1:AUTH_REQUEST"},
+        "pass": true
+      },
+      "actor_mismatch_rehashed": {
+        "result": {"decision": "BLOCK", "reason_code": "AUTHORITY_RECORD_ACTOR_MISMATCH", "explanation": "seq=1"},
+        "pass": true
+      },
+      "semantic_chain_tamper_rehashed": {
+        "log_validate": {"decision": "ALLOW", "reason_code": "DURABLE_CANONICAL_SIM_LOG_VALID", "explanation": "8"},
+        "recovery": {"decision": "BLOCK", "reason_code": "RECOVERY_RECONSTRUCTION_FAILED", "explanation": "prepared binding"},
+        "pass": true
+      },
+      "old_prepared_fact_injection": {
+        "schema": {"decision": "BLOCK", "reason_code": "CANONICAL_LOG_PAYLOAD_SCHEMA_INVALID", "explanation": "TX_PREPARED"},
+        "pass": true
+      },
+      "commit_append_failure_atomicity": {
+        "result": {"decision": "BLOCK", "reason_code": "CANONICAL_LOG_APPEND_FAILED", "explanation": "failure injection"},
+        "state_unchanged": true,
+        "status": "PREPARED",
+        "pass": true
+      }
+    }
+  },
+  "cleanup_findings": [],
+  "overall": {
+    "decision": "ALLOW",
+    "stage1": true,
+    "stage2": true,
+    "stage3": true
+  }
+}

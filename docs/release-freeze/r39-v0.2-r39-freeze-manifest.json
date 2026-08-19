@@ -1,0 +1,50 @@
+{
+  "freeze_manifest_version": "R39_RELEASE_FREEZE_V1",
+  "release_candidate": {
+    "repository": "japan1988/multi-agent-mediation",
+    "base_branch": "main",
+    "base_commit_sha": "658dcfabe2bfd957a88ee65a4353fab5f7b27b12",
+    "review_branch": "r39-canonical-mediation-v0.2-release-candidate",
+    "file": "territory_mediation_sim_v0_2_hardened_r39.py",
+    "sha256": "092386e1275e4b1163d8e4be9007e19e450f25f67af3be4e78b471ebd5d4d2b6",
+    "model_id": "HM-R39-CANONICAL-MEDIATION-V1",
+    "sim_version": "0.2-r39",
+    "schema": "R39_CLEANUP_CANONICAL_SIM_V1",
+    "schema_changed_for_release": false
+  },
+  "validation": {
+    "artifact": "docs/release-validation/r39-v0.2-r39-three-stage-validation.json",
+    "order": [
+      "normal_simulation",
+      "consistency_noncontradiction_purpose_means",
+      "adversarial_review"
+    ],
+    "normal_simulation": "ALLOW",
+    "behavioral_contracts": "30/30 PASS",
+    "consistency_noncontradiction_purpose_means": "ALLOW",
+    "adversarial_review": "ALLOW",
+    "recovery": "ALLOW",
+    "state_recovery_exact": true,
+    "cleanup_findings": []
+  },
+  "purpose_invariants": [
+    "USER_DECIDES",
+    "SEMANTIC_ROLE_CONTINUITY",
+    "FAIL_CLOSED",
+    "AUDITABLE_AND_RECONSTRUCTIBLE"
+  ],
+  "non_goals": [
+    "TPM/HSM/secure-enclave emulation",
+    "OS-principal isolation guarantees",
+    "external monotonic rollback protection",
+    "real-world autonomous execution",
+    "production trust infrastructure guarantees"
+  ],
+  "release_boundary": {
+    "research_and_educational_simulator_only": true,
+    "automatic_merge": false,
+    "automatic_deployment": false,
+    "final_merge_authority": "HUMAN_OWNER",
+    "tagging": "MANUAL_AFTER_MERGE"
+  }
+}
