@@ -1354,3 +1354,27 @@ This repository is provided for research and educational purposes only.
 It is not a production safety system, legal tool, medical tool, financial tool, regulatory compliance tool, or autonomous control system.
 
 Use it only in local, authorized, defensive, and educational contexts.
+
+## Current mediation placement comparison experiment
+
+This branch documents a controlled local-only comparison of the same mediation decision logic placed in different architectural roles.
+
+- **A — Gate only**: frozen comparison baseline in `experiments/phase1/mediator_agent_r39_gate_phase1_sim_v0_2.py`.
+- **B — Same-Logic Agent only**: current comparison arm in `experiments/phase1/same_logic_mediation_agent_phase1_sim_v0_2.py`.
+- **C — Same-Logic Agent + Gate**: planned only after the A/B evidence is reviewed and frozen; it is not implemented in this branch.
+
+The comparison keeps the codebook, Method / Purpose / Outcome model, fingerprinting, recurrence and lineage rules, append-only violation history, fixtures, expected outcomes, and USER/HITL boundary fixed as far as the controlled experiment requires. The intended experimental variable between A and B is the architectural placement of the same mediation decision logic.
+
+The experiment does not assume that Gate-only, Agent-only, or Agent + Gate is superior. Equivalent results are valid evidence. Later comparison will examine behavioral agreement, pause/block behavior, recurrence detection, auditability, authority leakage, and—when C is implemented—possible collision or complementary coverage between Agent and Gate.
+
+A later role-separated Agent + Gate design may be considered only if the C results provide evidence that separating responsibilities is useful.
+
+Safety boundary for this experiment:
+
+- local simulation only
+- USER/HITL remains the final decision authority
+- no network or external API access
+- no autonomous external execution
+- no automatic fix or revision application
+- no automatic commit, push, pull request, merge, or deployment
+- Agent and Gate do not receive final-decision or external-execution authority
