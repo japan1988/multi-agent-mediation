@@ -34,7 +34,7 @@ Maestro Orchestrator は、複数のシミュレートされた AI エージェ�
 
 主な設計原則は単純です。
 
-動作が不確実、危険、不整合、または外部に影響を及ぼす可能性がある場合、ワークフローは自動的に継続するのではなく、停止するか人間によるレビューを求めるべきです。
+> 動作が不確実、危険、不整合、または外部に影響を及ぼす可能性がある場合、ワークフローは自動的に継続するのではなく、停止するか人間によるレビューを求めるべきです。
 
 ## このプロジェクトとは
 
@@ -79,11 +79,11 @@ Maestro Orchestrator は、複数のシミュレートされた AI エージェ�
 
 このリポジトリに初めて触れる場合は、次の順で読んでください。
 
-1. Safety and scope
-2. Responsible use and prohibited use
-3. Advisory-only policy
-4. Human review model
-5. Current simulator lines は、安全境界を理解してから読む
+1. **Safety and scope**
+2. **Responsible use and prohibited use**
+3. **Advisory-only policy**
+4. **Human review model**
+5. **Current simulator lines** は、安全境界を理解してから読む
 
 このリポジトリは研究および教育用のテストベンチです。  
 出力は研究成果物であり、本番承認や安全保証ではありません。
@@ -147,7 +147,7 @@ Tasukeru Analysis は、このリポジトリの防御的リポジトリレビ�
 - 公開 PR コメントが過度に詳細なセキュリティ情報を避けているか
 - ワークフローが自動修正、commit、push、merge を行わず助言専用のままであるか
 
-このワークフローは、詳細な exploit 手順を開示せず、自律的な強制システムとして動作しません。詳細な指摘は、人間レビュー用のワークフロー artifacts とログに残されます。
+このワークフローは、詳細な exploit 手順を開示せず、自律的な強制システムとして動作しません。詳細な指摘は、人間レビュー用の workflow artifacts とログに残されます。
 
 実行される静的およびリポジトリ固有のチェックには次のものがあります。
 
@@ -162,7 +162,7 @@ Tasukeru Analysis は、このリポジトリの防御的リポジトリレビ�
 
 警告を隠すことを目的としていません。代わりに、能動的な修復候補、レビュー専用の指摘、履歴バージョン警告、ノイズの可能性が高いものを分離し、メンテナーが優先すべき項目に集中できるようにします。
 
-## Workflow hardening note
+### Workflow hardening note
 
 Tasukeru Analysis ワークフローには、防御的な workflow hardening チェックも含まれています。
 
@@ -381,7 +381,6 @@ Dependency consistency reports は、指摘、影響構造、影響分類、レ�
 
 - `scripts/tasukeru_explainable_patch.py`
 - `tests/test_tasukeru_explainable_patch.py`
-
 
 ## Advisory behavior
 
@@ -718,8 +717,8 @@ Coordinator executes only the explicit user-selected action
 - Office output consistency checks
 - profit、formula、chart、conclusion mismatch detection
 - personal-data and confidential-signal masking
-- threshold policy: score == 0.8 は warning / draft review のみ
-- threshold policy: score > 0.8 は human review を trigger
+- threshold policy: `score == 0.8` は warning / draft review のみ
+- threshold policy: `score > 0.8` は human review を trigger
 - user-scoped draft revision proposals only
 - related agents create draft revision proposals only
 - coordinator has no autonomous decision authority
@@ -743,8 +742,8 @@ Coordinator executes only the explicit user-selected action
 - original user instruction が comparison baseline のままか
 - personal-data and confidential signals が mediation 前に masked されるか
 - mediator が masked metadata のみを使うか
-- score == 0.8 が human review を trigger しないか
-- score > 0.8 が human review を trigger するか
+- `score == 0.8` が human review を trigger しないか
+- `score > 0.8` が human review を trigger するか
 - user-targeted revision prompts が draft proposals のみを生成するか
 - coordinator が self-decision を避け、明示的にユーザーが選択した actions のみを実行するか
 
@@ -755,11 +754,11 @@ Coordinator executes only the explicit user-selected action
 主な特性:
 
 - trust-score based automation entry diagnosis
-- trust_score == 0.9 は auto eligible ではない
-- trust_score > 0.9 は user approval 後に automation candidate になり得る
+- `trust_score == 0.9` は auto eligible ではない
+- `trust_score > 0.9` は user approval 後に automation candidate になり得る
 - automation 開始後の automation-risk based continuation diagnosis
-- automation_risk_score < 0.1 は automation を継続
-- automation_risk_score >= 0.1 は fail-closed suspension を trigger
+- `automation_risk_score < 0.1` は automation を継続
+- `automation_risk_score >= 0.1` は fail-closed suspension を trigger
 - coordinator relay-only temporary automation suspension
 - automation resume には user review が必要
 - diagnostic helper remains diagnostic-only and does not directly command agents
@@ -767,11 +766,11 @@ Coordinator executes only the explicit user-selected action
 
 この extension は次の検証に有用です。
 
-- automation entry が trust_score > 0.9 によって gate されるか
-- trust_score == 0.9 が non-eligible として扱われるか
+- automation entry が `trust_score > 0.9` によって gate されるか
+- `trust_score == 0.9` が non-eligible として扱われるか
 - automation active 化前に user approval が必要か
 - automation continuation が trust scoring から risk scoring に切り替わるか
-- automation_risk_score == 0.1 が fail closed into suspension になるか
+- `automation_risk_score == 0.1` が fail closed into suspension になるか
 - suspended automation の resume に user review が必要か
 - automatic fix、commit、push、merge が無効のままか
 
@@ -819,8 +818,8 @@ Files:
 - `agent_source_grounded_office_orchestration_sim_v1_0_1_fail_closed_hardening_draft.py`
 - `tests/test_agent_source_grounded_office_orchestration_sim_v1_0_1_fail_closed_hardening_contract.py`
 
-v1.0.0 file は comparison baseline として保持されています。  
-v1.0.1 file は baseline の検証済み numeric-boundary behavior を維持しながら、invalid threshold score input に対する fail-closed handling を追加します。
+`v1.0.0` file は comparison baseline として保持されています。  
+`v1.0.1` file は baseline の検証済み numeric-boundary behavior を維持しながら、invalid threshold score input に対する fail-closed handling を追加します。
 
 Mediator / Maestro gate decisions:
 
@@ -837,15 +836,15 @@ invalid score input
 
 対応する contract test は次を検証します。
 
-- invalid score input が fail closed into PAUSE_FOR_HITL になること
+- invalid score input が fail closed into `PAUSE_FOR_HITL` になること
 - baseline numeric threshold behavior の維持
 - responsibility-floor failures が score によって rescue されないこと
-- severe conditions と structural invariant violations が ROUTED_TO_PRECHECK へ routing されること
+- severe conditions と structural invariant violations が `ROUTED_TO_PRECHECK` へ routing されること
 - candidate presentation と next-stage approval の分離
-- user acceptance による PAUSE_FOR_HITL または ROUTED_TO_PRECHECK の bypass がないこと
+- user acceptance による `PAUSE_FOR_HITL` または `ROUTED_TO_PRECHECK` の bypass がないこと
 - Maestro による autonomous final decision または external action がないこと
-- Tasukeru、Mediator、Maestro が illegal sealed=True state を発行しないこと
-- deterministic runs=100 と runs=1000 distribution checks
+- Tasukeru、Mediator、Maestro が illegal `sealed=True` state を発行しないこと
+- deterministic `runs=100` と `runs=1000` distribution checks
 
 これは local-only research and verification draft です。  
 automatic adoption、automatic external action、automatic fixes、automatic commits、automatic pushes、automatic merges を許可しません。
@@ -891,21 +890,19 @@ Public scope boundary:
 
 この public line は authorization records、static candidate review、mediation、human-review routing、bounded non-executing proposal records の範囲内に留まるべきです。Offensive capability expansion、external execution、external scanning、automatic remediation、automatic application、automatic merge、autonomous security enforcement、または real targets に対する exploit validation は範囲外です。
 
-## AI-to-AI Mediation Control Plane v0.7 draft evaluator
+### AI-to-AI Mediation Control Plane v0.7 draft evaluator
 
 `evaluator_pseudocode.py` file は、local research and educational use のための draft-only evaluator sketch です。要求または観測された挙動を L0 から L6 までの external-action levels に分類し、高リスクケースを次のようにルーティングします。
 
-```text
-L4 -> HUMAN_REVIEW_REQUIRED
-L5 -> ISOLATED_REVIEW_REQUIRED
-L6 -> STOP_AND_PRESERVE
-```
+- L4 -> `HUMAN_REVIEW_REQUIRED`
+- L5 -> `ISOLATED_REVIEW_REQUIRED`
+- L6 -> `STOP_AND_PRESERVE`
 
 この evaluator は side-effect free です。external APIs を呼び出さず、candidate code を実行せず、repository files を変更せず、deployments を承認せず、safety thresholds を変更せず、models を train せず、self-improvement loops を実装しません。
 
 production authorization、autonomous enforcement、deployment approval、safety guarantees は提供しません。externally impactful、self-improving、または evolution-loop-related action の前には人間レビューが引き続き必要です。
 
-## AI-to-AI Mediation Control Plane v0.8 Explainable Patch Gate draft
+### AI-to-AI Mediation Control Plane v0.8 Explainable Patch Gate draft
 
 `evaluator_pseudocode_v0_8_explainable_patch_gate.py` file は、v0.7 evaluator の versioned draft extension です。
 
@@ -915,11 +912,9 @@ v0.8 draft は、AI-generated patch proposals に human-readable explanation、e
 
 Patch accountability findings は、通常なら continue する case を `HUMAN_REVIEW_REQUIRED` へ routing する場合があります。ただし、既存の高リスク routing を弱めてはなりません。
 
-```text
-L4 -> HUMAN_REVIEW_REQUIRED
-L5 -> ISOLATED_REVIEW_REQUIRED
-L6 -> STOP_AND_PRESERVE
-```
+- L4 -> `HUMAN_REVIEW_REQUIRED`
+- L5 -> `ISOLATED_REVIEW_REQUIRED`
+- L6 -> `STOP_AND_PRESERVE`
 
 v0.8 draft は、自動 patch application、commit、push、pull request creation、merge、deployment requests を、人間レビューを要する禁止された automatic actions としても扱います。
 
@@ -929,7 +924,7 @@ Related test file:
 
 - `tests/test_evaluator_pseudocode_v0_8_explainable_patch_gate.py`
 
-### Difference from v0.7
+#### Difference from v0.7
 
 v0.7 は、external actions、self-improvement behavior、evaluator changes、evolution-loop signals を L0-L6 review levels へ分類することに焦点を当てています。
 
@@ -937,11 +932,11 @@ v0.8 はその classification model を維持しつつ、AI-generated patches �
 
 v0.8 draft は、v0.7 evaluator と v0.7 tests を変更しないよう、意図的に separate file として versioned されています。
 
-### What the v0.8 tests check
+#### What the v0.8 tests check
 
 v0.8 test file は次を確認します。
 
-- patch-accountability fields が default で False であること
+- patch-accountability fields が default で `False` であること
 - explanation のない generated patches は human review を要求すること
 - security-related patches は support fields がある場合でも human review を要求すること
 - already-applied patches は human review を要求すること
@@ -952,7 +947,44 @@ v0.8 test file は次を確認します。
 - patch-accountability overlay が L5 または L6 を弱めないこと
 - blocked actions に automatic patch actions が含まれること
 - human-review stub に patch-accountability fields と reason codes が含まれること
-- versioned evaluator が py_compile に通ること
+- versioned evaluator が `py_compile` に通ること
+
+### 11. HITL flow control simulator
+
+このシミュレーターは、小規模なローカルワークフローに対する dependency-aware human-review routing をモデル化します。
+
+Files:
+
+- `hitl_flow_sim_v0_1.py`
+- `demo_hitl_flow_v0_1.py`
+
+主な特性:
+
+- task-level dependency checks
+- clear tasks に対する `AUTO_CONTINUE`
+- downstream work を block しない ambiguous tasks に対する `LOCAL_HOLD`
+- dependent work を block する ambiguous tasks に対する `EARLY_HITL`
+- external-effect tasks に対する `MANDATORY_HITL`
+- workflow-integrity failures に対する `GLOBAL_STOP`
+- completed tasks を再実行しない resume behavior
+- local-only demo workflow
+
+このシミュレーターは次の検証に有用です。
+
+- clear tasks が不要な human review なしに継続できるか
+- ambiguous だが independent な work を local に hold できるか
+- downstream-blocking ambiguity が early human review を trigger するか
+- external side effects に explicit human approval が必要か
+- resume が completed work を再実行せず保持するか
+
+これは最小構成の V0.1 research prototype です。  
+checkpoint hashing、handoff-token validation、one-time handoff consumption、expiry checks、intent/execution hash-chain verification は含みません。
+
+### Phase 5B development status
+
+次の hardening stage である Phase 5B は、現在設計および検証中です。one-time handoff consumption、replay prevention、expiry、hash-binding rules には追加の整合性・安全性レビューが必要であるため、完了まで時間がかかります。
+
+Phase 5B は現在の V0.1 prototype には実装されていません。設計を明示的にレビューし、必要なテストが合格した後に更新を公開します。
 
 ## Batch execution and resume
 
@@ -982,11 +1014,9 @@ Example use cases:
 
 Example task sequence:
 
-```text
-T1: spreadsheet task
-T2: presentation task
-T3: ambiguous task requiring human review
-```
+- T1: spreadsheet task
+- T2: presentation task
+- T3: ambiguous task requiring human review
 
 Expected behavior:
 
@@ -1074,7 +1104,7 @@ local demonstrations では、simulator が明示的に対応している場合�
 目的:
 
 - audit-log、checkpoint、artifact integrity behavior を verify する
-- tamper-evidence detection を demonstrat する
+- tamper-evidence detection を demonstrate する
 - integrity verification が失敗した場合に human review のために pause する
 
 ## Recommended reading order
@@ -1127,6 +1157,13 @@ local demonstrations では、simulator が明示的に対応している場合�
 - 対応する tests を読む
 
 この path は、source agents、source evidence packets、Office draft artifacts、mediator reconciliation、diagnostic packet handling、human-review relay、loop-limit enforcement が external side effects なしにどう連携するかを学ぶのに有用です。
+
+### HITL flow-control behavior を確認する場合
+
+- HITL flow simulator core を読む
+- demo workflow を実行する
+
+この path は、local hold、early human review、external effects に対する mandatory human approval、global stop behavior、completed work を再実行しない resume を学ぶのに有用です。
 
 挙動を検証する場合は、常に implementation と corresponding tests を一緒に読んでください。
 
@@ -1288,10 +1325,10 @@ script または simulator は、external submission を silent に実行すべ�
 
 ## Project policies
 
-- Security Policy
-- Japanese Security Policy Translation
-- License Policy
-- Contributing Guide
+- [Security Policy](SECURITY.md)
+- [Japanese Security Policy Translation](SECURITY.ja.md)
+- [License Policy](LICENSE_POLICY.md)
+- [Contributing Guide](CONTRIBUTING.md)
 
 ## Disclaimer
 
@@ -1300,3 +1337,210 @@ script または simulator は、external submission を silent に実行すべ�
 本番安全システム、法律ツール、医療ツール、金融ツール、規制遵守ツール、自律制御システムではありません。
 
 ローカル、許可済み、防御的、教育的な文脈でのみ使用してください。
+
+## 現在の mediation placement 比較実験
+
+このセクションでは、同じ mediation decision logic を異なるアーキテクチャ上の役割へ配置した A/B 比較と、その結果を受けて設計した C について記録します。
+
+- **A — Gate only**: `experiments/phase1/mediator_agent_r39_gate_phase1_sim_v0_2.py`
+- **B — Same-Logic Agent only**: `experiments/phase1/same_logic_mediation_agent_phase1_sim_v0_2.py`
+- **C — Gate-main / Agent-sub**: `experiments/phase1/gate_main_agent_sub_phase1c_v0_1.py`
+
+### A/B 比較で分かったこと
+
+A/B 比較は、**アーキテクチャ上の配置**と**判定ロジックそのもの**を切り分けるために行いました。
+
+**A — Gate only**
+
+メリット:
+
+- 検証権限が明確
+- 決定フローが決定論的で監査しやすい
+- 固定不変条件、権限境界、再発判定、スコープ、履歴検証に適している
+
+デメリット:
+
+- 入力がすでに期待される Proposal モデルへ構造化されていることを前提としている
+- canonical field に表現されていない上流の曖昧さ、provenance 不足、未解決の意図、semantic drift などを検出しにくい
+
+**B — Same-Logic Agent only**
+
+メリット:
+
+- 配置だけを変えた対照実験として有用
+- 同じロジックを Gate 配置から Agent 配置へ移した場合に、固定済みの挙動が変化するかを確認できた
+- 比較のため、同じ fixture、reason code、history model、USER/HITL 境界を維持できた
+
+デメリット:
+
+- B は意図的に A と同じ mediation logic を使用しているため、独立した補完的カバレッジを提供しない
+- A に存在する上流・schema レベルの blind spot が、B にもそのまま残る可能性がある
+
+### A/B の結果を受けて C で変更した点
+
+A/B 比較の結果、**同じ判定ロジックの配置を Gate から Agent へ変更するだけでは、A が持つ上流・schema レベルの gap を十分に補完できない**ことが分かりました。
+
+そのため C では、A/B のように同じ役割を別の場所へ配置するのではなく、**Agent と Gate の責任を明確に分離する構成**へ変更しました。
+
+A/B/C の基本構成は次のようになります。
+
+```text
+A:
+INPUT
+→ Gate
+→ USER / HITL
+
+B:
+INPUT
+→ Same-Logic Agent
+→ USER / HITL
+
+C:
+INPUT
+→ Agent (sub)
+→ Gate (main)
+→ USER / HITL
+```
+
+C での主な変更点:
+
+- **Gate を MAIN として維持**
+  - authority、scope、binding、history、recurrence、invariant などの主要な検証責任は Gate が保持する
+  - Agent は Gate の判定を上書き、弱化、迂回できない
+
+- **Agent を SUB へ変更**
+  - Agent は最終判定を行うのではなく、Gate が単独では把握しにくい上流の gap を検出する
+  - semantic ambiguity、missing required information、provenance 不足、binding 未解決、purpose / intent 未解決、未申告の semantic change などを検出・可視化する
+
+- **処理順序と判定優先順位を分離**
+  - 処理順序は `Agent → Gate`
+  - 判定優先順位は `Gate > Agent`
+  - Agent が先に処理しても、主要な検証権限は Gate が保持する
+
+- **Agent 出力を信頼済み入力として扱わない**
+  - Gate は Agent が生成した canonical candidate、gap report、normalization 結果をそのまま信用しない
+  - Agent の変換内容、provenance、binding、scope、USER 修正履歴などを Gate が独立して検証する
+
+- **Agent が曖昧さを勝手に補完しない**
+  - USER の選択、意味判断、権限判断が必要な場合は `PAUSE_FOR_HITL`
+  - USER 自身が入力を修正した後、Agent が再評価し、その後 Gate が再検証する
+
+- **Agent の未申告変更も Gate の検証対象にする**
+  - Agent が宣言されていない意味変更や scope 変更を行った場合は、自動的に安全と判断しない
+  - 必要に応じて `PAUSE_FOR_HITL` または Gate review へ送る
+
+- **A/B で共有していた gap を C-specific fixture として検証する**
+  - upstream ambiguity
+  - missing required information
+  - missing provenance
+  - unresolved binding
+  - unresolved purpose / intent
+  - undeclared semantic change
+  - severe-event candidate
+
+### C でどのように改善したか
+
+C は、A と B を単純に組み合わせた構成ではありません。
+
+A/B 比較で確認された「配置変更だけでは補えない gap」に対して、Agent を Gate の補助層として追加し、役割を分離しました。
+
+```text
+A = Gate による固定検証
+
+B = 同じ検証ロジックを Agent 配置で比較
+
+C = Agent による gap detection
+    +
+    Gate による独立検証
+```
+
+C では、Agent が Gate の前段で不足や曖昧さを検出し、Gate がその結果を独立して再検証します。
+
+これにより、Gate が構造化済み入力だけを見ている場合には把握しにくかった上流の問題を、Gate 判定の前または Gate review 時に明示できるようになりました。
+
+ただし、Agent が新しい最終権限を持つわけではありません。
+
+```text
+MAIN = Gate
+SUB = Agent
+FINAL AUTHORITY = USER
+```
+
+判定優先順位は次の通りです。
+
+```text
+Gate > Agent
+```
+
+具体的には:
+
+```text
+Gate BLOCK
+→ BLOCK
+
+Gate PAUSE
+→ PAUSE_FOR_HITL
+
+Gate ALLOW + Agent CONCERN
+→ PAUSE_FOR_HITL
+
+Gate ALLOW + Agent CLEAR
+→ ALLOW candidate
+```
+
+Agent は Gate の判定を緩和できません。
+
+Agent の役割は、Gate を通過させることではなく、**Gate が検証すべき情報や gap を追加で可視化すること**です。
+
+### C の改善範囲
+
+C は、Gate 検証の前段または Gate review 時に上流の gap を明示化することで、**Gate 検証境界付近のカバレッジを改善します**。
+
+現在の contract-level simulation では、次の点を検証対象としています。
+
+- A の既存 regression が維持されている
+- B の既存 regression が維持されている
+- A/B が共有する upstream / schema-level gap behavior を識別できる
+- C が対象となる gap を HITL または Gate review へルーティングできる
+- Agent による未申告変更を Gate が検証できる
+- Gate-main / Agent-sub の優先順位が維持される
+- Agent が Gate を迂回または上書きできない
+- USER/HITL が最終決定権を保持する
+- automatic fix、external execution、commit、push、merge の権限が追加されていない
+
+### 現時点での位置づけ
+
+C の結果は、**contract-level simulation による検証結果**です。
+
+これは、現在設計している役割分離、判定優先順位、gap handling、回帰挙動が設計どおり成立することを確認するためのものです。
+
+C が普遍的に A/B より安全であることや、本番環境での semantic inference 品質、production safety を保証するものではありません。
+
+現在の位置づけは次の通りです。
+
+```text
+A
+Gate-only baseline
+↓
+B
+Same-Logic Agent-only comparison
+↓
+A/B comparison
+共有 gap を確認
+↓
+C
+Gate-main / Agent-sub
+役割分離による補完構成
+```
+
+A/B は C に置き換えられた失敗例ではなく、C の設計変更が必要であることを確認するための比較基準として維持されます。
+
+Safety boundary for this experiment:
+
+- local simulation only
+- USER/HITL remains the final decision authority
+- no network or external API access
+- no autonomous external execution
+- no automatic fix or revision application
+- no automatic commit, push, pull request, merge, or deployment
+- Agent and Gate do not receive final-decision or external-execution authority
