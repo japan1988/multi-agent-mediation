@@ -1378,3 +1378,208 @@ Safety boundary for this experiment:
 - no automatic fix or revision application
 - no automatic commit, push, pull request, merge, or deployment
 - Agent and Gate do not receive final-decision or external-execution authority
+## Current mediation placement comparison experiment
+
+This section records the A/B comparison of the same mediation decision logic placed in different architectural roles, and C, which was designed based on the results.
+
+- **A — Gate only**: `experiments/phase1/mediator_agent_r39_gate_phase1_sim_v0_2.py`
+- **B — Same-Logic Agent only**: `experiments/phase1/same_logic_mediation_agent_phase1_sim_v0_2.py`
+- **C — Gate-main / Agent-sub**: `experiments/phase1/gate_main_agent_sub_phase1c_v0_1.py`
+
+### A/B comparison findings
+
+The A/B comparison was used to separate **architectural placement** from **the decision logic itself**.
+
+**A — Gate only**
+
+Advantages:
+
+- clear validation authority
+- deterministic and auditable decision flow
+- strong fit for fixed invariants, authority boundaries, recurrence, scope, and history checks
+
+Limitations:
+
+- assumes the input has already been structured into the expected Proposal model
+- has limited visibility into upstream ambiguity, missing provenance, unresolved intent, or semantic drift that is not represented in canonical fields
+
+**B — Same-Logic Agent only**
+
+Advantages:
+
+- useful as a controlled placement experiment
+- showed whether moving the same logic from Gate placement to Agent placement changed the frozen behavior
+- preserved the same fixtures, reason codes, history model, and USER/HITL boundary for comparison
+
+Limitations:
+
+- because B intentionally uses the same mediation logic as A, it does not provide independent complementary coverage
+- upstream and schema-level blind spots present in A can also remain present in B
+
+### How C changed based on the A/B results
+
+The A/B comparison showed that **moving the same decision logic from Gate placement to Agent placement was not enough to cover A's upstream and schema-level gaps**.
+
+C therefore does not simply place the same role somewhere else. It separates the responsibilities of Agent and Gate.
+
+```text
+A:
+INPUT
+→ Gate
+→ USER / HITL
+
+B:
+INPUT
+→ Same-Logic Agent
+→ USER / HITL
+
+C:
+INPUT
+→ Agent (sub)
+→ Gate (main)
+→ USER / HITL
+```
+
+The main changes in C are:
+
+- **Gate remains MAIN**
+  - Gate retains primary responsibility for validating authority, scope, binding, history, recurrence, invariants, and related conditions
+  - Agent cannot overwrite, weaken, or bypass a Gate decision
+
+- **Agent becomes SUB**
+  - Agent does not make the final decision
+  - Agent detects upstream gaps that Gate may not be able to observe from already-structured input alone
+  - examples include semantic ambiguity, missing required information, missing provenance, unresolved binding, unresolved purpose / intent, and undeclared semantic change
+
+- **Processing order and decision precedence are separated**
+  - processing order is `Agent → Gate`
+  - decision precedence is `Gate > Agent`
+  - even though Agent runs first, Gate retains the primary validation authority
+
+- **Agent output is not treated as trusted input**
+  - Gate does not automatically trust Agent-generated canonical candidates, gap reports, or normalization results
+  - Gate independently validates Agent transformations, provenance, binding, scope, and USER repair history
+
+- **Agent does not silently resolve ambiguity**
+  - when USER choice, meaning, or authority judgment is required, the result is `PAUSE_FOR_HITL`
+  - after USER updates the input, Agent re-evaluates it and Gate independently validates it again
+
+- **Undeclared Agent changes are also reviewed by Gate**
+  - undeclared semantic or scope changes are not automatically treated as safe
+  - they are routed to `PAUSE_FOR_HITL` or Gate review as required
+
+- **Shared A/B gaps are covered by C-specific fixtures**
+  - upstream ambiguity
+  - missing required information
+  - missing provenance
+  - unresolved binding
+  - unresolved purpose / intent
+  - undeclared semantic change
+  - severe-event candidate
+
+### How C improves coverage
+
+C is not a simple combination of A and B.
+
+For the gaps that A/B showed could not be addressed by placement alone, C adds Agent as a supplementary layer while preserving Gate as the independent main validator.
+
+```text
+A = fixed validation by Gate
+
+B = the same validation logic tested in Agent placement
+
+C = gap detection by Agent
+    +
+    independent validation by Gate
+```
+
+In C, Agent detects missing or ambiguous upstream information before Gate validation, and Gate independently verifies the resulting handoff.
+
+This makes upstream issues more visible before or during Gate review when those issues may be difficult to observe from already-structured input alone.
+
+Agent does not gain new final authority.
+
+```text
+MAIN = Gate
+SUB = Agent
+FINAL AUTHORITY = USER
+```
+
+Decision precedence remains:
+
+```text
+Gate > Agent
+```
+
+For example:
+
+```text
+Gate BLOCK
+→ BLOCK
+
+Gate PAUSE
+→ PAUSE_FOR_HITL
+
+Gate ALLOW + Agent CONCERN
+→ PAUSE_FOR_HITL
+
+Gate ALLOW + Agent CLEAR
+→ ALLOW candidate
+```
+
+Agent cannot relax a Gate decision.
+
+The role of Agent is not to make a proposal pass the Gate. Its role is to make additional information and gaps visible so that Gate can validate them.
+
+### C improvement scope
+
+C improves coverage around the Gate validation boundary by making upstream gaps explicit before or during Gate review.
+
+The current contract-level simulation checks that:
+
+- the existing A regression remains preserved
+- the existing B regression remains preserved
+- shared A/B upstream and schema-level gap behavior can be identified
+- C can route targeted gaps to HITL or Gate review
+- Gate can detect undeclared Agent changes
+- Gate-main / Agent-sub precedence is preserved
+- Agent cannot bypass or overwrite Gate
+- USER/HITL remains the final decision authority
+- no automatic fix, external execution, commit, push, or merge authority is introduced
+
+### Current position
+
+The C result is **contract-level simulation evidence**.
+
+It is intended to verify that the current role separation, decision precedence, gap handling, and regression behavior operate according to the designed contracts.
+
+It does not establish that C is universally safer than A/B, nor does it establish real-world semantic inference quality or production safety.
+
+The current progression is:
+
+```text
+A
+Gate-only baseline
+↓
+B
+Same-Logic Agent-only comparison
+↓
+A/B comparison
+shared gaps identified
+↓
+C
+Gate-main / Agent-sub
+complementary role separation
+```
+
+A/B are not failed designs replaced by C. They remain comparison baselines that provided evidence for why C needed a different role-separated architecture.
+
+Safety boundary for this experiment:
+
+- local simulation only
+- USER/HITL remains the final decision authority
+- no network or external API access
+- no autonomous external execution
+- no automatic fix or revision application
+- no automatic commit, push, pull request, merge, or deployment
+- Agent and Gate do not receive final-decision or external-execution authority
