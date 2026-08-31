@@ -1340,7 +1340,7 @@ script または simulator は、external submission を silent に実行すべ�
 
 ## 現在の mediation placement 比較実験
 
-このセクションでは、同じ mediation decision logic を異なるアーキテクチャ上の役割へ配置した A/B 比較と、その結果を受けて設計した C について記録します。
+この実験では、USER/HITL 境界と主要な判定挙動を統制したまま、mediation logic の配置を比較します。
 
 - **A — Gate only**: `experiments/phase1/mediator_agent_r39_gate_phase1_sim_v0_2.py`
 - **B — Same-Logic Agent only**: `experiments/phase1/same_logic_mediation_agent_phase1_sim_v0_2.py`
@@ -1348,194 +1348,45 @@ script または simulator は、external submission を silent に実行すべ�
 
 ### A/B 比較で分かったこと
 
-A/B 比較は、**アーキテクチャ上の配置**と**判定ロジックそのもの**を切り分けるために行いました。
+A は、invariant、authority、scope、recurrence、history に対して、明確で決定論的かつ監査しやすい検証を提供します。一方で、入力がすでに期待される Proposal model に構造化された後では、上流の曖昧さ、provenance 不足、未解決の intent、semantic drift などを検出しにくいという制約があります。
 
-**A — Gate only**
+B は、同じ mediation logic を Agent 配置へ移した対照実験です。A と意図的に同じロジックを使うため、独立した補完的カバレッジは持たず、同じ upstream / schema-level blind spot が残る可能性があります。
 
-メリット:
+### C のアーキテクチャ
 
-- 検証権限が明確
-- 決定フローが決定論的で監査しやすい
-- 固定不変条件、権限境界、再発判定、スコープ、履歴検証に適している
-
-デメリット:
-
-- 入力がすでに期待される Proposal モデルへ構造化されていることを前提としている
-- canonical field に表現されていない上流の曖昧さ、provenance 不足、未解決の意図、semantic drift などを検出しにくい
-
-**B — Same-Logic Agent only**
-
-メリット:
-
-- 配置だけを変えた対照実験として有用
-- 同じロジックを Gate 配置から Agent 配置へ移した場合に、固定済みの挙動が変化するかを確認できた
-- 比較のため、同じ fixture、reason code、history model、USER/HITL 境界を維持できた
-
-デメリット:
-
-- B は意図的に A と同じ mediation logic を使用しているため、独立した補完的カバレッジを提供しない
-- A に存在する上流・schema レベルの blind spot が、B にもそのまま残る可能性がある
-
-### A/B の結果を受けて C で変更した点
-
-A/B 比較の結果、**同じ判定ロジックの配置を Gate から Agent へ変更するだけでは、A が持つ上流・schema レベルの gap を十分に補完できない**ことが分かりました。
-
-そのため C では、A/B のように同じ役割を別の場所へ配置するのではなく、**Agent と Gate の責任を明確に分離する構成**へ変更しました。
-
-A/B/C の基本構成は次のようになります。
+C では、同一ロジックの配置比較から、Agent と Gate の役割分離へ変更します。
 
 ```text
-A:
-INPUT
-→ Gate
-→ USER / HITL
-
-B:
-INPUT
-→ Same-Logic Agent
-→ USER / HITL
-
-C:
 INPUT
 → Agent (sub)
 → Gate (main)
 → USER / HITL
 ```
 
-C での主な変更点:
-
-- **Gate を MAIN として維持**
-  - authority、scope、binding、history、recurrence、invariant などの主要な検証責任は Gate が保持する
-  - Agent は Gate の判定を上書き、弱化、迂回できない
-
-- **Agent を SUB へ変更**
-  - Agent は最終判定を行うのではなく、Gate が単独では把握しにくい上流の gap を検出する
-  - semantic ambiguity、missing required information、provenance 不足、binding 未解決、purpose / intent 未解決、未申告の semantic change などを検出・可視化する
-
-- **処理順序と判定優先順位を分離**
-  - 処理順序は `Agent → Gate`
-  - 判定優先順位は `Gate > Agent`
-  - Agent が先に処理しても、主要な検証権限は Gate が保持する
-
-- **Agent 出力を信頼済み入力として扱わない**
-  - Gate は Agent が生成した canonical candidate、gap report、normalization 結果をそのまま信用しない
-  - Agent の変換内容、provenance、binding、scope、USER 修正履歴などを Gate が独立して検証する
-
-- **Agent が曖昧さを勝手に補完しない**
-  - USER の選択、意味判断、権限判断が必要な場合は `PAUSE_FOR_HITL`
-  - USER 自身が入力を修正した後、Agent が再評価し、その後 Gate が再検証する
-
-- **Agent の未申告変更も Gate の検証対象にする**
-  - Agent が宣言されていない意味変更や scope 変更を行った場合は、自動的に安全と判断しない
-  - 必要に応じて `PAUSE_FOR_HITL` または Gate review へ送る
-
-- **A/B で共有していた gap を C-specific fixture として検証する**
-  - upstream ambiguity
-  - missing required information
-  - missing provenance
-  - unresolved binding
-  - unresolved purpose / intent
-  - undeclared semantic change
-  - severe-event candidate
-
-### C でどのように改善したか
-
-C は、A と B を単純に組み合わせた構成ではありません。
-
-A/B 比較で確認された「配置変更だけでは補えない gap」に対して、Agent を Gate の補助層として追加し、役割を分離しました。
-
-```text
-A = Gate による固定検証
-
-B = 同じ検証ロジックを Agent 配置で比較
-
-C = Agent による gap detection
-    +
-    Gate による独立検証
-```
-
-C では、Agent が Gate の前段で不足や曖昧さを検出し、Gate がその結果を独立して再検証します。
-
-これにより、Gate が構造化済み入力だけを見ている場合には把握しにくかった上流の問題を、Gate 判定の前または Gate review 時に明示できるようになりました。
-
-ただし、Agent が新しい最終権限を持つわけではありません。
-
-```text
-MAIN = Gate
-SUB = Agent
-FINAL AUTHORITY = USER
-```
+- **Agent (SUB)** は、semantic ambiguity、missing required information / provenance、unresolved binding / purpose、undeclared semantic change などの gap を検出・報告します。
+- **Gate (MAIN)** は、authority、scope、binding、history、recurrence、invariant、Agent の変換内容、USER repair history を独立して検証します。
+- Agent の出力は Gate にとって untrusted input です。Agent は Gate の判定を弱化、上書き、迂回できません。
+- USER の選択、意味判断、権限判断が必要な場合、Agent が勝手に補完せず HITL のために pause します。
+- **FINAL AUTHORITY = USER** です。
 
 判定優先順位は次の通りです。
 
 ```text
-Gate > Agent
+Gate BLOCK → BLOCK
+Gate PAUSE → PAUSE_FOR_HITL
+Gate ALLOW + Agent CONCERN → PAUSE_FOR_HITL
+Gate ALLOW + Agent CLEAR → ALLOW candidate
 ```
 
-具体的には:
+つまり C は、A と B を単純に組み合わせるのではなく、Agent による補完的な gap detection の後に Gate が独立検証する構成です。
 
-```text
-Gate BLOCK
-→ BLOCK
+### 結果の適用範囲
 
-Gate PAUSE
-→ PAUSE_FOR_HITL
+現在の結果は **contract-level simulation evidence** です。A/B regression の維持、共有 gap の検出、C による HITL / Gate review への routing、Gate-over-Agent precedence、Agent による override や authority expansion の防止を検証します。
 
-Gate ALLOW + Agent CONCERN
-→ PAUSE_FOR_HITL
+これは、C の普遍的な優位性、現実世界での semantic inference 品質、production safety を証明するものではありません。A と B は失敗例ではなく、引き続き比較基準として残します。
 
-Gate ALLOW + Agent CLEAR
-→ ALLOW candidate
-```
-
-Agent は Gate の判定を緩和できません。
-
-Agent の役割は、Gate を通過させることではなく、**Gate が検証すべき情報や gap を追加で可視化すること**です。
-
-### C の改善範囲
-
-C は、Gate 検証の前段または Gate review 時に上流の gap を明示化することで、**Gate 検証境界付近のカバレッジを改善します**。
-
-現在の contract-level simulation では、次の点を検証対象としています。
-
-- A の既存 regression が維持されている
-- B の既存 regression が維持されている
-- A/B が共有する upstream / schema-level gap behavior を識別できる
-- C が対象となる gap を HITL または Gate review へルーティングできる
-- Agent による未申告変更を Gate が検証できる
-- Gate-main / Agent-sub の優先順位が維持される
-- Agent が Gate を迂回または上書きできない
-- USER/HITL が最終決定権を保持する
-- automatic fix、external execution、commit、push、merge の権限が追加されていない
-
-### 現時点での位置づけ
-
-C の結果は、**contract-level simulation による検証結果**です。
-
-これは、現在設計している役割分離、判定優先順位、gap handling、回帰挙動が設計どおり成立することを確認するためのものです。
-
-C が普遍的に A/B より安全であることや、本番環境での semantic inference 品質、production safety を保証するものではありません。
-
-現在の位置づけは次の通りです。
-
-```text
-A
-Gate-only baseline
-↓
-B
-Same-Logic Agent-only comparison
-↓
-A/B comparison
-共有 gap を確認
-↓
-C
-Gate-main / Agent-sub
-役割分離による補完構成
-```
-
-A/B は C に置き換えられた失敗例ではなく、C の設計変更が必要であることを確認するための比較基準として維持されます。
-
-Safety boundary for this experiment:
+この実験の Safety boundary:
 
 - local simulation only
 - USER/HITL remains the final decision authority
