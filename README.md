@@ -1412,3 +1412,15 @@ Safety boundary for this experiment:
 - no automatic fix or revision application
 - no automatic commit, push, pull request, merge, or deployment
 - Agent and Gate do not receive final-decision or external-execution authority
+### Development note for C and later stages
+
+The C architecture and subsequent stages are expanding beyond the earlier
+placement comparison into more complex framework-level consistency, provenance,
+causal-chain, semantic-chain, and HITL control mechanisms.
+
+Because these mechanisms interact with each other, the next update may take
+longer than previous iterations. The design is being reviewed incrementally
+before implementation and release rather than being rushed into the repository.
+
+New stages will be published after their contracts, invariants, and required
+simulation tests have been reviewed.
