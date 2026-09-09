@@ -1395,3 +1395,14 @@ Gate ALLOW + Agent CLEAR → ALLOW candidate
 - no automatic fix or revision application
 - no automatic commit, push, pull request, merge, or deployment
 - Agent and Gate do not receive final-decision or external-execution authority
+### C以降の開発状況
+
+C以降では、従来の配置比較からさらに進み、Framework全体の整合性、
+provenance、因果チェーン、semantic chain、HITL制御などを組み合わせた
+設計を進めています。
+
+これらの機構は相互依存が多く、これまでの段階より設計・検証が複雑に
+なっているため、次回の更新には少し時間がかかる見込みです。
+
+実装を急ぐのではなく、各contract・invariant・simulation条件を
+段階的に確認したうえで公開します。
