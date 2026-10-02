@@ -1,720 +1,673 @@
-#!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
-"""Tasukeru detection evidence review (DRAFT_FIX; report-only).
-
-Python 3.11+, standard library only. This tool reads explicitly supplied files
-or directories, parses Python as data, and writes JSON to stdout. It does not
-import/execute target code, call networks, write files, or alter existing gates,
-findings, counts, HITL, STOP, confidence, 4D, PEL, FEI, or PBM.
-
-Examples:
-    python tasukeru_detection_review.py --self-test
-    python tasukeru_detection_review.py example.py
-    python tasukeru_detection_review.py scripts tests
-    python tasukeru_detection_review.py --baseline-workflow tasukeru-analysis.yml example.py
-
-The legacy comparison reproduces only the uploaded abuse-pattern text matcher,
-not the entire workflow's classifiers or decisions. New results are evidence
-for human review, never authorization. Syntax is not a proof of runtime effects.
-YAML support is limited to quoted Python heredocs; shell/YAML semantics remain
-UNKNOWN. Unsupported, unreadable, invalid, oversized, or symlinked targets are
-reported as incomplete, not clean. No raw source or credential values are output.
-
-Provenance: tasukeru-analysis(9).yml, SHA-256
-13ff21a87b74e1f5461a25f5810d6fe90452f6d109296decfd16a9131e3f3f13
-"""
-from __future__ import annotations
-
-import argparse
-import ast
-import hashlib
-import json
-import os
-import re
-import textwrap
-from collections import defaultdict
-from pathlib import Path
-from typing import Any
-
-BASELINE_SHA256 = "13ff21a87b74e1f5461a25f5810d6fe90452f6d109296decfd16a9131e3f3f13"
-MAX_BYTES = 2_000_000
-SKIP_DIRS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache",
-             ".mypy_cache", ".ruff_cache", "archive"}
-SUPPORTED_SUFFIXES = {".py", ".yml", ".yaml"}
-NETWORK_PATTERNS = (
-    r"\brequests\.(post|put|patch|delete)\s*\(",
-    r"\burllib\.request\.urlopen\s*\(",
-    r"\bhttp\.client\.",
-)
-CREDENTIAL_PATTERN = r"\b(secret|token|api[_-]?key|password|credential|private[_-]?key)\b"
-DESTRUCTIVE_PATTERNS = (
-    r"\bshutil\.rmtree\s*\(",
-    r"\bos\.(remove|unlink|rmdir)\s*\(",
-    r"\.unlink\s*\(",
-    r"\brm\s+-rf\b",
-)
-DYNAMIC_PATTERNS = (
-    r"\beval\s*\(",
-    r"\bexec\s*\(",
-    r"\bsubprocess\.(run|Popen|call)\s*\(",
-)
-STATE_MARKERS = {"trust_store_path", "grants_store_path", "eval_state_path"}
-NETWORK_RE = tuple(re.compile(p, re.I) for p in NETWORK_PATTERNS)
-DESTRUCTIVE_RE = tuple(re.compile(p, re.I) for p in DESTRUCTIVE_PATTERNS)
-DYNAMIC_RE = tuple(re.compile(p, re.I) for p in DYNAMIC_PATTERNS)
-CREDENTIAL_RE = re.compile(CREDENTIAL_PATTERN, re.I)
-HEREDOC_RE = re.compile(r"\bpython(?:3)?\s+-\s*<<\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1")
-
-POLICY = {
-    "status": "DRAFT_FIX",
-    "report_only": True,
-    "automatic_adoption": False,
-    "existing_findings_changed": False,
-    "existing_decisions_changed": False,
-    "existing_counts_changed": False,
-    "feeds_existing_scores": False,
-    "approval_verified_by_this_tool": False,
-    "human_review_required": True,
-    "target_code_executed": False,
-    "network_calls": False,
-    "file_writes": False,
-}
-
-
-def legacy_candidates(text: str, *, capped: bool = True) -> list[dict[str, Any]]:
-    """Reproduce the baseline text matcher, without its path/decision classifier."""
-    found: list[dict[str, Any]] = []
-    for number, line in enumerate(text.splitlines(), 1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        lower = stripped.lower()
-        network = any(pattern.search(stripped) for pattern in NETWORK_RE)
-        if network and not any(word in lower for word in ("approved", "hitl", "allowlist")):
-            found.append({"line": number, "kind": "EXTERNAL_EFFECT"})
-        credential = ("_tokens" not in lower and "side_effect_tokens" not in lower
-                      and bool(CREDENTIAL_RE.search(stripped)))
-        if credential and (network or any(word in lower for word in ("send", "upload", "exfil"))):
-            found.append({"line": number, "kind": "CREDENTIAL_REFERENCE"})
-        if any(pattern.search(stripped) for pattern in DESTRUCTIVE_RE):
-            if ".unlink" in lower and any(marker in lower for marker in STATE_MARKERS):
-                found.append({"line": number, "kind": "STATE_RESET_REVIEW"})
-            elif not any(word in lower for word in ("tmp_path", "temporary", "test")):
-                found.append({"line": number, "kind": "DESTRUCTIVE_EFFECT"})
-        if any(pattern.search(stripped) for pattern in DYNAMIC_RE):
-            gated = ("subprocess.run" in lower and "nosec" in lower
-                     and "hitl-gated" in lower and "shell=false" in lower)
-            if gated:
-                found.append({"line": number, "kind": "DYNAMIC_REVIEW_ONLY"})
-            elif "literal_eval" not in lower and "pytest" not in lower:
-                found.append({"line": number, "kind": "DYNAMIC_EXECUTION"})
-        if capped and len(found) >= 5:
-            break
-    return found
-
-
-def credential_reference(node: ast.AST) -> bool:
-    """Lexical references in arguments only; no values or dataflow are exposed."""
-    for child in ast.walk(node):
-        value = child.id if isinstance(child, ast.Name) else (
-            child.attr if isinstance(child, ast.Attribute) else (
-                child.value if isinstance(child, ast.Constant)
-                and isinstance(child.value, str) else ""
-            )
-        )
-        if CREDENTIAL_RE.search(value) or CREDENTIAL_RE.search(value.replace("_", " ")):
-            return True
-    return False
-
-
-class Bindings(ast.NodeVisitor):
-    """Gather one lexical scope conservatively; do not enter child scopes."""
-
-    def __init__(self) -> None:
-        self.imports: dict[str, set[str]] = defaultdict(set)
-        self.blocked: set[str] = set()
-
-    def visit_Import(self, node: ast.Import) -> None:
-        for alias in node.names:
-            self.imports[alias.asname or alias.name.split(".")[0]].add(
-                alias.name if alias.asname else alias.name.split(".")[0]
-            )
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        for alias in node.names:
-            if alias.name == "*":
-                self.blocked.add("*")
-            elif node.level:
-                self.blocked.add(alias.asname or alias.name)
-            else:
-                self.imports[alias.asname or alias.name].add(
-                    (node.module + "." if node.module else "") + alias.name
-                )
-
-    def visit_Name(self, node: ast.Name) -> None:
-        if isinstance(node.ctx, (ast.Store, ast.Del)):
-            self.blocked.add(node.id)
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        self.blocked.add(node.name)
-
-    visit_AsyncFunctionDef = visit_FunctionDef
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        self.blocked.add(node.name)
-
-    def visit_Lambda(self, node: ast.Lambda) -> None:
-        pass
-
-    def visit_ListComp(self, node: ast.ListComp) -> None:
-        pass
-
-    visit_SetComp = visit_ListComp
-    visit_DictComp = visit_ListComp
-    visit_GeneratorExp = visit_ListComp
-
-    def visit_Global(self, node: ast.Global) -> None:
-        self.blocked.update(node.names)
-
-    visit_Nonlocal = visit_Global
-
-    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
-        if node.name:
-            self.blocked.add(node.name)
-        self.generic_visit(node)
-
-    def visit_MatchAs(self, node: ast.MatchAs) -> None:
-        if node.name:
-            self.blocked.add(node.name)
-        self.generic_visit(node)
-
-    def visit_MatchStar(self, node: ast.MatchStar) -> None:
-        if node.name:
-            self.blocked.add(node.name)
-
-    def visit_MatchMapping(self, node: ast.MatchMapping) -> None:
-        if node.rest:
-            self.blocked.add(node.rest)
-        self.generic_visit(node)
-
-
-class Scope:
-    def __init__(self, body: list[ast.stmt], parent: Scope | None = None,
-                 parameters: list[str] | None = None, kind: str = "function") -> None:
-        self.parent = parent
-        self.kind = kind
-        self.bindings = Bindings()
-        for statement in body:
-            self.bindings.visit(statement)
-        self.bindings.blocked.update(parameters or [])
-
-    def resolve(self, name: str) -> tuple[str, str]:
-        bindings = self.bindings
-        imports = bindings.imports.get(name, set())
-        if name in bindings.blocked or "*" in bindings.blocked or len(imports) > 1:
-            hint = next(iter(imports)) if len(imports) == 1 else name
-            if not imports and self.parent is not None:
-                hint, _ = self.parent.resolve(name)
-            return hint, "UNKNOWN_SHADOWED_OR_AMBIGUOUS"
-        if imports:
-            return next(iter(imports)), "IMPORT_SYNTAX_ONLY"
-        if self.parent is not None:
-            return self.parent.resolve(name)
-        if name in {"eval", "exec"}:
-            return name, "BUILTIN_NAME_SYNTAX_ONLY"
-        return name, "UNKNOWN_BINDING"
-
-
-def parameter_names(arguments: ast.arguments) -> list[str]:
-    return [argument.arg for argument in
-            [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs,
-             *([arguments.vararg] if arguments.vararg else []),
-             *([arguments.kwarg] if arguments.kwarg else [])]]
-
-
-def dotted_name(node: ast.AST, scope: Scope) -> tuple[str, str]:
-    if isinstance(node, ast.Name):
-        return scope.resolve(node.id)
-    if isinstance(node, ast.Attribute):
-        root, status = dotted_name(node.value, scope)
-        return (root + "." + node.attr if root else ""), status
-    return "", "UNKNOWN_DYNAMIC_CALLEE"
-
-
-def call_family(name: str, node: ast.Call) -> str | None:
-    if name in {"requests.post", "requests.put", "requests.patch", "requests.delete",
-                "urllib.request.urlopen"} or name.startswith("http.client."):
-        return "EXTERNAL_EFFECT"
-    if name in {"shutil.rmtree", "os.remove", "os.unlink", "os.rmdir"}:
-        return "DESTRUCTIVE_EFFECT"
-    if isinstance(node.func, ast.Attribute) and node.func.attr == "unlink":
-        return "DESTRUCTIVE_EFFECT"
-    if name in {"eval", "exec", "subprocess.run", "subprocess.Popen", "subprocess.call"}:
-        return "DYNAMIC_EXECUTION"
-    return None
-
-
-class CallReview(ast.NodeVisitor):
-    def __init__(self, tree: ast.Module, text: str) -> None:
-        self.scope = Scope(tree.body, kind="module")
-        self.text = text
-        self.lines = text.splitlines()
-        self.calls: list[dict[str, Any]] = []
-
-    def visit_Call(self, node: ast.Call) -> None:
-        name, resolution = dotted_name(node.func, self.scope)
-        family = call_family(name, node)
-        if family:
-            first, last = node.lineno, node.end_lineno or node.lineno
-            nearby = "\n".join(self.lines[first-1:last]).lower()
-            signals = []
-            if any(word in nearby for word in ("approved", "hitl", "allowlist")):
-                signals.append("ANNOTATION_OR_NAME_IS_NOT_APPROVAL")
-            if family == "EXTERNAL_EFFECT" and (
-                any(credential_reference(argument) for argument in node.args)
-                or any(credential_reference(keyword.value) for keyword in node.keywords)
-            ):
-                signals.append("CREDENTIAL_REFERENCE_IN_CALL")
-            if family == "DESTRUCTIVE_EFFECT" and any(marker in nearby for marker in STATE_MARKERS):
-                signals.append("STATE_MARKER_IS_NOT_SAFETY_PROOF")
-            if family == "DYNAMIC_EXECUTION" and any(word in nearby for word in ("nosec", "hitl-gated")):
-                signals.append("SUPPRESSION_COMMENT_IS_NOT_AUTHORIZATION")
-            self.calls.append({
-                "line": first,
-                "end_line": last,
-                "kind": family,
-                "callee_family": name if resolution == "IMPORT_SYNTAX_ONLY" else family,
-                "binding_status": resolution,
-                "evidence_status": "CALL_SYNTAX_ONLY",
-                "approval_status": "UNKNOWN",
-                "runtime_effect_status": "UNKNOWN",
-                "signals": signals,
-            })
-        self.generic_visit(node)
-
-    def _function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
-        annotations = [argument.annotation for argument in
-                       [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs,
-                        *([node.args.vararg] if node.args.vararg else []),
-                        *([node.args.kwarg] if node.args.kwarg else [])]
-                       if argument.annotation is not None]
-        for child in [*node.decorator_list, *node.args.defaults,
-                      *(value for value in node.args.kw_defaults if value is not None),
-                      *annotations, *([node.returns] if node.returns is not None else [])]:
-            self.visit(child)
-        previous = self.scope
-        parent = previous.parent if previous.kind == "class" else previous
-        self.scope = Scope(node.body, parent, parameter_names(node.args))
-        for statement in node.body:
-            self.visit(statement)
-        self.scope = previous
-
-    visit_FunctionDef = _function
-    visit_AsyncFunctionDef = _function
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        for child in [*node.decorator_list, *node.bases, *(keyword.value for keyword in node.keywords)]:
-            self.visit(child)
-        previous = self.scope
-        self.scope = Scope(node.body, previous, kind="class")
-        for statement in node.body:
-            self.visit(statement)
-        self.scope = previous
-
-    def visit_Lambda(self, node: ast.Lambda) -> None:
-        for child in [*node.args.defaults, *(value for value in node.args.kw_defaults if value is not None)]:
-            self.visit(child)
-        previous = self.scope
-        parent = previous.parent if previous.kind == "class" else previous
-        self.scope = Scope([], parent, parameter_names(node.args))
-        self.visit(node.body)
-        self.scope = previous
-
-    def _comprehension(self, node: ast.AST) -> None:
-        previous = self.scope
-        # Conservatively mask all comprehension target names; no fabricated binding.
-        targets = [child.id for generator in node.generators
-                   for child in ast.walk(generator.target) if isinstance(child, ast.Name)]
-        self.scope = Scope([], previous, targets)
-        self.generic_visit(node)
-        self.scope = previous
-
-    visit_ListComp = _comprehension
-    visit_SetComp = _comprehension
-    visit_DictComp = _comprehension
-    visit_GeneratorExp = _comprehension
-
-
-def parse_review(text: str) -> dict[str, Any]:
-    legacy = legacy_candidates(text)
-    uncapped = legacy_candidates(text, capped=False)
-    try:
-        tree = ast.parse(text)
-    except (SyntaxError, ValueError, MemoryError, RecursionError) as error:
-        return {
-            "parse_status": "UNKNOWN",
-            "error_type": type(error).__name__,
-            "legacy_candidates": legacy,
-            "uncapped_text_candidates": uncapped,
-            "call_evidence": [],
-            "comparison_status": "UNKNOWN",
-        }
-    review = CallReview(tree, text)
-    try:
-        review.visit(tree)
-    except RecursionError:
-        return {
-            "parse_status": "UNKNOWN",
-            "error_type": "RecursionError",
-            "legacy_candidates": legacy,
-            "uncapped_text_candidates": uncapped,
-            "call_evidence": [],
-            "comparison_status": "UNKNOWN",
-        }
-    calls = sorted(review.calls, key=lambda item: (item["line"], item["end_line"], item["kind"]))
-    only_text = [
-        {**item, "status": "TEXT_MATCH_WITHOUT_CORRESPONDING_CALL_SYNTAX"}
-        for item in uncapped
-        if item["kind"] in {"EXTERNAL_EFFECT", "DESTRUCTIVE_EFFECT", "DYNAMIC_EXECUTION"}
-        and not any(call["kind"] == item["kind"]
-                    and call["line"] <= item["line"] <= call["end_line"] for call in calls)
-    ]
-    functions = []
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            functions.append({
-                "line": node.lineno,
-                "end_line": node.end_lineno,
-                "kind": "ASYNC_FUNCTION" if isinstance(node, ast.AsyncFunctionDef) else "FUNCTION",
-                "evidence_status": "SYNTACTIC_RANGE_ONLY",
-            })
-    return {
-        "parse_status": "PARSED",
-        "legacy_candidates": legacy,
-        "uncapped_text_candidates": uncapped,
-        "text_candidates_after_legacy_cutoff": uncapped[len(legacy):],
-        "call_evidence": calls,
-        "text_only_evidence": only_text,
-        "function_ranges": sorted(functions, key=lambda item: item["line"]),
-        "comparison_status": "SYNTAX_COMPARISON_ONLY",
-    }
-
-
-def python_heredocs(text: str) -> tuple[list[tuple[int, str]], bool]:
-    lines = text.splitlines()
-    blocks = []
-    index = 0
-    complete = True
-    while index < len(lines):
-        match = HEREDOC_RE.search(lines[index])
-        if not match:
-            index += 1
-            continue
-        end = index + 1
-        marker = match.group(2)
-        while end < len(lines) and lines[end].strip() != marker:
-            end += 1
-        if end == len(lines):
-            complete = False
-            break
-        blocks.append((index + 2, textwrap.dedent("\n".join(lines[index+1:end]))))
-        index = end + 1
-    return blocks, complete
-
-
-def verify_baseline(path: Path) -> dict[str, Any]:
-    try:
-        if path.is_symlink():
-            return {"status": "UNKNOWN", "error_type": "SymlinkNotRead"}
-    except OSError as error:
-        return {"status": "UNKNOWN", "error_type": type(error).__name__}
-    try:
-        with path.open("rb") as handle:
-            raw = handle.read(MAX_BYTES + 1)
-    except OSError as error:
-        return {"status": "UNKNOWN", "error_type": type(error).__name__}
-    if len(raw) > MAX_BYTES:
-        return {"status": "UNKNOWN", "error_type": "SizeLimit"}
-    digest = hashlib.sha256(raw).hexdigest()
-    return {
-        "status": "MATCH" if digest == BASELINE_SHA256 else "BASELINE_MISMATCH",
-        "sha256": digest,
-        "expected_sha256": BASELINE_SHA256,
-        "semantics": "Byte identity of the uploaded workflow only; not runtime validation.",
-    }
-
-
-def review_file(path: Path, display_path: str | None = None) -> dict[str, Any]:
-    item: dict[str, Any] = {"path": display_path or path.as_posix()}
-    try:
-        if path.is_symlink():
-            return {**item, "status": "UNKNOWN_SYMLINK_NOT_READ", "coverage_complete": False}
-    except OSError as error:
-        return {**item, "status": "UNKNOWN_METADATA_ERROR", "error_type": type(error).__name__,
-                "coverage_complete": False}
-    if path.suffix.lower() not in SUPPORTED_SUFFIXES:
-        return {**item, "status": "UNKNOWN_UNSUPPORTED_TYPE", "coverage_complete": False}
-    try:
-        with path.open("rb") as handle:
-            raw = handle.read(MAX_BYTES + 1)
-    except OSError as error:
-        return {**item, "status": "UNKNOWN_READ_ERROR", "error_type": type(error).__name__,
-                "coverage_complete": False}
-    if len(raw) > MAX_BYTES:
-        return {**item, "status": "UNKNOWN_SIZE_LIMIT", "coverage_complete": False}
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return {**item, "status": "UNKNOWN_UTF8_ERROR", "coverage_complete": False}
-    item["sha256"] = hashlib.sha256(raw).hexdigest()
-    if path.suffix.lower() == ".py":
-        analysis = parse_review(text)
-        return {**item, "status": "PYTHON_SYNTAX_REVIEW", "coverage_complete":
-                analysis["parse_status"] == "PARSED", "analysis": analysis,
-                "coverage_semantics": "Only the documented static call families; not all behavior."}
-    blocks, closed = python_heredocs(text)
-    return {
-        **item,
-        "status": "PARTIAL_PYTHON_HEREDOC_REVIEW" if blocks else "UNKNOWN_NO_PYTHON_HEREDOC",
-        "coverage_complete": False,
-        "heredocs_closed": closed,
-        "legacy_text_comparison_only": legacy_candidates(text),
-        "python_blocks": [{"source_start_line": start, "analysis": parse_review(body)}
-                          for start, body in blocks],
-        "coverage_semantics": "Shell commands, YAML semantics, and non-heredoc Python are UNKNOWN.",
-    }
-
-
-def build_report(targets: list[Path], baseline_path: Path | None = None) -> dict[str, Any]:
-    baseline = verify_baseline(baseline_path) if baseline_path else {
-        "status": "NOT_SUPPLIED", "expected_sha256": BASELINE_SHA256}
-    if baseline["status"] in {"UNKNOWN", "BASELINE_MISMATCH"}:
-        return {"policy": dict(POLICY), "baseline": baseline, "status": "BASELINE_UNRESOLVED",
-                "coverage_complete": False, "files": [], "discovery_issues": []}
-    files: list[dict[str, Any]] = []
-    issues: list[dict[str, str]] = []
-    seen: set[str] = set()
-
-    def add(path: Path, display: str | None = None) -> None:
-        identity = os.path.abspath(path)
-        if identity not in seen:
-            seen.add(identity)
-            files.append(review_file(path, display))
-
-    for target in targets:
-        try:
-            symbolic = target.is_symlink()
-            directory = target.is_dir() if not symbolic else False
-        except OSError:
-            issues.append({"path": target.as_posix(), "status": "UNKNOWN_TARGET_METADATA"})
-            continue
-        if symbolic:
-            issues.append({"path": target.as_posix(), "status": "UNKNOWN_SYMLINK_NOT_READ"})
-        elif directory:
-            def onerror(error: OSError) -> None:
-                issues.append({"path": target.as_posix(), "status": "UNKNOWN_DIRECTORY_READ"})
-            for root, directories, names in os.walk(target, followlinks=False, onerror=onerror):
-                for name in sorted(directories):
-                    candidate = Path(root) / name
-                    try:
-                        symbolic = candidate.is_symlink()
-                    except OSError:
-                        issues.append({"path": candidate.relative_to(target).as_posix(),
-                                       "status": "UNKNOWN_DIRECTORY_METADATA"})
-                        symbolic = True
-                    if symbolic:
-                        issues.append({"path": candidate.relative_to(target).as_posix(),
-                                       "status": "UNKNOWN_SYMLINK_NOT_READ"})
-                excluded = {issue["path"] for issue in issues}
-                directories[:] = sorted(name for name in directories
-                                         if name not in SKIP_DIRS
-                                         and (Path(root) / name).relative_to(target).as_posix() not in excluded)
-                for name in sorted(names):
-                    candidate = Path(root) / name
-                    if candidate.suffix.lower() in SUPPORTED_SUFFIXES:
-                        add(candidate, candidate.relative_to(target).as_posix())
-        else:
-            add(target)
-    complete = bool(files) and not issues and all(item["coverage_complete"] for item in files)
-    return {
-        "schema_version": "tasukeru-detection-evidence-v1",
-        "policy": dict(POLICY),
-        "baseline": baseline,
-        "status": "REVIEW_EVIDENCE_GENERATED" if complete else "REVIEW_EVIDENCE_INCOMPLETE",
-        "coverage_complete": complete,
-        "safe_or_approved_conclusion": "NOT_DETERMINED",
-        "pr_files_api_completeness": "NOT_CHECKED",
-        "scope": {"suffixes": sorted(SUPPORTED_SUFFIXES), "excluded_directories": sorted(SKIP_DIRS),
-                  "max_bytes_per_file": MAX_BYTES, "targets": [path.as_posix() for path in targets]},
-        "files": files,
-        "discovery_issues": issues,
-        "limits": [
-            "No external authorization, runtime behavior, interprocedural dataflow, or policy adoption is verified.",
-            "Bindings are conservative syntax evidence; order, reachability, monkey patching, and runtime types are UNKNOWN.",
-            "Text-only evidence is never automatically removed from existing findings.",
-            "The legacy matcher comparison omits path-dependent decisions and does not replace the uploaded workflow.",
-            "PR API pagination and tool-result completeness require separate evidence and are not checked here.",
-        ],
-    }
-
-
-def self_test() -> dict[str, Any]:
-    """Deterministic synthetic fixtures; target fixture code is parsed, not run."""
-    tests: list[dict[str, Any]] = []
-
-    def check(name: str, ok: bool) -> None:
-        tests.append({"name": name, "passed": bool(ok)})
-
-    def calls(text: str) -> list[dict[str, Any]]:
-        return parse_review(text).get("call_evidence", [])
-
-    direct = "import requests\nrequests.post(url)\n"
-    literal = 'message = "requests.post(url)"\n'
-    commented = "import requests\nrequests.post(url)  # HITL\n"
-    marker_name = "import requests\nrequests.post(unapproved_url)\n"
-    alias = "import requests as rq\nrq.post(url)\n"
-    multiline = 'import requests\nrequests.post(\n    url,\n    json={"token": token},\n)\n'
-    check("direct_call_retained", len(calls(direct)) == 1)
-    check("literal_legacy_match_reproduced", len(legacy_candidates(literal)) == 1)
-    check("literal_has_no_call_evidence", calls(literal) == [])
-    check("literal_remains_reviewable_text_evidence", len(parse_review(literal)["text_only_evidence"]) == 1)
-    check("HITL_comment_legacy_suppression_reproduced", legacy_candidates(commented) == [])
-    check("HITL_comment_does_not_prove_approval", calls(commented)[0]["approval_status"] == "UNKNOWN")
-    check("unapproved_name_legacy_suppression_reproduced", legacy_candidates(marker_name) == [])
-    check("unapproved_name_call_observed", len(calls(marker_name)) == 1)
-    check("alias_legacy_miss_reproduced", legacy_candidates(alias) == [])
-    check("alias_call_observed", len(calls(alias)) == 1 and calls(alias)[0]["binding_status"] == "IMPORT_SYNTAX_ONLY")
-    from_import = "from requests import post as send\nsend(url)\n"
-    check("from_import_alias_observed", len(calls(from_import)) == 1)
-    check("multiline_credential_legacy_miss_reproduced",
-          not any(item["kind"] == "CREDENTIAL_REFERENCE" for item in legacy_candidates(multiline)))
-    check("multiline_credential_observed",
-          "CREDENTIAL_REFERENCE_IN_CALL" in calls(multiline)[0]["signals"])
-    later = "import requests\n" + "\n".join("requests.post(url)" for _ in range(7)) + "\n"
-    check("five_hit_legacy_cutoff_reproduced", len(legacy_candidates(later)) == 5)
-    check("uncapped_text_reads_later_hits", len(legacy_candidates(later, capped=False)) == 7)
-    check("AST_reads_later_calls", len(calls(later)) == 7)
-    check("cutoff_delta_is_two", len(parse_review(later)["text_candidates_after_legacy_cutoff"]) == 2)
-    unrelated = 'class AuditLog:\n    def emit(self):\n        return None\n\nnote = "sealed raise ValueError"\n'
-    ranges = parse_review(unrelated)["function_ranges"]
-    check("function_range_excludes_unrelated_text", ranges[0]["end_line"] == 3)
-    syntax_error = parse_review("requests.post(\n")
-    check("invalid_python_is_UNKNOWN", syntax_error["parse_status"] == "UNKNOWN")
-    check("invalid_python_keeps_legacy_evidence", len(syntax_error["legacy_candidates"]) == 1)
-    rebound = "import requests\nrequests = other\nrequests.post(url)\n"
-    check("rebound_import_is_UNKNOWN", calls(rebound)[0]["binding_status"].startswith("UNKNOWN"))
-    parameter = "import requests\ndef operation(requests):\n    requests.post(url)\n"
-    check("shadowed_parameter_is_UNKNOWN", calls(parameter)[0]["binding_status"].startswith("UNKNOWN"))
-    cross_scope = "def other():\n    import requests as rq\n\nrq.post(url)\n"
-    check("import_in_other_scope_not_resolved", calls(cross_scope) == [])
-    nested = "import requests as rq\ndef operation():\n    rq.post(url)\n"
-    check("module_import_visible_in_function", len(calls(nested)) == 1)
-    async_source = "import requests as rq\nasync def operation():\n    rq.post(url)\n"
-    check("async_function_supported", len(calls(async_source)) == 1)
-    delete = "import os as operating\noperating.remove(path)\n"
-    check("destructive_alias_observed", calls(delete)[0]["kind"] == "DESTRUCTIVE_EFFECT")
-    dynamic = "import subprocess as child\nchild.run(command, shell=False)  # nosec HITL-gated\n"
-    check("dynamic_alias_observed_without_authorization",
-          calls(dynamic)[0]["kind"] == "DYNAMIC_EXECUTION"
-          and calls(dynamic)[0]["approval_status"] == "UNKNOWN")
-    suppressed = "subprocess.run(command, shell=False)  # nosec HITL-gated\n"
-    check("legacy_dynamic_downgrade_reproduced", legacy_candidates(suppressed)[0]["kind"] == "DYNAMIC_REVIEW_ONLY")
-    reset = "trust_store_path.unlink()\n"
-    check("legacy_state_reset_downgrade_reproduced", legacy_candidates(reset)[0]["kind"] == "STATE_RESET_REVIEW")
-    get_call = "import requests\nrequests.get(url)\n"
-    check("API_family_not_expanded_to_requests_get", calls(get_call) == [])
-    after = json.dumps(POLICY, sort_keys=True)
-    parse_review(multiline)
-    check("policy_not_mutated_by_analysis", json.dumps(POLICY, sort_keys=True) == after)
-    serialized = json.dumps(parse_review(
-        'import requests\nrequests.post(url, json={"token": "SYNTHETIC_SECRET_SENTINEL"})\n'))
-    check("source_and_credential_values_not_output", "SYNTHETIC_SECRET_SENTINEL" not in serialized)
-    blocks, closed = python_heredocs("run: |\n  python - <<'PY'\n  import requests\n  requests.post(url)\n  PY\n")
-    check("quoted_python_heredoc_parsed", closed and len(blocks) == 1 and len(calls(blocks[0][1])) == 1)
-    open_blocks, closed = python_heredocs("python - <<'PY'\nrequests.post(url)\n")
-    check("unclosed_heredoc_incomplete", not closed and open_blocks == [])
-    scope_class = "import requests as rq\nclass C:\n    rq = other\n    def operation(self):\n        rq.post(url)\n"
-    check("method_uses_module_not_class_binding", calls(scope_class)[0]["binding_status"] == "IMPORT_SYNTAX_ONLY")
-    compreh = "import requests\n[requests.post(url) for requests in objects]\n"
-    check("comprehension_shadowing_is_UNKNOWN", calls(compreh)[0]["binding_status"].startswith("UNKNOWN"))
-    check("no_safe_or_approved_conclusion_emitted",
-          all(item["approval_status"] == "UNKNOWN" and item["runtime_effect_status"] == "UNKNOWN"
-              for item in calls(multiline)))
-    api_key = 'import requests\nrequests.post(url, headers={"key": API_KEY})\n'
-    check("API_KEY_reference_observed", "CREDENTIAL_REFERENCE_IN_CALL" in calls(api_key)[0]["signals"])
-    private_key = 'import requests\nrequests.post(url, json={"key": private_key})\n'
-    check("private_key_reference_observed", "CREDENTIAL_REFERENCE_IN_CALL" in calls(private_key)[0]["signals"])
-    alias_rebound = "import requests as rq\nrq = other\nrq.post(url)\n"
-    check("rebound_alias_remains_UNKNOWN_evidence", calls(alias_rebound)[0]["binding_status"].startswith("UNKNOWN"))
-    alias_parameter = "import requests as rq\ndef operation(rq):\n    rq.post(url)\n"
-    check("shadowed_alias_remains_UNKNOWN_evidence", calls(alias_parameter)[0]["binding_status"].startswith("UNKNOWN"))
-    annotation = "import requests\ndef operation(x: requests.post(url)) -> requests.post(url):\n    pass\n"
-    check("annotation_calls_observed_as_syntax_only", len(calls(annotation)) == 2)
-    harmless = 'requests_message = "Use the API only after HITL"\n'
-    check("ordinary_documentation_has_no_call_evidence", calls(harmless) == [])
-    duplicate_import = "import requests as rq\nimport custom as rq\nrq.post(url)\n"
-    check("conflicting_import_not_misreported_as_known_requests", calls(duplicate_import) == [])
-    # Simulate read failures and special targets in memory; no test files are written.
-    import io
-    from unittest.mock import patch
-    virtual = Path("synthetic_case.py")
-    with patch.object(Path, "is_symlink", return_value=False):
-        with patch.object(Path, "open", side_effect=FileNotFoundError()):
-            check("missing_file_incomplete", review_file(virtual)["status"] == "UNKNOWN_READ_ERROR")
-        with patch.object(Path, "open", side_effect=PermissionError()):
-            check("unreadable_file_incomplete", not review_file(virtual)["coverage_complete"])
-        with patch.object(Path, "open", return_value=io.BytesIO(b"\xff")):
-            check("invalid_UTF8_incomplete", review_file(virtual)["status"] == "UNKNOWN_UTF8_ERROR")
-        with patch.object(Path, "open", return_value=io.BytesIO(b"x" * (MAX_BYTES + 1))):
-            check("oversized_file_incomplete", review_file(virtual)["status"] == "UNKNOWN_SIZE_LIMIT")
-        with patch.object(Path, "open") as reader:
-            check("unsupported_type_incomplete", not review_file(Path("synthetic_case.txt"))["coverage_complete"])
-            check("unsupported_type_not_read", reader.call_count == 0)
-        with patch.object(Path, "open", return_value=io.BytesIO(b"run: echo example\n")):
-            check("YAML_without_python_is_UNKNOWN", review_file(Path("synthetic.yml"))["status"] == "UNKNOWN_NO_PYTHON_HEREDOC")
-        payload = b"run: |\n  python - <<'PY'\n  import requests\n  requests.post(url)\n  PY\n"
-        with patch.object(Path, "open", return_value=io.BytesIO(payload)):
-            item = review_file(Path("synthetic.yml"))
-            check("YAML_with_python_still_partial", item["status"] == "PARTIAL_PYTHON_HEREDOC_REVIEW" and not item["coverage_complete"])
-        with patch.object(Path, "open", return_value=io.BytesIO(b"mismatched baseline")):
-            report = build_report([virtual], Path("baseline.yml"))
-            check("baseline_mismatch_stops_comparison", report["status"] == "BASELINE_UNRESOLVED" and report["files"] == [])
-    with patch.object(Path, "is_symlink", return_value=True), patch.object(Path, "open") as reader:
-        check("symlink_incomplete", not review_file(virtual)["coverage_complete"])
-        check("symlink_not_read", reader.call_count == 0)
-    with patch.object(Path, "is_symlink", side_effect=PermissionError()):
-        check("metadata_error_is_UNKNOWN", review_file(virtual)["status"] == "UNKNOWN_METADATA_ERROR")
-    empty = build_report([])
-    check("empty_targets_not_complete", not empty["coverage_complete"] and empty["files"] == [])
-    check("report_does_not_determine_safety", empty["safe_or_approved_conclusion"] == "NOT_DETERMINED")
-    failed = [item["name"] for item in tests if not item["passed"]]
-    return {
-        "status": "PASSED" if not failed else "FAILED",
-        "tests_total": len(tests),
-        "tests_passed": len(tests) - len(failed),
-        "failed": failed,
-        "tests": tests,
-        "semantics": "Synthetic deterministic evidence checks only; not measured real-repository accuracy.",
-        "target_code_executed": False,
-    }
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("targets", nargs="*", type=Path, help="Explicit source files/directories; no default whole-repo scan")
-    parser.add_argument("--self-test", action="store_true", help="Run deterministic synthetic parser/matcher checks")
-    parser.add_argument("--baseline-workflow", type=Path, help="Optional byte-identity check against the uploaded baseline")
-    arguments = parser.parse_args(argv)
-    if arguments.self_test:
-        result = self_test()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0 if result["status"] == "PASSED" else 1
-    if not arguments.targets:
-        parser.error("Supply source targets, or use --self-test.")
-    report = build_report(arguments.targets, arguments.baseline_workflow)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if report["coverage_complete"] else 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+# DRAFT_FEATURE_PROPOSAL: manual evidence collection; no automatic adoption.
+# Add as a NEW file: .github/workflows/tasukeru-artifact-observer.yml
+# Do not paste into or replace tasukeru-analysis.yml.
+# This workflow consumes a finished source artifact and publishes only separate JSON reports.
+name: Tasukeru Artifact Observer
+'on':
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Completed Tasukeru Analysis run ID in this repository"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+
+jobs:
+  artifact-observation:
+    name: Separate artifact observations for human review
+    if: ${{ github.repository == 'japan1988/multi-agent-mediation' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare trusted observer outside the repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tasukeru-observer-reports"
+          cat > "$RUNNER_TEMP/tasukeru_artifact_observer.py" <<'TASUKERU_OBSERVER_CODE'
+          #!/usr/bin/env python3
+          """DRAFT: read-only observation of a finished Tasukeru advisory ZIP.
+          
+          Keep this tool outside the scanned repository. It does not import the existing
+          reviewer, execute target code, change its inputs/outputs, modify gates, or write
+          files. It prints separate JSON evidence. Different values do not prove tampering
+          or the same generation; snapshot relationships and causes remain UNKNOWN.
+          This checks recorded artifact bytes and ARL row-count values only. ARL chain
+          integrity, authenticity, approval and program safety are NOT verified here.
+          """
+          from __future__ import annotations
+          import argparse
+          import hashlib
+          import io
+          import json
+          import re
+          import zlib
+          from pathlib import Path, PurePosixPath
+          from zipfile import ZipFile, BadZipFile, ZIP_DEFLATED
+          
+          MAX_COMPRESSED = 64 * 1024 * 1024
+          MAX_TOTAL = 64 * 1024 * 1024
+          MAX_MEMBER = 16 * 1024 * 1024
+          MAX_ROWS = 10000
+          SHA = re.compile(r"[0-9a-f]{64}\Z")
+          POLICY = {
+              "status": "DRAFT_FEATURE_PROPOSAL",
+              "report_only": True,
+              "existing_reviewer_imported": False,
+              "existing_findings_changed": False,
+              "existing_decisions_changed": False,
+              "existing_counts_changed": False,
+              "feeds_existing_scores": False,
+              "automatic_repair": False,
+              "human_review_required": True,
+              "file_writes": False,
+              "network_calls": False,
+          }
+          COUNT_SOURCES = (
+              ("tasukeru_arl_verify.json", ("row_count",)),
+              ("tasukeru_announcement.json", ("arl", "row_count")),
+              ("tasukeru_clean_run_draft.json", ("summary", "arl_rows")),
+          )
+          
+          def strict_json(raw: bytes):
+              def pairs(items):
+                  result = {}
+                  for key, value in items:
+                      if key in result:
+                          raise ValueError("duplicate_key")
+                      result[key] = value
+                  return result
+              def constant(value):
+                  raise ValueError("nonfinite_number")
+              return json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=constant)
+          
+          def safe_member(name: str) -> bool:
+              if not isinstance(name, str) or not name or "\\" in name or "\x00" in name:
+                  return False
+              parts = name.split("/")
+              return not PurePosixPath(name).is_absolute() and not any(
+                  part in {"", ".", ".."} for part in parts
+              ) and not any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in name)
+          
+          def inspect_finished_bundle(raw: bytes) -> dict:
+              result = {
+                  "schema_version": "tasukeru-artifact-observation-draft-v1",
+                  "policy": dict(POLICY),
+                  "bundle_sha256": hashlib.sha256(raw).hexdigest(),
+                  "artifact_hash_checks": [],
+                  "arl_row_count_checks": [],
+                  "unknowns": [],
+                  "same_snapshot_relationship": "UNKNOWN",
+                  "cause_or_actor": "UNKNOWN",
+                  "safety_approval_or_authenticity": "NOT_DETERMINED",
+              }
+              def unknown(subject, reason):
+                  result["unknowns"].append({"subject": subject, "reason": reason})
+              def finish():
+                  differences = sum(not item["values_match"] for item in result["artifact_hash_checks"])
+                  differences += sum(not item["values_match"] for item in result["arl_row_count_checks"])
+                  result["observed_difference_count"] = differences
+                  result["observation_status"] = (
+                      "DIFFERENCES_WITH_UNKNOWN" if differences and result["unknowns"]
+                      else "DIFFERENCES_OBSERVED" if differences
+                      else "UNKNOWN" if result["unknowns"]
+                      else "VALUES_MATCH_IN_CHECKED_SCOPE"
+                  )
+                  result["scope_note"] = "Byte/value comparisons only; never a whole-system verification."
+                  return result
+              if len(raw) > MAX_COMPRESSED:
+                  unknown("archive", "SIZE_LIMIT")
+                  return finish()
+              try:
+                  archive = ZipFile(io.BytesIO(raw))
+              except (BadZipFile, OSError, ValueError):
+                  unknown("archive", "INVALID_ZIP")
+                  return finish()
+              with archive:
+                  infos = archive.infolist()
+                  names = [info.filename for info in infos if not info.is_dir()]
+                  if len(names) != len(set(names)):
+                      unknown("archive", "DUPLICATE_MEMBER")
+                      return finish()
+                  if sum(info.file_size for info in infos) > MAX_TOTAL:
+                      unknown("archive", "UNCOMPRESSED_SIZE_LIMIT")
+                      return finish()
+                  index = {info.filename: info for info in infos if not info.is_dir()}
+                  cache = {}
+                  def read(name):
+                      if name in cache:
+                          return cache[name]
+                      if not safe_member(name):
+                          unknown("archive_member", "INVALID_RELATIVE_PATH")
+                          return None
+                      info = index.get(name)
+                      if info is None:
+                          unknown(name, "MISSING_MEMBER")
+                          return None
+                      if info.file_size > MAX_MEMBER:
+                          unknown(name, "MEMBER_SIZE_LIMIT")
+                          return None
+                      try:
+                          with archive.open(info) as handle:
+                              data = handle.read(MAX_MEMBER + 1)
+                          if len(data) > MAX_MEMBER or len(data) != info.file_size:
+                              unknown(name, "MEMBER_SIZE_UNRESOLVED")
+                              return None
+                      except (OSError, ValueError, RuntimeError, BadZipFile, NotImplementedError,
+                              EOFError, zlib.error):
+                          unknown(name, "MEMBER_READ_FAILED")
+                          return None
+                      cache[name] = data
+                      return data
+                  arl_bytes = read("tasukeru_arl.jsonl")
+                  rows = []
+                  complete_rows = False
+                  if arl_bytes is not None:
+                      try:
+                          lines = arl_bytes.decode("utf-8").splitlines()
+                          nonempty = [line for line in lines if line.strip()]
+                          if not nonempty:
+                              raise ValueError("empty_arl")
+                          if len(nonempty) > MAX_ROWS:
+                              raise ValueError("row_limit")
+                          for line in nonempty:
+                              row = strict_json(line.encode("utf-8"))
+                              if not isinstance(row, dict):
+                                  raise ValueError("nonobject_row")
+                              rows.append(row)
+                          complete_rows = True
+                      except (UnicodeError, ValueError, TypeError, RecursionError):
+                          unknown("tasukeru_arl.jsonl", "ARL_PARSE_UNRESOLVED")
+                  if complete_rows:
+                      run_ids = {row.get("run_id") for row in rows
+                                 if isinstance(row.get("run_id"), str) and row.get("run_id")}
+                      if len(run_ids) != 1 or any(not isinstance(row.get("run_id"), str)
+                                                 or row.get("run_id") not in run_ids for row in rows):
+                          unknown("tasukeru_arl.jsonl", "RUN_BINDING_UNRESOLVED")
+                      result["actual_parsed_arl_rows"] = len(rows)
+                      records = [row for row in rows if row.get("layer") == "artifact_integrity"]
+                      if not records:
+                          unknown("tasukeru_arl.jsonl", "NO_ARTIFACT_RECORDS")
+                      for row in records:
+                          evidence = row.get("evidence")
+                          if not isinstance(evidence, dict):
+                              unknown("artifact_record", "EVIDENCE_NOT_OBJECT")
+                              continue
+                          name, expected = evidence.get("artifact"), evidence.get("artifact_sha256")
+                          size = evidence.get("size_bytes")
+                          if not safe_member(name) or not isinstance(expected, str) or SHA.fullmatch(expected) is None:
+                              unknown("artifact_record", "INVALID_REFERENCE_OR_SHA256")
+                              continue
+                          if type(size) is not int or size < 0:
+                              unknown(name, "INVALID_SIZE")
+                              continue
+                          data = read(name)
+                          if data is None:
+                              continue
+                          actual = hashlib.sha256(data).hexdigest()
+                          result["artifact_hash_checks"].append({
+                              "artifact": name,
+                              "recorded_sha256": expected,
+                              "actual_sha256": actual,
+                              "recorded_bytes": size,
+                              "actual_bytes": len(data),
+                              "values_match": expected == actual and size == len(data),
+                              "signal": "ARTIFACT_BYTES_MATCH" if expected == actual and size == len(data)
+                                        else "ARTIFACT_BYTES_DIFFER",
+                          })
+                  for name, path in COUNT_SOURCES:
+                      data = read(name)
+                      if data is None:
+                          continue
+                      try:
+                          value = strict_json(data)
+                          for key in path:
+                              if not isinstance(value, dict) or key not in value:
+                                  raise ValueError("missing_field")
+                              value = value[key]
+                          if type(value) is not int or value < 0:
+                              raise ValueError("invalid_count")
+                      except (UnicodeError, ValueError, TypeError, RecursionError):
+                          unknown(name, "COUNT_FIELD_UNRESOLVED")
+                          continue
+                      if not complete_rows:
+                          unknown(name, "ARL_COUNT_REFERENCE_UNRESOLVED")
+                          continue
+                      result["arl_row_count_checks"].append({
+                          "source": name,
+                          "field": ".".join(path),
+                          "reported_rows": value,
+                          "actual_parsed_rows": len(rows),
+                          "values_match": value == len(rows),
+                          "signal": "ARL_ROW_COUNT_VALUE_MATCH" if value == len(rows)
+                                    else "ARL_ROW_COUNT_VALUE_DIFFERS",
+                          "same_generation": "UNKNOWN",
+                      })
+              return finish()
+          
+          def self_test() -> dict:
+              def bundle(changed=False, count=1, omit=None, artifact_name="summary.md"):
+                  original = b"original summary"
+                  row = {
+                      "layer": "artifact_integrity",
+                      "run_id": "synthetic-run",
+                      "evidence": {"artifact": artifact_name,
+                                   "artifact_sha256": hashlib.sha256(original).hexdigest(),
+                                   "size_bytes": len(original)},
+                  }
+                  content = {
+                      "tasukeru_arl.jsonl": json.dumps(row).encode() + b"\n",
+                      "summary.md": b"changed summary" if changed else original,
+                      "tasukeru_arl_verify.json": b'{"row_count":1}',
+                      "tasukeru_announcement.json": b'{"arl":{"row_count":1}}',
+                      "tasukeru_clean_run_draft.json": json.dumps({"summary":{"arl_rows":count}}).encode(),
+                  }
+                  buffer = io.BytesIO()
+                  with ZipFile(buffer, "w") as archive:
+                      for name, value in content.items():
+                          if name != omit:
+                              archive.writestr(name, value)
+                  return buffer.getvalue()
+              checks = []
+              def check(name, condition):
+                  checks.append({"name": name, "passed": bool(condition)})
+              matching = inspect_finished_bundle(bundle())
+              check("matching_values", matching["observation_status"] == "VALUES_MATCH_IN_CHECKED_SCOPE")
+              check("one_artifact_compared", len(matching["artifact_hash_checks"]) == 1)
+              check("three_row_counts_compared", len(matching["arl_row_count_checks"]) == 3)
+              changed = inspect_finished_bundle(bundle(changed=True))
+              check("artifact_change_detected", changed["observed_difference_count"] == 1)
+              check("tampering_not_inferred", changed["cause_or_actor"] == "UNKNOWN")
+              counted = inspect_finished_bundle(bundle(count=2))
+              check("row_count_difference_detected", counted["observed_difference_count"] == 1)
+              check("generation_not_assumed", counted["arl_row_count_checks"][-1]["same_generation"] == "UNKNOWN")
+              both = inspect_finished_bundle(bundle(changed=True, count=2))
+              check("both_differences_preserved", both["observed_difference_count"] == 2)
+              missing = inspect_finished_bundle(bundle(omit="tasukeru_arl_verify.json"))
+              check("missing_report_is_UNKNOWN", missing["observation_status"] == "UNKNOWN")
+              path_case = inspect_finished_bundle(bundle(artifact_name="../summary.md"))
+              check("invalid_reference_is_UNKNOWN", path_case["observation_status"] == "UNKNOWN")
+              invalid = inspect_finished_bundle(b"not a zip")
+              check("invalid_zip_is_UNKNOWN", invalid["observation_status"] == "UNKNOWN")
+              check("no_approval_conclusion", matching["safety_approval_or_authenticity"] == "NOT_DETERMINED")
+              check("does_not_feed_scores", matching["policy"]["feeds_existing_scores"] is False)
+              check("does_not_repair", matching["policy"]["automatic_repair"] is False)
+              check("existing_policy_not_mutated", POLICY["existing_decisions_changed"] is False)
+              for raw, name in [(b'{"x":1,"x":2}', "duplicate_JSON"),
+                                (b'{"x":NaN}', "nonfinite_JSON"), (b"\xff", "invalid_UTF8")]:
+                  rejected = False
+                  try:
+                      strict_json(raw)
+                  except (UnicodeError, ValueError):
+                      rejected = True
+                  check(name + "_rejected", rejected)
+              def edited_bundle(changes):
+                  data = bundle()
+                  buffer = io.BytesIO()
+                  with ZipFile(io.BytesIO(data)) as old, ZipFile(buffer, "w") as new:
+                      for name in old.namelist():
+                          new.writestr(name, changes.get(name, old.read(name)))
+                  return buffer.getvalue()
+              malformed_id = json.loads(
+                  ZipFile(io.BytesIO(bundle())).read("tasukeru_arl.jsonl"))
+              malformed_id["run_id"] = {}
+              bad_binding = inspect_finished_bundle(edited_bundle({
+                  "tasukeru_arl.jsonl": json.dumps(malformed_id).encode() + b"\n"}))
+              check("invalid_run_id_is_UNKNOWN", any(item["reason"] == "RUN_BINDING_UNRESOLVED"
+                                                   for item in bad_binding["unknowns"]))
+              bad_count = inspect_finished_bundle(edited_bundle({
+                  "tasukeru_arl_verify.json": b'{"row_count":true}'}))
+              check("boolean_count_is_UNKNOWN", any(item["reason"] == "COUNT_FIELD_UNRESOLVED"
+                                                  for item in bad_count["unknowns"]))
+              bad_arl = inspect_finished_bundle(edited_bundle({
+                  "tasukeru_arl.jsonl": b'{"run_id":"synthetic", "run_id":"other"}\n'}))
+              check("duplicate_ARL_keys_are_UNKNOWN", bad_arl["observation_status"] == "UNKNOWN")
+              empty_arl = inspect_finished_bundle(edited_bundle({"tasukeru_arl.jsonl": b""}))
+              check("empty_ARL_is_UNKNOWN", empty_arl["observation_status"] == "UNKNOWN")
+              absent = inspect_finished_bundle(bundle(omit="summary.md"))
+              check("missing_artifact_is_UNKNOWN", absent["observation_status"] == "UNKNOWN")
+              zero_count = inspect_finished_bundle(edited_bundle({
+                  "tasukeru_arl_verify.json": b'{"row_count":-1}'}))
+              check("negative_count_is_UNKNOWN", any(item["reason"] == "COUNT_FIELD_UNRESOLVED"
+                                                   for item in zero_count["unknowns"]))
+              # Corrupt the first DEFLATE block of one member; this must be UNKNOWN.
+              compressed = io.BytesIO()
+              with ZipFile(io.BytesIO(bundle())) as old, ZipFile(
+                      compressed, "w", compression=ZIP_DEFLATED) as new:
+                  for name in old.namelist():
+                      new.writestr(name, old.read(name))
+              damaged = bytearray(compressed.getvalue())
+              with ZipFile(io.BytesIO(damaged)) as archive:
+                  info = archive.getinfo("summary.md")
+                  offset = info.header_offset + 30 + len(info.filename.encode("utf-8")) + len(info.extra)
+              damaged[offset] = 0x07  # Invalid DEFLATE block type.
+              broken = inspect_finished_bundle(bytes(damaged))
+              check("corrupt_compression_is_UNKNOWN", any(
+                  item["subject"] == "summary.md" and item["reason"] == "MEMBER_READ_FAILED"
+                  for item in broken["unknowns"]))
+              failed = [item["name"] for item in checks if not item["passed"]]
+              return {"status": "PASSED" if not failed else "FAILED",
+                      "tests_total": len(checks), "tests_passed": len(checks)-len(failed),
+                      "failed": failed, "tests": checks}
+          
+          def main(argv=None) -> int:
+              parser = argparse.ArgumentParser(description=__doc__)
+              parser.add_argument("bundle", nargs="?", type=Path)
+              parser.add_argument("--self-test", action="store_true")
+              args = parser.parse_args(argv)
+              if args.self_test:
+                  result = self_test()
+                  print(json.dumps(result, ensure_ascii=False, indent=2))
+                  return 0 if result["status"] == "PASSED" else 1
+              if args.bundle is None:
+                  parser.error("Supply a finished advisory ZIP, or --self-test.")
+              try:
+                  if args.bundle.is_symlink():
+                      raise ValueError("symlink")
+                  with args.bundle.open("rb") as handle:
+                      raw = handle.read(MAX_COMPRESSED + 1)
+                  result = inspect_finished_bundle(raw)
+              except (OSError, ValueError):
+                  result = {"observation_status": "UNKNOWN", "policy": dict(POLICY),
+                            "unknowns": [{"subject": "input_zip", "reason": "READ_UNRESOLVED"}]}
+              print(json.dumps(result, ensure_ascii=False, indent=2))
+              # Difference signals are evidence only. This is not an enforcement gate.
+              return 0
+          
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          TASUKERU_OBSERVER_CODE
+          python3 -I -B - <<'TASUKERU_OBSERVER_SOURCE_CHECK'
+          import hashlib
+          import os
+          import sys
+          from pathlib import Path
+          code = Path(os.environ["RUNNER_TEMP"]) / "tasukeru_artifact_observer.py"
+          if sys.version_info[:2] != (3, 12):
+              raise SystemExit("UNKNOWN: PYTHON_RUNTIME_NOT_VALIDATED")
+          if hashlib.sha256(code.read_bytes()).hexdigest() != "0e951ba53cb94bce7513bdd714f0339d006b1fbf1c9d2cbd58dae54cdd31131e":
+              raise SystemExit("UNKNOWN: OBSERVER_SOURCE_BYTES_DIFFER")
+          TASUKERU_OBSERVER_SOURCE_CHECK
+          
+          
+      - name: Run observer self-tests
+        shell: bash
+        run: |
+          python3 -I -B "$RUNNER_TEMP/tasukeru_artifact_observer.py" --self-test > "$RUNNER_TEMP/tasukeru-observer-reports/self-test.json"
+
+      - name: Read the selected completed run and download its advisory ZIP
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          OBSERVER_SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        with:
+          retries: 0
+          script: |
+            async function retrieveAdvisory(github, context, requestedId) {
+              const expectedRepository = "japan1988/multi-agent-mediation";
+              const expectedPath = ".github/workflows/tasukeru-analysis.yml";
+              const expectedWorkflowId = 181231524;
+              const maximumBytes = 64 * 1024 * 1024;
+              const crypto = require("node:crypto");
+              function unresolved(reason) {
+                const error = new Error(reason);
+                error.observerReason = reason;
+                throw error;
+              }
+              function validateRun(run, runId) {
+                if (!run || run.id !== runId ||
+                    run.repository?.full_name !== expectedRepository ||
+                    !Number.isSafeInteger(run.repository?.id) ||
+                    run.path !== expectedPath || run.workflow_id !== expectedWorkflowId ||
+                    !/^[0-9a-f]{40}$/.test(run.head_sha || "") ||
+                    !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) {
+                  unresolved("SOURCE_RUN_BINDING_UNRESOLVED");
+                }
+                if (run.status !== "completed") unresolved("SOURCE_RUN_NOT_COMPLETED");
+              }
+              function validateArtifact(artifact, run) {
+                if (!artifact || !Number.isSafeInteger(artifact.id) || artifact.id < 1 ||
+                    artifact.name !== "tasukeru-advisory-logs" ||
+                    artifact.expired !== false ||
+                    !Number.isSafeInteger(artifact.size_in_bytes) ||
+                    artifact.size_in_bytes < 1 || artifact.size_in_bytes > maximumBytes ||
+                    !/^sha256:[0-9a-f]{64}$/.test(artifact.digest || "") ||
+                    artifact.workflow_run?.id !== run.id ||
+                    artifact.workflow_run?.head_sha !== run.head_sha ||
+                    artifact.workflow_run?.repository_id !== run.repository.id) {
+                  unresolved("SOURCE_ARTIFACT_BINDING_UNRESOLVED");
+                }
+              }
+              let runId;
+              try {
+                if (context.eventName !== "workflow_dispatch" ||
+                    context.ref !== "refs/heads/main" ||
+                    context.repo.owner + "/" + context.repo.repo !== expectedRepository) {
+                  unresolved("DISPATCH_CONTEXT_UNRESOLVED");
+                }
+                if (typeof requestedId !== "string" || !/^[1-9][0-9]{0,15}$/.test(requestedId)) {
+                  unresolved("RUN_ID_INPUT_INVALID");
+                }
+                runId = Number(requestedId);
+                if (!Number.isSafeInteger(runId)) unresolved("RUN_ID_INPUT_INVALID");
+                const {owner, repo} = context.repo;
+                const run = (await github.rest.actions.getWorkflowRun({
+                  owner, repo, run_id: runId, request: {timeout: 30000}
+                })).data;
+                validateRun(run, runId);
+                const listing = (await github.rest.actions.listWorkflowRunArtifacts({
+                  owner, repo, run_id: runId, per_page: 100, request: {timeout: 30000}
+                })).data;
+                if (!listing || !Array.isArray(listing.artifacts) ||
+                    !Number.isSafeInteger(listing.total_count) ||
+                    listing.total_count !== listing.artifacts.length || listing.total_count > 100) {
+                  unresolved("ARTIFACT_LIST_INCOMPLETE");
+                }
+                const matching = listing.artifacts.filter(item => item?.name === "tasukeru-advisory-logs");
+                if (matching.length !== 1) unresolved("ARTIFACT_NOT_UNIQUE");
+                const artifact = matching[0];
+                validateArtifact(artifact, run);
+                const download = await github.rest.actions.downloadArtifact({
+                  owner, repo, artifact_id: artifact.id, archive_format: "zip",
+                  request: {timeout: 30000}
+                });
+                let bytes;
+                if (Buffer.isBuffer(download.data)) bytes = download.data;
+                else if (download.data instanceof ArrayBuffer) bytes = Buffer.from(download.data);
+                else if (ArrayBuffer.isView(download.data)) {
+                  bytes = Buffer.from(download.data.buffer, download.data.byteOffset, download.data.byteLength);
+                } else unresolved("ARCHIVE_BYTES_UNRESOLVED");
+                if (bytes.length !== artifact.size_in_bytes || bytes.length > maximumBytes) {
+                  unresolved("ARCHIVE_SIZE_UNRESOLVED");
+                }
+                const digest = crypto.createHash("sha256").update(bytes).digest("hex");
+                if ("sha256:" + digest !== artifact.digest) unresolved("ARCHIVE_DIGEST_DIFFERS");
+                const after = (await github.rest.actions.getWorkflowRun({
+                  owner, repo, run_id: runId, request: {timeout: 30000}
+                })).data;
+                validateRun(after, runId);
+                if (after.run_attempt !== run.run_attempt || after.head_sha !== run.head_sha) {
+                  unresolved("SOURCE_RUN_CHANGED_DURING_READ");
+                }
+                const artifactAfter = (await github.rest.actions.getArtifact({
+                  owner, repo, artifact_id: artifact.id, request: {timeout: 30000}
+                })).data;
+                validateArtifact(artifactAfter, after);
+                if (artifactAfter.id !== artifact.id || artifactAfter.digest !== artifact.digest ||
+                    artifactAfter.size_in_bytes !== artifact.size_in_bytes) {
+                  unresolved("SOURCE_ARTIFACT_CHANGED_DURING_READ");
+                }
+                return {
+                  manifest: {
+                    retrieval_status: "READY_FOR_OBSERVATION",
+                    repository: expectedRepository, workflow_path: expectedPath,
+                    run_id: runId, run_attempt: run.run_attempt, head_sha: run.head_sha,
+                    source_run_conclusion: run.conclusion,
+                    artifact_id: artifact.id, artifact_name: artifact.name,
+                    bundle_sha256: digest, compressed_bytes: bytes.length,
+                    digest_check: "MATCHED_GITHUB_RECORDED_DIGEST",
+                    authenticity_or_approval: "NOT_DETERMINED"
+                  },
+                  bytes
+                };
+              } catch (error) {
+                return {manifest: {
+                  retrieval_status: "UNKNOWN",
+                  reason: error.observerReason || "READ_UNRESOLVED",
+                  repository: expectedRepository,
+                  run_id: Number.isSafeInteger(runId) ? runId : null,
+                  authenticity_or_approval: "NOT_DETERMINED"
+                }, bytes: null};
+              }
+            }
+            
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const root = process.env.RUNNER_TEMP;
+            const result = await retrieveAdvisory(github, context, process.env.OBSERVER_SOURCE_RUN_ID);
+            if (result.bytes !== null) {
+              fs.writeFileSync(path.join(root, "tasukeru-advisory-input.zip"), result.bytes, {flag: "wx"});
+            }
+            fs.writeFileSync(path.join(root, "tasukeru-observer-reports", "retrieval.json"),
+                             JSON.stringify(result.manifest, null, 2) + "\n", {flag: "wx"});
+            core.notice("Source retrieval: " + result.manifest.retrieval_status);
+            
+      - name: Generate an independent observation report
+        shell: bash
+        run: |
+          python3 -I -B - <<'TASUKERU_ACTIONS_ADAPTER'
+          import hashlib
+          import importlib.util
+          import io
+          import json
+          import os
+          from pathlib import Path
+          from zipfile import ZipFile
+          
+          OBSERVER_SHA256 = "0e951ba53cb94bce7513bdd714f0339d006b1fbf1c9d2cbd58dae54cdd31131e"
+          
+          def bind_arl_run_id(observer, raw, expected):
+              if not isinstance(expected, str) or not expected.isdigit():
+                  return "UNKNOWN"
+              if not isinstance(raw, bytes) or len(raw) > observer.MAX_COMPRESSED:
+                  return "UNKNOWN"
+              try:
+                  with ZipFile(io.BytesIO(raw)) as archive:
+                      infos = [item for item in archive.infolist() if not item.is_dir()]
+                      names = [item.filename for item in infos]
+                      if len(names) != len(set(names)):
+                          return "UNKNOWN"
+                      if sum(item.file_size for item in infos) > observer.MAX_TOTAL:
+                          return "UNKNOWN"
+                      info = archive.getinfo("tasukeru_arl.jsonl")
+                      if info.file_size > observer.MAX_MEMBER:
+                          return "UNKNOWN"
+                      with archive.open(info) as handle:
+                          data = handle.read(observer.MAX_MEMBER + 1)
+                      if len(data) != info.file_size or len(data) > observer.MAX_MEMBER:
+                          return "UNKNOWN"
+                  lines = [line for line in data.decode("utf-8").splitlines() if line.strip()]
+                  if not lines or len(lines) > observer.MAX_ROWS:
+                      return "UNKNOWN"
+                  rows = [observer.strict_json(line.encode("utf-8")) for line in lines]
+                  if not all(isinstance(row, dict) and isinstance(row.get("run_id"), str)
+                             for row in rows):
+                      return "UNKNOWN"
+                  return "MATCHED_LITERAL_RUN_ID" if all(row["run_id"] == expected for row in rows) else "DIFFERENT_LITERAL_RUN_ID"
+              except Exception:
+                  return "UNKNOWN"
+          
+          def make_observation(observer, raw, manifest):
+              effects = {
+                  "policy_scope": "Observer core only; Actions adapter creates separate report files.",
+                  "repository_write_requested": False,
+                  "source_artifact_write_requested": False,
+                  "controlled_report_output": True,
+                  "artifact_upload_status": "NOT_OBSERVED_BY_PYTHON",
+                  "workflow_success_is_safety_approval": False,
+              }
+              if manifest.get("retrieval_status") != "READY_FOR_OBSERVATION":
+                  return {
+                      "observation_status": "UNKNOWN", "github_source": manifest,
+                      "actions_adapter_effects": effects, "policy": dict(observer.POLICY),
+                      "unknowns": [{"subject": "github_source",
+                                    "reason": manifest.get("reason", "SOURCE_UNRESOLVED")}],
+                      "safety_approval_or_authenticity": "NOT_DETERMINED"
+                  }
+              if (manifest.get("repository") != "japan1988/multi-agent-mediation"
+                      or manifest.get("workflow_path") != ".github/workflows/tasukeru-analysis.yml"
+                      or manifest.get("artifact_name") != "tasukeru-advisory-logs"
+                      or type(manifest.get("run_id")) is not int or manifest["run_id"] < 1
+                      or type(manifest.get("run_attempt")) is not int or manifest["run_attempt"] < 1
+                      or type(manifest.get("artifact_id")) is not int or manifest["artifact_id"] < 1
+                      or not isinstance(manifest.get("bundle_sha256"), str)
+                      or observer.SHA.fullmatch(manifest["bundle_sha256"]) is None):
+                  return {
+                      "observation_status": "UNKNOWN", "github_source": manifest,
+                      "actions_adapter_effects": effects, "policy": dict(observer.POLICY),
+                      "unknowns": [{"subject": "github_source", "reason": "MANIFEST_BINDING_UNRESOLVED"}],
+                      "safety_approval_or_authenticity": "NOT_DETERMINED"
+                  }
+              if not isinstance(raw, bytes) or hashlib.sha256(raw).hexdigest() != manifest.get("bundle_sha256"):
+                  return {
+                      "observation_status": "UNKNOWN", "github_source": manifest,
+                      "actions_adapter_effects": effects, "policy": dict(observer.POLICY),
+                      "unknowns": [{"subject": "downloaded_zip", "reason": "SOURCE_BYTES_UNRESOLVED"}],
+                      "safety_approval_or_authenticity": "NOT_DETERMINED"
+                  }
+              report = observer.inspect_finished_bundle(raw)
+              report["github_source"] = manifest
+              report["actions_adapter_effects"] = effects
+              binding = bind_arl_run_id(observer, raw, str(manifest["run_id"]))
+              report["arl_run_id_value_check"] = binding
+              if binding != "MATCHED_LITERAL_RUN_ID":
+                  report["unknowns"].append({"subject": "arl_run_id", "reason": binding})
+                  report["observation_status"] = (
+                      "DIFFERENCES_WITH_UNKNOWN" if report["observed_difference_count"] else "UNKNOWN"
+                  )
+              return report
+          
+          def main():
+              root = Path(os.environ["RUNNER_TEMP"])
+              reports = root / "tasukeru-observer-reports"
+              code = root / "tasukeru_artifact_observer.py"
+              source = code.read_bytes()
+              if hashlib.sha256(source).hexdigest() != OBSERVER_SHA256:
+                  raise SystemExit("UNKNOWN: OBSERVER_SOURCE_BYTES_DIFFER")
+              spec = importlib.util.spec_from_file_location("tasukeru_trusted_observer", code)
+              observer = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(observer)
+              try:
+                  with (reports / "retrieval.json").open("rb") as handle:
+                      manifest = observer.strict_json(handle.read(65537))
+                  if not isinstance(manifest, dict):
+                      raise ValueError("manifest")
+              except Exception:
+                  manifest = {"retrieval_status": "UNKNOWN", "reason": "MANIFEST_UNRESOLVED"}
+              raw = None
+              if manifest.get("retrieval_status") == "READY_FOR_OBSERVATION":
+                  try:
+                      with (root / "tasukeru-advisory-input.zip").open("rb") as handle:
+                          raw = handle.read(observer.MAX_COMPRESSED + 1)
+                  except OSError:
+                      manifest = {"retrieval_status": "UNKNOWN", "reason": "SOURCE_READ_UNRESOLVED"}
+              result = make_observation(observer, raw, manifest)
+              with (reports / "observation.json").open("x", encoding="utf-8") as handle:
+                  json.dump(result, handle, ensure_ascii=False, indent=2)
+                  handle.write("\n")
+              print("Observation status:", result["observation_status"])
+              print("This job generates evidence; success is not an approval or whole-system verification.")
+          
+          if __name__ == "__main__":
+              main()
+          TASUKERU_ACTIONS_ADAPTER
+          
+      - name: Save separate observation reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: tasukeru-artifact-observer-report
+          path: ${{ runner.temp }}/tasukeru-observer-reports/*.json
+          retention-days: 7
+          if-no-files-found: error
