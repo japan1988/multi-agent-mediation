@@ -1,0 +1,15 @@
+{
+  "arl_row_count_checks": [
+    {
+      "source": "tasukeru_clean_run_draft.json",
+      "field": "summary.arl_rows",
+      "reported_rows": 87,
+      "actual_parsed_rows": 93,
+      "values_match": false,
+      "signal": "ARL_ROW_COUNT_VALUE_DIFFERS",
+      "same_generation": "UNKNOWN"
+    }
+  ],
+  "cause_or_actor": "UNKNOWN",
+  "safety_approval_or_authenticity": "NOT_DETERMINED"
+}

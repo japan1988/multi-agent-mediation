@@ -1424,3 +1424,5 @@ before implementation and release rather than being rushed into the repository.
 
 New stages will be published after their contracts, invariants, and required
 simulation tests have been reviewed.
+
+A selected excerpt from a Tasukeru artifact-observer run, showing one of two observed differences, is available in [this sample file](docs/tasukeru-artifact-observer-excerpt.json). The [full report](https://github.com/japan1988/multi-agent-mediation/actions/runs/36973640549/artifacts/11212710428) can be downloaded from GitHub Actions while the artifact remains available.
