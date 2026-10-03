@@ -1,0 +1,231 @@
+# UNADOPTED EXPERIMENT: real observer reports, mock AI and mock approval only.
+# Add this as a NEW file. Keep the existing analysis/observer YAML unchanged.
+name: Tasukeru Mediation Demo (mock AI and approval)
+
+on:
+  workflow_dispatch:
+    inputs:
+      observer_run_id:
+        description: Completed Tasukeru Artifact Observer run ID (not the analysis run ID)
+        required: true
+        type: string
+      scenario:
+        description: Independent fixture scenario; all runs the bounded test suite
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - consistent
+          - corrected
+          - no_approval
+          - still_inconsistent
+          - expired_approval
+          - result_unknown
+          - human_stop
+          - unsupported_cause
+          - replay_approval
+          - double_request
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  mediation-demo:
+    name: Experiment only - no AI API or final adoption
+    if: >-
+      ${{ github.repository == 'japan1988/multi-agent-mediation' &&
+          github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      DEMO_ROOT: ${{ runner.temp }}/tasukeru-mediation-demo
+    steps:
+      - name: Prepare separate input and report directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$DEMO_ROOT"
+          mkdir "$DEMO_ROOT/input" "$DEMO_ROOT/reports"
+
+      - name: Read the committed demo files and baseline workflows
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/tasukeru_mediation_demo/
+            /.github/workflows/tasukeru-analysis.yml
+            /.github/workflows/tasukeru-artifact-observer.yml
+
+      - name: Set up Python for the experiment
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Check preserved workflows and run fixture self-tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B scripts/tasukeru_mediation_demo/run_demo.py \
+            --self-test --repo-root "$GITHUB_WORKSPACE" \
+            --output "$DEMO_ROOT/reports/self-test"
+
+      - name: Read the selected observer report artifact
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          DEMO_OBSERVER_RUN_ID: ${{ inputs.observer_run_id }}
+        with:
+          retries: 0
+          script: |
+            async function retrieveObserver(github, context, requestedId) {
+              const expectedRepository = 'japan1988/multi-agent-mediation';
+              const expectedPath = '.github/workflows/tasukeru-artifact-observer.yml';
+              const expectedBlob = '4913f7409f7994808fb86970ad763cd92be98f82';
+              const maximumBytes = 2 * 1024 * 1024;
+              const crypto = require('node:crypto');
+              function unresolved(reason) {
+                const error = new Error(reason);
+                error.demoReason = reason;
+                throw error;
+              }
+              function validateRun(run, runId) {
+                if (!run || run.id !== runId || run.repository?.full_name !== expectedRepository ||
+                    !Number.isSafeInteger(run.repository?.id) || run.repository.id < 1 ||
+                    run.path !== expectedPath || !Number.isSafeInteger(run.workflow_id) || run.workflow_id < 1 ||
+                    !/^[0-9a-f]{40}$/.test(run.head_sha || '') ||
+                    !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) {
+                  unresolved('OBSERVER_RUN_BINDING_UNRESOLVED');
+                }
+                if (run.event !== 'workflow_dispatch' || run.head_branch !== 'main') {
+                  unresolved('OBSERVER_PRODUCER_CONTEXT_UNRESOLVED');
+                }
+                if (run.status !== 'completed' || run.conclusion !== 'success') {
+                  unresolved('OBSERVER_RUN_NOT_COMPLETED_SUCCESSFULLY');
+                }
+              }
+              function validateArtifact(artifact, run) {
+                if (!artifact || !Number.isSafeInteger(artifact.id) || artifact.id < 1 ||
+                    artifact.name !== 'tasukeru-artifact-observer-report' || artifact.expired !== false ||
+                    !Number.isSafeInteger(artifact.size_in_bytes) || artifact.size_in_bytes < 1 ||
+                    artifact.size_in_bytes > maximumBytes || !/^sha256:[0-9a-f]{64}$/.test(artifact.digest || '') ||
+                    artifact.workflow_run?.id !== run.id || artifact.workflow_run?.head_sha !== run.head_sha ||
+                    artifact.workflow_run?.repository_id !== run.repository.id) {
+                  unresolved('OBSERVER_ARTIFACT_BINDING_UNRESOLVED');
+                }
+              }
+              let runId;
+              try {
+                if (context.eventName !== 'workflow_dispatch' || context.ref !== 'refs/heads/main' ||
+                    context.repo.owner + '/' + context.repo.repo !== expectedRepository) {
+                  unresolved('DISPATCH_CONTEXT_UNRESOLVED');
+                }
+                if (typeof requestedId !== 'string' || !/^[1-9][0-9]{0,15}$/.test(requestedId)) {
+                  unresolved('RUN_ID_INPUT_INVALID');
+                }
+                runId = Number(requestedId);
+                if (!Number.isSafeInteger(runId)) unresolved('RUN_ID_INPUT_INVALID');
+                const {owner, repo} = context.repo;
+                const run = (await github.rest.actions.getWorkflowRun({
+                  owner, repo, run_id: runId, request: {timeout: 30000}
+                })).data;
+                validateRun(run, runId);
+                const workflowFile = (await github.rest.repos.getContent({
+                  owner, repo, path: expectedPath, ref: run.head_sha, request: {timeout: 30000}
+                })).data;
+                if (!workflowFile || workflowFile.type !== 'file' || workflowFile.path !== expectedPath ||
+                    workflowFile.sha !== expectedBlob) unresolved('OBSERVER_WORKFLOW_BASELINE_CHANGED');
+                const listing = (await github.rest.actions.listWorkflowRunArtifacts({
+                  owner, repo, run_id: runId, per_page: 100, request: {timeout: 30000}
+                })).data;
+                if (!listing || !Array.isArray(listing.artifacts) ||
+                    !Number.isSafeInteger(listing.total_count) || listing.total_count !== listing.artifacts.length ||
+                    listing.total_count > 100) unresolved('ARTIFACT_LIST_INCOMPLETE');
+                const matching = listing.artifacts.filter(a => a?.name === 'tasukeru-artifact-observer-report');
+                if (matching.length !== 1) unresolved('OBSERVER_ARTIFACT_NOT_UNIQUE');
+                const artifact = matching[0];
+                validateArtifact(artifact, run);
+                const download = await github.rest.actions.downloadArtifact({
+                  owner, repo, artifact_id: artifact.id, archive_format: 'zip', request: {timeout: 30000}
+                });
+                let bytes;
+                if (Buffer.isBuffer(download.data)) bytes = download.data;
+                else if (download.data instanceof ArrayBuffer) bytes = Buffer.from(download.data);
+                else if (ArrayBuffer.isView(download.data)) {
+                  bytes = Buffer.from(download.data.buffer, download.data.byteOffset, download.data.byteLength);
+                } else unresolved('ARCHIVE_BYTES_UNRESOLVED');
+                if (bytes.length !== artifact.size_in_bytes || bytes.length > maximumBytes) {
+                  unresolved('ARCHIVE_SIZE_UNRESOLVED');
+                }
+                const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+                if ('sha256:' + digest !== artifact.digest) unresolved('ARCHIVE_DIGEST_DIFFERS');
+                const after = (await github.rest.actions.getWorkflowRun({
+                  owner, repo, run_id: runId, request: {timeout: 30000}
+                })).data;
+                validateRun(after, runId);
+                if (after.run_attempt !== run.run_attempt || after.head_sha !== run.head_sha ||
+                    after.workflow_id !== run.workflow_id || after.repository.id !== run.repository.id) {
+                  unresolved('OBSERVER_RUN_CHANGED_DURING_READ');
+                }
+                const artifactAfter = (await github.rest.actions.getArtifact({
+                  owner, repo, artifact_id: artifact.id, request: {timeout: 30000}
+                })).data;
+                validateArtifact(artifactAfter, after);
+                if (artifactAfter.id !== artifact.id || artifactAfter.digest !== artifact.digest ||
+                    artifactAfter.size_in_bytes !== artifact.size_in_bytes) {
+                  unresolved('OBSERVER_ARTIFACT_CHANGED_DURING_READ');
+                }
+                return {manifest: {
+                  read_status: 'READY_FOR_DEMO', repository: expectedRepository, workflow_path: expectedPath,
+                  observer_run_id: runId, run_attempt: run.run_attempt, head_sha: run.head_sha,
+                  conclusion: run.conclusion, artifact_id: artifact.id, artifact_name: artifact.name,
+                  sha256: digest, bytes: bytes.length, workflow_blob_sha: expectedBlob,
+                  authenticity_or_approval: 'NOT_DETERMINED'
+                }, bytes};
+              } catch (error) {
+                return {manifest: {read_status: 'UNKNOWN', reason: error.demoReason || 'READ_UNRESOLVED',
+                  repository: expectedRepository, observer_run_id: Number.isSafeInteger(runId) ? runId : null,
+                  authenticity_or_approval: 'NOT_DETERMINED'}, bytes: null};
+              }
+            }
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const result = await retrieveObserver(github, context, process.env.DEMO_OBSERVER_RUN_ID);
+            if (result.bytes !== null) {
+              fs.writeFileSync(path.join(process.env.DEMO_ROOT, 'input', 'observer.zip'), result.bytes, {flag: 'wx'});
+            }
+            fs.writeFileSync(path.join(process.env.DEMO_ROOT, 'reports', 'source-download.json'),
+              JSON.stringify(result.manifest, null, 2) + '\n', {flag: 'wx'});
+            core.notice('Observer retrieval: ' + result.manifest.read_status);
+
+      - name: Exercise mediation and fixed revalidation with mock outputs
+        shell: bash
+        env:
+          DEMO_SCENARIO: ${{ inputs.scenario }}
+        run: |
+          set -euo pipefail
+          python -I -B scripts/tasukeru_mediation_demo/run_demo.py \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --observer-zip "$DEMO_ROOT/input/observer.zip" \
+            --retrieval-manifest "$DEMO_ROOT/reports/source-download.json" \
+            --scenario "$DEMO_SCENARIO" --output "$DEMO_ROOT/reports/demo"
+
+      - name: Show the experiment result separately
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$DEMO_ROOT/reports/demo/summary.md" ]; then
+            cat "$DEMO_ROOT/reports/demo/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Save the experiment evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: tasukeru-mediation-demo-report
+          path: ${{ runner.temp }}/tasukeru-mediation-demo/reports
+          if-no-files-found: error
+          retention-days: 7
