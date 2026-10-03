@@ -39,13 +39,13 @@ jobs:
           github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 6
-    env:
-      DEMO_ROOT: ${{ runner.temp }}/tasukeru-mediation-demo
     steps:
       - name: Prepare separate input and report directories
         shell: bash
         run: |
           set -euo pipefail
+          DEMO_ROOT="${RUNNER_TEMP}/tasukeru-mediation-demo"
+          printf 'DEMO_ROOT=%s\n' "$DEMO_ROOT" >> "$GITHUB_ENV"
           mkdir "$DEMO_ROOT"
           mkdir "$DEMO_ROOT/input" "$DEMO_ROOT/reports"
 
