@@ -372,5 +372,602 @@ for _args, _options in CASE_SPECS:
 
 
 
+
+
+# Stage 2: offline checks for the Stage 1 shared-record storage contract.
+# The separate SQLite backend below is a disposable test fixture. It is not a
+# GitHub backend, does not authenticate a human, and grants no execution rights.
+# These tests do not enable live approval or change the workflow entry.
+
+
+def _shared_store_module():
+    ensure_modules()
+    return ENTRY.storage
+
+
+def _shared_fixture_authority():
+    module = _shared_store_module()
+    return {
+        "schema": "NORMALIZED_PROTECTED_REF_POLICY_DRAFT_V1",
+        "repository": module.SHARED_REPOSITORY,
+        "authority_epoch": "OFFLINE_STAGE2_FIXTURE_ONLY",
+        "prefixes": copy.deepcopy(module.SHARED_PREFIXES),
+        "enforcement": "active",
+        "creation_allowed": True,
+        "updates_allowed": False,
+        "deletions_allowed": False,
+        "bypass_actors": [],
+    }
+
+
+def _shared_fixture_binding():
+    module = _shared_store_module()
+    return {
+        "repository": module.SHARED_REPOSITORY,
+        "workflow_path": module.SHARED_WORKFLOW,
+        "run_id": 900000001,
+        "run_attempt": 1,
+        # Synthetic binding only; not authority from an actual Actions run.
+        "head_sha": "42b688079fca3d04a27f1c0d6bbdfa9d90f4ac78",
+        "head_branch": "main",
+    }
+
+
+class _SharedFixtureBackend:
+    """Separate LOCAL create-once fixture. Server protection is not verified."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.module = _shared_store_module()
+        self.fault = None
+        self.before_create = None
+        self.read_fault = False
+        self.create_count = 0
+        self.policy_override = False
+        self.policy_value = None
+
+    @classmethod
+    def prepare(cls, path):
+        module = _shared_store_module()
+        with Path(path).open("xb"):
+            pass
+        with sqlite3.connect(path) as con:
+            con.execute("CREATE TABLE policy (raw BLOB)")
+            con.execute("INSERT INTO policy VALUES (?)",
+                        (module.encode(_shared_fixture_authority()),))
+            con.execute("CREATE TABLE refs (ref TEXT PRIMARY KEY, raw BLOB)")
+            con.execute(
+                "CREATE TRIGGER no_update BEFORE UPDATE ON refs "
+                "BEGIN SELECT RAISE(ABORT,'immutable fixture record'); END"
+            )
+            con.execute(
+                "CREATE TRIGGER no_delete BEFORE DELETE ON refs "
+                "BEGIN SELECT RAISE(ABORT,'immutable fixture record'); END"
+            )
+        return cls(path)
+
+    def connection(self):
+        # A missing backend must fail rather than silently create a fresh DB.
+        return sqlite3.connect(
+            self.path.resolve().as_uri() + "?mode=rw", uri=True, timeout=3
+        )
+
+    def policy(self):
+        if self.policy_override:
+            return copy.deepcopy(self.policy_value)
+        with self.connection() as con:
+            return json.loads(con.execute("SELECT raw FROM policy").fetchone()[0])
+
+    def read_exact(self, reference):
+        if self.read_fault:
+            raise OSError("UNRESOLVED_OFFLINE_FIXTURE_READ")
+        with self.connection() as con:
+            row = con.execute(
+                "SELECT raw FROM refs WHERE ref=?", (reference,)
+            ).fetchone()
+        return row[0] if row else None
+
+    def create_once(self, reference, raw):
+        self.create_count += 1
+        if self.fault == "forbidden":
+            raise self.module.SharedRecordDenied()
+        if self.before_create is not None:
+            self.before_create()
+        try:
+            with self.connection() as con:
+                con.execute("INSERT INTO refs VALUES (?,?)", (reference, raw))
+        except sqlite3.IntegrityError:
+            raise self.module.SharedRecordConflict() from None
+        if self.fault == "lost_ack":
+            raise self.module.SharedRecordResultUnknown()
+        if self.fault == "bad_receipt":
+            return {"created": True}
+        return {
+            "reference": reference,
+            "sha256": self.module.digest(raw),
+            "created": True,
+        }
+
+    def fault_replace(self, kind, raw):
+        """Deliberate fixture corruption; not a recovery or production API."""
+        with self.connection() as con:
+            con.execute("DROP TRIGGER no_update")
+            con.execute(
+                "UPDATE refs SET raw=? WHERE ref LIKE ?",
+                (raw, self.module.SHARED_PREFIXES[kind] + "%"),
+            )
+            con.execute(
+                "CREATE TRIGGER no_update BEFORE UPDATE ON refs "
+                "BEGIN SELECT RAISE(ABORT,'immutable fixture record'); END"
+            )
+
+    def fault_remove(self, kind):
+        """Deliberate fixture corruption; protected-record loss is not safe."""
+        with self.connection() as con:
+            con.execute("DROP TRIGGER no_delete")
+            con.execute(
+                "DELETE FROM refs WHERE ref LIKE ?",
+                (self.module.SHARED_PREFIXES[kind] + "%",),
+            )
+            con.execute(
+                "CREATE TRIGGER no_delete BEFORE DELETE ON refs "
+                "BEGIN SELECT RAISE(ABORT,'immutable fixture record'); END"
+            )
+
+
+_SHARED_PROCESS_PROBE = '''
+import importlib.util
+import json
+from pathlib import Path
+import socket
+import sys
+import time
+from unittest.mock import patch
+
+with patch.object(socket, "socket", side_effect=AssertionError("NO_FIXTURE_NETWORK")):
+    test_path, db_path, owner, barrier_path = sys.argv[1:]
+    spec = importlib.util.spec_from_file_location("shared_contract_child_tests", test_path)
+    checks = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = checks
+    spec.loader.exec_module(checks)
+    module = checks._shared_store_module()
+    backend = checks._SharedFixtureBackend(db_path)
+    if barrier_path:
+        barrier = Path(barrier_path)
+        def before_create():
+            with (barrier / owner).open("xb"):
+                pass
+            deadline = time.monotonic() + 5
+            while not all((barrier / name).is_file() for name in ("WORKER_0", "WORKER_1")):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("BOUNDED_OFFLINE_PROCESS_BARRIER_TIMEOUT")
+                time.sleep(0.01)
+        backend.before_create = before_create
+    store = module.SharedRecordStoreDraft(
+        backend, expected_authority=checks._shared_fixture_authority()
+    )
+    try:
+        store.claim_once(
+            checks._shared_fixture_binding(), b'{"proposal":"OFFLINE FIXTURE"}', owner
+        )
+        state = "CLAIMED"
+    except module.GateStopped as exc:
+        state = exc.state
+    print(json.dumps({"state": state, "create_attempts": backend.create_count}))
+'''
+
+
+class SharedRecordContractChecks(unittest.TestCase):
+    """Offline storage invariants only; live identity/expiry remain untested."""
+
+    def setUp(self):
+        network = patch.object(
+            socket, "socket", side_effect=AssertionError("NO_FIXTURE_NETWORK")
+        )
+        network.start()
+        self.addCleanup(network.stop)
+        self.module = _shared_store_module()
+        self.assertTrue(
+            hasattr(self.module, "SharedRecordStoreDraft"),
+            "Stage 1 approval_store.py is required; missing checks are not skipped.",
+        )
+        self.temp = tempfile.TemporaryDirectory(prefix="shared-contract-fixture-")
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / "protected.sqlite"
+        self.backend = _SharedFixtureBackend.prepare(self.path)
+        self.store = self.new_store(self.backend)
+        self.binding = _shared_fixture_binding()
+        self.raw = b'{"proposal":"OFFLINE FIXTURE"}'
+        self.store.register_plan_once(self.binding, self.raw)
+
+    def new_store(self, backend):
+        return self.module.SharedRecordStoreDraft(
+            backend, expected_authority=_shared_fixture_authority()
+        )
+
+    def fresh(self):
+        return self.new_store(_SharedFixtureBackend(self.path))
+
+    def stopped(self, state, operation):
+        with self.assertRaises(self.module.GateStopped) as caught:
+            operation()
+        self.assertEqual(caught.exception.state, state)
+
+    def claim(self):
+        self.store.claim_once(self.binding, self.raw, "WORKER_1")
+
+    def test_default_has_no_live_backend(self):
+        self.stopped(
+            "STOPPED_SHARED_STORE_UNCONFIGURED",
+            lambda: self.module.SharedRecordStoreDraft().status(self.binding, self.raw),
+        )
+
+    def test_new_plan_is_pending(self):
+        self.assertEqual(self.fresh().status(self.binding, self.raw)["state"],
+                         "WAITING_FOR_APPROVAL")
+        # Check the LOCAL fixture assumptions; this proves nothing about GitHub.
+        with self.backend.connection() as con:
+            with self.assertRaises(sqlite3.IntegrityError):
+                con.execute("UPDATE refs SET raw=?", (b"{}",))
+            with self.assertRaises(sqlite3.IntegrityError):
+                con.execute("DELETE FROM refs")
+
+    def test_duplicate_plan_does_not_write(self):
+        before = self.backend.create_count
+        self.stopped(
+            "DENIED_USED_OR_CLOSED",
+            lambda: self.store.register_plan_once(self.binding, self.raw),
+        )
+        self.assertEqual(self.backend.create_count, before)
+
+    def test_claim_replay_new_handler_denied(self):
+        self.claim()
+        response = subprocess.run(
+            self.process_probe("WORKER_2"), capture_output=True,
+            text=True, timeout=10, check=True,
+        )
+        self.assertEqual(
+            json.loads(response.stdout),
+            {"state": "DENIED_USED_OR_CLOSED", "create_attempts": 0},
+        )
+
+    def test_same_owner_cannot_claim_again(self):
+        self.claim()
+        self.stopped("DENIED_USED_OR_CLOSED", self.claim)
+
+    def test_other_owner_cannot_continue(self):
+        self.claim()
+        self.stopped(
+            "DENIED_USED_OR_CLOSED",
+            lambda: self.fresh().assert_owned_claim(self.binding, self.raw, "WORKER_2"),
+        )
+
+    def test_rejection_is_terminal(self):
+        self.store.reject_once(self.binding, self.raw)
+        self.stopped("DENIED_USED_OR_CLOSED", self.claim)
+        self.assertEqual(self.fresh().status(self.binding, self.raw)["state"],
+                         "REJECTED_BY_HUMAN")
+
+    def test_stop_before_claim(self):
+        self.store.stop_for_verified_request(self.binding, self.raw)
+        self.stopped("STOPPED_BY_HUMAN", self.claim)
+
+    def test_stop_after_claim(self):
+        self.claim()
+        self.store.stop_for_verified_request(self.binding, self.raw)
+        self.stopped(
+            "STOPPED_BY_HUMAN",
+            lambda: self.fresh().assert_owned_claim(self.binding, self.raw, "WORKER_1"),
+        )
+
+    def test_stop_does_not_require_new_write_for_repeat(self):
+        self.store.stop_for_verified_request(self.binding, self.raw)
+        before = self.backend.create_count
+        self.store.stop_for_verified_request(self.binding, self.raw)
+        self.assertEqual(self.backend.create_count, before)
+
+    def test_rewind_mutable_progress_cannot_reuse(self):
+        progress = self.module.LocalSimulationStore.prepare_new(
+            self.path.with_name("mutable.sqlite")
+        )
+        local_hash = progress.put({
+            "plan_id": "LOCAL", "initial_state": "WAITING_FOR_APPROVAL",
+            "protected_plan_sha256": self.module.digest(self.raw),
+        })
+        calls = []
+        self.claim()
+        progress.decide_once("LOCAL", local_hash, "approve")
+        calls.append("OFFLINE FIXTURE")
+        progress.finish("LOCAL", {"state": "HUMAN_REVIEW"})
+        with progress.connection() as con:
+            con.execute(
+                "UPDATE plans SET status='WAITING_FOR_APPROVAL',claims=0,result=NULL"
+            )
+        self.assertEqual(progress.get("LOCAL")[2], "WAITING_FOR_APPROVAL")
+        self.stopped(
+            "DENIED_USED_OR_CLOSED",
+            lambda: self.fresh().claim_once(self.binding, self.raw, "WORKER_2"),
+        )
+        self.assertEqual(len(calls), 1)
+
+    def test_rewind_mutable_progress_cannot_resume_stop(self):
+        progress = self.module.LocalSimulationStore.prepare_new(
+            self.path.with_name("mutable.sqlite")
+        )
+        progress.put({
+            "plan_id": "LOCAL", "initial_state": "WAITING_FOR_APPROVAL",
+            "protected_plan_sha256": self.module.digest(self.raw),
+        })
+        progress.stop_during_request("LOCAL")
+        self.store.stop_for_verified_request(self.binding, self.raw)
+        with progress.connection() as con:
+            con.execute(
+                "UPDATE plans SET status='WAITING_FOR_APPROVAL',claims=0,result=NULL"
+            )
+        self.assertEqual(progress.get("LOCAL")[2], "WAITING_FOR_APPROVAL")
+        self.stopped(
+            "STOPPED_BY_HUMAN",
+            lambda: self.fresh().claim_once(self.binding, self.raw, "WORKER_2"),
+        )
+
+    def test_new_bytes_for_same_run_not_a_new_slot(self):
+        self.stopped(
+            "STOPPED_BINDING",
+            lambda: self.store.status(self.binding, b'{"proposal":"CHANGED"}'),
+        )
+        self.stopped(
+            "DENIED_USED_OR_CLOSED",
+            lambda: self.store.register_plan_once(self.binding, b'{"proposal":"CHANGED"}'),
+        )
+
+    def test_exact_byte_binding_preserves_whitespace_difference(self):
+        self.stopped(
+            "STOPPED_BINDING",
+            lambda: self.store.status(self.binding, b'{ "proposal": "OFFLINE FIXTURE" }'),
+        )
+
+    def test_unknown_read_not_absence(self):
+        self.backend.read_fault = True
+        before = self.backend.create_count
+        self.stopped("STOPPED_SHARED_STORAGE_UNRESOLVED", self.claim)
+        self.assertEqual(self.backend.create_count, before)
+
+    def test_missing_backend_no_recreation(self):
+        self.backend.path = self.path.with_name("absent.sqlite")
+        self.stopped("STOPPED_SHARED_PROTECTION", self.claim)
+        self.assertFalse(self.backend.path.exists())
+
+    def test_creation_lost_ack_no_retry_or_release(self):
+        self.backend.fault = "lost_ack"
+        before = self.backend.create_count
+        self.stopped("STOPPED_RESULT_UNKNOWN", self.claim)
+        self.assertEqual(self.backend.create_count - before, 1)
+        self.stopped(
+            "DENIED_USED_OR_CLOSED",
+            lambda: self.fresh().claim_once(self.binding, self.raw, "WORKER_2"),
+        )
+
+    def test_unverified_receipt_no_retry_or_release(self):
+        self.backend.fault = "bad_receipt"
+        before = self.backend.create_count
+        self.stopped("STOPPED_RESULT_UNKNOWN", self.claim)
+        self.assertEqual(self.backend.create_count - before, 1)
+        self.stopped(
+            "DENIED_USED_OR_CLOSED",
+            lambda: self.fresh().claim_once(self.binding, self.raw, "WORKER_2"),
+        )
+
+    def test_creation_forbidden_no_automatic_retry(self):
+        self.backend.fault = "forbidden"
+        before = self.backend.create_count
+        self.stopped("STOPPED_SHARED_WRITE_FORBIDDEN", self.claim)
+        self.assertEqual(self.backend.create_count - before, 1)
+
+    def test_corrupt_plan_anchor_blocks(self):
+        self.backend.fault_replace("plan", b"{")
+        self.stopped("STOPPED_SHARED_RECORD_INVALID", self.claim)
+
+    def test_unknown_record_key_blocks(self):
+        ref = self.module.SHARED_PREFIXES["plan"] + self.store._binding(self.binding)
+        value = json.loads(self.backend.read_exact(ref))
+        value["extra"] = "UNKNOWN"
+        self.backend.fault_replace("plan", self.module.encode(value))
+        self.stopped("STOPPED_BINDING", self.claim)
+
+    def test_plan_anchor_hash_mismatch_blocks(self):
+        ref = self.module.SHARED_PREFIXES["plan"] + self.store._binding(self.binding)
+        value = json.loads(self.backend.read_exact(ref))
+        value["plan_sha256"] = "0" * 64
+        self.backend.fault_replace("plan", self.module.encode(value))
+        self.stopped("STOPPED_BINDING", self.claim)
+
+    def test_orphaned_consumption_not_reinitialized(self):
+        self.claim()
+        self.backend.fault_remove("plan")
+        self.stopped(
+            "DENIED_USED_OR_CLOSED",
+            lambda: self.store.register_plan_once(self.binding, self.raw),
+        )
+
+    def test_orphaned_stop_not_reinitialized(self):
+        self.store.stop_for_verified_request(self.binding, self.raw)
+        self.backend.fault_remove("plan")
+        self.stopped(
+            "STOPPED_BY_HUMAN",
+            lambda: self.store.register_plan_once(self.binding, self.raw),
+        )
+
+    def test_missing_plan_not_automatically_recovered(self):
+        self.backend.fault_remove("plan")
+        self.stopped("STOPPED_PLAN_UNKNOWN", self.claim)
+
+    def test_wrong_decision_type_blocks(self):
+        self.claim()
+        ref = self.module.SHARED_PREFIXES["consumed"] + self.store._binding(self.binding)
+        value = json.loads(self.backend.read_exact(ref))
+        value["decision"] = []
+        self.backend.fault_replace("consumed", self.module.encode(value))
+        self.stopped(
+            "STOPPED_SHARED_RECORD_INVALID",
+            lambda: self.store.status(self.binding, self.raw),
+        )
+
+    def test_stop_invalid_plan_rejected(self):
+        self.stopped(
+            "STOPPED_BINDING",
+            lambda: self.store.stop_for_verified_request(
+                self.binding, b'{"proposal":"CHANGED"}'
+            ),
+        )
+
+    def test_thread_race_has_one_reservation(self):
+        barrier = threading.Barrier(2)
+        results = []
+
+        def worker(owner):
+            backend = _SharedFixtureBackend(self.path)
+            backend.before_create = lambda: barrier.wait(timeout=5)
+            store = self.new_store(backend)
+            try:
+                store.claim_once(self.binding, self.raw, owner)
+                results.append("CLAIMED")
+            except self.module.GateStopped as exc:
+                results.append(exc.state)
+
+        threads = [
+            threading.Thread(target=worker, args=("WORKER_" + str(i),))
+            for i in range(2)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=6)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(sorted(results), ["CLAIMED", "DENIED_USED_OR_CLOSED"])
+
+    def process_probe(self, owner, barrier_path=""):
+        # Uses fresh isolated Python processes, without a platform-specific fork.
+        return [
+            sys.executable, "-I", "-B", "-c", _SHARED_PROCESS_PROBE,
+            str(Path(__file__).resolve()), str(self.path), owner, str(barrier_path),
+        ]
+
+    def test_process_race_has_one_reservation(self):
+        barrier_path = self.path.with_name("process-barrier")
+        barrier_path.mkdir()
+        workers = [
+            subprocess.Popen(
+                self.process_probe("WORKER_" + str(i), barrier_path),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            for i in range(2)
+        ]
+        rows = []
+        try:
+            for worker in workers:
+                out, err = worker.communicate(timeout=10)
+                self.assertEqual(worker.returncode, 0, err)
+                rows.append(json.loads(out))
+        finally:
+            for worker in workers:
+                if worker.poll() is None:
+                    worker.terminate()
+                    worker.wait(timeout=2)
+        self.assertEqual(
+            sorted(row["state"] for row in rows),
+            ["CLAIMED", "DENIED_USED_OR_CLOSED"],
+        )
+        self.assertEqual(sum(row["create_attempts"] for row in rows), 2)
+        self.assertEqual(self.fresh().status(self.binding, self.raw)["state"], "CLAIMED")
+
+    def test_legacy_live_response_still_disabled(self):
+        for decision in ("approve", "reject", "none"):
+            result = self.module.unavailable_live_response(decision)
+            self.assertEqual(result["state"], "STOPPED_LIVE_APPROVAL_UNCONFIGURED")
+            self.assertFalse(result["approval_accepted"])
+            self.assertEqual(result["mock_generations"], 0)
+
+
+_SHARED_INVALID_JSON = [
+    ("duplicate", b'{"a":1,"a":2}'),
+    ("BOM", b'\xef\xbb\xbf{}'),
+    ("nonfinite", b'{"a":NaN}'),
+    ("surrogate", b'{"a":"\\ud800"}'),
+    ("trailing_comma", b'{"a":1,}'),
+    ("nonobject", b"[]"),
+]
+
+
+def _make_shared_json_test(raw):
+    def test(self):
+        self.stopped(
+            "STOPPED_SHARED_RECORD_INVALID",
+            lambda: self.store.status(self.binding, raw),
+        )
+    return test
+
+
+for _name, _raw in _SHARED_INVALID_JSON:
+    setattr(SharedRecordContractChecks, "test_json_" + _name, _make_shared_json_test(_raw))
+
+
+_SHARED_BAD_BINDINGS = [
+    ("run_id_bool", "run_id", True),
+    ("rerun", "run_attempt", 2),
+    ("head_changed", "head_sha", "0" * 40),
+    ("branch", "head_branch", "other"),
+    ("workflow", "workflow_path", ".github/workflows/other.yml"),
+]
+
+
+def _make_shared_binding_test(key, value):
+    def test(self):
+        self.binding[key] = value
+        self.stopped(
+            "STOPPED_BINDING",
+            lambda: self.store.status(self.binding, self.raw),
+        )
+    return test
+
+
+for _name, _key, _value in _SHARED_BAD_BINDINGS:
+    setattr(
+        SharedRecordContractChecks, "test_binding_" + _name,
+        _make_shared_binding_test(_key, _value),
+    )
+
+
+_SHARED_BAD_POLICIES = [
+    ("unknown", None, None),
+    ("updates", "updates_allowed", True),
+    ("delete", "deletions_allowed", True),
+    ("bypass", "bypass_actors", ["fixture"]),
+    ("disabled", "enforcement", "disabled"),
+    ("missing_field", "missing", None),
+    ("nonfinite", "updates_allowed", float("nan")),
+]
+
+
+def _make_shared_policy_test(key, value):
+    def test(self):
+        policy = _shared_fixture_authority()
+        if key is None:
+            policy = None
+        elif key == "missing":
+            del policy["updates_allowed"]
+        else:
+            policy[key] = value
+        self.backend.policy_override = True
+        self.backend.policy_value = policy
+        self.stopped("STOPPED_SHARED_PROTECTION", self.claim)
+    return test
+
+
+for _name, _key, _value in _SHARED_BAD_POLICIES:
+    setattr(
+        SharedRecordContractChecks, "test_protection_" + _name,
+        _make_shared_policy_test(_key, _value),
+    )
+
 if __name__ == "__main__":
     unittest.main()
