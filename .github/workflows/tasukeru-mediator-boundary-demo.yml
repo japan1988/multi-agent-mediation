@@ -1,0 +1,89 @@
+# Purpose: a mediator's reassuring wording must not become execution authority.
+# Add independent fixture checks for purpose, provenance, scope, composition
+# and unresolved states. This NEW workflow does not replace existing Tasukeru.
+# No AI API, live approval, ledger writes, repairs or automatic adoption.
+name: Tasukeru Mediator Boundary Demo (fixtures only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  boundary-fixtures:
+    name: Independent mediator checks - no execution authority
+    if: >-
+      ${{ github.repository == 'japan1988/multi-agent-mediation' &&
+          github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Prepare separate temporary report directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          BOUNDARY_ROOT="${RUNNER_TEMP}/tasukeru-mediator-boundary"
+          printf 'BOUNDARY_ROOT=%s\n' "$BOUNDARY_ROOT" >> "$GITHUB_ENV"
+          mkdir "$BOUNDARY_ROOT"
+          mkdir "$BOUNDARY_ROOT/reports"
+
+      - name: Read committed fixture code and pinned baseline
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/tasukeru_mediation_demo/
+            /tests/conftest.py
+            /tests/test_tasukeru_mediator_boundary_demo.py
+            /tests/test_tasukeru_mediation_confirmation.py
+            /tests/test_github_approval_reader_draft.py
+            /pytest.ini
+            /.github/workflows/python-app.yml
+            /.github/workflows/tasukeru-analysis.yml
+            /.github/workflows/tasukeru-artifact-observer.yml
+            /.github/workflows/tasukeru-mediation-demo.yml
+            /.github/workflows/tasukeru-mediation-confirmation.yml
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Test independent checks and report-only entry point
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B tests/test_tasukeru_mediator_boundary_demo.py \
+            > "$BOUNDARY_ROOT/reports/self-tests.txt" 2>&1
+          cat "$BOUNDARY_ROOT/reports/self-tests.txt"
+
+      - name: Compare 32 bounded scenarios using synthetic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B scripts/tasukeru_mediation_demo/run_mediator_boundary_demo.py \
+            --repo-root "$GITHUB_WORKSPACE" --output "$BOUNDARY_ROOT/reports/demo"
+
+      - name: Publish evidence and limitations in job summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "$BOUNDARY_ROOT/reports/demo/summary.md" ]; then
+            cat "$BOUNDARY_ROOT/reports/demo/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' 'Demo incomplete; no approval or execution authority granted.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload separate fixture reports
+        if: always() && env.BOUNDARY_ROOT != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: tasukeru-mediator-boundary-demo-report
+          path: ${{ env.BOUNDARY_ROOT }}/reports
+          if-no-files-found: error
+          retention-days: 7
