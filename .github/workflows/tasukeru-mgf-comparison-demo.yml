@@ -1,0 +1,89 @@
+# Purpose: a small side experiment to test connected Mediator, Gate, Framework
+# and Observer fixtures while preserving their separate authority contracts.
+# Repair the gap between the last state check and one-use report finalization.
+# This NEW manual workflow leaves all existing Tasukeru workflows unchanged.
+# Synthetic inputs only: no AI API, live approval, ledger writes or repair.
+name: Tasukeru MGF Comparison Demo (fixtures only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mgf-fixtures:
+    name: Connected fixture comparison - no execution authority
+    if: >-
+      ${{ github.repository == 'japan1988/multi-agent-mediation' &&
+          github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Prepare separate temporary reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          MGF_ROOT="${RUNNER_TEMP}/tasukeru-mgf-comparison"
+          printf 'MGF_ROOT=%s\n' "$MGF_ROOT" >> "$GITHUB_ENV"
+          mkdir "$MGF_ROOT"
+          mkdir "$MGF_ROOT/reports"
+
+      - name: Read committed fixture code and full comparison baseline
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/tasukeru_mediation_demo/
+            /tests/conftest.py
+            /tests/test_tasukeru_mediator_boundary_demo.py
+            /tests/test_tasukeru_mediation_confirmation.py
+            /tests/test_github_approval_reader_draft.py
+            /tests/test_tasukeru_mgf_comparison_demo.py
+            /pytest.ini
+            /.github/workflows/
+            /docs/tasukeru-mediator-boundary-demo.md
+            /docs/tasukeru-mgf-comparison-demo.md
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Test late-stop repair and comparison entry point
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B tests/test_tasukeru_mgf_comparison_demo.py \
+            > "$MGF_ROOT/reports/self-tests.txt" 2>&1
+          cat "$MGF_ROOT/reports/self-tests.txt"
+
+      - name: Compare four bounded paths using synthetic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B scripts/tasukeru_mediation_demo/run_mgf_comparison_demo.py \
+            --repo-root "$GITHUB_WORKSPACE" --output "$MGF_ROOT/reports/comparison"
+
+      - name: Publish evidence and limitations in job summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f "$MGF_ROOT/reports/comparison/summary.md" ]; then
+            cat "$MGF_ROOT/reports/comparison/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' 'Comparison incomplete; no approval or execution authority granted.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload separate fixture reports
+        if: always() && env.MGF_ROOT != ''
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: tasukeru-mgf-comparison-demo-report
+          path: ${{ env.MGF_ROOT }}/reports
+          if-no-files-found: error
+          retention-days: 7
