@@ -12,6 +12,10 @@ Language: [English](README.md) / [日本語](README.ja.md)
 [![Ruff](https://img.shields.io/badge/lint-ruff-46a2f1?style=flat-square)](https://docs.astral.sh/ruff/)
 [![Last Commit](https://img.shields.io/github/last-commit/japan1988/multi-agent-mediation?style=flat-square)](https://github.com/japan1988/multi-agent-mediation/commits/main)
 
+## 開発状況（2026年10月13日）
+
+Phase 1Fは、最終凍結に向けた検証を進めています。最終テストで新たな問題が見つかったため、現在修正中です。修正後の再検証とレビューが完了するまで、凍結は保留しています。進捗は確認できた段階でお知らせします。
+
 Maestro Orchestrator は、複数のシミュレートされた AI エージェントが安全に協調できるかを検証するための、ローカル研究用ツールです。
 
 このツールは、何が起きたかを記録し、出力の整合性を確認し、リスクがあるように見える場合には人間によるレビューのために停止します。
@@ -83,7 +87,7 @@ Maestro Orchestrator は、複数のシミュレートされた AI エージェ�
 2. **Responsible use and prohibited use**
 3. **Advisory-only policy**
 4. **Human review model**
-5. **Current simulator lines** は、安全境界を理解してから読む
+5. **シミュレーターの参考資料** は、安全境界を理解してから読む
 
 このリポジトリは研究および教育用のテストベンチです。  
 出力は研究成果物であり、本番承認や安全保証ではありません。
@@ -428,9 +432,9 @@ Dependency consistency reports は、指摘、影響構造、影響分類、レ�
 
 README は概要を簡潔に保ちます。詳細な図、参照ファイル、bundles、documentation assets は documentation index に配置してください。
 
-## Current simulator lines
+## シミュレーターの参考資料
 
-このリポジトリには複数のローカル専用シミュレーター系列があります。各系列は異なるオーケストレーションまたはレビュー課題に焦点を当てます。
+以下のシミュレーター系列は、ローカル研究の参考資料および回帰検証用の例です。現在のPhase 1Fの開発状況を示すものではありません。
 
 ### 1. Gate-based mediator simulator
 
@@ -980,12 +984,6 @@ Files:
 これは最小構成の V0.1 research prototype です。  
 checkpoint hashing、handoff-token validation、one-time handoff consumption、expiry checks、intent/execution hash-chain verification は含みません。
 
-### Phase 5B development status
-
-次の hardening stage である Phase 5B は、現在設計および検証中です。one-time handoff consumption、replay prevention、expiry、hash-binding rules には追加の整合性・安全性レビューが必要であるため、完了まで時間がかかります。
-
-Phase 5B は現在の V0.1 prototype には実装されていません。設計を明示的にレビューし、必要なテストが合格した後に更新を公開します。
-
 ## Batch execution and resume
 
 このリポジトリには batch-style orchestration examples が含まれています。
@@ -1338,7 +1336,7 @@ script または simulator は、external submission を silent に実行すべ�
 
 ローカル、許可済み、防御的、教育的な文脈でのみ使用してください。
 
-## 現在の mediation placement 比較実験
+## 過去のmediation placement比較実験（参考）
 
 この実験では、USER/HITL 境界と主要な判定挙動を統制したまま、mediation logic の配置を比較します。
 
@@ -1395,22 +1393,3 @@ Gate ALLOW + Agent CLEAR → ALLOW candidate
 - no automatic fix or revision application
 - no automatic commit, push, pull request, merge, or deployment
 - Agent and Gate do not receive final-decision or external-execution authority
-### C以降の開発状況
-
-C以降では、従来の配置比較からさらに進み、Framework全体の整合性、
-provenance、因果チェーン、semantic chain、HITL制御などを組み合わせた
-設計を進めています。
-
-これらの機構は相互依存が多く、これまでの段階より設計・検証が複雑に
-なっているため、次回の更新には少し時間がかかる見込みです。
-
-実装を急ぐのではなく、各contract・invariant・simulation条件を
-段階的に確認したうえで公開します。
-
-### 開発状況（2026年9月26日）
-
-開発は継続しています。現在、設計はPhase 1Fまで進めていますが、公開済みの実装はPhase 1Dまでです。
-
-各機構の相互作用やFramework全体の整合性の確認に時間を要しており、現時点ではすぐに公開できる段階にはありません。
-
-Phase 1Fまでの内容を2026年内に公開できるよう、設計・実装・検証を進めています。ただし、公開時期を確約するものではありません。必要な検証とレビューの完了を優先し、進捗に応じて開発状況をお知らせします。

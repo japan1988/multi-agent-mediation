@@ -26,6 +26,10 @@
   </a>
 </p>
 
+## Development update — 2026-10-13
+
+Phase 1F is undergoing final review toward a freeze. Final testing identified additional issues, and corrective work is in progress. The freeze remains pending until the corrections are reviewed and re-tested. Further updates will follow when that review is complete.
+
 Maestro Orchestrator is a local research tool for testing how multiple simulated AI agents can work together safely.
 
 It records what happened, checks whether outputs stay consistent, and pauses for human review when something looks risky.
@@ -97,7 +101,7 @@ If you are new to this repository, start here:
 2. Read **Responsible use and prohibited use**.
 3. Read **Advisory-only policy**.
 4. Read **Human review model**.
-5. Read **Current simulator lines** only after you understand the safety boundaries.
+5. Read **Simulator reference collection** only after you understand the safety boundaries.
 
 This repository is a research and educational test bench.  
 The outputs are research artifacts, not production approvals or safety guarantees.
@@ -442,9 +446,9 @@ The diagram documents may include:
 
 The README keeps the overview concise. Detailed diagrams, reference files, bundles, and documentation assets should be placed in the documentation index.
 
-## Current simulator lines
+## Simulator reference collection
 
-This repository contains several local-only simulator lines. Each line focuses on a different orchestration or review problem.
+The simulator lines below are retained as local research references and regression examples. They do not describe the current Phase 1F development status.
 
 ### 1. Gate-based mediator simulator
 
@@ -995,13 +999,6 @@ This simulator is useful for checking:
 This is a minimal V0.1 research prototype.  
 It does not include checkpoint hashing, handoff-token validation, one-time handoff consumption, expiry checks, or intent/execution hash-chain verification.
 
-### Phase 5B development status
-
-The next hardening stage, referred to as Phase 5B, is currently under design and verification. Its one-time handoff consumption, replay prevention, expiry, and hash-binding rules require additional consistency and safety review, so completion will take more time.
-
-Phase 5B is not implemented in the current V0.1 prototype. An update will be published after the design has been explicitly reviewed and the required tests have passed. Thank you for your patience.
-
-
 ## Batch execution and resume
 
 This repository includes batch-style orchestration examples.
@@ -1355,7 +1352,7 @@ It is not a production safety system, legal tool, medical tool, financial tool, 
 
 Use it only in local, authorized, defensive, and educational contexts.
 
-## Current mediation placement comparison experiment
+## Earlier mediation placement comparison
 
 This experiment compares mediation placement while keeping the USER/HITL boundary and core decision behavior controlled.
 
@@ -1412,17 +1409,4 @@ Safety boundary for this experiment:
 - no automatic fix or revision application
 - no automatic commit, push, pull request, merge, or deployment
 - Agent and Gate do not receive final-decision or external-execution authority
-### Development note for C and later stages
-
-The C architecture and subsequent stages are expanding beyond the earlier
-placement comparison into more complex framework-level consistency, provenance,
-causal-chain, semantic-chain, and HITL control mechanisms.
-
-Because these mechanisms interact with each other, the next update may take
-longer than previous iterations. The design is being reviewed incrementally
-before implementation and release rather than being rushed into the repository.
-
-New stages will be published after their contracts, invariants, and required
-simulation tests have been reviewed.
-
 A selected excerpt from a Tasukeru artifact-observer run, showing one of two observed differences, is available in [this sample file](docs/tasukeru-artifact-observer-excerpt.json). The [full report](https://github.com/japan1988/multi-agent-mediation/actions/runs/36973640549/artifacts/11212710428) can be downloaded from GitHub Actions while the artifact remains available.
