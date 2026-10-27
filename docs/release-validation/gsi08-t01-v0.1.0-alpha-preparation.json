@@ -1,0 +1,57 @@
+{
+  "schema": "gsi08-t01-release-preparation-v1",
+  "prepared_date": "2026-10-27",
+  "timezone": "Asia/Tokyo",
+  "repository": "japan1988/multi-agent-mediation",
+  "proposed_tag": "v0.1.0-alpha",
+  "title": "GSI-08 T01 — v0.1.0-alpha",
+  "preparation_status": "DOCS_PREPARED_ASSETS_PENDING",
+  "intended_research_release_designation": "RESEARCH_RELEASE_READY",
+  "external_integration_and_production": "FREEZE_BLOCKED",
+  "source": {
+    "filename": "GSI08_T01_RC13_FH01_minimal_candidate.py",
+    "expected_sha256": "963198bff4385f81ba7b0c965ed4cde9159bd58acfaaa8fc2a47ef669e1f3a6e",
+    "expected_sha256_origin": "user_supplied",
+    "observed_sha256": null,
+    "hash_match_verified": false,
+    "included_in_this_change": false
+  },
+  "verification": {
+    "date": "2026-10-26",
+    "python": "3.12.14",
+    "origin": "user_supplied_release_text",
+    "report_obtained": false,
+    "rerun_for_this_change": false,
+    "independently_confirmed_for_this_change": false,
+    "reported_results": {
+      "normal": {
+        "existing": "16/16 PASS",
+        "boundary": "22/22 PASS",
+        "concurrent_trials": "300/300",
+        "refreshed_rejections": "300/300",
+        "usage_90": "300/300"
+      },
+      "optimized": {
+        "existing": "16/16 PASS",
+        "boundary": "22/22 PASS",
+        "concurrent_trials": "300/300",
+        "refreshed_rejections": "300/300",
+        "usage_90": "300/300"
+      }
+    }
+  },
+  "known_issues": [
+    "AUDIT02 audit corruption does not automatically stop later valid approved admissions",
+    "Limited semantic consistency checks for unknown evidence",
+    "Incomplete independently authenticated STOP recovery authority",
+    "Limited simulated-approval ownership and concurrency guarantees",
+    "Some internal tests do not check actual admission decisions",
+    "Unspecified large-input and long-running performance"
+  ],
+  "merge_policy": "human_review_and_manual_merge_only",
+  "tag_policy": "separate_manual_decision",
+  "release_policy": "separate_manual_prerelease_decision",
+  "runtime_modified": false,
+  "tasukeru_modified": false,
+  "workflows_modified": false
+}
