@@ -80,3 +80,14 @@ Software code is under [Apache License 2.0](LICENSE). Documentation, diagrams an
 | Earlier simulator catalog and extended explanations | [Pinned snapshot of the previous README](https://github.com/japan1988/multi-agent-mediation/blob/6e2f157cdfa56a5010a9ce5bb274e2eae685538c/README.md) |
 
 Historical and version-specific documents are reference records. Distinguish them from the current implementation and validation status of Phase 1F.
+### Development Update — November 2026
+
+Development of the Maestro Orchestrator research framework is continuing incrementally.
+
+We are refining the simulation environment, reviewing safety controls, and conducting step-by-step validation of components under development.
+
+Some experimental components remain under internal development and are not yet included in the public repository.
+
+The existing safety boundaries and human-review requirements remain unchanged. Further updates will be shared as validation progresses.
+
+This is a development progress update, not an announcement of a completed release.
