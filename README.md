@@ -91,3 +91,15 @@ Some experimental components remain under internal development and are not yet i
 The existing safety boundaries and human-review requirements remain unchanged. Further updates will be shared as validation progresses.
 
 This is a development progress update, not an announcement of a completed release.
+
+### Development Update — November 2026
+
+Development of the Maestro Orchestrator research framework is continuing steadily.
+
+We are currently preparing a local sandbox environment to support future validation and testing.
+
+Progress is being made incrementally, with safety and verification taking priority over development speed.
+
+Further technical details and validation results will be shared when appropriate.
+
+This update is intended to confirm ongoing development, not to announce a completed implementation or release.
