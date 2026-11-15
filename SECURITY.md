@@ -56,6 +56,15 @@ The repository and its workflows do not authorize:
 
 Any externally impactful action must remain blocked, prohibited, or explicitly human-review gated.
 
+## Maestro Review Core v0.1 integration boundaries
+
+Maestro Review Core evaluates approval signatures and evidence for a review request. Treat `REVIEW_SATISFIED` as an advisory result. `ExecutionAuthority` remains `NOT_GRANTED`. Keep any decision to execute, apply changes, merge, or deploy behind a separate authorization check and human review.
+
+* Obtain the trusted policy, reviewer public keys, expected hashes, and current UTC time from sources controlled by the integration. Keep caller-submitted values out of those trust inputs.
+* Establish reviewer identity and intent through your approval process and key management. A verified signature establishes that the corresponding private key signed the approval data.
+* The library has no durable record of approval consumption. The same approval can yield the same result when evaluated again. If your workflow requires single use, keep a durable record and check and consume the approval atomically at the point where it is accepted.
+* Keep any later human-authorized action bound to its exact target and reviewed inputs. Recheck that binding immediately before the action. Treat `STOP`, `UNKNOWN`, and evaluation errors as reasons to stop or request human review.
+
 ## Security review output policy
 
 Public security-related outputs should avoid offensive detail.
