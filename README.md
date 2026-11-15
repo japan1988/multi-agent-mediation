@@ -95,3 +95,8 @@ The existing safety boundaries and human-review requirements remain unchanged.
 Further technical details and validation results will be shared when appropriate.
 
 This update confirms ongoing development. It does not announce a completed implementation, successful final validation, or a release.
+### Maestro Review Core v0.1
+
+Maestro Review Core is a Windows library for .NET Framework 4.8 that verifies approval signatures, checks approval expiry, and compares evidence SHA-256 hashes. A result of `REVIEW_SATISFIED` means the review conditions were met. Execution authority remains `NOT_GRANTED`.
+
+The bundled tests passed against the distribution DLL in an offline Windows 11 VM. A rebuild from the included C# sources matched the distribution DLL byte for byte after zeroing the build timestamp and module identifier (MVID) in comparison copies. These results apply to Review Core v0.1.
