@@ -2,6 +2,8 @@
 
 English / [日本語](README.ja.md)
 
+[Security Policy](SECURITY.md) / [セキュリティポリシー（日本語）](SECURITY.ja.md)
+
 <p align="center">
   <a href="https://github.com/japan1988/multi-agent-mediation/stargazers">
     <img src="https://img.shields.io/github/stars/japan1988/multi-agent-mediation?style=social" alt="GitHub Stars">
