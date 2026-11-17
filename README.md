@@ -1,4 +1,4 @@
-# Maestro Orchestrator — Multi-Agent Orchestration Framework
+`# Maestro Orchestrator — Multi-Agent Orchestration Framework
 
 English / [日本語](README.ja.md)
 
@@ -80,6 +80,7 @@ Software code is under [Apache License 2.0](LICENSE). Documentation, diagrams an
 | Mock mediation and independent verification boundaries | [Mediator boundary demo](docs/tasukeru-mediator-boundary-demo.md) |
 | Mediator, Gate, Framework and Observer comparison | [MGF comparison demo](docs/tasukeru-mgf-comparison-demo.md) |
 | Earlier simulator catalog and extended explanations | [Pinned snapshot of the previous README](https://github.com/japan1988/multi-agent-mediation/blob/6e2f157cdfa56a5010a9ce5bb274e2eae685538c/README.md) |
+| Conceptual workflow for internal verification in the private Maestro build | [Workflow diagram (English)](docs/maestro-internal-verification-workflow.en.png) |
 
 Historical and version-specific documents are reference records. Distinguish them from the current implementation and validation status of Phase 1F.
 ### Development Update — November 2026
