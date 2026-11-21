@@ -103,3 +103,12 @@ This update confirms ongoing development. It does not announce a completed imple
 Maestro Review Core is a Windows library for .NET Framework 4.8 that verifies approval signatures, checks approval expiry, and compares evidence SHA-256 hashes. A result of `REVIEW_SATISFIED` means the review conditions were met. Execution authority remains `NOT_GRANTED`.
 
 The bundled tests passed against the distribution DLL in an offline Windows 11 VM. A rebuild from the included C# sources matched the distribution DLL byte for byte after zeroing the build timestamp and module identifier (MVID) in comparison copies. These results apply to Review Core v0.1.
+### Tasukeru and Mediator — Integration Research
+
+We are exploring the integration of Tasukeru and Mediator as part of the ongoing development of a transparent and verifiable multi-agent orchestration framework.
+
+The research focuses on traceable decision evidence, consistent safety checks across agent interactions, and a clear separation between review outcomes and execution authority.
+
+Human oversight and final approval remain essential design principles. The framework is intended to support reviewable decisions without automatically granting execution authority.
+
+This work is currently in the specification and validation-case preparation stage. Integration is not yet complete, and the combined framework has not undergone final validation.
